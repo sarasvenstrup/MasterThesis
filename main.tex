@@ -1,0 +1,324 @@
+%% --------------------------------------------------
+%% Silence template warnings (optional)
+%% --------------------------------------------------
+\RequirePackage{silence}
+\WarningFilter{titlesec}{Non standard sectioning command}
+\WarningFilter{scrreprt}{Usage of package}
+\WarningFilter{scrreprt}{Activating an ugly workaround}
+
+% *********************************************************
+% CHOOSE THEME
+% *********************************************************
+\newcommand{\thesisTheme}{ucph}
+
+% *********************************************************
+% DOCUMENT CLASS
+% *********************************************************
+\documentclass[
+  paper=A4,
+  12pt,
+  twoside=true,
+  openright,
+  parskip=full,
+  chapterprefix=true,
+  headings=normal,
+  bibliography=totoc,
+  listof=totoc,
+  titlepage=on,
+  captions=tableabove,
+  abstract=on
+]{scrreprt}
+
+% --------------------------------------------------
+% Language & typography
+% --------------------------------------------------
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+
+% --------------------------------------------------
+% Page layout
+% --------------------------------------------------
+\usepackage[
+  left=3cm,
+  right=3cm,
+  top=3cm,
+  bottom=3cm
+]{geometry}
+
+% --------------------------------------------------
+% Line spacing
+% --------------------------------------------------
+\usepackage{setspace}
+\onehalfspacing
+
+% *********************************************************
+% THESIS METADATA
+% *********************************************************
+\newcommand{\thesisTitle}{Encoder--Decoder Approaches to Affine Term Structure Models}
+\newcommand{\thesisName}{Frederikke R{\o}n Nielsen \\ Sara Friis Svenstrup}
+\newcommand{\thesisSubject}{MSc in Mathematics \& Economics}
+\newcommand{\thesisDate}{June 2026}
+\newcommand{\thesisVersion}{First Version}
+
+\newcommand{\thesisExternalSupervisor}{Rolf Poulsen}
+
+\newcommand{\thesisUniversity}{University of Copenhagen}
+\newcommand{\thesisFaculty}{Faculty of Science}
+\newcommand{\thesisInstitute}{Department of Mathematical Sciences}
+\newcommand{\thesisCity}{Copenhagen}
+\newcommand{\thesisAddress}{Universitetsparken 15}
+\newcommand{\thesisPostal}{2100}
+
+% *********************************************************
+% UCPH TEMPLATE PACKAGE
+% *********************************************************
+\usepackage[
+  figuresep=colon,
+  sansserif=false,
+  hangfigurecaption=false,
+  hangsection=true,
+  hangsubsection=true,
+  colorize=full,
+  colortheme={\thesisTheme},
+  bibsys=biber,
+  bibfile=references,
+  bibstyle=authoryear
+]{ucphthesis}
+
+\hypersetup{
+  pdftitle={\thesisTitle},
+  pdfsubject={\thesisSubject},
+  pdfauthor={Sara Friis Svenstrup; Frederikke R{\o}n Nielsen},
+  colorlinks=false,
+  pdfborder={0 0 0}
+}
+
+% *********************************************************
+% COLOR — ONE RED USED EVERYWHERE
+% *********************************************************
+\usepackage{xcolor}
+\definecolor{UCPHred}{HTML}{8A1C1C}
+
+% *********************************************************
+% CHAPTER TITLES — RED VERTICAL RULE (THICKER)
+% *********************************************************
+\usepackage{titlesec}
+
+\titleformat{\chapter}[hang]
+  {\Huge\bfseries}
+  {\thechapter\hspace{1em}\textcolor{UCPHred}{\vrule width 1.4pt}\hspace{1em}}
+  {0pt}
+  {}
+
+\titlespacing*{\chapter}{0pt}{2.5em}{2em}
+
+\titleformat{\section}
+  {\Large\bfseries}
+  {\thesection}
+  {1em}
+  {}
+
+\titleformat{\subsection}
+  {\large\bfseries}
+  {\thesubsection}
+  {1em}
+  {}
+
+% *********************************************************
+% HEADER: "3 | Title" WITH RED LINE (NO 'Chapter')
+% *********************************************************
+\renewcommand{\chaptermarkformat}{%
+  \thechapter\hspace{1em}%
+  \textcolor{UCPHred}{\vrule width 1.4pt}\hspace{1em}%
+}
+
+% *********************************************************
+% PAGE NUMBER — BOTTOM RIGHT WITH RED LINE (THICKER)
+% *********************************************************
+\usepackage{fancyhdr}
+
+\fancypagestyle{maincontentstyle}{
+  \fancyhf{}
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0pt}
+  \fancyhead[L]{\leftmark}
+  \fancyfoot[R]{%
+    \textcolor{UCPHred}{\vrule width 1.4pt height 12pt}%
+    \hspace{0.6em}\thepage}
+}
+
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0pt}
+  \fancyfoot[R]{%
+    \textcolor{UCPHred}{\vrule width 1.4pt height 12pt}%
+    \hspace{0.6em}\thepage}
+}
+
+% *********************************************************
+% MATHEMATICS & THEOREMS
+% *********************************************************
+\usepackage{amsmath, amssymb}
+\usepackage{amsthm}
+
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{example}[theorem]{Example}
+
+% *********************************************************
+% FIGURES & TABLES
+% *********************************************************
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\captionsetup{font=small, labelfont=bf}
+
+% *********************************************************
+% BIBLIOGRAPHY
+% *********************************************************
+\usepackage[
+  backend=biber,
+  style=authoryear
+]{biblatex}
+\addbibresource{references.bib}
+
+% *********************************************************
+% ECON / FINANCE MACROS
+% *********************************************************
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\R}{\mathbb{R}}
+
+% *********************************************************
+% COVER PAGE CONTENT
+% *********************************************************
+\subject{\vspace{4.5cm}\thesisSubject}
+\title{\thesisTitle}
+\author{\thesisName\\\small{Supervised by \thesisExternalSupervisor}}
+\date{\thesisDate}
+
+% *********************************************************
+% DOCUMENT
+% *********************************************************
+\begin{document}
+
+% --------------------------
+% FIRST PAGE — TEMPLATE TITLE PAGE (full background)
+% --------------------------
+\pagenumbering{roman}
+\pagestyle{empty}
+\AddToShipoutPicture*{\TitleBackground}
+\maketitle
+\clearpage
+
+% --------------------------
+% SECOND PAGE — TEMPLATE “INFO PAGE” (watermark-only background)
+% This matches your screenshot: bottom-left text, watermark reused.
+% --------------------------
+\pagestyle{empty}
+\AddToShipoutPicture*{\SecondTitleBackground}
+\thispagestyle{empty}
+
+% Push content to bottom
+\vspace*{\fill}
+
+\noindent
+\begin{minipage}{0.62\textwidth}
+  {\bfseries \thesisName\par}
+  \vspace{0.25em}
+  {\itshape \thesisTitle\par}
+  \vspace{0.25em}
+  {\thesisSubject, \thesisDate\par}
+  \vspace{0.25em}
+  {Supervisor: \thesisExternalSupervisor\par}
+
+  \vspace{1.2cm}
+
+  {\bfseries \thesisUniversity\par}
+  \vspace{0.15em}
+  {\itshape \thesisFaculty\par}
+  \vspace{0.15em}
+  {\thesisInstitute\par}
+  {\thesisAddress\par}
+  {\thesisPostal\ \thesisCity\par}
+\end{minipage}
+
+\clearpage
+
+% --------------------------
+% FRONT MATTER
+% --------------------------
+\pagestyle{maincontentstyle}
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+Later.
+\clearpage
+
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+Just write text... for now.
+\clearpage
+
+\tableofcontents
+\clearpage
+
+\listoffigures
+\clearpage
+
+\listoftables
+\clearpage
+
+% --------------------------
+% MAIN MATTER
+% --------------------------
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\chapter{Introduction}
+\input{Sections/Introduction}
+
+
+\chapter{Literature Review}
+Text.
+
+\chapter{Methodology}
+Text.
+
+\chapter{Results}
+Text.
+
+\chapter{Discussion}
+Text.
+
+\chapter{Conclusion}
+Text.
+
+% --------------------------
+% BIBLIOGRAPHY
+% --------------------------
+\clearpage
+\printbibliography
+
+% --------------------------
+% APPENDIX
+% --------------------------
+\appendix
+\clearpage
+
+\chapter{Additional Material}
+Appendix text.
+
+\end{document}
