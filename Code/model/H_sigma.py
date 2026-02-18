@@ -1,0 +1,55 @@
+#%pip install torch
+#dbutils.library.restartPython()
+
+# DO NOT RUN THIS FILE
+
+import torch
+import torch.nn as nn
+
+from utils.common import CenteredSoftStep # Load the activation function
+
+
+class HSigma(nn.Module):
+    """
+    H network from the paper: (2,4,3), no bias, soft step activation.
+    Maps z -> (logσ1, logσ2, atanhρ), then transforms.
+    """
+
+    def __init__(self, latent_dim: int, hidden_dim: int, bias = False):
+        super().__init__()
+
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim, bias=bias),
+            CenteredSoftStep(),
+            nn.Linear(hidden_dim, 3, bias=bias),
+        )
+
+    def forward(self, z, return_raw=False):
+        """
+        z: (B,2) or (2,)
+
+        Returns (default):
+          sigma1, sigma2, rho
+
+        If return_raw=True:
+          log_sigma1, log_sigma2, atanh_rho
+        """
+
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
+
+        raw = self.net(z)   # (B,3)
+
+        if return_raw:
+            return raw
+
+        log_sigma1 = raw[:, 0:1]
+        log_sigma2 = raw[:, 1:2]
+        atanh_rho  = raw[:, 2:3]
+
+        sigma1 = torch.exp(log_sigma1)
+        sigma2 = torch.exp(log_sigma2)
+        rho    = torch.tanh(atanh_rho)
+
+        return sigma1, sigma2, rho
+
