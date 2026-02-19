@@ -490,7 +490,6 @@ for col in mu_cols:
 
 print(f"Done. Figures saved to: {FIGURES_DIR}")
 
-
 # ============================================================
 # FIGURE 3 (paper-style): Approximate Sharpe ratio of ZCBs
 # Requires:
@@ -503,7 +502,7 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 # Saves to Figures/<USE>/paper_fig3_sharpe_ratio_<date>.png/pdf
 # ============================================================
 
-from Code.utils.sharpe_ratio import sharpe_ratio_zcb
+from Code.analysis.sharpe_ratio import sharpe_ratio_zcb  # <-- IMPORTANT: path
 
 def pick_date_or_nearest(meta_df: pd.DataFrame, target_date: str) -> pd.Timestamp:
     """Pick target_date if exists, else nearest available date in meta_df."""
@@ -513,11 +512,14 @@ def pick_date_or_nearest(meta_df: pd.DataFrame, target_date: str) -> pd.Timestam
         raise ValueError("No dates available in meta_df")
     if (dates == td).any():
         return td
-    # nearest
     idx = np.argmin(np.abs(dates - td))
     return pd.to_datetime(dates[idx])
 
-def one_curve_per_currency_on_date(df_wide_dec: pd.DataFrame, date_pick: pd.Timestamp, target_tenors) -> pd.DataFrame:
+def one_curve_per_currency_on_date(
+    df_wide_dec: pd.DataFrame,
+    date_pick: pd.Timestamp,
+    target_tenors
+) -> pd.DataFrame:
     """
     Returns a df with one row per currency at date_pick.
     If duplicates per currency on that date, keep last.
@@ -528,11 +530,10 @@ def one_curve_per_currency_on_date(df_wide_dec: pd.DataFrame, date_pick: pd.Time
     if sel.empty:
         raise ValueError(f"No rows found for date {pd.to_datetime(date_pick).date()}")
     sel = sel.sort_values(["ccy", "as_of_date"]).drop_duplicates(subset=["ccy"], keep="last")
-    # keep only needed cols
     return sel[["as_of_date", "ccy"] + list(target_tenors)].reset_index(drop=True)
 
 # -----------------------------
-# Build df_wide_dec (observed in decimals) if you haven't already
+# Build df_wide_dec (observed in decimals)
 # -----------------------------
 df_wide_dec = df_wide.copy()
 if SCALE_IS_PERCENT:
@@ -550,8 +551,12 @@ print("Figure 3 date used:", date_pick_F3.date())
 # -----------------------------
 sel = one_curve_per_currency_on_date(df_wide_dec, date_pick_F3, TARGET_TENORS)
 
-S_date = torch.tensor(sel[list(TARGET_TENORS)].to_numpy(dtype=np.float32), device=device)
-# Encode only (no need to run full forward)
+S_date = torch.tensor(
+    sel[list(TARGET_TENORS)].to_numpy(dtype=np.float32),
+    device=device
+)
+
+# Encode only (SR uses decoder/bond pricer derivatives, not encoder derivatives)
 with torch.no_grad():
     z_date = model.encoder(S_date)  # (n_ccy, d)
 
@@ -559,27 +564,31 @@ ccys = sel["ccy"].tolist()
 
 # -----------------------------
 # Tau grid for SR curve
-#   (paper uses a curve over maturities; dense grid looks nicer)
 # -----------------------------
-tau_grid = torch.linspace(1.0, float(model.tau_max), steps=117, device=device)  # ~0.25y spacing
-# you can also do: torch.arange(1.0, model.tau_max + 1.0, 1.0)
+tau_grid = torch.linspace(
+    1.0,
+    float(model.tau_max),
+    steps=117,
+    device=device
+)  # ~0.25y spacing
 
 # -----------------------------
-# Compute SR for each currency across tau
+# Compute SR for each currency across tau (BATCHED over tau)
+#   We batch by repeating z across maturities:
+#     z_rep: (N_tau, d), tau_vec: (N_tau,)
+#   sharpe_ratio_zcb returns (N_tau,)
 # -----------------------------
 SR_mat = []
-for i in range(z_date.shape[0]):
-    zi = z_date[i:i+1, :]  # (1,d)
-    # SR returned shape (1,) when tau is scalar, but here tau is (N,) -> we want (N,)
-    # We'll loop taus to avoid any shape ambiguity in bond_price wrapper.
-    sr_list = []
-    for t in tau_grid:
-        t_req = t.detach().clone().requires_grad_(True)
-        sr_val = sharpe_ratio_zcb(model, zi, t_req)  # (1,)
-        sr_list.append(sr_val.item())
-    SR_mat.append(sr_list)
 
-SR_mat = np.array(SR_mat)  # (n_ccy, N_tau)
+for i in range(z_date.shape[0]):
+    zi = z_date[i:i+1, :]                 # (1,d)
+    zi_rep = zi.repeat(tau_grid.numel(), 1)  # (N_tau,d)
+    tau_vec = tau_grid.detach().clone()      # (N_tau,)
+
+    sr_vec = sharpe_ratio_zcb(model, zi_rep, tau_vec)  # (N_tau,)
+    SR_mat.append(sr_vec.cpu().numpy())
+
+SR_mat = np.stack(SR_mat, axis=0)  # (n_ccy, N_tau)
 tau_np = tau_grid.detach().cpu().numpy()
 
 # -----------------------------
@@ -607,6 +616,5 @@ H.save_figure(fig, plot_cfg, f"paper_fig3_sharpe_ratio_{date_pick_F3.date()}")
 # -----------------------------
 # Print summary magnitudes (sanity check)
 # -----------------------------
-absmax = np.max(np.abs(SR_mat))
+absmax = float(np.max(np.abs(SR_mat)))
 print("Max |SR| across currencies and maturities:", absmax)
-

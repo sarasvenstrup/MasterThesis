@@ -3,11 +3,10 @@
 # Zero-coupon bond "Sharpe ratio" diagnostic (paper Figure 3 style)
 #
 # Computes instantaneous SR for rolling-maturity ZCB price P(z,tau):
-#   SR(z,tau) = [ (mu_P - r*P)/P ] / ||sigma_P||
+#   SR(z,tau) = (mu_P - r*P) / ||(∇_z P)^T L||
 #
-# where (under Q):
-#   dP = mu_P dt + (∇_z P)^T L dW
-#   mu_P = ∂_tau P + (∇P)^T mu + 1/2 Tr( L^T H(P) L )
+# where (under Q) the rolling-maturity drift is:
+#   mu_P = -∂_tau P + (∇P)^T mu + 1/2 Tr( L^T H(P) L )
 #
 # NOTES:
 # - This is an arbitrage diagnostic: if the no-arbitrage PDE holds,
@@ -21,12 +20,13 @@
 # ============================================================
 
 from __future__ import annotations
+from typing import Dict, Union
 import torch
 
 
 def _hessian_scalar_wrt_z(y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
     """
-    Compute Hessian of scalar y_i wrt z_i for each batch element i.
+    Hessian of scalar y_i w.r.t. z_i for each batch element i.
 
     y: (B,)  scalar per batch item
     z: (B,d) requires_grad=True
@@ -57,10 +57,36 @@ def _row_norm(x: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     return torch.sqrt(torch.clamp((x * x).sum(dim=1), min=eps))
 
 
+def _as_batch_tau(tau_in: Union[torch.Tensor, float, int], B: int, ref: torch.Tensor) -> torch.Tensor:
+    """
+    Convert tau_in to a (B,) tensor on same device/dtype as ref, with *independent storage*.
+    (Avoids .expand() views that can cause confusing gradients.)
+    """
+    if not torch.is_tensor(tau_in):
+        tau_in = torch.tensor(tau_in, dtype=ref.dtype, device=ref.device)
+
+    if tau_in.ndim == 0:
+        # allocate real storage, not expand-view
+        tau = tau_in.detach().clone().repeat(B).requires_grad_(True)  # (B,)
+        return tau
+
+    if tau_in.ndim == 1:
+        if tau_in.numel() == 1:
+            tau = tau_in.detach().clone().repeat(B).requires_grad_(True)  # (B,)
+            return tau
+        if tau_in.numel() == B:
+            tau = tau_in.detach().clone().requires_grad_(True)  # (B,)
+            return tau
+
+        raise ValueError(f"tau_in shape {tuple(tau_in.shape)} incompatible with batch B={B}")
+
+    raise ValueError(f"tau_in must be scalar or (B,) or (1,), got {tuple(tau_in.shape)}")
+
+
 def sharpe_ratio_zcb(
     model,
     z_in: torch.Tensor,
-    tau_in: torch.Tensor,
+    tau_in: Union[torch.Tensor, float, int],
     eps: float = 1e-12,
 ) -> torch.Tensor:
     """
@@ -75,8 +101,8 @@ def sharpe_ratio_zcb(
               mu: (B,d)
               sigma_or_L: (B,d) or (B,d,d)
               r_tilde: (B,) or (B,1)
-    z_in: (B,d) tensor
-    tau_in: scalar tensor (), or (B,) tensor (in years)
+    z_in: (B,d) tensor (or (d,))
+    tau_in: scalar tensor/float, or (B,) tensor
 
     Returns
     -------
@@ -87,27 +113,17 @@ def sharpe_ratio_zcb(
     # --- z with grad ---
     if z_in.ndim == 1:
         z_in = z_in.unsqueeze(0)
-    z = z_in.detach().requires_grad_(True)  # (B,d)
+    if z_in.ndim != 2:
+        raise ValueError(f"z_in must be (B,d) or (d,), got {tuple(z_in.shape)}")
 
-    # --- tau with grad ---
-    if not torch.is_tensor(tau_in):
-        tau_in = torch.tensor(tau_in, dtype=z.dtype, device=z.device)
+    z = z_in.detach().clone().requires_grad_(True)  # (B,d)
+    B = z.shape[0]
 
-    if tau_in.ndim == 0:
-        tau = tau_in.expand(z.shape[0]).detach().requires_grad_(True)  # (B,)
-    elif tau_in.ndim == 1:
-        if tau_in.shape[0] == 1:
-            tau = tau_in.expand(z.shape[0]).detach().requires_grad_(True)
-        elif tau_in.shape[0] == z.shape[0]:
-            tau = tau_in.detach().clone().requires_grad_(True)
-        else:
-            raise ValueError(f"tau_in shape {tuple(tau_in.shape)} incompatible with batch {z.shape[0]}")
-    else:
-        raise ValueError(f"tau_in must be scalar or (B,), got {tuple(tau_in.shape)}")
+    # --- tau with grad (B,) ---
+    tau = _as_batch_tau(tau_in, B=B, ref=z)  # (B,)
 
     # --- model params under Q ---
-    mu, sigma_or_L, r = model.params_from_z(z)  # required wrapper
-    mu = torch.zeros_like(mu)
+    mu, sigma_or_L, r = model.params_from_z(z)
 
     if r.ndim == 2 and r.shape[1] == 1:
         r = r.squeeze(1)
@@ -116,7 +132,6 @@ def sharpe_ratio_zcb(
 
     # interpret sigma_or_L
     if sigma_or_L.ndim == 2:
-        # diagonal vols -> diffusion matrix L = diag(sigmas)
         L = torch.diag_embed(sigma_or_L)  # (B,d,d)
     elif sigma_or_L.ndim == 3:
         L = sigma_or_L  # (B,d,d)
@@ -124,7 +139,7 @@ def sharpe_ratio_zcb(
         raise ValueError(f"sigma_or_L must be (B,d) or (B,d,d), got {tuple(sigma_or_L.shape)}")
 
     # --- bond price P(z,tau) ---
-    P = model.bond_price_from_z(z, tau)  # required wrapper
+    P = model.bond_price_from_z(z, tau)
     if P.ndim == 2 and P.shape[1] == 1:
         P = P.squeeze(1)
     if P.ndim != 1:
@@ -132,27 +147,92 @@ def sharpe_ratio_zcb(
 
     # --- derivatives ---
     dP_dtau = torch.autograd.grad(P.sum(), tau, create_graph=True)[0]  # (B,)
-    gradP = torch.autograd.grad(P.sum(), z, create_graph=True)[0]  # (B,d)
-    H = _hessian_scalar_wrt_z(P, z)  # (B,d,d)
+    gradP = torch.autograd.grad(P.sum(), z, create_graph=True)[0]      # (B,d)
+    H = _hessian_scalar_wrt_z(P, z)                                    # (B,d,d)
 
-    # --- drift of P for rolling maturity (IMPORTANT: -∂τP) ---
-    term1 = -dP_dtau
-    term2 = (gradP * mu).sum(dim=1)
+    # --- drift of P for rolling maturity: -∂τP + (∇P)^T mu + 1/2 Tr(L^T H L) ---
+    term_tau = -dP_dtau
+    term_mu = (gradP * mu).sum(dim=1)
 
-    tmp = torch.matmul(H, L)  # (B,d,d)
-    quad = torch.matmul(L.transpose(1, 2), tmp)  # (B,d,d)
-    term3 = 0.5 * torch.diagonal(quad, dim1=1, dim2=2).sum(dim=1)
+    tmp = torch.matmul(H, L)                      # (B,d,d)
+    quad = torch.matmul(L.transpose(1, 2), tmp)   # (B,d,d)
+    term_trace = 0.5 * torch.diagonal(quad, dim1=1, dim2=2).sum(dim=1)
 
-    mu_P = term1 + term2 + term3  # (B,)
+    mu_P = term_tau + term_mu + term_trace  # (B,)
 
     # --- vol vector of P: (∇P)^T L ---
     vol_vec = torch.matmul(gradP.unsqueeze(1), L).squeeze(1)  # (B,d)
-    vol_price = _row_norm(vol_vec, eps=eps)  # (B,)
+    vol_price = _row_norm(vol_vec, eps=eps)                   # (B,)
 
-    # --- Sharpe ratio ---
-    # Use cancellation-stable form:
-    # SR = (mu_P - r*P) / ||(∇P)^T L||
+    # --- Sharpe ratio (PDE residual scaled by price-vol norm) ---
     SR = (mu_P - r * P) / torch.clamp(vol_price, min=eps)
-
     return SR.detach()
 
+
+def sharpe_ratio_zcb_debug(
+    model,
+    z_in: torch.Tensor,
+    tau_in: Union[torch.Tensor, float, int],
+    eps: float = 1e-12
+) -> Dict[str, torch.Tensor]:
+    """
+    Returns all intermediate terms for debugging.
+    """
+    model.eval()
+
+    if z_in.ndim == 1:
+        z_in = z_in.unsqueeze(0)
+    if z_in.ndim != 2:
+        raise ValueError(f"z_in must be (B,d) or (d,), got {tuple(z_in.shape)}")
+
+    z = z_in.detach().clone().requires_grad_(True)  # (B,d)
+    B = z.shape[0]
+
+    tau = _as_batch_tau(tau_in, B=B, ref=z)  # (B,)
+
+    mu, sigma_or_L, r = model.params_from_z(z)
+    if r.ndim == 2 and r.shape[1] == 1:
+        r = r.squeeze(1)
+
+    if sigma_or_L.ndim == 2:
+        L = torch.diag_embed(sigma_or_L)
+    elif sigma_or_L.ndim == 3:
+        L = sigma_or_L
+    else:
+        raise ValueError(f"sigma_or_L must be (B,d) or (B,d,d), got {tuple(sigma_or_L.shape)}")
+
+    P = model.bond_price_from_z(z, tau)
+    if P.ndim == 2 and P.shape[1] == 1:
+        P = P.squeeze(1)
+
+    dP_dtau = torch.autograd.grad(P.sum(), tau, create_graph=True)[0]  # (B,)
+    gradP = torch.autograd.grad(P.sum(), z, create_graph=True)[0]      # (B,d)
+    H = _hessian_scalar_wrt_z(P, z)                                    # (B,d,d)
+
+    term_tau = -dP_dtau
+    term_mu = (gradP * mu).sum(dim=1)
+
+    tmp = torch.matmul(H, L)
+    quad = torch.matmul(L.transpose(1, 2), tmp)
+    term_trace = 0.5 * torch.diagonal(quad, dim1=1, dim2=2).sum(dim=1)
+
+    mu_P = term_tau + term_mu + term_trace
+
+    vol_vec = torch.matmul(gradP.unsqueeze(1), L).squeeze(1)  # (B,d)
+    vol_price = _row_norm(vol_vec, eps=eps)
+
+    resid = mu_P - r * P
+    SR = resid / torch.clamp(vol_price, min=eps)
+
+    return {
+        "P": P.detach(),
+        "r": r.detach(),
+        "rP": (r * P).detach(),
+        "term_tau": term_tau.detach(),
+        "term_mu": term_mu.detach(),
+        "term_trace": term_trace.detach(),
+        "mu_P": mu_P.detach(),
+        "resid": resid.detach(),
+        "vol_price": vol_price.detach(),
+        "SR": SR.detach(),
+    }
