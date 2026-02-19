@@ -131,14 +131,14 @@ def sharpe_ratio_zcb(
 
     # --- derivatives ---
     dP_dtau = torch.autograd.grad(P.sum(), tau, create_graph=True)[0]  # (B,)
-    gradP = torch.autograd.grad(P.sum(), z, create_graph=True)[0]      # (B,d)
-    H = _hessian_scalar_wrt_z(P, z)                                    # (B,d,d)
+    gradP = torch.autograd.grad(P.sum(), z, create_graph=True)[0]  # (B,d)
+    H = _hessian_scalar_wrt_z(P, z)  # (B,d,d)
 
-    # --- drift of P for rolling maturity ---
-    term1 = dP_dtau
+    # --- drift of P for rolling maturity (IMPORTANT: -∂τP) ---
+    term1 = -dP_dtau
     term2 = (gradP * mu).sum(dim=1)
 
-    tmp = torch.matmul(H, L)                  # (B,d,d)
+    tmp = torch.matmul(H, L)  # (B,d,d)
     quad = torch.matmul(L.transpose(1, 2), tmp)  # (B,d,d)
     term3 = 0.5 * torch.diagonal(quad, dim1=1, dim2=2).sum(dim=1)
 
@@ -146,10 +146,12 @@ def sharpe_ratio_zcb(
 
     # --- vol vector of P: (∇P)^T L ---
     vol_vec = torch.matmul(gradP.unsqueeze(1), L).squeeze(1)  # (B,d)
-    vol = _row_norm(vol_vec, eps=eps)                         # (B,)
+    vol_price = _row_norm(vol_vec, eps=eps)  # (B,)
 
-    # --- SR ---
-    excess_return = (mu_P - r * P) / torch.clamp(P, min=eps)
-    SR = excess_return / vol
+    # --- Sharpe ratio ---
+    # Use cancellation-stable form:
+    # SR = (mu_P - r*P) / ||(∇P)^T L||
+    SR = (mu_P - r * P) / torch.clamp(vol_price, min=eps)
 
     return SR.detach()
+
