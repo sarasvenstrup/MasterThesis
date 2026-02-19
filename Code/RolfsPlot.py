@@ -502,7 +502,7 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 # Saves to Figures/<USE>/paper_fig3_sharpe_ratio_<date>.png/pdf
 # ============================================================
 
-from Code.analysis.sharpe_ratio import sharpe_ratio_zcb  # <-- IMPORTANT: path
+from Code.utils.sharpe_ratio import sharpe_ratio_zcb  # <-- IMPORTANT: path
 
 def pick_date_or_nearest(meta_df: pd.DataFrame, target_date: str) -> pd.Timestamp:
     """Pick target_date if exists, else nearest available date in meta_df."""
