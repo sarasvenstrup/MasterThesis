@@ -1,29 +1,4 @@
-#%pip install torch
-#dbutils.library.restartPython()
-
 import torch
-
-def par_swap_from_discount_old(P, tenors):
-    """
-    Annual-pay fixed-for-float par swap rate from discount factors.
-    P: (B,T) or (T,) discount factors for tau=1..T (annual grid)
-    tenors: iterable of ints (e.g. [1,2,3,5,10,15,20,30])
-
-    Returns: (B,len(tenors)) or (len(tenors),)
-    """
-    if P.dim() == 1:
-        P = P.unsqueeze(0)  # (1,T)
-
-    tenors = [int(t) for t in tenors]
-    out = []
-    for T in tenors:
-        idx = T - 1
-        PT = P[:, idx]                    # (B,)
-        denom = P[:, :idx+1].sum(dim=1)   # (B,)
-        S = (1.0 - PT) / denom            # (B,)
-        out.append(S)
-
-    return torch.stack(out, dim=1)        # (B, n_tenors)
 
 def par_swap_from_discount(P: torch.Tensor, tenors: list[int]) -> torch.Tensor:
     """
