@@ -1,5 +1,4 @@
-import os
-import sys
+import os, sys
 import numpy as np
 import pandas as pd
 import torch
@@ -10,112 +9,139 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
-from Code.model.vasicek import Vasicek
-from Code.utils.vasicek_fit import fit_r0_single_curve
-from Code.utils.vasicek_fit import fit_optionA
+from Code.utils.vasicek_fit import fit_r0_single_curve, fit_global_params_and_r0s
 from Code.utils.rates import par_swap_from_discount
 
+
+def to_decimals(Y: np.ndarray) -> np.ndarray:
+    return Y / 100.0 if np.nanmean(Y) > 1.0 else Y
+
+
+def rmse_bps(S_pred: np.ndarray, S_obs: np.ndarray):
+    err = (S_pred - S_obs)  # decimals
+    total = 1e4 * float(np.sqrt(np.mean(err ** 2)))
+    by_tenor = 1e4 * np.sqrt(np.mean(err ** 2, axis=0))
+    return total, by_tenor
+
+
 if __name__ == "__main__":
-    device = "cpu"
-    tenors = list(TARGET_TENORS)  # [1,2,3,5,10,15,20,30]
+    DEVICE = "cpu"
+    TENORS = list(TARGET_TENORS)
+    SAMPLE_PER_CCY = 200
+
+    SAVE_DIR = os.path.join(REPO_ROOT, "figures")
+    os.makedirs(SAVE_DIR, exist_ok=True)
 
     data = build_all_dataframes()
-    df = data["df_wide_bbg_full"].copy()  # or df_wide_test_full
+    df = data["df_wide_bbg_full"].copy()
 
-    # --- pick one currency with many curves ---
-    ccy_counts = df["ccy"].value_counts()
-    ccy = ccy_counts.index[0]
-    df_ccy = df[df["ccy"] == ccy].sort_values("as_of_date").reset_index(drop=True)
+    # -----------------------------
+    # 1) r0-only sanity on one curve
+    # -----------------------------
+    ccy = df["ccy"].value_counts().index[0]
+    df_ccy_all = df[df["ccy"] == ccy].dropna(subset=TENORS).sort_values("as_of_date").reset_index(drop=True)
 
-    # --- pick one date (middle-ish so it's not extreme) ---
-    pick_idx = len(df_ccy) // 2
-    row = df_ccy.iloc[pick_idx]
+    pick_idx = len(df_ccy_all) // 2
+    row = df_ccy_all.iloc[pick_idx]
+    y = np.array([row[t] for t in TENORS], dtype=float)
+    y = to_decimals(y)
+    S_obs = torch.tensor(y, device=DEVICE, dtype=torch.float64)
 
-    # observed swaps (likely in percent -> convert to decimals if needed)
-    y = np.array([row[t] for t in tenors], dtype=float)
-
-    # Heuristic: if average > 1, it's probably percent (e.g. 4.5), convert to decimal.
-    if np.nanmean(y) > 1.0:
-        y = y / 100.0
-
-    S_obs = torch.tensor(y, device=device, dtype=torch.float64)
-
-    print("Picked curve:")
-    print("  ccy:", ccy)
-    print("  date:", pd.to_datetime(row["as_of_date"]).date())
-    print("  observed (decimals):", S_obs.cpu().numpy())
-
-    # Fixed Vasicek params for the test
-    kappa0, theta0, sigma0 = 0.5, 0.02, 0.01
-
-    r0_hat, model, S_pred, loss = fit_r0_single_curve(
-        S_obs, tenors, kappa=kappa0, theta=theta0, sigma=sigma0,
+    r0_hat, model_fixed, S_pred, loss = fit_r0_single_curve(
+        S_obs, TENORS, kappa=0.5, theta=0.02, sigma=0.01,
         n_steps=800, lr=5e-2
     )
+    print("\nSanity r0-only:")
+    print("  ccy:", ccy, "date:", pd.to_datetime(row["as_of_date"]).date())
+    print("  r0_hat:", float(r0_hat.item()), "MSE:", float(loss.item()))
 
-    print("\nFit results:")
-    print("  r0_hat:", float(r0_hat.item()))
-    print("  loss (MSE):", float(loss.item()))
-    print("  params used:", "kappa", float(model.kappa.item()),
-          "theta", float(model.theta.item()),
-          "sigma", float(model.sigma.item()))
-
-    # Plot obs vs fitted
     plt.figure()
-    plt.plot(tenors, S_obs.cpu().numpy(), marker="o", label="Observed")
-    plt.plot(tenors, S_pred.cpu().numpy(), marker="o", label="Vasicek fitted (r0 only)")
+    plt.plot(TENORS, S_obs.cpu().numpy(), marker="o", label="Observed")
+    plt.plot(TENORS, S_pred.cpu().numpy(), marker="o", label="Vasicek (fit r0)")
     plt.xlabel("Maturity (years)")
     plt.ylabel("Par swap rate")
-    plt.title(f"One-curve Vasicek fit (ccy={ccy}, date={pd.to_datetime(row['as_of_date']).date()})")
+    plt.title(f"Vasicek sanity (ccy={ccy}, date={pd.to_datetime(row['as_of_date']).date()})")
     plt.legend()
     plt.tight_layout()
     plt.show()
 
-    # pick a single currency
-    df = data["df_wide_bbg_full"].copy()
-    ccy = df["ccy"].value_counts().index[0]
-    df_ccy = df[df["ccy"] == ccy].sort_values("as_of_date").reset_index(drop=True)
+    # -----------------------------
+    # 2) Option A on one currency
+    # -----------------------------
+    df_ccy = df_ccy_all.sample(SAMPLE_PER_CCY, random_state=0).sort_values("as_of_date").reset_index(drop=True)
+    Y = to_decimals(df_ccy[TENORS].to_numpy(dtype=float))
 
-    df_ccy = df_ccy.sample(200, random_state=0).sort_values("as_of_date").reset_index(drop=True)
-
-    tenors = list(TARGET_TENORS)
-    Y = df_ccy[tenors].to_numpy(dtype=float)
-    if np.nanmean(Y) > 1.0:
-        Y = Y / 100.0
-
-    # run option A calibration (start with smaller settings to test)
-    vas_model, r0s = fit_optionA(
-        Y, tenors,
+    vas_model, r0s, _ = fit_global_params_and_r0s(
+        Y, TENORS,
         outer_steps=10,
         inner_steps=80,
         lr_params=5e-2,
         lr_r0=1e-1,
-        device="cpu"
+        device=DEVICE,
+        print_every=1
     )
 
-    print("Fitted params:")
+    with torch.no_grad():
+        P_all = vas_model.discount_curve_annual(r0s, T_max=max(TENORS))
+        S_all = par_swap_from_discount(P_all, TENORS).cpu().numpy()
+
+    total, by_tenor = rmse_bps(S_all, Y)
+    print("\nOption A (single ccy) params:")
     print("  kappa:", float(vas_model.kappa.item()))
     print("  theta:", float(vas_model.theta.item()))
     print("  sigma:", float(vas_model.sigma.item()))
+    print(f"  RMSE total (bps): {total:.3f}")
+    for t, v in zip(TENORS, by_tenor):
+        print(f"    {t:>2}Y: {v:.3f}")
 
-    # plot the same middle date again
     pick_idx = len(df_ccy) // 2
-    row = df_ccy.iloc[pick_idx]
-    S_obs = Y[pick_idx]  # (8,)
-
-    with torch.no_grad():
-        T_max = max(tenors)
-        P = vas_model.discount_curve_annual(r0s[pick_idx], T_max=T_max)  # (1,Tmax)
-        S_pred = par_swap_from_discount(P, tenors).squeeze(0).cpu().numpy()
-
     plt.figure()
-    plt.plot(tenors, S_obs, marker="o", label="Observed")
-    plt.plot(tenors, S_pred, marker="o", label="Vasicek fitted (Option A)")
-    plt.title(f"Vasicek Option A fit (ccy={ccy}, date={pd.to_datetime(row['as_of_date']).date()})")
+    plt.plot(TENORS, Y[pick_idx], marker="o", label="Observed")
+    plt.plot(TENORS, S_all[pick_idx], marker="o", label="Vasicek (Option A)")
+    plt.title(f"Vasicek Option A fit (ccy={ccy}, date={pd.to_datetime(df_ccy.iloc[pick_idx]['as_of_date']).date()})")
     plt.xlabel("Maturity (years)")
     plt.ylabel("Par swap rate")
     plt.legend()
     plt.tight_layout()
     plt.show()
 
+    # -----------------------------
+    # 3) Option A across currencies table
+    # -----------------------------
+    results = []
+    for ccy_i in sorted(df["ccy"].unique()):
+        df_i = df[df["ccy"] == ccy_i].dropna(subset=TENORS).sort_values("as_of_date").reset_index(drop=True)
+        if len(df_i) < SAMPLE_PER_CCY:
+            continue
 
+        df_sub = df_i.sample(SAMPLE_PER_CCY, random_state=0).sort_values("as_of_date").reset_index(drop=True)
+        Y_i = to_decimals(df_sub[TENORS].to_numpy(dtype=float))
+
+        vas_i, r0s_i, _ = fit_global_params_and_r0s(
+            Y_i, TENORS, outer_steps=10, inner_steps=80,
+            lr_params=5e-2, lr_r0=1e-1, device=DEVICE, print_every=0
+        )
+        with torch.no_grad():
+            P_i = vas_i.discount_curve_annual(r0s_i, T_max=max(TENORS))
+            S_i = par_swap_from_discount(P_i, TENORS).cpu().numpy()
+
+        total_i, by_tenor_i = rmse_bps(S_i, Y_i)
+        results.append({
+            "ccy": ccy_i,
+            "n_curves": len(df_sub),
+            "rmse_bps_total": total_i,
+            "kappa": float(vas_i.kappa.item()),
+            "theta": float(vas_i.theta.item()),
+            "sigma": float(vas_i.sigma.item()),
+            **{f"rmse_{t}y_bps": float(v) for t, v in zip(TENORS, by_tenor_i)}
+        })
+
+    res_df = pd.DataFrame(results).sort_values("rmse_bps_total")
+    print("\n=== Vasicek Option A summary ===")
+    if len(res_df) == 0:
+        print("No currencies had enough curves.")
+    else:
+        print(res_df[["ccy","n_curves","rmse_bps_total","kappa","theta","sigma"]].to_string(index=False))
+        out_path = os.path.join(SAVE_DIR, "vasicek_optionA_rmse_table.csv")
+        res_df.to_csv(out_path, index=False)
+        print("\nSaved:", out_path)

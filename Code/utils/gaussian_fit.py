@@ -1,6 +1,7 @@
 # Code/utils/gaussian2f_fit.py
 import numpy as np
 import torch
+import torch.nn as nn
 
 from Code.utils.rates import par_swap_from_discount
 from Code.model.gaussian import Gaussian2F
@@ -70,3 +71,68 @@ def fit_optionA_2f(
             )
 
     return model, z.detach()
+
+
+class LinearEncoder(nn.Module):
+    def __init__(self, in_dim: int, out_dim: int, dtype=torch.float64, device="cpu"):
+        super().__init__()
+        self.lin = nn.Linear(in_dim, out_dim, bias=True, dtype=dtype).to(device)
+
+    def forward(self, x):
+        return self.lin(x)
+
+def fit_optionB_2f(
+    curves,                 # (N,K) numpy, decimals
+    tenors,                 # list of maturities
+    hidden=None,            # reserved if you later want MLP
+    n_steps=5000,
+    lr=1e-3,
+    device="cpu",
+    seed=0,
+):
+    """
+    Option B: learn encoder z_t = g(S_t) + global params jointly (end-to-end).
+    Returns: model, encoder, z (N,2), final loss
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    tenors = [int(t) for t in tenors]
+    T_max = max(tenors)
+
+    Y = torch.tensor(np.asarray(curves), device=device, dtype=torch.float64)  # (N,K)
+    N, K = Y.shape
+
+    # init model params
+    level = float(torch.mean(Y).item())
+    model = Gaussian2F(
+        kappa1=0.5, theta1=max(level/2, 1e-6), sigma1=0.01,
+        kappa2=0.1, theta2=max(level/2, 1e-6), sigma2=0.01,
+        device=torch.device(device), dtype=torch.float64
+    )
+
+    # simplest encoder (linear)
+    encoder = LinearEncoder(in_dim=K, out_dim=2, device=device, dtype=torch.float64)
+
+    opt = torch.optim.Adam(list(model.parameters()) + list(encoder.parameters()), lr=lr)
+
+    loss = None
+    for step in range(n_steps):
+        opt.zero_grad()
+
+        z = encoder(Y)  # (N,2), uses observed swaps as input
+        P = model.discount_curve_annual(z, T_max=T_max)           # (N,T)
+        S_pred = par_swap_from_discount(P, tenors)                # (N,K)
+
+        loss = torch.mean((S_pred - Y) ** 2)
+        loss.backward()
+        opt.step()
+
+        if (step + 1) % 500 == 0:
+            print(f"[{step+1}/{n_steps}] loss={loss.item():.3e} "
+                  f"k1={model.kappa1.item():.3f} k2={model.kappa2.item():.3f}")
+
+    with torch.no_grad():
+        z = encoder(Y)
+
+    return model, encoder, z.detach(), loss.detach()
