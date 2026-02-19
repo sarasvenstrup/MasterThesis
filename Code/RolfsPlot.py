@@ -18,6 +18,9 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
+torch.set_num_threads(4)
+torch.set_num_interop_threads(2)
+
 from Code.utils import helpers as H
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
 from Code.model.full_model import FullModel
@@ -28,17 +31,10 @@ print("MPS available:", hasattr(torch.backends, "mps") and torch.backends.mps.is
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
-elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-    device = torch.device("mps")
 else:
     device = torch.device("cpu")
 
 print("Using device:", device)
-
-# CPU threading (tune down if thermals/throttling)
-cores = os.cpu_count() or 8
-torch.set_num_threads(cores)
-torch.set_num_interop_threads(min(8, cores))
 
 # Helps on many CPUs for convs etc.
 torch.backends.mkldnn.enabled = True
