@@ -246,7 +246,7 @@ loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=Fals
 # -----------------------------
 torch.manual_seed(0)
 
-LATENT_DIM = 3
+LATENT_DIM = 2
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
