@@ -23,6 +23,38 @@ from Code.utils.ode import (
     solve_AB_rk38,
 )
 
+def _interp1d_batch(P_grid: torch.Tensor, tau_years: torch.Tensor, tau_max: int) -> torch.Tensor:
+    """
+    Linear interpolation of P_grid (B, T=tau_max+1) at tau_years (B,).
+    Returns (B,)
+    """
+    B, T = P_grid.shape
+    x = torch.clamp(tau_years, 0.0, float(tau_max))
+
+    lo = torch.floor(x).long()
+    hi = torch.clamp(lo + 1, max=tau_max)
+    w = (x - lo.to(x.dtype))
+
+    idx = torch.arange(B, device=P_grid.device)
+    P_lo = P_grid[idx, lo]
+    P_hi = P_grid[idx, hi]
+    return (1.0 - w) * P_lo + w * P_hi
+
+
+def _interp1d_matrix(P_grid: torch.Tensor, tau_years: torch.Tensor, tau_max: int) -> torch.Tensor:
+    """
+    Linear interpolation of P_grid (B, T) at tau_years (N,).
+    Returns (B,N)
+    """
+    x = torch.clamp(tau_years, 0.0, float(tau_max))
+    lo = torch.floor(x).long()
+    hi = torch.clamp(lo + 1, max=tau_max)
+    w = (x - lo.to(x.dtype))
+
+    P_lo = P_grid[:, lo]  # (B,N)
+    P_hi = P_grid[:, hi]  # (B,N)
+    return (1.0 - w.unsqueeze(0)) * P_lo + w.unsqueeze(0) * P_hi
+
 
 class FullModel(nn.Module):
 
@@ -58,6 +90,89 @@ class FullModel(nn.Module):
         self.K = KMu(latent_dim, bias=True)
         self.H = HSigma(latent_dim, h_hidden, hr_bias)
         self.R = RShort(latent_dim, r_hidden, hr_bias)
+
+    def params_from_z(self, z: torch.Tensor):
+        """
+        Return (mu(z), L(z), r_tilde(z)) without going through the encoder.
+        """
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
+
+        mu = self.K(z)                 # (B,d)
+        sigmas, rhos = self.H(z)       # (B,d), (B, d(d-1)/2)
+        r_tilde = self.R(z)            # (B,1) or (B,)
+
+        L = L_from_sigmas_rhos(sigmas, rhos)  # (B,d,d)
+        return mu, L, r_tilde
+
+
+    def bond_price_from_z(self, z: torch.Tensor, tau_query: torch.Tensor) -> torch.Tensor:
+        """
+        Return P(z, tau_query) where tau_query is in YEARS.
+
+        tau_query can be:
+          - scalar tensor ()  -> returns (B,)
+          - (B,)              -> returns (B,)
+          - (N,)              -> returns (B,N)
+
+        This uses the same ODE/pricing as forward() and then interpolates over
+        the integer grid 0..tau_max. Autograd flows through z and tau_query.
+        """
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
+
+        B = z.shape[0]
+        device = z.device
+        dtype = z.dtype
+
+        # tau grid 0..tau_max and normalized [0,1]
+        tau = torch.arange(0, self.tau_max + 1, device=device, dtype=dtype)   # (T,)
+        tau_in = tau / float(self.tau_max)                                    # (T,)
+
+        # same as forward(): compute G, mu, L, r, then A,B, then P_grid
+        G_vals = self.G(z, tau_in)  # (B,T)
+
+        mu, L, r_tilde = self.params_from_z(z)
+
+        def G_single(z_single):
+            return self.G(z_single.unsqueeze(0), tau_in).squeeze(0)  # (T,)
+
+        dG_du = d_tau_autograd_nodewise(self.G, z, tau_in)
+        dG_dtau = dG_du / float(self.tau_max)
+
+        grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, L)
+
+        alpha, beta, gamma = paper_alpha_beta_gamma_trace(
+            G=G_vals,
+            dG_dtau=dG_dtau,
+            grad_z_G=grad_z_G,
+            trace_cov_hess=trace_cov_hess,
+            mu=mu,
+            sigma=L,
+            r_tilde=r_tilde,
+        )
+
+        A_vals, B_vals = solve_AB_rk38(tau, alpha, beta, gamma)
+
+        P_grid = torch.exp(A_vals - B_vals * G_vals)  # (B,T)
+
+        # --- handle tau_query shapes ---
+        if not torch.is_tensor(tau_query):
+            raise TypeError("tau_query must be a torch.Tensor (so autograd can compute ∂τP).")
+
+        tq = tau_query.to(device=device, dtype=dtype)
+
+        if tq.ndim == 0:
+            tqB = tq.expand(B)  # (B,)
+            return _interp1d_batch(P_grid, tqB, self.tau_max)
+
+        if tq.ndim == 1:
+            if tq.shape[0] == B:
+                return _interp1d_batch(P_grid, tq, self.tau_max)  # (B,)
+            else:
+                return _interp1d_matrix(P_grid, tq, self.tau_max)  # (B,N)
+
+        raise ValueError(f"tau_query must be scalar or 1D, got {tuple(tq.shape)}")
 
     def forward(self, S_in):
         # ensure batch

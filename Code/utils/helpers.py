@@ -228,3 +228,26 @@ def plot_recon_on_date(
 
     save_figure(fig, cfg, f"reconstruction_{date_pick.date()}")
     plt.show()
+
+def rmse_bps_per_currency_paper(S_true, S_pred, meta_df):
+    """
+    Computes in-sample RMSE in basis points per currency.
+    """
+
+    if torch.is_tensor(S_true):
+        S_true = S_true.detach().cpu().numpy()
+    if torch.is_tensor(S_pred):
+        S_pred = S_pred.detach().cpu().numpy()
+
+    err = S_pred - S_true  # decimals
+    tmp = meta_df.copy()
+
+    rmses = {}
+    for ccy in tmp["ccy"].unique():
+        idx = (tmp["ccy"].values == ccy)
+        e = err[idx, :]
+        rmses[ccy] = float(np.sqrt(np.mean(e**2)) * 10000.0)
+
+    out = pd.Series(rmses).sort_values()
+    out.loc["Average"] = out.mean()
+    return out
