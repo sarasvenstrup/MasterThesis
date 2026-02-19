@@ -15,6 +15,7 @@ from Code.model.H_sigma import HSigma
 from Code.model.R_short import RShort
 
 from Code.utils.rates import par_swap_from_discount
+from Code.utils.sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (
     d_tau_autograd_nodewise,
     grad_and_trace_cov_hess_G,
@@ -81,48 +82,11 @@ class FullModel(nn.Module):
         G_vals = self.G(z, tau_in)
 
         mu = self.K(z)  # (batch,d)
-        sigma1, sigma2, rho = self.H(z)  # (batch,d,d)
+        sigmas, rhos = self.H(z)  # (batch,d,d)
 
-        r_tilde = self.R(z)  # turn off for now
+        r_tilde = self.R(z)
 
-        Bsize, d = mu.shape
-
-        # ================= OLD SIGMA MATRIX CODE ===================
-        # sigma = torch.zeros(Bsize, d, d, device=device, dtype=dtype)
-
-        # sigma1, sigma2, rho are (B,1) or (B,)
-        # s1 = sigma1.squeeze(-1)  # (B,)
-        # s2 = sigma2.squeeze(-1)  # (B,)
-        # r  = rho.squeeze(-1)     # (B,)
-
-        # off = r * s1 * s2        # (B,)
-
-        # sigma = torch.stack(
-        #    [
-        #        torch.stack([s1,  off], dim=-1),
-        #        torch.stack([off, s2 ], dim=-1),
-        #    ],
-        #    dim=-2
-        # )  # (B,2,2)
-
-        # ================= OLD SIGMA MATRIX CODE (end) ==============
-
-        # ================= NEW SIGMA MATRIX CODE (start) ==============
-
-        # sigma1, sigma2, rho are (B,1) or (B,)
-        s1 = sigma1.squeeze(-1)  # (B,)
-        s2 = sigma2.squeeze(-1)  # (B,)
-        r = rho.squeeze(-1)  # (B,)
-
-        sqrt1mr2 = torch.sqrt(torch.clamp(1.0 - r ** 2, min=1e-12))
-
-        sigma = torch.zeros(Bsize, d, d, device=device, dtype=dtype)
-        sigma[:, 0, 0] = s1
-        sigma[:, 0, 1] = 0.0
-        sigma[:, 1, 0] = r * s2
-        sigma[:, 1, 1] = sqrt1mr2 * s2
-
-        # ================= NEW SIGMA MATRIX CODE (end) ==============
+        sigma = L_from_sigmas_rhos(sigmas, rhos)
 
         def G_single(z_single):
             return self.G(z_single.unsqueeze(0), tau_in).squeeze(0)  # (N,)

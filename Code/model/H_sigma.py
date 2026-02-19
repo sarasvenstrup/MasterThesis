@@ -43,13 +43,25 @@ class HSigma(nn.Module):
         if return_raw:
             return raw
 
-        log_sigma1 = raw[:, 0:1]
-        log_sigma2 = raw[:, 1:2]
-        atanh_rho  = raw[:, 2:3]
+        #log_sigma1 = raw[:, 0:1]
+        #log_sigma2 = raw[:, 1:2]
+        #atanh_rho  = raw[:, 2:3]
 
-        sigma1 = torch.exp(log_sigma1)
-        sigma2 = torch.exp(log_sigma2)
-        rho    = torch.tanh(atanh_rho)
+        #sigma1 = torch.exp(log_sigma1)
+        #sigma2 = torch.exp(log_sigma2)
+        #rho    = torch.tanh(atanh_rho)
 
-        return sigma1, sigma2, rho
+        # ----------------------------
+        # 1) Volatilities
+        # ----------------------------
+        log_sigmas = raw[:, :self.d]  # (B,d)
+        sigmas = torch.exp(log_sigmas)  # ensure positive
+
+        # ----------------------------
+        # 2) Correlations
+        # ----------------------------
+        atanh_rhos = raw[:, self.d:]  # (B, n_corr)
+        rhos = torch.tanh(atanh_rhos)  # ensure in (-1,1)
+
+        return sigmas, rhos  # sigma1, sigma2, rho
 
