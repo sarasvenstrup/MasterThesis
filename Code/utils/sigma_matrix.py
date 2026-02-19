@@ -1,5 +1,44 @@
 import torch
 
+def L_from_sigmas_rhos_1d(sigmas: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    """
+    sigmas: (B,1) positive [sigma1]
+    returns:
+      L: (B,1,1) with Sigma = L L^T = sigma^2
+    """
+    device, dtype = sigmas.device, sigmas.dtype
+    B = sigmas.shape[0]
+    s1 = torch.clamp(sigmas[:, 0], min=eps)  # just to be safe
+
+    L = torch.zeros(B, 1, 1, device=device, dtype=dtype)
+    L[:, 0, 0] = s1
+    return L
+
+
+def L_from_sigmas_rhos_2d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    """
+    sigmas: (B,2) positive [sigma1, sigma2]
+    rhos:   (B,1) in (-1,1) [rho12]
+    returns:
+      L: (B,2,2) lower-triangular with Sigma = L L^T
+    """
+    device, dtype = sigmas.device, sigmas.dtype
+    B = sigmas.shape[0]
+
+    s1 = sigmas[:, 0]
+    s2 = sigmas[:, 1]
+    rho = rhos[:, 0]
+
+    sqrt1mr2 = torch.sqrt(torch.clamp(1.0 - rho**2, min=eps))
+
+    L = torch.zeros(B, 2, 2, device=device, dtype=dtype)
+    L[:, 0, 0] = s1
+    L[:, 1, 0] = rho * s2
+    L[:, 1, 1] = sqrt1mr2 * s2
+
+    return L
+
+
 def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
     sigmas: (B,3) positive [sigma1, sigma2, sigma3]
@@ -51,35 +90,19 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     return L
 
 
-def L_from_sigmas_rhos_2d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
-    """
-    sigmas: (B,2) positive [sigma1, sigma2]
-    rhos:   (B,1) in (-1,1) [rho12]
-    returns:
-      L: (B,2,2) lower-triangular with Sigma = L L^T
-    """
-    device, dtype = sigmas.device, sigmas.dtype
-    B = sigmas.shape[0]
-
-    s1 = sigmas[:, 0]
-    s2 = sigmas[:, 1]
-    rho = rhos[:, 0]
-
-    sqrt1mr2 = torch.sqrt(torch.clamp(1.0 - rho**2, min=eps))
-
-    L = torch.zeros(B, 2, 2, device=device, dtype=dtype)
-    L[:, 0, 0] = s1
-    L[:, 1, 0] = rho * s2
-    L[:, 1, 1] = sqrt1mr2 * s2
-
-    return L
-
-
-def L_from_sigmas_rhos(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+def L_from_sigmas_rhos(sigmas: torch.Tensor, rhos: torch.Tensor | None = None, eps: float = 1e-12) -> torch.Tensor:
     d = sigmas.shape[1]
-    if d == 2:
+    if d == 1:
+        return L_from_sigmas_rhos_1d(sigmas, eps=eps)
+    elif d == 2:
+        # rhos should be (B,1)
+        if rhos is None:
+            raise ValueError("rhos is required for d=2 (shape (B,1)).")
         return L_from_sigmas_rhos_2d(sigmas, rhos, eps=eps)
     elif d == 3:
+        # rhos should be (B,3)
+        if rhos is None:
+            raise ValueError("rhos is required for d=3 (shape (B,3)).")
         return L_from_sigmas_rhos_3d(sigmas, rhos, eps=eps)
     else:
-        raise NotImplementedError("Only d=2 or d=3 implemented for (sigmas, rhos) parameterization.")
+        raise NotImplementedError("Only d=1,2,3 implemented for (sigmas, rhos) parameterization.")
