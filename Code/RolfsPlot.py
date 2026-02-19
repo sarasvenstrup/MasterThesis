@@ -6,7 +6,7 @@
 #  - batch size = 32
 #  - 1000 epochs
 #  - in-sample RMSE table (bps) per currency
-# Saves all plots to: <repo_root>/figures/<USE>/
+# Saves all plots to: <repo_root>/Figures/<USE>/
 # ============================================
 
 import os
@@ -17,11 +17,12 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
+from Code.utils import helpers as H
+from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
+
 # -----------------------------
 # 0) Paths + imports
 # -----------------------------
-# If running as script → __file__ exists
-# If running in console → fallback to current working directory
 try:
     REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -30,7 +31,6 @@ except NameError:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-# Your model import (keep as you wrote; adjust if your package name differs)
 from Code.model.full_model import FullModel
 
 print("Torch:", torch.__version__)
@@ -39,36 +39,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 # -----------------------------
-# 0b) Figure saving utilities
+# 0b) Run config
 # -----------------------------
-USE = "test"   # "test" (debug first) then switch to "bbg"
+USE = "test"  # "test" first, then "bbg"
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", USE)
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
-def save_figure(name: str, dpi: int = 300):
-    """Save current matplotlib figure as PNG + PDF into figures/<USE>/"""
-    safe = "".join(c if (c.isalnum() or c in "-_") else "_" for c in str(name))
-    png_path = os.path.join(FIGURES_DIR, f"{safe}.png")
-    pdf_path = os.path.join(FIGURES_DIR, f"{safe}.pdf")
-    plt.savefig(png_path, dpi=dpi, bbox_inches="tight")
-    plt.savefig(pdf_path, bbox_inches="tight")
-    print(f"Saved figure: {png_path}")
-
-# Optional: consistent figure style
-plt.rcParams.update({
-    "font.size": 11,
-    "axes.grid": True,
-})
+plt.rcParams.update({"font.size": 11, "axes.grid": True})
 
 # -----------------------------
-# 1) Load data from local repo folder SwapDAta
+# 1) Load data
 # -----------------------------
-# Assumes your loader lives at SwapDAta/load_swapdata.py and defines:
-#   - build_all_dataframes()
-#   - TARGET_TENORS = [1,2,3,5,10,15,20,30]
-from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
-
 data = build_all_dataframes()
 
 if USE == "test":
@@ -82,41 +64,38 @@ print("\nLoaded long rows:", len(df_long))
 print("Loaded wide full rows:", len(df_wide_full))
 print("Currencies found:", sorted(df_wide_full["ccy"].unique())[:30])
 
-# Optional: filter to one currency folder if you want (e.g. 'sw')
-# df_wide_full = df_wide_full[df_wide_full["ccy"].str.lower() == "sw"].copy()
+# Tenor grid
+tenors = np.array([float(x) for x in TARGET_TENORS], dtype=float)
 
-# Tenor grid (what the model expects)
-WANTED_TENORS = [float(x) for x in TARGET_TENORS]  # for plotting
-tenors = np.array(WANTED_TENORS, dtype=float)
-
-# Ensure wide has exactly these columns (id + 8 tenors)
-df_wide = df_wide_full[["as_of_date", "ccy"] + TARGET_TENORS].copy()
+# Ensure columns
+df_wide = df_wide_full[["as_of_date", "ccy"] + list(TARGET_TENORS)].copy()
 df_wide["as_of_date"] = pd.to_datetime(df_wide["as_of_date"])
+df_wide = df_wide[df_wide["as_of_date"] >= "2010-01-01"].copy()
 
 meta = df_wide[["as_of_date", "ccy"]].reset_index(drop=True)
-X = df_wide[TARGET_TENORS].to_numpy(dtype=np.float32)  # may be percent or decimals
+X = df_wide[list(TARGET_TENORS)].to_numpy(dtype=np.float32)
 print("Wide shape:", X.shape)
 
 # -----------------------------
 # 2) Currency rename + colors
 # -----------------------------
 currency_rename_map = {
-    'ad': 'AUD', 'AD': 'AUD',
-    'cd': 'CAD', 'CD': 'CAD',
-    'dk': 'DKK', 'DK': 'DKK',
-    'eu': 'EUR', 'EU': 'EUR',
-    'jy': 'JPY', 'JY': 'JPY',
-    'nk': 'NOK', 'NK': 'NOK',
-    'sk': 'SEK', 'SK': 'SEK',
-    'uk': 'GBP', 'UK': 'GBP',
-    'us': 'USD', 'US': 'USD'
+    "ad": "AUD", "AD": "AUD",
+    "cd": "CAD", "CD": "CAD",
+    "dk": "DKK", "DK": "DKK",
+    "eu": "EUR", "EU": "EUR",
+    "jy": "JPY", "JY": "JPY",
+    "nk": "NOK", "NK": "NOK",
+    "sk": "SEK", "SK": "SEK",
+    "uk": "GBP", "UK": "GBP",
+    "us": "USD", "US": "USD",
 }
 meta["ccy"] = meta["ccy"].map(lambda x: currency_rename_map.get(x, x))
 df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
 
 currency_color_map = {
-    'AUD': 'pink', 'CAD': 'grey', 'DKK': 'red', 'EUR': 'blue', 'JPY': 'black',
-    'NOK': 'orange', 'SEK': 'purple', 'GBP': 'green', 'USD': 'brown'
+    "AUD": "pink", "CAD": "grey", "DKK": "red", "EUR": "blue", "JPY": "black",
+    "NOK": "orange", "SEK": "purple", "GBP": "green", "USD": "brown",
 }
 
 # -----------------------------
@@ -129,18 +108,135 @@ print("Median |swap|:", median_abs, "=> SCALE_IS_PERCENT =", SCALE_IS_PERCENT)
 if SCALE_IS_PERCENT:
     X = X / 100.0
 
-X_tensor = torch.from_numpy(X)  # CPU (N,8)
+X_tensor = torch.from_numpy(X)  # (N,8) CPU
 print("X_tensor:", tuple(X_tensor.shape))
 print("First row TRUE:", X_tensor[0].numpy())
+
+# -----------------------------
+# 3b) Helper configs
+# -----------------------------
+plot_cfg = H.PlotConfig(
+    figures_dir=FIGURES_DIR,
+    use_tag=USE,
+    currency_colors=currency_color_map,
+    dpi=300,
+)
+
+data_cfg = H.DataConfig(
+    target_tenors=list(TARGET_TENORS),
+    tenor_years=tenors,
+    scale_is_percent=SCALE_IS_PERCENT,
+)
+
+# =============================
+# PAPER PLOTS A + B (Observed only)
+#   A) swap curves on one date
+#   B) 10Y time series
+# =============================
+
+def plot_swap_curves_on_date_observed(df_wide_obs: pd.DataFrame,
+                                      target_tenors,
+                                      tenors_years: np.ndarray,
+                                      currency_colors: dict,
+                                      date_pick,
+                                      plot_cfg: H.PlotConfig):
+    date_pick = pd.to_datetime(date_pick)
+    dfo = df_wide_obs.copy()
+    dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
+
+    sel = dfo[dfo["as_of_date"] == date_pick].copy()
+    if sel.empty:
+        raise ValueError(f"No rows found for date {date_pick.date()}")
+
+    # one curve per currency
+    sel = sel.sort_values(["ccy", "as_of_date"]).drop_duplicates(subset=["ccy"], keep="last")
+    Y = sel[list(target_tenors)].to_numpy(dtype=np.float32)
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    for i, ccy in enumerate(sel["ccy"].values):
+        color = currency_colors.get(ccy, None)
+        ax.plot(tenors_years, Y[i], marker="o", color=color, label=ccy, alpha=0.9)
+
+    ax.set_xlabel("Tenor (years)")
+    ax.set_ylabel("Swap rate (decimals)")
+    ax.set_title(f"Observed swap curves on {date_pick.date()}")
+    ax.grid(True)
+
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
+    fig.tight_layout(rect=[0, 0.12, 1, 1])
+
+    H.save_figure(fig, plot_cfg, f"paper_fig2a_observed_curves_{date_pick.date()}")
+    plt.show()
+
+
+def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
+                                           tenor_col,
+                                           currency_colors: dict,
+                                           plot_cfg: H.PlotConfig,
+                                           title: str = None):
+    dfo = df_wide_obs.copy()
+    dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    for ccy, g in dfo.groupby("ccy"):
+        g = g.sort_values("as_of_date")
+        color = currency_colors.get(ccy, None)
+        ax.plot(g["as_of_date"], g[tenor_col].astype(float), color=color, label=ccy, alpha=0.9)
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Swap rate (decimals)")
+    ax.set_title(title if title is not None else f"Observed {tenor_col} swap rate over time")
+    ax.grid(True)
+
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
+    fig.tight_layout(rect=[0, 0.12, 1, 1])
+
+    H.save_figure(fig, plot_cfg, f"paper_fig2b_timeseries_{tenor_col}")
+    plt.show()
+
+
+# Build decimals version of observed df (so plots match model scale)
+df_wide_dec = df_wide.copy()
+if SCALE_IS_PERCENT:
+    for col in TARGET_TENORS:
+        df_wide_dec[col] = df_wide_dec[col].astype(float) / 100.0
+
+# A) Choose paper date if it exists, otherwise first available
+paper_date = pd.to_datetime("2016-08-30")
+date_pick_A = paper_date if (df_wide_dec["as_of_date"] == paper_date).any() else df_wide_dec["as_of_date"].iloc[0]
+
+plot_swap_curves_on_date_observed(
+    df_wide_obs=df_wide_dec,
+    target_tenors=TARGET_TENORS,
+    tenors_years=tenors,
+    currency_colors=currency_color_map,
+    date_pick=date_pick_A,
+    plot_cfg=plot_cfg,
+)
+
+# B) 10Y time series (or closest tenor to 10)
+TENOR_10Y = 10
+if TENOR_10Y not in TARGET_TENORS:
+    TENOR_10Y = min(TARGET_TENORS, key=lambda t: abs(float(t) - 10.0))
+
+plot_swap_timeseries_one_tenor_observed(
+    df_wide_obs=df_wide_dec,
+    tenor_col=TENOR_10Y,
+    currency_colors=currency_color_map,
+    plot_cfg=plot_cfg,
+    title=f"Observed {TENOR_10Y}Y swap rate over time (all currencies)",
+)
 
 # -----------------------------
 # 4) DataLoader (paper settings)
 # -----------------------------
 from torch.utils.data import TensorDataset, DataLoader
 
-BATCH_SIZE = 32      # paper
-LR = 1e-3            # paper
-EPOCHS = 1000        # paper
+BATCH_SIZE = 32
+LR = 1e-3
+EPOCHS = 1000
 
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
@@ -150,7 +246,8 @@ loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=Fals
 # -----------------------------
 torch.manual_seed(0)
 
-model = FullModel().to(device)
+LATENT_DIM = 3
+model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
 optim = torch.optim.Adam(model.parameters(), lr=LR)
@@ -167,7 +264,7 @@ for epoch in range(EPOCHS):
     for (xb_cpu,) in loader:
         xb = xb_cpu.to(device)
 
-        optim.zero_grad()
+        optim.zero_grad(set_to_none=True)
         out = model(xb)
         S_hat = out[0]
 
@@ -204,14 +301,13 @@ def run_model_batches(model, X_tensor_cpu, batch_size=256, device="cpu"):
     S_hats, zs = [], []
     N = X_tensor_cpu.shape[0]
     for i in range(0, N, batch_size):
-        xb = X_tensor_cpu[i:i+batch_size].to(device)
+        xb = X_tensor_cpu[i : i + batch_size].to(device)
         out = model(xb)
         S_hat, z = out[0], out[1]
         S_hats.append(S_hat.detach().cpu())
         zs.append(z.detach().cpu())
     return torch.cat(S_hats, dim=0), torch.cat(zs, dim=0)
 
-model.eval()
 S_hat_all, z_all = run_model_batches(model, X_tensor, batch_size=256, device=device)
 
 # -----------------------------
@@ -231,26 +327,8 @@ meta_eval = meta.loc[mask.numpy()].reset_index(drop=True)
 # -----------------------------
 # 8) RMSE per currency (bps) + save table
 # -----------------------------
-def rmse_bps_per_currency_paper(S_true, S_pred, meta_df):
-    if torch.is_tensor(S_true):
-        S_true = S_true.detach().cpu().numpy()
-    if torch.is_tensor(S_pred):
-        S_pred = S_pred.detach().cpu().numpy()
+rmse_series = H.rmse_bps_per_currency_paper(X_eval, S_eval, meta_eval)
 
-    err = (S_pred - S_true)  # decimals
-    tmp = meta_df.copy()
-
-    rmses = {}
-    for ccy in tmp["ccy"].unique():
-        idx = (tmp["ccy"].values == ccy)
-        e = err[idx, :]  # (N_ccy, 8)
-        rmses[ccy] = float(np.sqrt(np.mean(e**2)) * 10000.0)  # bps
-
-    out = pd.Series(rmses).sort_values()
-    out.loc["Average"] = out.mean()
-    return out
-
-rmse_series = rmse_bps_per_currency_paper(X_eval, S_eval, meta_eval)
 print("\nSteady-state in-sample RMSE (bps) per currency:")
 print(rmse_series.to_frame("RMSE (bps)"))
 
@@ -259,79 +337,60 @@ rmse_series.to_frame("RMSE (bps)").to_csv(rmse_path)
 print("Saved RMSE table:", rmse_path)
 
 # -----------------------------
-# 9) Plots (all saved)
+# 9) Plots
 # -----------------------------
 # 9a) Training loss
-plt.figure(figsize=(6, 3.5))
-plt.plot(train_losses)
-plt.xlabel("Epoch")
-plt.ylabel("Train MSE")
-plt.title(f"Training loss (in-sample) — USE={USE}")
-save_figure(f"training_loss_{USE}")
+fig, ax = plt.subplots(figsize=(6, 3.5))
+ax.plot(train_losses)
+ax.set_xlabel("Epoch")
+ax.set_ylabel("Train MSE")
+ax.set_title(f"Training loss (in-sample) — USE={USE}")
+H.save_figure(fig, plot_cfg, "training_loss")
 plt.show()
 
 # 9b) Actual vs reconstructed on one date
-def plot_recon_on_date(df_wide_used, S_hat_all_eval, meta_eval_df, date_pick):
-    m = meta_eval_df.copy()
-    idx = (m["as_of_date"] == pd.to_datetime(date_pick)).values
-    if idx.sum() == 0:
-        raise ValueError("No rows found for that date.")
-
-    X_true = df_wide_used.loc[idx, TARGET_TENORS].to_numpy(dtype=np.float32)
-    if SCALE_IS_PERCENT:
-        X_true = X_true / 100.0
-
-    X_pred = S_hat_all_eval[idx].detach().cpu().numpy()
-    ccys = m.loc[idx, "ccy"].values
-
-    plt.figure(figsize=(8, 4))
-    for i, ccy in enumerate(ccys):
-        col = currency_color_map.get(ccy, None)
-        plt.plot(tenors, X_true[i], marker="o", color=col, alpha=0.6)
-        plt.plot(tenors, X_pred[i], marker="x", linestyle="--", color=col, alpha=0.9)
-
-    plt.xlabel("Tenor (years)")
-    plt.ylabel("Swap rate (decimals)")
-    d = pd.to_datetime(date_pick).date()
-    plt.title(f"Actual (o) vs Reconstructed (x) on {d} — USE={USE}")
-    plt.grid(True)
-    save_figure(f"reconstruction_{USE}_{d}")
-    plt.show()
-
 date_pick = meta_eval["as_of_date"].iloc[0]
 df_wide_eval = df_wide.loc[mask.numpy()].reset_index(drop=True)
-plot_recon_on_date(df_wide_eval, S_hat_all[mask], meta_eval, date_pick)
 
-# 9c) Latent factors over time
-def plot_latents_over_time(z_eval_t, meta_eval_df):
-    z_np = z_eval_t.detach().cpu().numpy()
-    m = meta_eval_df.copy()
-    m["z1"] = z_np[:, 0]
-    m["z2"] = z_np[:, 1]
-    m = m.sort_values(["ccy", "as_of_date"])
+H.plot_recon_on_date(
+    df_wide_used=df_wide_eval,
+    S_hat_all_eval=S_hat_all[mask],
+    meta_eval_df=meta_eval,
+    date_pick=date_pick,
+    data_cfg=data_cfg,
+    cfg=plot_cfg,
+)
 
-    plt.figure(figsize=(11, 4))
+# 9c) Latent factors over time (fix ordering)
+def plot_latents_over_time(z_eval_t: torch.Tensor, meta_eval_df: pd.DataFrame, cfg: H.PlotConfig):
+    order = meta_eval_df.sort_values(["ccy", "as_of_date"]).index.to_numpy()
+    m = meta_eval_df.loc[order].reset_index(drop=True)
+    z_np = z_eval_t.detach().cpu().numpy()[order]
 
-    plt.subplot(1, 2, 1)
-    for ccy, g in m.groupby("ccy"):
-        plt.plot(g["as_of_date"], g["z1"], color=currency_color_map.get(ccy, None), label=ccy)
-    plt.title("Latent factor z1")
-    plt.grid(True)
+    d = z_np.shape[1]
+    fig, axes = plt.subplots(nrows=d, ncols=1, figsize=(11, 3.5 * d), sharex=False)
+    if d == 1:
+        axes = [axes]
 
-    plt.subplot(1, 2, 2)
-    for ccy, g in m.groupby("ccy"):
-        plt.plot(g["as_of_date"], g["z2"], color=currency_color_map.get(ccy, None), label=ccy)
-    plt.title("Latent factor z2")
-    plt.grid(True)
+    for k in range(d):
+        ax = axes[k]
+        m_k = m.copy()
+        m_k[f"z{k+1}"] = z_np[:, k]
 
-    handles, labels = plt.gca().get_legend_handles_labels()
-    plt.figlegend(handles, labels, loc="lower center", ncol=6, fontsize=9)
-    plt.tight_layout(rect=[0, 0.12, 1, 1])
+        for ccy, g in m_k.groupby("ccy"):
+            color = cfg.currency_colors.get(ccy) if cfg.currency_colors else None
+            ax.plot(g["as_of_date"], g[f"z{k+1}"], color=color, label=ccy)
 
-    save_figure(f"latent_factors_{USE}")
+        ax.set_title(f"Latent factor z{k+1}")
+        ax.grid(True)
+
+    handles, labels = axes[-1].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
+    fig.tight_layout(rect=[0, 0.06, 1, 1])
+    H.save_figure(fig, cfg, "latent_factors")
     plt.show()
 
-plot_latents_over_time(z_all[mask], meta_eval)
+plot_latents_over_time(z_all[mask], meta_eval, plot_cfg)
 
 # -----------------------------
 # 10) Parameter-model plots
@@ -339,79 +398,69 @@ plot_latents_over_time(z_all[mask], meta_eval)
 @torch.no_grad()
 def run_model_full_batches(model, X_tensor_cpu, batch_size=256, device="cpu"):
     model.eval()
-    zs, mus, sigmas, rts = [], [], [], []
+    zs, mus, sigmas_or_Ls, rts = [], [], [], []
     N = X_tensor_cpu.shape[0]
+
     for i in range(0, N, batch_size):
-        xb = X_tensor_cpu[i:i+batch_size].to(device)
+        xb = X_tensor_cpu[i : i + batch_size].to(device)
         out = model(xb)
-        z, mu, sigma, r_tilde = out[1], out[6], out[7], out[8]
+
+        z = out[1]
+        mu = out[6]
+        sigma_or_L = out[7]
+        r_tilde = out[8]
+
         zs.append(z.detach().cpu())
         mus.append(mu.detach().cpu())
-        sigmas.append(sigma.detach().cpu())
+        sigmas_or_Ls.append(sigma_or_L.detach().cpu())
         rts.append(r_tilde.detach().cpu())
-    z_all_ = torch.cat(zs, dim=0)
-    mu_all_ = torch.cat(mus, dim=0)
-    sigma_all_ = torch.cat(sigmas, dim=0)
-    r_all_ = torch.cat(rts, dim=0)
-    return z_all_, mu_all_, sigma_all_, r_all_
+
+    return (
+        torch.cat(zs, dim=0),
+        torch.cat(mus, dim=0),
+        torch.cat(sigmas_or_Ls, dim=0),
+        torch.cat(rts, dim=0),
+    )
 
 z_all_full, mu_all_full, sigma_all_full, r_all_full = run_model_full_batches(
     model, X_tensor, batch_size=256, device=device
 )
 
-z_eval = z_all_full[mask]
 mu_eval = mu_all_full[mask]
 sigma_eval = sigma_all_full[mask]
 r_eval = r_all_full[mask]
-
 if r_eval.ndim == 2 and r_eval.shape[1] == 1:
     r_eval = r_eval.squeeze(1)
 
-sigma1_eval = sigma_eval[:, 0, 0]
-sigma2_eval = torch.sqrt(sigma_eval[:, 1, 0]**2 + sigma_eval[:, 1, 1]**2)
-rho_eval = sigma_eval[:, 1, 0] / torch.clamp(sigma2_eval, min=1e-12)
+# Build params_df (auto-detect sigma vs L)
+if sigma_eval.ndim == 3:
+    params_df = H.build_params_df_from_L(meta_eval, mu_eval, sigma_eval, r_eval)
+elif sigma_eval.ndim == 2:
+    params_df = H.build_params_df_from_diag_vol(meta_eval, mu_eval, sigma_eval, r_eval)
+else:
+    raise ValueError(f"Unexpected sigma/L shape: {tuple(sigma_eval.shape)}")
 
-params_df = meta_eval.copy()
-params_df["mu1"] = mu_eval[:, 0].numpy()
-params_df["mu2"] = mu_eval[:, 1].numpy()
-params_df["sigma1"] = sigma1_eval.numpy()
-params_df["sigma2"] = sigma2_eval.numpy()
-params_df["rho"] = rho_eval.numpy()
-params_df["r_tilde"] = r_eval.numpy()
-params_df = params_df.sort_values(["ccy", "as_of_date"])
+mu_cols = sorted(H.cols_matching(params_df, r"^mu\d+$"), key=lambda s: int(s[2:]))
+sigma_cols = sorted(H.cols_matching(params_df, r"^sigma\d+$"), key=lambda s: int(s[5:]))
+rho_cols = sorted(H.cols_matching(params_df, r"^rho\d+\d+$"))
 
-def plot_param_over_time(params_df, col, title=None):
-    plt.figure(figsize=(11, 4))
-    for ccy, g in params_df.groupby("ccy"):
-        plt.plot(g["as_of_date"], g[col], color=currency_color_map.get(ccy, None), label=ccy)
-    plt.title(title if title is not None else col)
-    plt.grid(True)
-    handles, labels = plt.gca().get_legend_handles_labels()
-    plt.figlegend(handles, labels, loc="lower center", ncol=6, fontsize=9)
-    plt.tight_layout(rect=[0, 0.12, 1, 1])
-    save_figure(f"{col}_{USE}")
-    plt.show()
+H.plot_param_over_time(params_df, "r_tilde", cfg=plot_cfg, title="Short rate mapping r̃(z)")
 
-plot_param_over_time(params_df, "r_tilde", title="Short rate mapping r̃(z)")
-plot_param_over_time(params_df, "sigma1",  title="Volatility σ1(z)")
-plot_param_over_time(params_df, "sigma2",  title="Volatility σ2(z)")
-plot_param_over_time(params_df, "rho",     title="Correlation ρ(z)")
-plot_param_over_time(params_df, "mu1",     title="Drift μ1(z)")
-plot_param_over_time(params_df, "mu2",     title="Drift μ2(z)")
+for col in sigma_cols:
+    H.plot_param_over_time(params_df, col, cfg=plot_cfg, title=f"Volatility {col}(z)")
 
-def hist_param(params_df, col, bins=50):
-    plt.figure(figsize=(6, 3.5))
-    plt.hist(params_df[col].values, bins=bins)
-    plt.title(f"Histogram of {col}")
-    plt.grid(True)
-    save_figure(f"hist_{col}_{USE}")
-    plt.show()
+for col in rho_cols:
+    H.plot_param_over_time(params_df, col, cfg=plot_cfg, title=f"Correlation {col}")
 
-hist_param(params_df, "r_tilde")
-hist_param(params_df, "sigma1")
-hist_param(params_df, "sigma2")
-hist_param(params_df, "rho")
-hist_param(params_df, "mu1")
-hist_param(params_df, "mu2")
+for col in mu_cols:
+    H.plot_param_over_time(params_df, col, cfg=plot_cfg, title=f"Drift {col}(z)")
+
+H.hist_param(params_df, "r_tilde", cfg=plot_cfg)
+for col in sigma_cols:
+    H.hist_param(params_df, col, cfg=plot_cfg)
+for col in rho_cols:
+    H.hist_param(params_df, col, cfg=plot_cfg)
+for col in mu_cols:
+    H.hist_param(params_df, col, cfg=plot_cfg)
 
 print(f"Done. Figures saved to: {FIGURES_DIR}")

@@ -71,7 +71,7 @@ class FullModel(nn.Module):
         device = S_in.device
         dtype = S_in.dtype
 
-        # 1) Encode: (B,8) -> (B,2)
+        # 1) Encode: (B,8) -> (B, latent_dim)
         z = self.encoder(S_in)
 
         # 2) maturity grid
@@ -82,11 +82,11 @@ class FullModel(nn.Module):
         G_vals = self.G(z, tau_in)
 
         mu = self.K(z)  # (batch,d)
-        sigmas, rhos = self.H(z)  # (batch,d,d)
+        sigmas, rhos = self.H(z)  # sigmas: (B,d), rhos: (B,d(d-1)/2)
 
         r_tilde = self.R(z)
 
-        sigma = L_from_sigmas_rhos(sigmas, rhos)
+        sigma = L_from_sigmas_rhos(sigmas, rhos) # (B,d,d) = Cholesky L
 
         def G_single(z_single):
             return self.G(z_single.unsqueeze(0), tau_in).squeeze(0)  # (N,)
