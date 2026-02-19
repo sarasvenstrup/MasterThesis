@@ -1,28 +1,6 @@
-# ============================================
-# FULL SCRIPT: TRAIN (paper settings) + EVAL + PLOTS + SAVE FIGURES
-# Local repo data (SwapDAta/TestData + SwapDAta/Bloombergdata), no Spark.
-# Matches Section 2.4:
-#  - Adam, lr = 1e-3
-#  - batch size = 32
-#  - 1000 epochs
-#  - in-sample RMSE table (bps) per currency
-# Saves all plots to: <repo_root>/Figures/<USE>/
-# ============================================
-
 import os
 import sys
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn as nn
-import matplotlib.pyplot as plt
 
-from Code.utils import helpers as H
-from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
-
-# -----------------------------
-# 0) Paths + imports
-# -----------------------------
 try:
     REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -31,12 +9,44 @@ except NameError:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+import matplotlib
+matplotlib.use("Agg")   # or "Agg" if you only save figures and don't need windows
+
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import matplotlib.pyplot as plt
+
+from Code.utils import helpers as H
+from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
 from Code.model.full_model import FullModel
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("MPS available:", hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
+
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+
 print("Using device:", device)
+
+# CPU threading (tune down if thermals/throttling)
+cores = os.cpu_count() or 8
+torch.set_num_threads(cores)
+torch.set_num_interop_threads(min(8, cores))
+
+# Helps on many CPUs for convs etc.
+torch.backends.mkldnn.enabled = True
+
+# Less overhead in optimizer.zero_grad
+USE_SET_TO_NONE = True
+
+print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop_threads())
 
 # -----------------------------
 # 0b) Run config
@@ -167,7 +177,6 @@ def plot_swap_curves_on_date_observed(df_wide_obs: pd.DataFrame,
     fig.tight_layout(rect=[0, 0.12, 1, 1])
 
     H.save_figure(fig, plot_cfg, f"paper_fig2a_observed_curves_{date_pick.date()}")
-    plt.show()
 
 
 def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
@@ -194,7 +203,6 @@ def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
     fig.tight_layout(rect=[0, 0.12, 1, 1])
 
     H.save_figure(fig, plot_cfg, f"paper_fig2b_timeseries_{tenor_col}")
-    plt.show()
 
 
 # Build decimals version of observed df (so plots match model scale)
@@ -365,7 +373,6 @@ ax.set_xlabel("Epoch")
 ax.set_ylabel("Train MSE")
 ax.set_title(f"Training loss (in-sample) — USE={USE}")
 H.save_figure(fig, plot_cfg, "training_loss")
-plt.show()
 
 # 9b) Actual vs reconstructed on one date
 date_pick = meta_eval["as_of_date"].iloc[0]
@@ -407,7 +414,6 @@ def plot_latents_over_time(z_eval_t: torch.Tensor, meta_eval_df: pd.DataFrame, c
     fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
     fig.tight_layout(rect=[0, 0.06, 1, 1])
     H.save_figure(fig, cfg, "latent_factors")
-    plt.show()
 
 plot_latents_over_time(z_all[mask], meta_eval, plot_cfg)
 
@@ -497,7 +503,7 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 # Saves to Figures/<USE>/paper_fig3_sharpe_ratio_<date>.png/pdf
 # ============================================================
 
-from Code.analysis.sharpe_ratio import sharpe_ratio_zcb
+from Code.utils.sharpe_ratio import sharpe_ratio_zcb
 
 def pick_date_or_nearest(meta_df: pd.DataFrame, target_date: str) -> pd.Timestamp:
     """Pick target_date if exists, else nearest available date in meta_df."""
@@ -597,7 +603,6 @@ fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
 fig.tight_layout(rect=[0, 0.12, 1, 1])
 
 H.save_figure(fig, plot_cfg, f"paper_fig3_sharpe_ratio_{date_pick_F3.date()}")
-plt.show()
 
 # -----------------------------
 # Print summary magnitudes (sanity check)
