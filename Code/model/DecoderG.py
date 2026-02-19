@@ -6,7 +6,7 @@
 import torch
 import torch.nn as nn
 
-from utils.common import CenteredSoftStep
+from Code.utils.common import CenteredSoftStep
 
 
 class DecoderG(nn.Module):
