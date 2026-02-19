@@ -10,8 +10,14 @@ from typing import Tuple, Dict, List
 # 0) Repo-rooted path (no Desktop). Adjust if needed.
 # ---------------------------------------------------------
 # Assumes you run from repo root.
-REPO_ROOT = os.getcwd()
-ROOT = os.path.join(REPO_ROOT, "SwapData")  # <-- your folder in the repo
+#REPO_ROOT = os.getcwd()
+#ROOT = os.path.join(REPO_ROOT, "SwapData")  # <-- your folder in the repo
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # <- parent of Code
+ROOT = os.path.join(REPO_ROOT, "SwapData")
+print("Repo root:", REPO_ROOT)
+#print("Data root:", DATA_ROOT)
+
 
 # If you want both datasets on the same maturity grid (as in your model/paper)
 TARGET_TENORS: List[int] = [1, 2, 3, 5, 10, 15, 20, 30]
