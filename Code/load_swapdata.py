@@ -3,12 +3,15 @@ import re
 import pandas as pd
 from typing import Tuple, Dict, List
 
+
+
+
 # ---------------------------------------------------------
 # 0) Repo-rooted path (no Desktop). Adjust if needed.
 # ---------------------------------------------------------
 # Assumes you run from repo root.
 REPO_ROOT = os.getcwd()
-ROOT = os.path.join(REPO_ROOT, "SwapDAta")  # <-- your folder in the repo
+ROOT = os.path.join(REPO_ROOT, "SwapData")  # <-- your folder in the repo
 
 # If you want both datasets on the same maturity grid (as in your model/paper)
 TARGET_TENORS: List[int] = [1, 2, 3, 5, 10, 15, 20, 30]
