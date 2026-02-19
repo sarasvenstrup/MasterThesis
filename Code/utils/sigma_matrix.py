@@ -2,8 +2,8 @@ import torch
 
 def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
-    sigmas: (B,3) with positive entries [sigma1, sigma2, sigma3]
-    rhos:   (B,3) with entries in (-1,1) ordered as [rho12, rho13, rho23]
+    sigmas: (B,3) positive [sigma1, sigma2, sigma3]
+    rhos:   (B,3) in (-1,1) ordered as [rho12, rho13, rho23]
     returns:
       L: (B,3,3) lower-triangular Cholesky factor such that Sigma = L L^T
     """
@@ -29,7 +29,13 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     L20 = rho13 * s3
     L21 = s3 * (rho23 - rho12 * rho13) / sqrt_one_minus_r12_sq
 
-    # last diagonal must be real; clamp for numerical stability
+    # PSD check via det(R) >= 0 for 3x3 correlation matrix
+    detR = 1.0 - rho12**2 - rho13**2 - rho23**2 + 2.0 * rho12 * rho13 * rho23
+    if torch.any(detR < 0):
+        # Keep this lightweight; printing every batch can slow training a lot.
+        print("Warning: correlation matrix not PSD. min detR:", float(detR.min()))
+
+    # last diagonal must be real
     inside = 1.0 - rho13**2 - ((rho23 - rho12 * rho13)**2) / one_minus_r12_sq
     inside = torch.clamp(inside, min=eps)
     L22 = s3 * torch.sqrt(inside)
@@ -43,6 +49,7 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     L[:, 2, 2] = L22
 
     return L
+
 
 def L_from_sigmas_rhos_2d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
@@ -66,6 +73,7 @@ def L_from_sigmas_rhos_2d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     L[:, 1, 1] = sqrt1mr2 * s2
 
     return L
+
 
 def L_from_sigmas_rhos(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     d = sigmas.shape[1]
