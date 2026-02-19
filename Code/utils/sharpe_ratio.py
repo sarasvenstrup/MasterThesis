@@ -107,6 +107,7 @@ def sharpe_ratio_zcb(
 
     # --- model params under Q ---
     mu, sigma_or_L, r = model.params_from_z(z)  # required wrapper
+    mu = torch.zeros_like(mu)
 
     if r.ndim == 2 and r.shape[1] == 1:
         r = r.squeeze(1)
