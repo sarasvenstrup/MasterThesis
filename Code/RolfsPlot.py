@@ -1,5 +1,103 @@
+
+
+
 import os
 import sys
+import torch
+import torch.nn as nn
+torch.set_num_threads(4) # --- Torch thread settings MUST be first Torch-related thing ---
+torch.set_num_interop_threads(2)
+import numpy as np
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import seaborn as sns
+from cycler import cycler
+
+
+
+def set_paper_theme():
+    # 1) Use seaborn only to define a nice clean theme (works for matplotlib plots too)
+    sns.set_theme(context="paper", style="darkgrid", font_scale=1.05)
+
+
+    # Customize tab20b palette
+    full_palette = sns.color_palette("tab20b", 20)
+    selected_indices = [0, 1, 2, 3, 12, 13, 14, 15]
+    palette = [full_palette[i] for i in selected_indices]
+
+
+    # 3) Global matplotlib defaults (applies to ALL figures you create afterwards)
+    mpl.rcParams.update({
+        # Figure / saving
+        "figure.dpi": 180,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+
+
+        # Light grey full frame
+        "axes.spines.top": True,
+        "axes.spines.right": True,
+        "axes.spines.left": True,
+        "axes.spines.bottom": True,
+        "axes.edgecolor": "0.8",  # light grey frame
+        "axes.linewidth": 1.0,
+
+        # Grid styling
+        "axes.grid": True,
+        "grid.color": "0.9",
+        "grid.linewidth": 1.0,
+
+        # Text
+        "font.size": 11,
+        "axes.labelcolor": "0.2",
+        "xtick.color": "0.2",
+        "ytick.color": "0.2",
+
+        # Legend
+        "legend.frameon": False,
+
+        # Lines default
+        "lines.linewidth": 1.6,
+        "lines.markersize": 5.0,
+
+
+    })
+
+    # 4) Make the palette the default color cycle for matplotlib
+    mpl.rcParams["axes.prop_cycle"] = cycler(color=palette)
+
+    return palette
+
+
+def style_axis(ax, title=None, xlabel=None, ylabel=None, legend=True, legend_kwargs=None):
+    """Optional helper you can call per-figure for consistent finishing touches."""
+    if title is not None:
+        ax.set_title(title)
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+
+    # Ensure consistent grid/spines (in case some plots override)
+    ax.grid(True, which="major", axis="both")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    if legend:
+        kw = dict(frameon=False)
+        if legend_kwargs:
+            kw.update(legend_kwargs)
+        ax.legend(**kw)
+
+# Call this once, early in your script
+custom_palette = set_paper_theme()
+
+
+# ABOVE IS THE FIGURE SETTINGS =================
+
+
+
 
 try:
     REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -9,17 +107,7 @@ except NameError:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-import matplotlib
-matplotlib.use("Agg")   # or "Agg" if you only save figures and don't need windows
 
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn as nn
-import matplotlib.pyplot as plt
-
-torch.set_num_threads(4)
-torch.set_num_interop_threads(2)
 
 from Code.utils import helpers as H
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
@@ -47,12 +135,12 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # -----------------------------
 # 0b) Run config
 # -----------------------------
-USE = "test"  # "test" first, then "bbg"
+USE = "bbg"  # "test" first, then "bbg"
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", USE)
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
-plt.rcParams.update({"font.size": 11, "axes.grid": True})
+
 
 # -----------------------------
 # 1) Load data
@@ -99,10 +187,11 @@ currency_rename_map = {
 meta["ccy"] = meta["ccy"].map(lambda x: currency_rename_map.get(x, x))
 df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
 
-currency_color_map = {
-    "AUD": "pink", "CAD": "grey", "DKK": "red", "EUR": "blue", "JPY": "black",
-    "NOK": "orange", "SEK": "purple", "GBP": "green", "USD": "brown",
-}
+
+# Use your theme palette for consistent currency colors
+ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
+currency_color_map = {ccy: custom_palette[i % len(custom_palette)] for i, ccy in enumerate(ccy_order)}
+
 
 # -----------------------------
 # 3) Scale to decimals (auto-detect)
@@ -161,12 +250,21 @@ def plot_swap_curves_on_date_observed(df_wide_obs: pd.DataFrame,
     fig, ax = plt.subplots(figsize=(9, 4))
     for i, ccy in enumerate(sel["ccy"].values):
         color = currency_colors.get(ccy, None)
-        ax.plot(tenors_years, Y[i], marker="o", color=color, label=ccy, alpha=0.9)
+        ax.plot(
+            tenors_years, Y[i],
+            marker="o",
+            color=color,
+            label=ccy,
+            alpha=0.9,
+            markeredgecolor="white",
+            markeredgewidth=1.0,
+        )
 
     ax.set_xlabel("Tenor (years)")
     ax.set_ylabel("Swap rate (decimals)")
     ax.set_title(f"Observed swap curves on {date_pick.date()}")
     ax.grid(True)
+
 
     handles, labels = ax.get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
@@ -187,7 +285,13 @@ def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
     for ccy, g in dfo.groupby("ccy"):
         g = g.sort_values("as_of_date")
         color = currency_colors.get(ccy, None)
-        ax.plot(g["as_of_date"], g[tenor_col].astype(float), color=color, label=ccy, alpha=0.9)
+        ax.plot(
+            g["as_of_date"], g[tenor_col].astype(float),
+            color=color,
+            label=ccy,
+            alpha=0.9,
+            marker=None,  # time series usually no markers
+        )
 
     ax.set_xlabel("Date")
     ax.set_ylabel("Swap rate (decimals)")
@@ -401,7 +505,12 @@ def plot_latents_over_time(z_eval_t: torch.Tensor, meta_eval_df: pd.DataFrame, c
 
         for ccy, g in m_k.groupby("ccy"):
             color = cfg.currency_colors.get(ccy) if cfg.currency_colors else None
-            ax.plot(g["as_of_date"], g[f"z{k+1}"], color=color, label=ccy)
+            ax.plot(
+                g["as_of_date"], g[f"z{k + 1}"],
+                color=color,
+                label=ccy,
+                alpha=0.9,
+            )
 
         ax.set_title(f"Latent factor z{k+1}")
         ax.grid(True)
@@ -594,7 +703,13 @@ fig, ax = plt.subplots(figsize=(9, 4))
 
 for i, ccy in enumerate(ccys):
     col = currency_color_map.get(ccy, None)
-    ax.plot(tau_np, SR_mat[i], label=ccy, color=col, alpha=0.9)
+    ax.plot(
+        tau_np, SR_mat[i],
+        label=ccy,
+        color=col,
+        alpha=0.9,
+        linewidth=1.6,
+    )
 
 ax.set_xlabel("Maturity τ (years)")
 ax.set_ylabel("Approx. Sharpe ratio")
