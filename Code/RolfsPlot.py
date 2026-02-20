@@ -594,6 +594,35 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 ##### SHARPE RATIOS
 
+def pick_date_or_nearest(meta_df: pd.DataFrame, target_date: str) -> pd.Timestamp:
+    """Pick target_date if exists, else nearest available date in meta_df."""
+    td = pd.to_datetime(target_date)
+    dates = pd.to_datetime(meta_df["as_of_date"]).dropna().sort_values().unique()
+
+    if len(dates) == 0:
+        raise ValueError("No dates available in meta_df")
+
+    if (dates == td).any():
+        return td
+
+    idx = np.argmin(np.abs(dates - td))
+    return pd.to_datetime(dates[idx])
+
+def one_curve_per_currency_on_date( df_wide_dec: pd.DataFrame, date_pick: pd.Timestamp, target_tenors ) -> pd.DataFrame:
+    """ Returns a df with one row per currency at date_pick.
+    If duplicates per currency on that date, keep last. """
+
+    dfo = df_wide_dec.copy()
+    dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
+    sel = dfo[dfo["as_of_date"] == pd.to_datetime(date_pick)].copy()
+
+    if sel.empty:
+        raise ValueError(f"No rows found for date {pd.to_datetime(date_pick).date()}")
+
+    sel = sel.sort_values(["ccy", "as_of_date"]).drop_duplicates(subset=["ccy"], keep="last")
+
+    return sel[["as_of_date", "ccy"] + list(target_tenors)].reset_index(drop=True)
+
 # -----------------------------
 # Choose date (paper uses 2014-12-28). Use nearest if missing.
 # -----------------------------

@@ -6,8 +6,6 @@
 import torch
 import torch.nn as nn # import of PyTorch's neural-network layer
 
-
-
 class Encoder(nn.Module):
     def __init__(self, input_dim: int, latent_dim: int):
         super().__init__()

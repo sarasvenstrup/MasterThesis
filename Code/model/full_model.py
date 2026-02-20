@@ -23,39 +23,6 @@ from Code.utils.ode import (
     solve_AB_rk38,
 )
 
-def _interp1d_batch(P_grid: torch.Tensor, tau_years: torch.Tensor, tau_max: int) -> torch.Tensor:
-    """
-    Linear interpolation of P_grid (B, T=tau_max+1) at tau_years (B,).
-    Returns (B,)
-    """
-    B, T = P_grid.shape
-    x = torch.clamp(tau_years, 0.0, float(tau_max))
-
-    lo = torch.floor(x).long()
-    hi = torch.clamp(lo + 1, max=tau_max)
-    w = (x - lo.to(x.dtype))
-
-    idx = torch.arange(B, device=P_grid.device)
-    P_lo = P_grid[idx, lo]
-    P_hi = P_grid[idx, hi]
-    return (1.0 - w) * P_lo + w * P_hi
-
-
-def _interp1d_matrix(P_grid: torch.Tensor, tau_years: torch.Tensor, tau_max: int) -> torch.Tensor:
-    """
-    Linear interpolation of P_grid (B, T) at tau_years (N,).
-    Returns (B,N)
-    """
-    x = torch.clamp(tau_years, 0.0, float(tau_max))
-    lo = torch.floor(x).long()
-    hi = torch.clamp(lo + 1, max=tau_max)
-    w = (x - lo.to(x.dtype))
-
-    P_lo = P_grid[:, lo]  # (B,N)
-    P_hi = P_grid[:, hi]  # (B,N)
-    return (1.0 - w.unsqueeze(0)) * P_lo + w.unsqueeze(0) * P_hi
-
-
 class FullModel(nn.Module):
 
     def __init__(
