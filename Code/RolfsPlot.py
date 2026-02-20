@@ -599,83 +599,108 @@ for col in mu_cols:
 
 print(f"Done. Figures saved to: {FIGURES_DIR}")
 
-##### SHARPE RATIOS
+# SHARPE RATIO
 
-def pick_date_or_nearest(meta_df: pd.DataFrame, target_date: str) -> pd.Timestamp:
-    """Pick target_date if exists, else nearest available date in meta_df."""
-    td = pd.to_datetime(target_date)
-    dates = pd.to_datetime(meta_df["as_of_date"]).dropna().sort_values().unique()
+# =============================
+# 11) Approximate Sharpe ratio plots (Andreasen/Poulsen style)
+# =============================
 
-    if len(dates) == 0:
-        raise ValueError("No dates available in meta_df")
+from Code.utils.sharpe_ratio import LP_and_SR_approx_from_model  # adjust path if needed
 
-    if (dates == td).any():
-        return td
+@torch.no_grad()
+def pick_one_curve_per_currency_on_date(meta_df: pd.DataFrame, date_pick):
+    """
+    Returns indices (into meta_df / X_tensor rows) such that:
+      - as_of_date == date_pick
+      - one row per currency (last one if duplicates)
+    """
+    m = meta_df.copy()
+    m["as_of_date"] = pd.to_datetime(m["as_of_date"])
+    date_pick = pd.to_datetime(date_pick)
 
-    idx = np.argmin(np.abs(dates - td))
-    return pd.to_datetime(dates[idx])
-
-def one_curve_per_currency_on_date( df_wide_dec: pd.DataFrame, date_pick: pd.Timestamp, target_tenors ) -> pd.DataFrame:
-    """ Returns a df with one row per currency at date_pick.
-    If duplicates per currency on that date, keep last. """
-
-    dfo = df_wide_dec.copy()
-    dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
-    sel = dfo[dfo["as_of_date"] == pd.to_datetime(date_pick)].copy()
-
+    sel = m[m["as_of_date"] == date_pick].copy()
     if sel.empty:
-        raise ValueError(f"No rows found for date {pd.to_datetime(date_pick).date()}")
+        raise ValueError(f"No rows in meta_df for date {date_pick.date()}")
 
+    # if multiple rows per currency, keep last (arbitrary but stable)
     sel = sel.sort_values(["ccy", "as_of_date"]).drop_duplicates(subset=["ccy"], keep="last")
+    return sel.index.to_numpy(), sel
 
-    return sel[["as_of_date", "ccy"] + list(target_tenors)].reset_index(drop=True)
+def plot_sr_approx_on_date(
+    model,
+    X_tensor_cpu: torch.Tensor,
+    meta_df: pd.DataFrame,
+    currency_colors: dict,
+    date_pick,
+    cfg: H.PlotConfig,
+    sigma_bar=0.006,
+    tau_max=30,
+    batch_size_cap=64,
+):
+    """
+    Creates a single plot:
+      SR_approx(τ) for each currency (one curve per currency) on a chosen date.
+    """
+    # choose one curve per currency
+    idxs, sel_meta = pick_one_curve_per_currency_on_date(meta_df, date_pick)
 
-# -----------------------------
-# Choose date (paper uses 2014-12-28). Use nearest if missing.
-# -----------------------------
-date_pick_F3 = pick_date_or_nearest(meta, "2014-12-28")
-print("Figure 3 date used:", date_pick_F3.date())
+    # cap batch if you want (not necessary; there are ~9 currencies)
+    if len(idxs) > batch_size_cap:
+        idxs = idxs[:batch_size_cap]
+        sel_meta = sel_meta.iloc[:batch_size_cap].copy()
 
-# -----------------------------
-# Select one curve per currency and encode to z
-# -----------------------------
-sel = one_curve_per_currency_on_date(df_wide_dec, date_pick_F3, TARGET_TENORS)
+    xb = X_tensor_cpu[idxs].to(next(model.parameters()).device)
 
-S_date = torch.tensor(
-    sel[list(TARGET_TENORS)].to_numpy(dtype=np.float32),
-    device=device
+    # τ grid (annual)
+    tau_grid = torch.arange(1, tau_max + 1, device=xb.device, dtype=xb.dtype)
+
+    # IMPORTANT: LP_and_SR_approx_from_model uses autograd, so do NOT wrap this in torch.no_grad()
+    P_tau, LP, SRa = LP_and_SR_approx_from_model(model, xb, tau_grid, sigma_bar=sigma_bar)
+
+    # move to cpu for plotting
+    SRa_np = SRa.detach().cpu().numpy()
+    tau_np = tau_grid.detach().cpu().numpy()
+
+    # plot
+    fig, ax = plt.subplots(figsize=(9, 4))
+    for i, ccy in enumerate(sel_meta["ccy"].values):
+        color = currency_colors.get(ccy, None)
+        ax.plot(
+            tau_np, SRa_np[i],
+            label=ccy,
+            color=color,
+            alpha=0.9,
+        )
+
+    ax.set_xlabel("Maturity (years)")
+    ax.set_ylabel("Approx. Sharpe ratio")
+    ax.set_title(f"Approximate Sharpe ratio vs maturity on {pd.to_datetime(date_pick).date()}")
+
+    # make it look like your other plots (legend below)
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
+    fig.tight_layout(rect=[0, 0.12, 1, 1])
+
+    H.save_figure(fig, cfg, f"approx_sharpe_ratio_{pd.to_datetime(date_pick).date()}")
+
+    return SRa, tau_grid, sel_meta
+
+
+# ---- Choose a date (same logic as you used earlier)
+# Use paper date if available, else first available date in meta_eval
+paper_date = pd.to_datetime("2016-08-30")
+date_pick_sr = paper_date if (meta_eval["as_of_date"] == paper_date).any() else meta_eval["as_of_date"].iloc[0]
+
+# ---- Run & save plot
+# NOTE: this must NOT be under torch.no_grad() because SR uses autograd for gradients/Hessians.
+SRa_out, tau_grid_out, meta_used_sr = plot_sr_approx_on_date(
+    model=model,
+    X_tensor_cpu=X_tensor,         # your full CPU tensor
+    meta_df=meta_eval,             # already filtered to finite rows
+    currency_colors=currency_color_map,
+    date_pick=date_pick_sr,
+    cfg=plot_cfg,
+    sigma_bar=0.006,               # Andreasen proxy
+    tau_max=30,
 )
-
-with torch.no_grad():
-    z_date = model.encoder(S_date)  # (n_ccy, d)
-
-ccys = sel["ccy"].tolist()
-
-# -----------------------------
-# Tau grid for SR curve
-#   IMPORTANT: include 0 if your curve pricer supports it; otherwise start at 1e-3
-# -----------------------------
-
-tau_grid = torch.arange(1.0, float(model.tau_max) + 1.0, device=device)  # 1..30
-SR_mat_t = sharpe_ratio_zcb_curve(model, z_date, tau_grid, debug=True)
-
-SR = SR_mat_t.cpu().numpy()
-tau_np = tau_grid.cpu().numpy()
-
-fig, ax = plt.subplots(figsize=(9,4))
-for i, ccy in enumerate(ccys):
-    ax.plot(tau_np, SR[i], linewidth=1.2, alpha=0.9, label=ccy)  # no interpolation beyond joining points
-ax.set_xlabel("Tenor (year)")
-ax.set_ylabel("Approximate Sharpe ratio")
-ax.ticklabel_format(axis="y", style="sci", scilimits=(-6, -6))
-ax.grid(True)
-
-handles, labels = ax.get_legend_handles_labels()
-fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
-fig.tight_layout(rect=[0, 0.12, 1, 1])
-
-H.save_figure(fig, plot_cfg, f"paper_fig3_sharpe_ratio_{date_pick_F3.date()}")
-
-absmax = float(np.nanmax(np.abs(SR)))
-print("Max |SR| across currencies and maturities:", absmax)
-print("Doooooooone.")
+print(f"Saved approximate Sharpe ratio plot for {pd.to_datetime(date_pick_sr).date()} to: {FIGURES_DIR}")
