@@ -74,10 +74,10 @@ class FullModel(nn.Module):
 
         # 2) maturity grid
         tau = torch.arange(0, self.tau_max + 1, device=device, dtype=dtype)
-        tau_in = tau / float(self.tau_max)  # [0,1]
+        # tau_in = tau / float(self.tau_max)  # [0,1]
 
         # 3) Evaluate G(z,tau) in the grid -> (B,T)
-        G_vals = self.G(z, tau_in)
+        G_vals = self.G(z, tau)
 
         mu = self.K(z)  # (batch,d)
         sigmas, rhos = self.H(z)  # sigmas: (B,d), rhos: (B,d(d-1)/2)
@@ -87,10 +87,9 @@ class FullModel(nn.Module):
         sigma = L_from_sigmas_rhos(sigmas, rhos) # (B,d,d) = Cholesky L
 
         def G_single(z_single):
-            return self.G(z_single.unsqueeze(0), tau_in).squeeze(0)  # (N,)
+            return self.G(z_single.unsqueeze(0), tau).squeeze(0)  # (N,)
 
-        dG_du = d_tau_autograd_nodewise(self.G, z, tau_in)  # exact ∂G/∂u
-        dG_dtau = dG_du / float(self.tau_max)
+        dG_dtau = d_tau_autograd_nodewise(self.G, z, tau)  # exact ∂G/∂τ (years)
 
         grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, sigma)
 

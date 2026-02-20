@@ -6,7 +6,7 @@ from Code.utils.common import CenteredSoftStep
 
 class DecoderG(nn.Module):
 
-    def __init__(self, latent_dim: int, hidden_dim: int, bias: bool = True):
+    def __init__(self, latent_dim: int, hidden_dim: int, bias: bool = False):
         super().__init__()
 
         self.latent_dim = latent_dim
