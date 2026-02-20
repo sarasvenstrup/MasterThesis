@@ -12,6 +12,7 @@ import seaborn as sns
 from cycler import cycler
 
 
+
 def set_paper_theme():
     # 1) Use seaborn only to define a nice clean theme (works for matplotlib plots too)
     sns.set_theme(context="paper", style="darkgrid", font_scale=1.05)
@@ -108,6 +109,8 @@ if REPO_ROOT not in sys.path:
 from Code.utils import helpers as H
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
 from Code.model.full_model import FullModel
+
+from Code.utils.sharpe_ratio import SR_andreasen_reference  # adjust path if needed
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -581,11 +584,30 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # SHARPE RATIO
 
+
+with torch.no_grad():
+    finite_mask = torch.isfinite(X_tensor).all(dim=1)
+i0 = int(torch.nonzero(finite_mask, as_tuple=False)[0].item())
+
+xb = X_tensor[i0:i0+1].to(device)  # (1,8)
+
+# 3) Run the check (MUST NOT be under torch.no_grad)
+model.eval()
+N, LN, SR, tau = SR_andreasen_reference(model, xb, tau_max=30, sigma_bar=0.006)
+
+print("Index used:", i0)
+print("SR min/max:", float(SR.min().detach().cpu()), float(SR.max().detach().cpu()))
+
+# Optional: quick extra diagnostics for the 30Y endpoint
+print("N(30Y):", float(N[0, -1].detach().cpu()))
+print("LN(30Y):", float(LN[0, -1].detach().cpu()))
+print("SR(30Y):", float(SR[0, -1].detach().cpu()))
+
 # =============================
 # 11) Approximate Sharpe ratio plots (Andreasen/Poulsen style)
 # =============================
 
-from Code.utils.sharpe_ratio import LP_and_SR_approx_from_model  # adjust path if needed
+
 
 @torch.no_grad()
 def pick_one_curve_per_currency_on_date(meta_df: pd.DataFrame, date_pick):

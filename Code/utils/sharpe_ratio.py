@@ -365,3 +365,68 @@ def LP_and_SR_approx_from_model(
     SR = LP / (tau_plot * P_tau * sigma_bar)
 
     return P_tau, LP, SR, tau_plot.squeeze(0)
+
+
+import torch
+
+def SR_andreasen_reference(model, S_in, tau_max=30, sigma_bar=0.006):
+    """
+    Andreasen-style approx SR for your model with FULL consistency:
+      N = P (your decoder ZCB price)
+      LN computed from true derivatives of N wrt z
+      SR = LN / (tau * N * sigma_bar)
+
+    This is the one you should trust.
+    """
+    device = S_in.device
+    dtype  = S_in.dtype
+    Bsz    = S_in.shape[0]
+
+    # tau grid including 0 for stable d/dtau
+    tau_full = torch.arange(0, tau_max + 1, device=device, dtype=dtype)
+    idx_full = tau_full.long()
+
+    # forward WITH graph
+    S_hat, z, P_full, A_vals, B_vals, G_vals, mu, sigma, r_tilde = model(S_in.requires_grad_(True))
+    # P_full: (B, tau_max+1)
+
+    # dP/dtau on 0..tau_max
+    dP_dtau_full = torch.zeros_like(P_full)
+    dP_dtau_full[:, 0]  = (P_full[:, 1] - P_full[:, 0])
+    dP_dtau_full[:, -1] = (P_full[:, -1] - P_full[:, -2])
+    if tau_max >= 2:
+        dP_dtau_full[:, 1:-1] = 0.5 * (P_full[:, 2:] - P_full[:, :-2])
+
+    # slice to 1..tau_max
+    N_tau   = P_full[:, 1:]          # (B, tau_max)
+    dN_dtau = dP_dtau_full[:, 1:]    # (B, tau_max)
+
+    r = r_tilde.view(-1, 1)          # (B,1)
+    d = z.shape[1]
+
+    # HVP trace term: 0.5 * sum_j v_j^T Hess(N) v_j
+    sigma_cols = [sigma[:, :, j] for j in range(d)]
+
+    drift_term = torch.zeros(Bsz, tau_max, device=device, dtype=dtype)
+    trace_term = torch.zeros(Bsz, tau_max, device=device, dtype=dtype)
+
+    for m in range(tau_max):
+        Nm = N_tau[:, m]  # (B,)
+        g = torch.autograd.grad(Nm.sum(), z, create_graph=True)[0]  # (B,d)
+
+        drift_term[:, m] = (g * mu).sum(dim=1)
+
+        hvp_sum = torch.zeros(Bsz, device=device, dtype=dtype)
+        for v in sigma_cols:
+            gv = (g * v).sum()  # scalar
+            Hg_v = torch.autograd.grad(gv, z, create_graph=True)[0]  # (B,d)
+            hvp_sum += (Hg_v * v).sum(dim=1)
+
+        trace_term[:, m] = 0.5 * hvp_sum
+
+    LN = -dN_dtau - (r * N_tau) + drift_term + trace_term  # (B, tau_max)
+
+    tau = torch.arange(1, tau_max + 1, device=device, dtype=dtype).view(1, -1)
+    SR = LN / (tau * N_tau * sigma_bar)
+
+    return N_tau, LN, SR, tau.squeeze(0)
