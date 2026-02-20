@@ -200,7 +200,7 @@ def LP_and_SR_approx_from_model_fast(
     return P_tau, LP, SR
 
 
-def LP_and_SR_approx_from_model(
+def LP_and_SR_approx_from_model_hpv_old(
     model,
     S_in,                    # (B,8)
     tau_grid,                # (M,) integer maturities in years (1..30)
@@ -284,3 +284,84 @@ def LP_and_SR_approx_from_model(
     SR = LP / (tau_safe * P_tau * sigma_bar)
 
     return P_tau, LP, SR
+
+
+def LP_and_SR_approx_from_model(
+    model,
+    S_in,                    # (B,8)
+    tau_max=30,
+    sigma_bar=0.006,
+):
+    """
+    Computes SR on maturities 1..tau_max, but computes dP/dtau using a grid 0..tau_max
+    to avoid boundary artifacts at tau=1 and tau=tau_max.
+    Uses HVP for trace term (fast).
+    """
+    device = S_in.device
+    dtype  = S_in.dtype
+    Bsz = S_in.shape[0]
+
+    # ---- tau grid including 0
+    tau_full = torch.arange(0, tau_max + 1, device=device, dtype=dtype)   # (Mfull,)
+    idx_full = tau_full.long()
+
+    # ---- 1) Get A,B and params (no grad)
+    with torch.no_grad():
+        out = model(S_in)
+        A_vals = out[3]                      # (B, tau_max+1)
+        B_vals = out[4]                      # (B, tau_max+1)
+        mu     = out[6]                      # (B,d)
+        sigma  = out[7]                      # (B,d,d)
+        r_tilde= out[8].view(-1, 1)          # (B,1)
+
+        A_full = A_vals[:, idx_full]         # (B, tau_max+1)
+        B_full = B_vals[:, idx_full]         # (B, tau_max+1)
+
+    # ---- 2) Build small graph: z -> G -> P on tau_full
+    z = model.encoder(S_in).requires_grad_(True)  # (B,d)
+
+    u_full = (tau_full / float(model.tau_max)).to(device=device, dtype=dtype)  # (tau_max+1,)
+    G_full = model.G(z, u_full)                                                 # (B, tau_max+1)
+    P_full = torch.exp(A_full - B_full * G_full)                                # (B, tau_max+1)
+
+    # ---- 3) dP/dtau on the full grid (central inside, one-sided at ends)
+    dP_dtau_full = torch.zeros_like(P_full)
+    # dt = 1 year between nodes
+    dP_dtau_full[:, 0]  = (P_full[:, 1] - P_full[:, 0])          # forward at 0
+    dP_dtau_full[:, -1] = (P_full[:, -1] - P_full[:, -2])        # backward at tau_max
+    if tau_max >= 2:
+        dP_dtau_full[:, 1:-1] = 0.5 * (P_full[:, 2:] - P_full[:, :-2])
+
+    # now slice maturities 1..tau_max (these are what you plot)
+    P_tau   = P_full[:, 1:]            # (B, tau_max)
+    dP_dtau = dP_dtau_full[:, 1:]      # (B, tau_max)
+
+    d = z.shape[1]
+    # columns of sigma
+    sigma_cols = [sigma[:, :, j] for j in range(d)]
+
+    drift_term = torch.zeros(Bsz, tau_max, device=device, dtype=dtype)
+    trace_term = torch.zeros(Bsz, tau_max, device=device, dtype=dtype)
+
+    # ---- 4) grad + trace term via HVP per maturity
+    for m in range(tau_max):
+        Pm = P_tau[:, m]             # (B,)
+        g = torch.autograd.grad(Pm.sum(), z, create_graph=True)[0]  # (B,d)
+
+        drift_term[:, m] = (g * mu).sum(dim=1)
+
+        hvp_sum = torch.zeros(Bsz, device=device, dtype=dtype)
+        for v in sigma_cols:
+            gv = (g * v).sum()  # scalar
+            Hg_v = torch.autograd.grad(gv, z, create_graph=True)[0]  # (B,d)
+            hvp_sum = hvp_sum + (Hg_v * v).sum(dim=1)
+
+        trace_term[:, m] = 0.5 * hvp_sum
+
+    # ---- 5) LP and SR
+    LP = -dP_dtau - (r_tilde * P_tau) + drift_term + trace_term
+
+    tau_plot = torch.arange(1, tau_max + 1, device=device, dtype=dtype).view(1, -1)
+    SR = LP / (tau_plot * P_tau * sigma_bar)
+
+    return P_tau, LP, SR, tau_plot.squeeze(0)

@@ -635,11 +635,11 @@ def plot_sr_approx_on_date(
     tau_grid = torch.arange(1, tau_max + 1, device=xb.device, dtype=xb.dtype)
 
     # IMPORTANT: LP_and_SR_approx_from_model uses autograd, so do NOT wrap this in torch.no_grad()
-    P_tau, LP, SRa = LP_and_SR_approx_from_model(model, xb, tau_grid, sigma_bar=sigma_bar)
-
-    # move to cpu for plotting
-    SRa_np = SRa.detach().cpu().numpy()
+    P_tau, LP, SRa, tau_grid = LP_and_SR_approx_from_model(
+        model, xb, tau_max=tau_max, sigma_bar=sigma_bar
+    )
     tau_np = tau_grid.detach().cpu().numpy()
+    SRa_np = SRa.detach().cpu().numpy()
 
     # plot
     fig, ax = plt.subplots(figsize=(9, 4))
