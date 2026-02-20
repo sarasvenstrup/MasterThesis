@@ -657,18 +657,17 @@ ccys = sel["ccy"].tolist()
 # -----------------------------
 
 tau_grid = torch.arange(1.0, float(model.tau_max) + 1.0, device=device)  # 1..30
-SR_mat_t = sharpe_ratio_zcb_curve(model, z_date, tau_grid)  # use the fixed sign version
+SR_mat_t = sharpe_ratio_zcb_curve(model, z_date, tau_grid, debug=True)
 
 SR = SR_mat_t.cpu().numpy()
 tau_np = tau_grid.cpu().numpy()
 
 fig, ax = plt.subplots(figsize=(9,4))
 for i, ccy in enumerate(ccys):
-    ax.plot(tau_np, SR[i], marker="o", linewidth=1.2, alpha=0.9, label=ccy)
-
+    ax.plot(tau_np, SR[i], linewidth=1.2, alpha=0.9, label=ccy)  # no interpolation beyond joining points
 ax.set_xlabel("Tenor (year)")
 ax.set_ylabel("Approximate Sharpe ratio")
-ax.ticklabel_format(axis="y", style="sci", scilimits=(-6, -6))  # forces 1e-6 style
+ax.ticklabel_format(axis="y", style="sci", scilimits=(-6, -6))
 ax.grid(True)
 
 handles, labels = ax.get_legend_handles_labels()
