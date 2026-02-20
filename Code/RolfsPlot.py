@@ -654,13 +654,11 @@ ccys = sel["ccy"].tolist()
 # Tau grid for SR curve
 #   IMPORTANT: include 0 if your curve pricer supports it; otherwise start at 1e-3
 # -----------------------------
-tau_grid = torch.linspace(1e-3, float(model.tau_max), steps=117, device=device)
 
-# -----------------------------
-# Compute SR curves (NO interpolation path)
-#   SR_mat_t: (n_ccy, N_tau)
-# -----------------------------
-SR_mat_t = sharpe_ratio_zcb_curve(model, z_date, tau_grid)   # tensor
+tau_min = 0.25  # or 0.5 or 1.0
+tau_grid = torch.linspace(tau_min, float(model.tau_max), steps=117, device=device)
+SR_mat_t = sharpe_ratio_zcb_curve(model, z_date, tau_grid)
+
 SR_mat = SR_mat_t.cpu().numpy()
 tau_np = tau_grid.detach().cpu().numpy()
 
