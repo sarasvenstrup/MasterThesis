@@ -58,7 +58,7 @@ class FullModel(nn.Module):
         self.H = HSigma(latent_dim, h_hidden, hr_bias)
         self.R = RShort(latent_dim, r_hidden, hr_bias)
 
-    def bond_price_from_z_grid(self, z: torch.Tensor, tau_grid: torch.Tensor) -> torch.Tensor:
+    def bond_price_from_z(self, z: torch.Tensor, tau_grid: torch.Tensor) -> torch.Tensor:
         """
         No-interp ZCB curve: returns P(z, tau_grid) for a shared tau_grid (N,).
         tau_grid in YEARS, must be 1D increasing, within [0, tau_max].
