@@ -60,10 +60,11 @@ class FullModel(nn.Module):
 
     def params_from_z(self, z: torch.Tensor):
         """
-        Returns (mu, L, r) needed by Sharpe ratio code.
-        mu: (B,d)
-        L:  (B,d,d)   (Cholesky diffusion)
-        r:  (B,)      short rate mapping
+        Must match bond_price_from_z_grid() exactly.
+        Returns:
+          mu: (B,d)
+          L:  (B,d,d)  (Cholesky)
+          r:  (B,)     (short rate mapping)
         """
         if z.dim() == 1:
             z = z.unsqueeze(0)
@@ -73,7 +74,7 @@ class FullModel(nn.Module):
         L = L_from_sigmas_rhos(sigmas, rhos)  # (B,d,d)
         r = self.R(z)  # (B,1) or (B,)
         if r.ndim == 2 and r.shape[1] == 1:
-            r = r.squeeze(1)
+            r = r.squeeze(1)  # (B,)
         return mu, L, r
 
     def bond_price_from_z_grid(self, z: torch.Tensor, tau_grid: torch.Tensor) -> torch.Tensor:
@@ -107,10 +108,7 @@ class FullModel(nn.Module):
         # --- same pipeline as forward(), but on this u-grid ---
         G_vals = self.G(z, u)  # (B,N)
 
-        mu = self.K(z)  # (B,d)
-        sigmas, rhos = self.H(z)  # (B,d), (B, d(d-1)/2)
-        r_tilde = self.R(z)  # (B,1) or (B,)
-        sigma = L_from_sigmas_rhos(sigmas, rhos)  # (B,d,d)
+        mu, sigma, r_tilde = self.params_from_z(z)  # sigma is L (B,d,d), r_tilde is (B,)
 
         def G_single(z_single):
             return self.G(z_single.unsqueeze(0), u).squeeze(0)  # (N,)

@@ -36,28 +36,22 @@ def sharpe_ratio_zcb_curve(
 
     tau = tau_grid.to(device=z.device, dtype=z.dtype).detach().clone().requires_grad_(True)  # (N,)
 
-    mu, sigma_or_L, r = model.params_from_z(z)
-    if r.ndim == 2 and r.shape[1] == 1:
-        r = r.squeeze(1)
+    mu, L, r = model.params_from_z(z)  # mu (B,d), L (B,d,d), r (B,)
     if r.ndim != 1:
         raise ValueError(f"r must be (B,), got {tuple(r.shape)}")
-
-    if sigma_or_L.ndim == 2:
-        L = torch.diag_embed(sigma_or_L)   # (Bz,d,d)
-    elif sigma_or_L.ndim == 3:
-        L = sigma_or_L
-    else:
-        raise ValueError(f"sigma_or_L must be (B,d) or (B,d,d), got {tuple(sigma_or_L.shape)}")
+    if L.ndim != 3:
+        raise ValueError(f"L must be (B,d,d), got {tuple(L.shape)}")
 
     P = model.bond_price_from_z_grid(z, tau)  # (Bz,N)
 
-    # dP/dtau: grab diagonal of Jacobian of P wrt tau (one element per maturity)
+    # dP/dtau (diagonal of Jacobian wrt tau)
     dP_dtau_cols = []
     for j in range(tau.numel()):
         g = torch.autograd.grad(P[:, j].sum(), tau, create_graph=True, retain_graph=True)[0]  # (N,)
         dP_dtau_cols.append(g[j])
     dP_dtau = torch.stack(dP_dtau_cols, dim=0).unsqueeze(0).repeat(Bz, 1)  # (Bz,N)
 
+    # grads and Hessians wrt z
     gradP = []
     HessP = []
     for j in range(tau.numel()):
@@ -70,7 +64,8 @@ def sharpe_ratio_zcb_curve(
     gradP = torch.stack(gradP, dim=1)   # (Bz,N,d)
     HessP = torch.stack(HessP, dim=1)   # (Bz,N,d,d)
 
-    term_tau = -dP_dtau
+    # ✅ SIGN FIX: PDE uses +∂τP
+    term_tau = +dP_dtau
     term_mu = (gradP * mu.unsqueeze(1)).sum(dim=2)
 
     LT = L.transpose(1, 2)
@@ -94,7 +89,6 @@ def sharpe_ratio_zcb_curve(
     if debug:
         print("min vol_price:", float(vol_price.min()), "max vol_price:", float(vol_price.max()))
         print("min |resid|:", float(resid.abs().min()), "max |resid|:", float(resid.abs().max()))
-        print("vol_price first 5 taus:", vol_price[0, :5].detach().cpu().numpy())
         print("SR first 5 taus:", SR[0, :5].detach().cpu().numpy())
 
     return SR.detach()
