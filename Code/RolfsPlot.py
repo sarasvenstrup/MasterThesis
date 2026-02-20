@@ -355,7 +355,14 @@ LATENT_DIM = 2
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-optim = torch.optim.Adam(model.parameters(), lr=LR)
+optim = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
+
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    optim,
+    T_max=EPOCHS,
+    eta_min=1e-5   # final LR
+)
+
 loss_fn = nn.MSELoss()
 
 train_losses = []
@@ -384,6 +391,8 @@ for epoch in range(EPOCHS):
 
         running += float(loss.detach().cpu()) * xb.shape[0]
         n_obs += xb.shape[0]
+
+    scheduler.step()
 
     nan_batches_total += nan_batches
     epoch_loss = running / max(n_obs, 1)
@@ -685,3 +694,4 @@ H.save_figure(fig, plot_cfg, f"paper_fig3_sharpe_ratio_{date_pick_F3.date()}")
 
 absmax = float(np.max(np.abs(SR_mat)))
 print("Max |SR| across currencies and maturities:", absmax)
+print("Doooooooone.")
