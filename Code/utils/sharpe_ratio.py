@@ -41,11 +41,15 @@ def sharpe_ratio_zcb_curve(
     z = z_in.detach().clone().requires_grad_(True)  # (Bz,d)
     Bz, d = z.shape
 
-    tau = tau_grid.detach().clone().requires_grad_(True)  # (N,)
+    # tau = tau_grid.detach().clone().requires_grad_(True)  # (N,)
+    tau = tau_grid.to(device=z.device, dtype=z.dtype).detach().clone().requires_grad_(True)
 
     mu, sigma_or_L, r = model.params_from_z(z)
     if r.ndim == 2 and r.shape[1] == 1:
         r = r.squeeze(1)
+
+    if r.ndim != 1:
+        raise ValueError(...)
 
     if sigma_or_L.ndim == 2:
         L = torch.diag_embed(sigma_or_L)   # (Bz,d,d)

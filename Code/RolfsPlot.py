@@ -403,16 +403,22 @@ xb = X_tensor[:3].to(device)
 out = model(xb)
 z = out[1]  # (3,d)
 
-tau = torch.tensor(7.3, dtype=z.dtype, device=z.device, requires_grad=True)
-
-P = model.bond_price_from_z(z, tau)
+tau = torch.tensor([7.3], dtype=z.dtype, device=z.device, requires_grad=True)  # (1,)
+P = model.bond_price_from_z(z, tau)  # (B,)
 print("P shape:", P.shape)
 
-dP_dtau = torch.autograd.grad(P.sum(), tau, retain_graph=True)[0]
+dP_dtau = torch.autograd.grad(P.sum(), tau, retain_graph=True)[0]  # (1,)
 print("dP/dtau:", dP_dtau)
 
 dP_dz = torch.autograd.grad(P.sum(), z, retain_graph=True)[0]
 print("dP/dz shape:", dP_dz.shape)
+
+with torch.no_grad():
+    z0 = model.encoder(X_tensor[:1].to(device))
+
+tau_test = torch.linspace(1e-3, 30.0, 50, device=device, dtype=z0.dtype)
+P_test = model.bond_price_from_z_grid(z0, tau_test)
+print("P_test:", P_test.shape, "min/max", float(P_test.min()), float(P_test.max()))
 
 
 
@@ -648,7 +654,7 @@ ccys = sel["ccy"].tolist()
 # Tau grid for SR curve
 #   IMPORTANT: include 0 if your curve pricer supports it; otherwise start at 1e-3
 # -----------------------------
-tau_grid = torch.linspace(0.0, float(model.tau_max), steps=117, device=device)
+tau_grid = torch.linspace(1e-3, float(model.tau_max), steps=117, device=device)
 
 # -----------------------------
 # Compute SR curves (NO interpolation path)

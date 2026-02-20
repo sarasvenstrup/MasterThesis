@@ -58,7 +58,7 @@ class FullModel(nn.Module):
         self.H = HSigma(latent_dim, h_hidden, hr_bias)
         self.R = RShort(latent_dim, r_hidden, hr_bias)
 
-    def bond_price_from_z(self, z: torch.Tensor, tau_grid: torch.Tensor) -> torch.Tensor:
+    def bond_price_from_z_grid(self, z: torch.Tensor, tau_grid: torch.Tensor) -> torch.Tensor:
         """
         No-interp ZCB curve: returns P(z, tau_grid) for a shared tau_grid (N,).
         tau_grid in YEARS, must be 1D increasing, within [0, tau_max].
@@ -68,6 +68,8 @@ class FullModel(nn.Module):
         """
         if z.dim() == 1:
             z = z.unsqueeze(0)
+        if tau_grid.ndim == 0:
+            tau_grid = tau_grid.view(1)
         if tau_grid.ndim != 1:
             raise ValueError("tau_grid must be 1D (N,)")
 
@@ -75,6 +77,7 @@ class FullModel(nn.Module):
         device, dtype = z.device, z.dtype
 
         tau = tau_grid.to(device=device, dtype=dtype)
+
         if torch.any(tau < 0) or torch.any(tau > float(self.tau_max)):
             raise ValueError(f"tau_grid must be within [0, {self.tau_max}]")
         if torch.any(tau[1:] <= tau[:-1]):
@@ -114,6 +117,15 @@ class FullModel(nn.Module):
 
         P = torch.exp(A_vals - B_vals * G_vals)  # (B,N)
         return P
+
+    def bond_price_from_z(self, z: torch.Tensor, tau_query: torch.Tensor) -> torch.Tensor:
+        # convenience wrapper
+        if not torch.is_tensor(tau_query):
+            tau_query = torch.tensor(tau_query, device=z.device, dtype=z.dtype)
+        if tau_query.ndim == 0:
+            tau_query = tau_query.view(1)
+        P = self.bond_price_from_z_grid(z, tau_query)  # (B,N)
+        return P.squeeze(1) if P.shape[1] == 1 else P
 
     def forward(self, S_in):
         # ensure batch
