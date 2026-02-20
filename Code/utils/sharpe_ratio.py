@@ -1,6 +1,6 @@
 import torch
 
-def LP_and_SR_approx_from_model(
+def LP_and_SR_approx_from_model_old(
     model,
     S_in,                    # (B,8) swap inputs (decimals)
     tau_grid,                # (M,) maturities in years, e.g. torch.arange(1,31)
@@ -109,3 +109,93 @@ def LP_and_SR_approx_from_model(
     SR_approx = LP / (tau_safe * P_tau * sigma_bar)
 
     return P_tau, LP, SR_approx
+
+import torch
+
+def LP_and_SR_approx_from_model(
+    model,
+    S_in,                    # (B,8)
+    tau_grid,                # (M,) integer maturities in years (1..30)
+    sigma_bar=0.006,
+):
+    """
+    Faster SR diagnostic:
+      - Detaches ODE part (A_vals, B_vals) from autograd graph
+      - Keeps grad only through encoder + G(z,tau) (much cheaper)
+      - Uses same LP formula with FD in tau and exact z-derivatives
+
+    Returns:
+      P_tau: (B,M)
+      LP:    (B,M)
+      SR:    (B,M)
+    """
+    device = S_in.device
+    dtype  = S_in.dtype
+    tau_grid = tau_grid.to(device=device, dtype=dtype)
+    idx = tau_grid.long()
+
+    # 1) Get A,B and params cheaply (no graph)
+    with torch.no_grad():
+        # one forward to get A,B on full integer grid 0..tau_max
+        out = model(S_in)
+        P_full = out[2]      # (B, tau_max+1)
+        A_vals = out[3]      # (B, tau_max+1)
+        B_vals = out[4]      # (B, tau_max+1)
+        mu     = out[6]      # (B,d)
+        sigma  = out[7]      # (B,d,d)
+        r_tilde= out[8].view(-1, 1)  # (B,1)
+
+        # select annual points
+        A_tau = A_vals[:, idx]      # (B,M)
+        B_tau = B_vals[:, idx]      # (B,M)
+
+    # 2) Build small graph: z -> G -> P
+    #    (A_tau and B_tau are treated as constants here)
+    z = model.encoder(S_in).requires_grad_(True)  # (B,d)
+
+    # maturity grid for G uses normalized input u in [0,1]
+    # your G expects u = tau / tau_max
+    tau_max = float(model.tau_max)
+    u = (tau_grid / tau_max).to(device=device, dtype=dtype)  # (M,)
+    G_tau = model.G(z, u)  # (B,M)  (make sure your DecoderG supports broadcasting like this)
+
+    P_tau = torch.exp(A_tau - B_tau * G_tau)  # (B,M)
+
+    B, M = P_tau.shape
+    d = z.shape[1]
+
+    # 3) dP/dtau via finite differences on annual grid
+    dP_dtau = torch.zeros_like(P_tau)
+    dP_dtau[:, 0]  = (P_tau[:, 1] - P_tau[:, 0])
+    dP_dtau[:, -1] = (P_tau[:, -1] - P_tau[:, -2])
+    if M > 2:
+        dP_dtau[:, 1:-1] = 0.5 * (P_tau[:, 2:] - P_tau[:, :-2])
+
+    # 4) trace term 0.5 Tr(Cov Hess P) with small d (2 or 3) — now cheap
+    cov = sigma @ sigma.transpose(1, 2)  # (B,d,d)   (no grad needed)
+
+    gradP = torch.zeros(B, M, d, device=device, dtype=dtype)
+    trace_term = torch.zeros(B, M, device=device, dtype=dtype)
+
+    for m in range(M):
+        Pm = P_tau[:, m].sum()
+        g = torch.autograd.grad(Pm, z, create_graph=True)[0]  # (B,d)
+        gradP[:, m, :] = g
+
+        H = torch.zeros(B, d, d, device=device, dtype=dtype)
+        for i in range(d):
+            gi = g[:, i].sum()
+            Hi = torch.autograd.grad(gi, z, create_graph=True)[0]  # (B,d)
+            H[:, i, :] = Hi
+
+        trace_term[:, m] = 0.5 * (cov * H).sum(dim=(1, 2))
+
+    # 5) LP residual
+    drift_term = (gradP * mu.unsqueeze(1)).sum(dim=-1)  # (B,M)
+    LP = -dP_dtau - (r_tilde * P_tau) + drift_term + trace_term
+
+    # 6) Andreasen SR approx
+    tau_safe = tau_grid.clamp_min(1e-6).view(1, -1)
+    SR = LP / (tau_safe * P_tau * sigma_bar)
+
+    return P_tau, LP, SR

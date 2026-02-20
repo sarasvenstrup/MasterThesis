@@ -108,7 +108,6 @@ if REPO_ROOT not in sys.path:
 from Code.utils import helpers as H
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
 from Code.model.full_model import FullModel
-from Code.utils.sharpe_ratio import sharpe_ratio_zcb_curve
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -403,25 +402,6 @@ model.eval()
 xb = X_tensor[:3].to(device)
 out = model(xb)
 z = out[1]  # (3,d)
-
-tau = torch.tensor([7.3], dtype=z.dtype, device=z.device, requires_grad=True)  # (1,)
-P = model.bond_price_from_z(z, tau)  # (B,)
-print("P shape:", P.shape)
-
-dP_dtau = torch.autograd.grad(P.sum(), tau, retain_graph=True)[0]  # (1,)
-print("dP/dtau:", dP_dtau)
-
-dP_dz = torch.autograd.grad(P.sum(), z, retain_graph=True)[0]
-print("dP/dz shape:", dP_dz.shape)
-
-with torch.no_grad():
-    z0 = model.encoder(X_tensor[:1].to(device))
-
-tau_test = torch.linspace(1e-3, 30.0, 50, device=device, dtype=z0.dtype)
-P_test = model.bond_price_from_z_grid(z0, tau_test)
-print("P_test:", P_test.shape, "min/max", float(P_test.min()), float(P_test.max()))
-
-
 
 # -----------------------------
 # 6) Inference (in-sample)
