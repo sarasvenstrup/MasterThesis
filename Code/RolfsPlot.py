@@ -656,27 +656,20 @@ ccys = sel["ccy"].tolist()
 #   IMPORTANT: include 0 if your curve pricer supports it; otherwise start at 1e-3
 # -----------------------------
 
-tau_min = 0.25  # or 0.5 or 1.0
-tau_grid = torch.linspace(tau_min, float(model.tau_max), steps=117, device=device)
-SR_mat_t = sharpe_ratio_zcb_curve(model, z_date, tau_grid)
+tau_grid = torch.arange(1.0, float(model.tau_max) + 1.0, device=device)  # 1..30
+SR_mat_t = sharpe_ratio_zcb_curve(model, z_date, tau_grid)  # use the fixed sign version
 
-SR_mat = SR_mat_t.cpu().numpy()
-tau_np = tau_grid.detach().cpu().numpy()
+SR = SR_mat_t.cpu().numpy()
+tau_np = tau_grid.cpu().numpy()
 
-# -----------------------------
-# Plot
-# -----------------------------
-fig, ax = plt.subplots(figsize=(9, 4))
-
+fig, ax = plt.subplots(figsize=(9,4))
 for i, ccy in enumerate(ccys):
-    col = currency_color_map.get(ccy, None)
-    ax.plot(tau_np, SR_mat[i], label=ccy, color=col, alpha=0.9, linewidth=1.6)
+    ax.plot(tau_np, SR[i], marker="o", linewidth=1.2, alpha=0.9, label=ccy)
 
-ax.set_xlabel("Maturity τ (years)")
-ax.set_ylabel("Approx. Sharpe ratio")
-ax.set_title(f"Approximate Sharpe ratio of ZCBs — {date_pick_F3.date()}")
+ax.set_xlabel("Tenor (year)")
+ax.set_ylabel("Approximate Sharpe ratio")
+ax.ticklabel_format(axis="y", style="sci", scilimits=(-6, -6))  # forces 1e-6 style
 ax.grid(True)
-ax.ticklabel_format(axis="y", style="sci", scilimits=(-5, 5))
 
 handles, labels = ax.get_legend_handles_labels()
 fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
@@ -684,6 +677,6 @@ fig.tight_layout(rect=[0, 0.12, 1, 1])
 
 H.save_figure(fig, plot_cfg, f"paper_fig3_sharpe_ratio_{date_pick_F3.date()}")
 
-absmax = float(np.max(np.abs(SR_mat)))
+absmax = float(np.nanmax(np.abs(SR)))
 print("Max |SR| across currencies and maturities:", absmax)
 print("Doooooooone.")
