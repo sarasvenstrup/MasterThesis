@@ -110,7 +110,6 @@ from Code.utils import helpers as H
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
 from Code.model.full_model import FullModel
 
-from Code.utils.sharpe_ratio import SR_andreasen_reference  # adjust path if needed
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -584,37 +583,18 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # SHARPE RATIO
 
+# ============================================================
+# 11) Andreasen Sharpe-ratio diagnostics: N, LN, SR + plots
+# ============================================================
 
-with torch.no_grad():
-    finite_mask = torch.isfinite(X_tensor).all(dim=1)
-i0 = int(torch.nonzero(finite_mask, as_tuple=False)[0].item())
-
-xb = X_tensor[i0:i0+1].to(device)  # (1,8)
-
-# 3) Run the check (MUST NOT be under torch.no_grad)
-model.eval()
-N, LN, SR, tau = SR_andreasen_reference(model, xb, tau_max=30, sigma_bar=0.006)
-
-print("Index used:", i0)
-print("SR min/max:", float(SR.min().detach().cpu()), float(SR.max().detach().cpu()))
-
-# Optional: quick extra diagnostics for the 30Y endpoint
-print("N(30Y):", float(N[0, -1].detach().cpu()))
-print("LN(30Y):", float(LN[0, -1].detach().cpu()))
-print("SR(30Y):", float(SR[0, -1].detach().cpu()))
-
-# =============================
-# 11) Approximate Sharpe ratio plots (Andreasen/Poulsen style)
-# =============================
-
-
+from Code.utils.sharpe_ratio import SR_andreasen_reference
 
 @torch.no_grad()
 def pick_one_curve_per_currency_on_date(meta_df: pd.DataFrame, date_pick):
     """
     Returns indices (into meta_df / X_tensor rows) such that:
       - as_of_date == date_pick
-      - one row per currency (last one if duplicates)
+      - one row per currency
     """
     m = meta_df.copy()
     m["as_of_date"] = pd.to_datetime(m["as_of_date"])
@@ -624,85 +604,199 @@ def pick_one_curve_per_currency_on_date(meta_df: pd.DataFrame, date_pick):
     if sel.empty:
         raise ValueError(f"No rows in meta_df for date {date_pick.date()}")
 
-    # if multiple rows per currency, keep last (arbitrary but stable)
     sel = sel.sort_values(["ccy", "as_of_date"]).drop_duplicates(subset=["ccy"], keep="last")
     return sel.index.to_numpy(), sel
 
-def plot_sr_approx_on_date(
+
+def plot_LN_on_date(
     model,
     X_tensor_cpu: torch.Tensor,
     meta_df: pd.DataFrame,
     currency_colors: dict,
     date_pick,
     cfg: H.PlotConfig,
-    sigma_bar=0.006,
     tau_max=30,
-    batch_size_cap=64,
+    sigma_bar=0.006,
 ):
-    """
-    Creates a single plot:
-      SR_approx(τ) for each currency (one curve per currency) on a chosen date.
-    """
-    # choose one curve per currency
     idxs, sel_meta = pick_one_curve_per_currency_on_date(meta_df, date_pick)
-
-    # cap batch if you want (not necessary; there are ~9 currencies)
-    if len(idxs) > batch_size_cap:
-        idxs = idxs[:batch_size_cap]
-        sel_meta = sel_meta.iloc[:batch_size_cap].copy()
-
     xb = X_tensor_cpu[idxs].to(next(model.parameters()).device)
 
-    # τ grid (annual)
-    tau_grid = torch.arange(1, tau_max + 1, device=xb.device, dtype=xb.dtype)
+    # MUST have grads
+    model.eval()
+    N_tau, LN, SR, tau = SR_andreasen_reference(model, xb, tau_max=tau_max, sigma_bar=sigma_bar)
 
-    # IMPORTANT: LP_and_SR_approx_from_model uses autograd, so do NOT wrap this in torch.no_grad()
-    P_tau, LP, SRa, tau_grid = LP_and_SR_approx_from_model(
-        model, xb, tau_max=tau_max, sigma_bar=sigma_bar
-    )
-    tau_np = tau_grid.detach().cpu().numpy()
-    SRa_np = SRa.detach().cpu().numpy()
+    tau_np = tau.detach().cpu().numpy()
+    LN_np  = LN.detach().cpu().numpy()
 
-    # plot
     fig, ax = plt.subplots(figsize=(9, 4))
     for i, ccy in enumerate(sel_meta["ccy"].values):
-        color = currency_colors.get(ccy, None)
-        ax.plot(
-            tau_np, SRa_np[i],
-            label=ccy,
-            color=color,
-            alpha=0.9,
-        )
+        ax.plot(tau_np, LN_np[i], label=ccy, color=currency_colors.get(ccy, None), alpha=0.9)
 
     ax.set_xlabel("Maturity (years)")
-    ax.set_ylabel("Approx. Sharpe ratio")
-    ax.set_title(f"Approximate Sharpe ratio vs maturity on {pd.to_datetime(date_pick).date()}")
+    ax.set_ylabel("LN residual")
+    ax.set_title(f"LN(τ) on {pd.to_datetime(date_pick).date()} (one curve per currency)")
 
-    # make it look like your other plots (legend below)
     handles, labels = ax.get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
     fig.tight_layout(rect=[0, 0.12, 1, 1])
 
-    H.save_figure(fig, cfg, f"approx_sharpe_ratio_{pd.to_datetime(date_pick).date()}")
+    H.save_figure(fig, cfg, f"LN_residual_{pd.to_datetime(date_pick).date()}")
+    print("Saved LN plot.")
 
-    return SRa, tau_grid, sel_meta
+    return N_tau, LN, SR, tau, sel_meta
 
 
-# ---- Choose a date (same logic as you used earlier)
-# Use paper date if available, else first available date in meta_eval
-paper_date = pd.to_datetime("2016-08-30")
-date_pick_sr = paper_date if (meta_eval["as_of_date"] == paper_date).any() else meta_eval["as_of_date"].iloc[0]
+def plot_LN_terms_for_one_curve(model, xb, cfg: H.PlotConfig, tag="onecurve", tau_max=30):
+    """
+    LN = -dN/dtau - rN + mu·∇N + 0.5 Tr(Cov Hess N)
+    This plot shows each term for one curve to see what explodes.
+    """
+    device = xb.device
+    dtype  = xb.dtype
+    model.eval()
 
-# ---- Run & save plot
-# NOTE: this must NOT be under torch.no_grad() because SR uses autograd for gradients/Hessians.
-SRa_out, tau_grid_out, meta_used_sr = plot_sr_approx_on_date(
-    model=model,
-    X_tensor_cpu=X_tensor,         # your full CPU tensor
-    meta_df=meta_eval,             # already filtered to finite rows
-    currency_colors=currency_color_map,
-    date_pick=date_pick_sr,
-    cfg=plot_cfg,
-    sigma_bar=0.006,               # Andreasen proxy
+    # forward WITH graph
+    S_hat, z, P_full, A_vals, B_vals, G_vals, mu, sigma, r_tilde = model(xb.requires_grad_(True))
+
+    # dN/dtau on 0..tau_max (dt=1 year)
+    dP_dtau_full = torch.zeros_like(P_full)
+    dP_dtau_full[:, 0]  = (P_full[:, 1] - P_full[:, 0])
+    dP_dtau_full[:, -1] = (P_full[:, -1] - P_full[:, -2])
+    if tau_max >= 2:
+        dP_dtau_full[:, 1:-1] = 0.5 * (P_full[:, 2:] - P_full[:, :-2])
+
+    N_tau   = P_full[:, 1:]          # (1, tau_max)
+    dN_dtau = dP_dtau_full[:, 1:]    # (1, tau_max)
+
+    r = r_tilde.view(-1, 1)          # (1,1)
+    d = z.shape[1]
+    sigma_cols = [sigma[:, :, j] for j in range(d)]
+
+    drift_term = torch.zeros(1, tau_max, device=device, dtype=dtype)
+    trace_term = torch.zeros(1, tau_max, device=device, dtype=dtype)
+
+    for m in range(tau_max):
+        Nm = N_tau[:, m]
+        g = torch.autograd.grad(Nm.sum(), z, create_graph=True)[0]  # (1,d)
+
+        drift_term[:, m] = (g * mu).sum(dim=1)
+
+        hvp_sum = torch.zeros(1, device=device, dtype=dtype)
+        for v in sigma_cols:
+            gv = (g * v).sum()
+            Hg_v = torch.autograd.grad(gv, z, create_graph=True)[0]
+            hvp_sum += (Hg_v * v).sum(dim=1)
+
+        trace_term[:, m] = 0.5 * hvp_sum
+
+    term_dN = (-dN_dtau).detach().cpu().numpy().squeeze(0)
+    term_rN = (-(r * N_tau)).detach().cpu().numpy().squeeze(0)
+    term_mu = drift_term.detach().cpu().numpy().squeeze(0)
+    term_tr = trace_term.detach().cpu().numpy().squeeze(0)
+    LN      = term_dN + term_rN + term_mu + term_tr
+
+    tau_np = np.arange(1, tau_max + 1)
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(tau_np, term_dN, label="-dN/dτ")
+    ax.plot(tau_np, term_rN, label="-rN")
+    ax.plot(tau_np, term_mu, label="μ·∇N")
+    ax.plot(tau_np, term_tr, label="0.5 Tr")
+    ax.plot(tau_np, LN, label="LN (sum)", linewidth=2.5)
+
+    ax.set_xlabel("Maturity (years)")
+    ax.set_ylabel("Value")
+    ax.set_title("LN term decomposition (single curve)")
+    ax.legend(ncol=3, fontsize=9)
+    fig.tight_layout()
+
+    H.save_figure(fig, cfg, f"LN_terms_{tag}")
+    print("Saved LN term decomposition plot.")
+
+
+def plot_SR_on_date_reference(
+    model,
+    X_tensor_cpu: torch.Tensor,
+    meta_df: pd.DataFrame,
+    currency_colors: dict,
+    date_pick,
+    cfg: H.PlotConfig,
     tau_max=30,
+    sigma_bar=0.006,
+):
+    idxs, sel_meta = pick_one_curve_per_currency_on_date(meta_df, date_pick)
+    xb = X_tensor_cpu[idxs].to(next(model.parameters()).device)
+
+    model.eval()
+    N_tau, LN, SR, tau = SR_andreasen_reference(model, xb, tau_max=tau_max, sigma_bar=sigma_bar)
+
+    tau_np = tau.detach().cpu().numpy()
+    SR_np  = SR.detach().cpu().numpy()
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    for i, ccy in enumerate(sel_meta["ccy"].values):
+        ax.plot(tau_np, SR_np[i], label=ccy, color=currency_colors.get(ccy, None), alpha=0.9)
+
+    ax.set_xlabel("Maturity (years)")
+    ax.set_ylabel("Sharpe ratio (approx)")
+    ax.set_title(f"SR(τ) on {pd.to_datetime(date_pick).date()} (reference)")
+
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
+    fig.tight_layout(rect=[0, 0.12, 1, 1])
+
+    H.save_figure(fig, cfg, f"SR_reference_{pd.to_datetime(date_pick).date()}")
+    print("Saved SR reference plot.")
+
+    return N_tau, LN, SR, tau, sel_meta
+
+
+# ------------------------------
+# A) Single-curve numeric check
+# ------------------------------
+with torch.no_grad():
+    finite_mask = torch.isfinite(X_tensor).all(dim=1)
+i0 = int(torch.nonzero(finite_mask, as_tuple=False)[0].item())
+xb1 = X_tensor[i0:i0+1].to(device)
+
+model.eval()
+N1, LN1, SR1, tau1 = SR_andreasen_reference(model, xb1, tau_max=30, sigma_bar=0.006)
+
+print("Index used:", i0)
+print("SR min/max:", float(SR1.min().detach().cpu()), float(SR1.max().detach().cpu()))
+print("N(30Y):",  float(N1[0, -1].detach().cpu()))
+print("LN(30Y):", float(LN1[0, -1].detach().cpu()))
+print("SR(30Y):", float(SR1[0, -1].detach().cpu()))
+
+# ------------------------------
+# B) Plots on a chosen date
+# ------------------------------
+paper_date = pd.to_datetime("2016-08-30")
+date_pick = paper_date if (meta_eval["as_of_date"] == paper_date).any() else meta_eval["as_of_date"].iloc[0]
+
+_ = plot_LN_on_date(
+    model=model,
+    X_tensor_cpu=X_tensor,
+    meta_df=meta_eval,
+    currency_colors=currency_color_map,
+    date_pick=date_pick,
+    cfg=plot_cfg,
+    tau_max=30,
+    sigma_bar=0.006,
 )
-print(f"Saved approximate Sharpe ratio plot for {pd.to_datetime(date_pick_sr).date()} to: {FIGURES_DIR}")
+
+plot_LN_terms_for_one_curve(model, xb1, plot_cfg, tag=f"idx{i0}", tau_max=30)
+
+# Optional: SR plot (reference)
+_ = plot_SR_on_date_reference(
+    model=model,
+    X_tensor_cpu=X_tensor,
+    meta_df=meta_eval,
+    currency_colors=currency_color_map,
+    date_pick=date_pick,
+    cfg=plot_cfg,
+    tau_max=30,
+    sigma_bar=0.006,
+)
+
+print(f"Sharpe/LN diagnostics saved to: {FIGURES_DIR}")
