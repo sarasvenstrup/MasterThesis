@@ -1,22 +1,12 @@
 import torch
+from Code.utils.ode import (
+    d_tau_autograd_nodewise,
+    grad_and_trace_cov_hess_G,
+    paper_alpha_beta_gamma_trace,
+    solve_AB_rk38,
+)
 
-def _hessian_scalar_wrt_z(y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
-    if y.ndim != 1:
-        raise ValueError(f"y must be (B,), got {tuple(y.shape)}")
-    if z.ndim != 2:
-        raise ValueError(f"z must be (B,d), got {tuple(z.shape)}")
-
-    grads = torch.autograd.grad(y.sum(), z, create_graph=True)[0]  # (B,d)
-
-    rows = []
-    d = z.shape[1]
-    for j in range(d):
-        gj = grads[:, j]
-        Hj = torch.autograd.grad(gj.sum(), z, create_graph=True)[0]  # (B,d)
-        rows.append(Hj)
-
-    return torch.stack(rows, dim=1)  # (B,d,d)
-
+from Code.utils.ode import d_tau_fd_nodewise
 
 def sharpe_ratio_zcb_curve(
     model,
@@ -26,69 +16,79 @@ def sharpe_ratio_zcb_curve(
     vol_floor: float = 1e-6,
     debug: bool = False,
 ) -> torch.Tensor:
-
     model.eval()
 
     if z_in.ndim == 1:
         z_in = z_in.unsqueeze(0)
-    z = z_in.detach().clone().requires_grad_(True)  # (Bz,d)
-    Bz, d = z.shape
+    z = z_in.detach().clone()  # diagnostic; remove detach if you want grads
+    B, d = z.shape
 
-    tau = tau_grid.to(device=z.device, dtype=z.dtype).detach().clone().requires_grad_(True)  # (N,)
+    tau = tau_grid.detach().clone().to(device=z.device, dtype=z.dtype)
+    if tau.ndim != 1:
+        raise ValueError("tau_grid must be 1D (N,)")
+    if torch.any(tau[1:] <= tau[:-1]):
+        raise ValueError("tau_grid must be strictly increasing")
 
-    mu, L, r = model.params_from_z(z)  # mu (B,d), L (B,d,d), r (B,)
-    if r.ndim != 1:
-        raise ValueError(f"r must be (B,), got {tuple(r.shape)}")
-    if L.ndim != 3:
-        raise ValueError(f"L must be (B,d,d), got {tuple(L.shape)}")
+    # === same normalization as your pricer ===
+    u = tau / float(model.tau_max)        # (N,)
 
-    P = model.bond_price_from_z_grid(z, tau)  # (Bz,N)
+    # 1) G on grid
+    G_vals = model.G(z, u)                # (B,N)
 
-    # dP/dtau (diagonal of Jacobian wrt tau)
-    dP_dtau_cols = []
-    for j in range(tau.numel()):
-        g = torch.autograd.grad(P[:, j].sum(), tau, create_graph=True, retain_graph=True)[0]  # (N,)
-        dP_dtau_cols.append(g[j])
-    dP_dtau = torch.stack(dP_dtau_cols, dim=0).unsqueeze(0).repeat(Bz, 1)  # (Bz,N)
+    # 2) risk-neutral params
+    mu, L, r = model.params_from_z(z)     # mu (B,d), L (B,d,d), r (B,)
 
-    # grads and Hessians wrt z
-    gradP = []
-    HessP = []
-    for j in range(tau.numel()):
-        Pj = P[:, j]  # (Bz,)
-        g1 = torch.autograd.grad(Pj.sum(), z, create_graph=True, retain_graph=True)[0]  # (Bz,d)
-        gradP.append(g1)
-        H1 = _hessian_scalar_wrt_z(Pj, z)  # (Bz,d,d)
-        HessP.append(H1)
+    # 3) dG/dtau via JVP (already in your codebase)
+    dG_du = d_tau_autograd_nodewise(model.G, z, u)         # (B,N)
+    dG_dtau = dG_du / float(model.tau_max)                 # chain rule
 
-    gradP = torch.stack(gradP, dim=1)   # (Bz,N,d)
-    HessP = torch.stack(HessP, dim=1)   # (Bz,N,d,d)
+    # 4) grad_z G and Tr(Σ Hess G)
+    def G_single(z_single):
+        return model.G(z_single.unsqueeze(0), u).squeeze(0)  # (N,)
+    grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, L)  # (B,N,d), (B,N)
 
-    # ✅ SIGN FIX: PDE uses +∂τP
-    term_tau = +dP_dtau
-    term_mu = (gradP * mu.unsqueeze(1)).sum(dim=2)
+    # 5) alpha,beta,gamma + solve A,B
+    alpha, beta, gamma = paper_alpha_beta_gamma_trace(
+        G=G_vals,
+        dG_dtau=dG_dtau,
+        grad_z_G=grad_z_G,
+        trace_cov_hess=trace_cov_hess,
+        mu=mu,
+        sigma=L,
+        r_tilde=r,
+    )
+    A_vals, B_vals = solve_AB_rk38(tau, alpha, beta, gamma)   # (B,N), (B,N)
 
-    LT = L.transpose(1, 2)
-    term_trace_list = []
-    for j in range(tau.numel()):
-        Hj = HessP[:, j]
-        quad = LT @ (Hj @ L)
-        tr = torch.diagonal(quad, dim1=1, dim2=2).sum(dim=1)
-        term_trace_list.append(0.5 * tr)
-    term_trace = torch.stack(term_trace_list, dim=1)
+    # 6) logP and P
+    logP = A_vals - B_vals * G_vals
+    P = torch.exp(logP)
 
-    mu_P = term_tau + term_mu + term_trace
+    # === Ito pieces in logP-space ===
+    # Approximate derivatives wrt z, using that A,B are treated as tau-only in the PDE construction
+    grad_u = -B_vals.unsqueeze(2) * grad_z_G                  # (B,N,d)
+    trace_u = -B_vals * trace_cov_hess                        # (B,N)
 
-    vol_vec = torch.matmul(gradP, L)  # (Bz,N,d)
-    vol_price = torch.sqrt(torch.clamp((vol_vec * vol_vec).sum(dim=2), min=eps))  # (Bz,N)
+    # Need du/dtau. Since logP is on a grid, use finite diff nodewise (stable)
+    # (you already have d_tau_fd_nodewise; use it)
+    du_dtau = d_tau_fd_nodewise(logP, tau)                    # (B,N)
 
-    resid = mu_P - r.unsqueeze(1) * P
-    SR = resid / torch.clamp(vol_price, min=eps)
-    SR = torch.where(vol_price > vol_floor, SR, torch.nan)
+    gTmu = (grad_u * mu.unsqueeze(1)).sum(dim=2)              # (B,N)
+
+    # sigma_u = grad_u^T L
+    sigma_u = torch.matmul(grad_u, L)                         # (B,N,d)
+    vol_u = torch.sqrt(torch.clamp((sigma_u * sigma_u).sum(dim=2), min=eps))  # (B,N)
+
+    mu_u = -du_dtau + gTmu + 0.5 * trace_u                    # (B,N)
+    muP_over_P = mu_u + 0.5 * (vol_u ** 2)                    # (B,N)
+
+    # Sharpe (instantaneous)
+    SR = (muP_over_P - r.unsqueeze(1)) / torch.clamp(vol_u, min=eps)
+    SR = torch.where(vol_u > vol_floor, SR, torch.nan)
 
     if debug:
-        print("min vol_price:", float(vol_price.min()), "max vol_price:", float(vol_price.max()))
-        print("min |resid|:", float(resid.abs().min()), "max |resid|:", float(resid.abs().max()))
+        resid = (muP_over_P - r.unsqueeze(1))
+        print("max |muP/P - r|:", float(resid.abs().max()))
+        print("min/max vol_u:", float(vol_u.min()), float(vol_u.max()))
         print("SR first 5 taus:", SR[0, :5].detach().cpu().numpy())
 
     return SR.detach()
