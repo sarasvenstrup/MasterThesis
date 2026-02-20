@@ -1,28 +1,4 @@
-# Code/analysis/sharpe_ratio.py
-# ============================================================
-# Zero-coupon bond "Sharpe ratio" diagnostic (paper Figure 3 style)
-#
-# Computes instantaneous SR for rolling-maturity ZCB price P(z,tau):
-#   SR(z,tau) = (mu_P - r*P) / ||(∇_z P)^T L||
-#
-# where (under Q) the rolling-maturity drift is:
-#   mu_P = -∂_tau P + (∇P)^T mu + 1/2 Tr( L^T H(P) L )
-#
-# NOTES:
-# - This is an arbitrage diagnostic: if the no-arbitrage PDE holds,
-#   SR should be ~0 (up to numerical error).
-# - Requires your model to expose:
-#     model.bond_price_from_z(z, tau) -> P  (autograd-enabled)
-#     model.params_from_z(z) -> (mu, sigma_or_L, r_tilde)
-#   where sigma_or_L is either:
-#     (B,d)   diagonal vols  OR
-#     (B,d,d) diffusion matrix L
-# ============================================================
-
-from __future__ import annotations
-from typing import Dict, Union
 import torch
-
 
 def _hessian_scalar_wrt_z(y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
     """
@@ -48,191 +24,84 @@ def _hessian_scalar_wrt_z(y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
 
     return torch.stack(rows, dim=1)  # (B,d,d)
 
-
-def _row_norm(x: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
-    """
-    x: (B,d)
-    returns: (B,)
-    """
-    return torch.sqrt(torch.clamp((x * x).sum(dim=1), min=eps))
-
-
-def _as_batch_tau(tau_in: Union[torch.Tensor, float, int], B: int, ref: torch.Tensor) -> torch.Tensor:
-    """
-    Convert tau_in to a (B,) tensor on same device/dtype as ref, with *independent storage*.
-    (Avoids .expand() views that can cause confusing gradients.)
-    """
-    if not torch.is_tensor(tau_in):
-        tau_in = torch.tensor(tau_in, dtype=ref.dtype, device=ref.device)
-
-    if tau_in.ndim == 0:
-        # allocate real storage, not expand-view
-        tau = tau_in.detach().clone().repeat(B).requires_grad_(True)  # (B,)
-        return tau
-
-    if tau_in.ndim == 1:
-        if tau_in.numel() == 1:
-            tau = tau_in.detach().clone().repeat(B).requires_grad_(True)  # (B,)
-            return tau
-        if tau_in.numel() == B:
-            tau = tau_in.detach().clone().requires_grad_(True)  # (B,)
-            return tau
-
-        raise ValueError(f"tau_in shape {tuple(tau_in.shape)} incompatible with batch B={B}")
-
-    raise ValueError(f"tau_in must be scalar or (B,) or (1,), got {tuple(tau_in.shape)}")
-
-
-def sharpe_ratio_zcb(
+def sharpe_ratio_zcb_curve(
     model,
-    z_in: torch.Tensor,
-    tau_in: Union[torch.Tensor, float, int],
+    z_in: torch.Tensor,          # (Bz,d)
+    tau_grid: torch.Tensor,      # (N,)
     eps: float = 1e-12,
 ) -> torch.Tensor:
     """
-    Compute SR(z,tau) for each batch element.
-
-    Inputs
-    ------
-    model:
-        Must provide:
-          - bond_price_from_z(z, tau) -> P (B,) or (B,1), autograd-enabled
-          - params_from_z(z) -> (mu, sigma_or_L, r_tilde)
-              mu: (B,d)
-              sigma_or_L: (B,d) or (B,d,d)
-              r_tilde: (B,) or (B,1)
-    z_in: (B,d) tensor (or (d,))
-    tau_in: scalar tensor/float, or (B,) tensor
-
-    Returns
-    -------
-    SR: (B,) tensor (detached)
-    """
-    model.eval()
-
-    # --- z with grad ---
-    if z_in.ndim == 1:
-        z_in = z_in.unsqueeze(0)
-    if z_in.ndim != 2:
-        raise ValueError(f"z_in must be (B,d) or (d,), got {tuple(z_in.shape)}")
-
-    z = z_in.detach().clone().requires_grad_(True)  # (B,d)
-    B = z.shape[0]
-
-    # --- tau with grad (B,) ---
-    tau = _as_batch_tau(tau_in, B=B, ref=z)  # (B,)
-
-    # --- model params under Q ---
-    mu, sigma_or_L, r = model.params_from_z(z)
-
-    if r.ndim == 2 and r.shape[1] == 1:
-        r = r.squeeze(1)
-    if r.ndim != 1:
-        raise ValueError(f"r_tilde must be (B,) or (B,1), got {tuple(r.shape)}")
-
-    # interpret sigma_or_L
-    if sigma_or_L.ndim == 2:
-        L = torch.diag_embed(sigma_or_L)  # (B,d,d)
-    elif sigma_or_L.ndim == 3:
-        L = sigma_or_L  # (B,d,d)
-    else:
-        raise ValueError(f"sigma_or_L must be (B,d) or (B,d,d), got {tuple(sigma_or_L.shape)}")
-
-    # --- bond price P(z,tau) ---
-    P = model.bond_price_from_z(z, tau)
-    if P.ndim == 2 and P.shape[1] == 1:
-        P = P.squeeze(1)
-    if P.ndim != 1:
-        raise ValueError(f"P must be (B,) or (B,1), got {tuple(P.shape)}")
-
-    # --- derivatives ---
-    dP_dtau = torch.autograd.grad(P.sum(), tau, create_graph=True)[0]  # (B,)
-    gradP = torch.autograd.grad(P.sum(), z, create_graph=True)[0]      # (B,d)
-    H = _hessian_scalar_wrt_z(P, z)                                    # (B,d,d)
-
-    # --- drift of P for rolling maturity: -∂τP + (∇P)^T mu + 1/2 Tr(L^T H L) ---
-    term_tau = -dP_dtau
-    term_mu = (gradP * mu).sum(dim=1)
-
-    tmp = torch.matmul(H, L)                      # (B,d,d)
-    quad = torch.matmul(L.transpose(1, 2), tmp)   # (B,d,d)
-    term_trace = 0.5 * torch.diagonal(quad, dim1=1, dim2=2).sum(dim=1)
-
-    mu_P = term_tau + term_mu + term_trace  # (B,)
-
-    # --- vol vector of P: (∇P)^T L ---
-    vol_vec = torch.matmul(gradP.unsqueeze(1), L).squeeze(1)  # (B,d)
-    vol_price = _row_norm(vol_vec, eps=eps)                   # (B,)
-
-    # --- Sharpe ratio (PDE residual scaled by price-vol norm) ---
-    SR = (mu_P - r * P) / torch.clamp(vol_price, min=eps)
-    return SR.detach()
-
-
-def sharpe_ratio_zcb_debug(
-    model,
-    z_in: torch.Tensor,
-    tau_in: Union[torch.Tensor, float, int],
-    eps: float = 1e-12
-) -> Dict[str, torch.Tensor]:
-    """
-    Returns all intermediate terms for debugging.
+    Returns SR curves: (Bz, N) for each z and each tau in tau_grid.
+    Uses model.bond_price_from_z_grid(z, tau_grid) (NO interpolation).
     """
     model.eval()
 
     if z_in.ndim == 1:
         z_in = z_in.unsqueeze(0)
-    if z_in.ndim != 2:
-        raise ValueError(f"z_in must be (B,d) or (d,), got {tuple(z_in.shape)}")
+    z = z_in.detach().clone().requires_grad_(True)  # (Bz,d)
+    Bz, d = z.shape
 
-    z = z_in.detach().clone().requires_grad_(True)  # (B,d)
-    B = z.shape[0]
-
-    tau = _as_batch_tau(tau_in, B=B, ref=z)  # (B,)
+    tau = tau_grid.detach().clone().requires_grad_(True)  # (N,)
 
     mu, sigma_or_L, r = model.params_from_z(z)
     if r.ndim == 2 and r.shape[1] == 1:
         r = r.squeeze(1)
 
     if sigma_or_L.ndim == 2:
-        L = torch.diag_embed(sigma_or_L)
+        L = torch.diag_embed(sigma_or_L)   # (Bz,d,d)
     elif sigma_or_L.ndim == 3:
         L = sigma_or_L
     else:
         raise ValueError(f"sigma_or_L must be (B,d) or (B,d,d), got {tuple(sigma_or_L.shape)}")
 
-    P = model.bond_price_from_z(z, tau)
-    if P.ndim == 2 and P.shape[1] == 1:
-        P = P.squeeze(1)
+    # (Bz,N) no-interp prices
+    P = model.bond_price_from_z_grid(z, tau)  # (Bz,N)
 
-    dP_dtau = torch.autograd.grad(P.sum(), tau, create_graph=True)[0]  # (B,)
-    gradP = torch.autograd.grad(P.sum(), z, create_graph=True)[0]      # (B,d)
-    H = _hessian_scalar_wrt_z(P, z)                                    # (B,d,d)
+    # ∂τ P column-by-column (N is small ~117 so loop is fine)
+    dP_dtau_cols = []
+    for j in range(tau.numel()):
+        # derivative of sum over batch for that column w.r.t tau vector
+        g = torch.autograd.grad(P[:, j].sum(), tau, create_graph=True)[0]  # (N,)
+        dP_dtau_cols.append(g[j])
+    dP_dtau = torch.stack(dP_dtau_cols, dim=0)  # (N,)
+    dP_dtau = dP_dtau.unsqueeze(0).repeat(Bz, 1)  # (Bz,N)
 
-    term_tau = -dP_dtau
-    term_mu = (gradP * mu).sum(dim=1)
+    # ∇_z P for each maturity j (loop over N)
+    gradP = []
+    HessP = []
+    for j in range(tau.numel()):
+        Pj = P[:, j]  # (Bz,)
+        g1 = torch.autograd.grad(Pj.sum(), z, create_graph=True)[0]  # (Bz,d)
+        gradP.append(g1)
+        H1 = _hessian_scalar_wrt_z(Pj, z)  # (Bz,d,d)
+        HessP.append(H1)
 
-    tmp = torch.matmul(H, L)
-    quad = torch.matmul(L.transpose(1, 2), tmp)
-    term_trace = 0.5 * torch.diagonal(quad, dim1=1, dim2=2).sum(dim=1)
+    gradP = torch.stack(gradP, dim=1)   # (Bz,N,d)
+    HessP = torch.stack(HessP, dim=1)   # (Bz,N,d,d)
 
-    mu_P = term_tau + term_mu + term_trace
+    # term_tau = -∂τP
+    term_tau = -dP_dtau  # (Bz,N)
 
-    vol_vec = torch.matmul(gradP.unsqueeze(1), L).squeeze(1)  # (B,d)
-    vol_price = _row_norm(vol_vec, eps=eps)
+    # term_mu = (∇P)^T mu
+    term_mu = (gradP * mu.unsqueeze(1)).sum(dim=2)  # (Bz,N)
 
-    resid = mu_P - r * P
-    SR = resid / torch.clamp(vol_price, min=eps)
+    # term_trace = 1/2 Tr(L^T H L)
+    # compute per maturity
+    LT = L.transpose(1, 2)  # (Bz,d,d)
+    term_trace_list = []
+    for j in range(tau.numel()):
+        Hj = HessP[:, j]                 # (Bz,d,d)
+        tmp = torch.matmul(Hj, L)        # (Bz,d,d)
+        quad = torch.matmul(LT, tmp)     # (Bz,d,d)
+        tr = torch.diagonal(quad, dim1=1, dim2=2).sum(dim=1)  # (Bz,)
+        term_trace_list.append(0.5 * tr)
+    term_trace = torch.stack(term_trace_list, dim=1)  # (Bz,N)
 
-    return {
-        "P": P.detach(),
-        "r": r.detach(),
-        "rP": (r * P).detach(),
-        "term_tau": term_tau.detach(),
-        "term_mu": term_mu.detach(),
-        "term_trace": term_trace.detach(),
-        "mu_P": mu_P.detach(),
-        "resid": resid.detach(),
-        "vol_price": vol_price.detach(),
-        "SR": SR.detach(),
-    }
+    mu_P = term_tau + term_mu + term_trace  # (Bz,N)
+
+    # vol of P: (∇P)^T L -> (Bz,N,d) then norm over d
+    vol_vec = torch.matmul(gradP, L)  # (Bz,N,d)
+    vol_price = torch.sqrt(torch.clamp((vol_vec * vol_vec).sum(dim=2), min=eps))  # (Bz,N)
+
+    SR = (mu_P - r.unsqueeze(1) * P) / torch.clamp(vol_price, min=eps)  # (Bz,N)
+    return SR.detach()

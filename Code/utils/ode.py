@@ -139,7 +139,7 @@ def paper_alpha_beta_gamma_trace(
 
     return alpha, beta, gamma
 
-def solve_AB_rk38(
+def solve_AB_rk38_old(
     tau: torch.Tensor,
     alpha: torch.Tensor,
     beta: torch.Tensor,
@@ -215,4 +215,84 @@ def solve_AB_rk38(
 
     A = torch.cat(A_list, dim=1)  # (batch, N)
     B = torch.cat(B_list, dim=1)  # (batch, N)
+    return A, B
+
+def solve_AB_rk38(
+    tau: torch.Tensor,
+    alpha: torch.Tensor,
+    beta: torch.Tensor,
+    gamma: torch.Tensor,
+):
+    """
+    Solve for A(tau), B(tau) on an arbitrary increasing tau grid.
+
+    B' = alpha(t)*B + beta(t),   B(tau[0])=0
+    A' = gamma(t)*B^2,          A(tau[0])=0
+
+    Uses RK4 3/8 rule on each interval [tau_i, tau_{i+1}],
+    with *linear interpolation* of (alpha,beta,gamma) inside the interval.
+
+    tau:   (N,)
+    alpha,beta,gamma: (B, N)
+    returns: A,B each (B, N)
+    """
+    if tau.ndim != 1:
+        raise ValueError("tau must be 1D (N,)")
+    if alpha.shape != beta.shape or alpha.shape != gamma.shape:
+        raise ValueError("alpha,beta,gamma must have same shape (B,N)")
+    if alpha.shape[1] != tau.numel():
+        raise ValueError("alpha.shape[1] must equal len(tau)")
+
+    # align tau with coeff device/dtype
+    tau = tau.to(device=alpha.device, dtype=alpha.dtype)
+
+    Bsz, N = alpha.shape
+    dt = tau[1:] - tau[:-1]
+    if torch.any(dt <= 0):
+        raise ValueError("tau must be strictly increasing")
+
+    # constants on correct device/dtype
+    th0  = tau.new_tensor(0.0)
+    th13 = tau.new_tensor(1.0 / 3.0)
+    th23 = tau.new_tensor(2.0 / 3.0)
+    th1  = tau.new_tensor(1.0)
+
+    def coeff(i: int, th: torch.Tensor):
+        # th is scalar tensor on correct device/dtype
+        a0 = alpha[:, i:i+1]; a1 = alpha[:, i+1:i+2]
+        b0 = beta[:,  i:i+1]; b1 = beta[:,  i+1:i+2]
+        g0 = gamma[:, i:i+1]; g1 = gamma[:, i+1:i+2]
+        a = a0 + th * (a1 - a0)
+        b = b0 + th * (b1 - b0)
+        g = g0 + th * (g1 - g0)
+        return a, b, g
+
+    def rhs(i: int, th: torch.Tensor, Bcur: torch.Tensor):
+        a, b, g = coeff(i, th)
+        dB = a * Bcur + b
+        dA = g * (Bcur ** 2)
+        return dA, dB
+
+    Acur = torch.zeros(Bsz, 1, device=alpha.device, dtype=alpha.dtype)
+    Bcur = torch.zeros(Bsz, 1, device=alpha.device, dtype=alpha.dtype)
+
+    A_list = [Acur]
+    B_list = [Bcur]
+
+    for i in range(N - 1):
+        h = dt[i]  # scalar tensor
+
+        k1A, k1B = rhs(i, th0,  Bcur)
+        k2A, k2B = rhs(i, th13, Bcur + (h/3.0) * k1B)
+        k3A, k3B = rhs(i, th23, Bcur + (2*h/3.0) * k2B)
+        k4A, k4B = rhs(i, th1,  Bcur + h * (-k1B + k2B + k3B))
+
+        Acur = Acur + (h/8.0) * (k1A + 3.0*k2A + 3.0*k3A + k4A)
+        Bcur = Bcur + (h/8.0) * (k1B + 3.0*k2B + 3.0*k3B + k4B)
+
+        A_list.append(Acur)
+        B_list.append(Bcur)
+
+    A = torch.cat(A_list, dim=1)
+    B = torch.cat(B_list, dim=1)
     return A, B

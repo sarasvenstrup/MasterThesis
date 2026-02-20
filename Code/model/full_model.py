@@ -91,56 +91,46 @@ class FullModel(nn.Module):
         self.H = HSigma(latent_dim, h_hidden, hr_bias)
         self.R = RShort(latent_dim, r_hidden, hr_bias)
 
-    def params_from_z(self, z: torch.Tensor):
+    def bond_price_from_z_grid(self, z: torch.Tensor, tau_grid: torch.Tensor) -> torch.Tensor:
         """
-        Return (mu(z), L(z), r_tilde(z)) without going through the encoder.
-        """
-        if z.dim() == 1:
-            z = z.unsqueeze(0)
+        No-interp ZCB curve: returns P(z, tau_grid) for a shared tau_grid (N,).
+        tau_grid in YEARS, must be 1D increasing, within [0, tau_max].
 
-        mu = self.K(z)                 # (B,d)
-        sigmas, rhos = self.H(z)       # (B,d), (B, d(d-1)/2)
-        r_tilde = self.R(z)            # (B,1) or (B,)
-
-        L = L_from_sigmas_rhos(sigmas, rhos)  # (B,d,d)
-        return mu, L, r_tilde
-
-
-    def bond_price_from_z(self, z: torch.Tensor, tau_query: torch.Tensor) -> torch.Tensor:
-        """
-        Return P(z, tau_query) where tau_query is in YEARS.
-
-        tau_query can be:
-          - scalar tensor ()  -> returns (B,)
-          - (B,)              -> returns (B,)
-          - (N,)              -> returns (B,N)
-
-        This uses the same ODE/pricing as forward() and then interpolates over
-        the integer grid 0..tau_max. Autograd flows through z and tau_query.
+        Returns: (B, N)
+        Autograd flows through z and tau_grid.
         """
         if z.dim() == 1:
             z = z.unsqueeze(0)
+        if tau_grid.ndim != 1:
+            raise ValueError("tau_grid must be 1D (N,)")
 
         B = z.shape[0]
-        device = z.device
-        dtype = z.dtype
+        device, dtype = z.device, z.dtype
 
-        # tau grid 0..tau_max and normalized [0,1]
-        tau = torch.arange(0, self.tau_max + 1, device=device, dtype=dtype)   # (T,)
-        tau_in = tau / float(self.tau_max)                                    # (T,)
+        tau = tau_grid.to(device=device, dtype=dtype)
+        if torch.any(tau < 0) or torch.any(tau > float(self.tau_max)):
+            raise ValueError(f"tau_grid must be within [0, {self.tau_max}]")
+        if torch.any(tau[1:] <= tau[:-1]):
+            raise ValueError("tau_grid must be strictly increasing")
 
-        # same as forward(): compute G, mu, L, r, then A,B, then P_grid
-        G_vals = self.G(z, tau_in)  # (B,T)
+        # normalized u in [0,1]
+        u = tau / float(self.tau_max)  # (N,)
 
-        mu, L, r_tilde = self.params_from_z(z)
+        # --- same pipeline as forward(), but on this u-grid ---
+        G_vals = self.G(z, u)  # (B,N)
+
+        mu = self.K(z)  # (B,d)
+        sigmas, rhos = self.H(z)  # (B,d), (B, d(d-1)/2)
+        r_tilde = self.R(z)  # (B,1) or (B,)
+        sigma = L_from_sigmas_rhos(sigmas, rhos)  # (B,d,d)
 
         def G_single(z_single):
-            return self.G(z_single.unsqueeze(0), tau_in).squeeze(0)  # (T,)
+            return self.G(z_single.unsqueeze(0), u).squeeze(0)  # (N,)
 
-        dG_du = d_tau_autograd_nodewise(self.G, z, tau_in)
-        dG_dtau = dG_du / float(self.tau_max)
+        dG_du = d_tau_autograd_nodewise(self.G, z, u)  # exact ∂G/∂u, (B,N)
+        dG_dtau = dG_du / float(self.tau_max)  # chain rule
 
-        grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, L)
+        grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, sigma)
 
         alpha, beta, gamma = paper_alpha_beta_gamma_trace(
             G=G_vals,
@@ -148,31 +138,15 @@ class FullModel(nn.Module):
             grad_z_G=grad_z_G,
             trace_cov_hess=trace_cov_hess,
             mu=mu,
-            sigma=L,
+            sigma=sigma,
             r_tilde=r_tilde,
         )
 
-        A_vals, B_vals = solve_AB_rk38(tau, alpha, beta, gamma)
+        # IMPORTANT: solve on the same tau grid (works with your new RK38)
+        A_vals, B_vals = solve_AB_rk38(tau, alpha, beta, gamma)  # (B,N), (B,N)
 
-        P_grid = torch.exp(A_vals - B_vals * G_vals)  # (B,T)
-
-        # --- handle tau_query shapes ---
-        if not torch.is_tensor(tau_query):
-            raise TypeError("tau_query must be a torch.Tensor (so autograd can compute ∂τP).")
-
-        tq = tau_query.to(device=device, dtype=dtype)
-
-        if tq.ndim == 0:
-            tqB = tq.expand(B)  # (B,)
-            return _interp1d_batch(P_grid, tqB, self.tau_max)
-
-        if tq.ndim == 1:
-            if tq.shape[0] == B:
-                return _interp1d_batch(P_grid, tq, self.tau_max)  # (B,)
-            else:
-                return _interp1d_matrix(P_grid, tq, self.tau_max)  # (B,N)
-
-        raise ValueError(f"tau_query must be scalar or 1D, got {tuple(tq.shape)}")
+        P = torch.exp(A_vals - B_vals * G_vals)  # (B,N)
+        return P
 
     def forward(self, S_in):
         # ensure batch
@@ -182,7 +156,6 @@ class FullModel(nn.Module):
             S_in = S_in.unsqueeze(0)
             squeeze_back = True
 
-        B = S_in.shape[0]
         device = S_in.device
         dtype = S_in.dtype
 
