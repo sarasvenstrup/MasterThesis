@@ -13,13 +13,13 @@ def _hessian_scalar_wrt_z(y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
     if z.ndim != 2:
         raise ValueError(f"z must be (B,d), got {tuple(z.shape)}")
 
-    grads = torch.autograd.grad(y.sum(), z, create_graph=True)[0]  # (B,d)
+    grads = torch.autograd.grad(y.sum(), z, create_graph=True, retain_graph=True)[0]  # (B,d)
 
     rows = []
     d = z.shape[1]
     for j in range(d):
         gj = grads[:, j]  # (B,)
-        Hj = torch.autograd.grad(gj.sum(), z, create_graph=True)[0]  # (B,d)
+        Hj = torch.autograd.grad(gj.sum(), z, create_graph=True, retain_graph=True)[0]  # (B,d)
         rows.append(Hj)
 
     return torch.stack(rows, dim=1)  # (B,d,d)
@@ -49,7 +49,7 @@ def sharpe_ratio_zcb_curve(
         r = r.squeeze(1)
 
     if r.ndim != 1:
-        raise ValueError(...)
+        raise ValueError(f"r must be (B,), got {tuple(r.shape)}")
 
     if sigma_or_L.ndim == 2:
         L = torch.diag_embed(sigma_or_L)   # (Bz,d,d)
@@ -65,7 +65,7 @@ def sharpe_ratio_zcb_curve(
     dP_dtau_cols = []
     for j in range(tau.numel()):
         # derivative of sum over batch for that column w.r.t tau vector
-        g = torch.autograd.grad(P[:, j].sum(), tau, create_graph=True)[0]  # (N,)
+        g = torch.autograd.grad(P[:, j].sum(), tau, create_graph=True, retain_graph=True)[0]  # (N,)
         dP_dtau_cols.append(g[j])
     dP_dtau = torch.stack(dP_dtau_cols, dim=0)  # (N,)
     dP_dtau = dP_dtau.unsqueeze(0).repeat(Bz, 1)  # (Bz,N)
@@ -75,7 +75,7 @@ def sharpe_ratio_zcb_curve(
     HessP = []
     for j in range(tau.numel()):
         Pj = P[:, j]  # (Bz,)
-        g1 = torch.autograd.grad(Pj.sum(), z, create_graph=True)[0]  # (Bz,d)
+        g1 = torch.autograd.grad(Pj.sum(), z, create_graph=True, retain_graph=True)[0]  # (Bz,d)
         gradP.append(g1)
         H1 = _hessian_scalar_wrt_z(Pj, z)  # (Bz,d,d)
         HessP.append(H1)

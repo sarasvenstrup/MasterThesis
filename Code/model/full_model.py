@@ -58,6 +58,24 @@ class FullModel(nn.Module):
         self.H = HSigma(latent_dim, h_hidden, hr_bias)
         self.R = RShort(latent_dim, r_hidden, hr_bias)
 
+    def params_from_z(self, z: torch.Tensor):
+        """
+        Returns (mu, L, r) needed by Sharpe ratio code.
+        mu: (B,d)
+        L:  (B,d,d)   (Cholesky diffusion)
+        r:  (B,)      short rate mapping
+        """
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
+
+        mu = self.K(z)  # (B,d)
+        sigmas, rhos = self.H(z)  # (B,d), (B, d(d-1)/2)
+        L = L_from_sigmas_rhos(sigmas, rhos)  # (B,d,d)
+        r = self.R(z)  # (B,1) or (B,)
+        if r.ndim == 2 and r.shape[1] == 1:
+            r = r.squeeze(1)
+        return mu, L, r
+
     def bond_price_from_z_grid(self, z: torch.Tensor, tau_grid: torch.Tensor) -> torch.Tensor:
         """
         No-interp ZCB curve: returns P(z, tau_grid) for a shared tau_grid (N,).
