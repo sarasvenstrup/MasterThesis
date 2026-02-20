@@ -110,9 +110,8 @@ def LP_and_SR_approx_from_model_old(
 
     return P_tau, LP, SR_approx
 
-import torch
 
-def LP_and_SR_approx_from_model(
+def LP_and_SR_approx_from_model_fast(
     model,
     S_in,                    # (B,8)
     tau_grid,                # (M,) integer maturities in years (1..30)
@@ -195,6 +194,92 @@ def LP_and_SR_approx_from_model(
     LP = -dP_dtau - (r_tilde * P_tau) + drift_term + trace_term
 
     # 6) Andreasen SR approx
+    tau_safe = tau_grid.clamp_min(1e-6).view(1, -1)
+    SR = LP / (tau_safe * P_tau * sigma_bar)
+
+    return P_tau, LP, SR
+
+
+def LP_and_SR_approx_from_model(
+    model,
+    S_in,                    # (B,8)
+    tau_grid,                # (M,) integer maturities in years (1..30)
+    sigma_bar=0.006,
+):
+    """
+    Fast SR diagnostic using Hessian-vector products (HVP), no explicit Hessian.
+
+    - Detaches ODE part: A(tau), B(tau) treated as constants
+    - Keeps grad only through encoder + G(z,tau) -> P(z,tau)
+    - Computes 0.5 * Tr(Cov * Hess P) via sum_j v_j^T Hess(P) v_j, where v_j are columns of sigma
+    """
+    device = S_in.device
+    dtype  = S_in.dtype
+    tau_grid = tau_grid.to(device=device, dtype=dtype)
+    idx = tau_grid.long()
+
+    # ---- 1) Get A,B and (mu, sigma, r) cheaply (no graph)
+    with torch.no_grad():
+        out = model(S_in)
+        A_vals = out[3]                      # (B, tau_max+1)
+        B_vals = out[4]                      # (B, tau_max+1)
+        mu     = out[6]                      # (B,d)
+        sigma  = out[7]                      # (B,d,d)  (Cholesky L in your code)
+        r_tilde= out[8].view(-1, 1)          # (B,1)
+
+        A_tau = A_vals[:, idx]               # (B,M)
+        B_tau = B_vals[:, idx]               # (B,M)
+
+    # ---- 2) Build small graph: z -> G -> P
+    z = model.encoder(S_in).requires_grad_(True)  # (B,d)
+
+    tau_max = float(model.tau_max)
+    u = (tau_grid / tau_max).to(device=device, dtype=dtype)  # (M,)
+    G_tau = model.G(z, u)                                     # (B,M)
+
+    P_tau = torch.exp(A_tau - B_tau * G_tau)                  # (B,M)
+
+    Bsz, M = P_tau.shape
+    d = z.shape[1]
+
+    # ---- 3) dP/dtau via finite differences on annual grid
+    dP_dtau = torch.zeros_like(P_tau)
+    dP_dtau[:, 0]  = (P_tau[:, 1] - P_tau[:, 0])
+    dP_dtau[:, -1] = (P_tau[:, -1] - P_tau[:, -2])
+    if M > 2:
+        dP_dtau[:, 1:-1] = 0.5 * (P_tau[:, 2:] - P_tau[:, :-2])
+
+    # ---- 4) grad term and trace term via HVP
+    # drift_term = gradP · mu
+    # trace_term = 0.5 * sum_j v_j^T Hess(P) v_j  with v_j = sigma[:, :, j]
+    drift_term = torch.zeros(Bsz, M, device=device, dtype=dtype)
+    trace_term = torch.zeros(Bsz, M, device=device, dtype=dtype)
+
+    # columns of sigma: (B,d,d) -> list of (B,d)
+    sigma_cols = [sigma[:, :, j] for j in range(d)]
+
+    for m in range(M):
+        # We need gradients per-sample, so do sum but keep batch structure via grad outputs
+        Pm = P_tau[:, m]              # (B,)
+        Pm_sum = Pm.sum()
+
+        g = torch.autograd.grad(Pm_sum, z, create_graph=True)[0]  # (B,d)
+
+        drift_term[:, m] = (g * mu).sum(dim=1)
+
+        # HVP trick: for each direction v, compute v^T H v as grad(g·v) · v
+        # scalar = (g * v).sum() ; grad(scalar, z) gives (B,d); dot with v per sample
+        hvp_sum = torch.zeros(Bsz, device=device, dtype=dtype)
+        for v in sigma_cols:
+            gv = (g * v).sum()  # scalar (sums over batch and dims)
+            Hg_v = torch.autograd.grad(gv, z, create_graph=True)[0]  # (B,d)
+            hvp_sum = hvp_sum + (Hg_v * v).sum(dim=1)  # per-sample v^T H v
+
+        trace_term[:, m] = 0.5 * hvp_sum
+
+    # ---- 5) LP residual and SR
+    LP = -dP_dtau - (r_tilde * P_tau) + drift_term + trace_term
+
     tau_safe = tau_grid.clamp_min(1e-6).view(1, -1)
     SR = LP / (tau_safe * P_tau * sigma_bar)
 
