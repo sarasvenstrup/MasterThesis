@@ -28,19 +28,6 @@ class DecoderG(nn.Module):
         B, d = z.shape
         N = tau.numel()
 
-        # if z.dim() == 1:
-        #    z = z.unsqueeze(0)
-
-        # if not torch.is_tensor(tau):
-        #    tau = torch.tensor(tau, dtype=z.dtype, device=z.device)
-
-        # if tau.dim() == 0:
-        #    tau = tau.expand(z.shape[0], 1)
-        # elif tau.dim() == 1:
-        #    tau = tau.unsqueeze(1)
-
-        # Expand tau across batch
-        # tau_scaled = tau / self.tau_max   # normalize to [0,1]
         tau_in = tau.unsqueeze(0).expand(B, -1)
 
         z_exp = z.unsqueeze(1).expand(-1, N, -1)  # (batch,N,d)
