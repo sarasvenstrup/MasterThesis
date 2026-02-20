@@ -1,8 +1,3 @@
-# %pip install torch
-# dbutils.library.restartPython()
-
-# DO NOT RUN THIS FILE
-
 import torch
 import torch.nn as nn
 
