@@ -16,9 +16,9 @@
 % *********************************************************
 \documentclass[
   paper=A4,
-  12pt,
+  11pt,
   twoside=true,
-  openright,
+  %openright,
   parskip=full,
   chapterprefix=true,
   headings=normal,
@@ -50,7 +50,32 @@
 % Line spacing
 % --------------------------------------------------
 \usepackage{setspace}
-\onehalfspacing
+%\onehalfspacing
+%\singlespacing
+\setstretch{1.2}
+
+
+
+
+% --------------------------------------------------
+% Neural Network Visualization
+% --------------------------------------------------
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usetikzlibrary{decorations.pathreplacing}
+\usetikzlibrary{calc}
+
+
+
+% --------------------------------------------------
+% Links
+% --------------------------------------------------
+\usepackage{hyperref}
+
+% --------------------------------------------------
+% Text Boxes
+% --------------------------------------------------
+\usepackage{tcolorbox}
 
 % *********************************************************
 % THESIS METADATA
@@ -182,7 +207,15 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{caption}
-\captionsetup{font=small, labelfont=bf}
+\captionsetup{
+    justification=raggedright,
+    singlelinecheck=false,
+    format=hang,
+    font=footnotesize,
+    labelfont=bf
+}
+\usepackage{float}
+
 
 % *********************************************************
 % BIBLIOGRAPHY
@@ -287,24 +320,30 @@ Just write text... for now.
 \pagenumbering{arabic}
 \setcounter{page}{1}
 
-\chapter{Introduction}
-\input{Sections/Introduction}
+
+\input{ThesisLayout/mainmatter/introduction}
+
+\input{ThesisLayout/mainmatter/RolfsMethod}
+
+\input{ThesisLayout/mainmatter/methods}
+
+\input{ThesisLayout/mainmatter/rationale}
+
+\input{ThesisLayout/mainmatter/methods}
 
 
-\chapter{Literature Review}
-Text.
+\input{ThesisLayout/mainmatter/results}
 
-\chapter{Methodology}
-Text.
+\input{ThesisLayout/mainmatter/discussion}
 
-\chapter{Results}
-Text.
+\input{ThesisLayout/mainmatter/perspectives}
 
-\chapter{Discussion}
-Text.
+\input{ThesisLayout/mainmatter/conclusion}
 
-\chapter{Conclusion}
-Text.
+
+
+
+
 
 % --------------------------
 % BIBLIOGRAPHY
