@@ -1,0 +1,184 @@
+\chapter{Affine-Inspired Arbitrage-Free Encoder--Decoder Framework}
+
+
+In this chapter, we present the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}. The model is structured as a neural network architecture consisting of an encoder and a decoder. Its objective is to reconstruct par swap rate curves while enforcing the risk-neutral no-arbitrage condition by construction.\\
+\\
+The encoder maps observed swap rates to a low-dimensional latent state representation. The decoder transforms this latent state into a continuous zero-coupon bond price curve consistent with arbitrage-free term structure dynamics. \textcolor{red}{Since par swap rates are deterministic functions of zero-coupon bond prices, reconstructed swap rates inherit this arbitrage consistency}.
+Figure~\ref{fig:rolf_architecture} provides a graphical overview of the architecture. 
+
+\input{ThesisLayout/figures/Fig_RolfsMethodVisual}
+
+We now describe the individual model components in more detail, beginning with the linear encoder.
+
+\section{Linear Encoding}
+
+We consider observed par swap rates at time $t$ on the maturity grid
+\[
+M=\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\}.
+\]
+These rates form the input vector
+\[
+\mathbf{S}_t=(S_1(t),\dots,S_8(t))^\top \in \mathbb{R}^8.
+\]
+Following \citet{MatinWanPoulsen2025}, \textcolor{red}{the baseline specification} uses a latent factor representation of dimension $l=2$. To allow for later extension, however, we formulate the model using a general latent dimension $l$. The encoder then performs a linear transformation of the observed swap rates,
+\[
+z_t = A_1 \mathbf{S}_t,
+\]
+where $A_1 \in \mathbb{R}^{l \times 8}$ and $z_t=(z_1(t),...,z_l(t))^\top \in \mathbb{R}^l$.
+
+
+
+
+
+
+
+
+
+\section{Swap Rate Reconstruction from Bond Prices}
+
+The decoder generates zero-coupon bond prices $P(z_t,\tau)$ across the annually spaced maturity grid
+\[
+\tau \in \{1\text{Y},2\text{Y},\dots,30\text{Y}\}.
+\]
+
+
+
+Ignoring basis spreads between discounting and forwarding curves, the reconstructed swap rate at maturity $\tau$ is given by
+\begin{equation}
+\tilde{S}(z_t,\tau)
+=
+\frac{1-P(z_t,\tau)}
+{\sum_{\tau' \leq \tau} P(z_t,\tau')}.
+\label{estimatedswaprates}
+\end{equation}
+
+Here, the sum runs over maturities on the specified grid less than or equal to $\tau$.
+
+In practice, equation~\eqref{estimatedswaprates} does not hold exactly due to basis spreads between discount and forward curves. However, for modeling purposes we assume perfect consistency between discount factors and swap rates.
+
+Since swap rates are linear functionals of discount factors, arbitrage consistency must be imposed at the level of bond prices. The decoder is therefore constructed to generate bond prices that satisfy the risk-neutral no-arbitrage condition exactly.
+
+
+\section{Affine Bond Prices}
+
+Having the input and output settled, we now focus more on whats going on with the decoder. As said before it generates the ZCB-prices, however if we must be more precise, and as visualized in \ref{fig:rolf_architecture} it is precise to say that it actually generates $\mathcal{G}(,)$ and thus indirectly generates the ZCB-prices.
+
+
+It is here that \cite{MatinWanPoulsen2025} choose to assume that zero coupon bond prices have an affine-like structure, hereof the name of the title makes sense. So in the model, the time-$t$ zero-coupon bond price with time-to-maturity $\tau$ is written as
+\[
+P(z_t,\tau)
+=
+\exp\!\Big(A_{z_t}(\tau)-B_{z_t}(\tau)\,G(z_t,\tau)\Big),
+\]
+where $z_t$ is the latent state for fixed $t$, $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ are scalar functions of $\tau$,
+and $\mathcal{G}(z_t,\tau)$ is a scalar function that is learned.
+
+Simultaneously, to the model learning $\mathcal{G}(z_t,\tau)$ with a neural network G, the model also learns the model parameters that are needed for evaluqaitng A and B that are needed in order to compute the price.
+
+list the different networks
+
+\begin{equation}
+    \mathcal{K}: 
+    \begin{pmatrix}
+    z_1(t)\\
+    \vdots\\
+    z_l(t)    
+    \end{pmatrix}\longrightarrow 
+    \begin{pmatrix}
+    \mu_1(t)\\
+    \vdots\\
+    \mu_l(t)    
+    \end{pmatrix}=\textbf{M}
+    \begin{pmatrix}
+    z_1(t)\\
+    \vdots\\
+    z_l(t)    
+    \end{pmatrix}+\textbf{N}
+\end{equation}
+
+
+\begin{equation}
+    \mathcal{H}: 
+    \begin{pmatrix}
+    z_1(t)\\
+    \vdots\\
+    z_l(t)    
+    \end{pmatrix}\longrightarrow 
+    \begin{pmatrix}
+    \log(\sigma_{11})\\
+    \vdots\\
+    \log(\sigma_{ll})\\
+    \text{atanh}\rho_{11}\\
+    \vdots\\
+    \text{atanh}(\rho_{ll})
+    \end{pmatrix}
+\end{equation}
+
+
+\begin{equation}
+    \mathcal{R}: 
+    \begin{pmatrix}
+    z_1(t)\\
+    \vdots\\
+    z_l(t)    
+    \end{pmatrix}\longrightarrow 
+    \tilde{r}
+\end{equation}
+
+where the activation function in the latent layer is the centered soft step function 
+$$\psi(x)=\frac{1}{1+e^{-x}}-\frac{1}{2}$$
+
+
+To sum up the decoder transforms the latent factors produced by the encoder into arbitrage-free zero-coupon bond prices by combining neural network components with a no-arbitrage ODE system, and then converts these prices into swap rates.
+
+
+
+The decoder maps the latent factors $z_t$ back into the space of swap rates. It does so by first generating a continuous ZCB price curve. A neural network $\mathcal{G}(z_t,\tau)$ produces a smooth functional dependence on maturity $\tau$, and this function enters a system of coupled ODEs derived from the no-arbitrage condition. Solve thins ODE system yields the functions $A(\tau)$ and $B(\tau)$, from which ZCB prices are obtained. These prices are finally converted into model-implied swap rates using \ref{estimatedswaprates}. In this way, the decoder ensures that the reconstructed swap rates remain arbitrage-free by construction.
+
+
+
+
+% ============================== RETTET TIL OG MED HER =======================================
+% ============================================================================================
+
+
+
+
+\newpage
+
+\section{Motivation for Arbitrage-Free Decoding}
+
+\textcolor{red}{THIS IS THE ODE PART}
+
+Under the risk-neutral measure $\mathbb{Q}$, zero-coupon bond prices satisfy
+\[
+P(t,t+\tau)
+=
+\mathbb{E}_t^{\mathbb{Q}}
+\left[
+e^{-\int_t^{t+\tau} r(u)\,du}
+\right],
+\]
+where $r(t)$ denotes the short rate.
+
+Absence of arbitrage implies that the discounted bond price process must be a martingale under $\mathbb{Q}$. This condition yields a partial differential equation governing bond prices.
+
+To ensure that the generated bond price curve satisfies the no-arbitrage condition by construction, we parameterize bond prices in an affine-inspired form and solve a system of ordinary differential equations for each encoded latent state $z_t$.
+
+The following section derives this arbitrage-free structure in detail.
+
+
+
+
+
+
+With the method setup, we continue with the implementation of the method.
+
+\textcolor{red}{insert list of what we do in order to implement it}
+
+\begin{itemize}
+    \item pytorch
+    \item what do we do to compute the gradients
+    \item how do we train the model
+    \item how do 
+\end{itemize}
