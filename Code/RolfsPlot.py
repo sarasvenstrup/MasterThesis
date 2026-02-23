@@ -587,7 +587,7 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 #    + L (Cholesky) plots + printed matrices
 # ============================================================
 
-from Code.utils.sharpe_ratio import SR_andreasen_reference
+from Code.utils.sharpe_ratio import SR_andreasen_reference_noFD
 
 
 # ---------- helpers ----------
@@ -831,7 +831,7 @@ def plot_LN_on_date_reference(
     xb = X_tensor_cpu[idxs].to(next(model.parameters()).device)
 
     model.eval()
-    N_tau, LN, SR, tau = SR_andreasen_reference(model, xb, tau_max=tau_max, sigma_bar=sigma_bar)
+    N_tau, LN, SR, tau = SR_andreasen_reference_noFD(model, xb, tau_max=tau_max, sigma_bar=sigma_bar)
 
     tau_np = tau.detach().cpu().numpy()
     LN_np  = LN.detach().cpu().numpy()
@@ -864,7 +864,7 @@ def plot_SR_on_date_reference(
     xb = X_tensor_cpu[idxs].to(next(model.parameters()).device)
 
     model.eval()
-    N_tau, LN, SR, tau = SR_andreasen_reference(model, xb, tau_max=tau_max, sigma_bar=sigma_bar)
+    N_tau, LN, SR, tau = SR_andreasen_reference_noFD(model, xb, tau_max=tau_max, sigma_bar=sigma_bar)
 
     tau_np = tau.detach().cpu().numpy()
     SR_np  = SR.detach().cpu().numpy()
@@ -907,7 +907,7 @@ print("\nSingle curve index used:", i0)
 
 # 3) Quick reference numbers (must NOT be under no_grad)
 model.eval()
-N1, LN1, SR1, tau1 = SR_andreasen_reference(model, xb1, tau_max=30, sigma_bar=0.006)
+N1, LN1, SR1, tau1 = SR_andreasen_reference_noFD(model, xb1, tau_max=30, sigma_bar=0.006)
 print("SR min/max:", float(SR1.min().detach().cpu()), float(SR1.max().detach().cpu()))
 print("N(30Y):",  float(N1[0, -1].detach().cpu()))
 print("LN(30Y):", float(LN1[0, -1].detach().cpu()))
