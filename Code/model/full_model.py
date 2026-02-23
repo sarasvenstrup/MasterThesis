@@ -20,8 +20,10 @@ from Code.utils.ode import (
     d_tau_autograd_nodewise,
     grad_and_trace_cov_hess_G,
     paper_alpha_beta_gamma_trace,
-    solve_AB_rk38,
+    solve_AB
 )
+
+from Code.utils.helpers import check_monotonicity, instantaneous_forward
 
 class FullModel(nn.Module):
 
@@ -30,13 +32,13 @@ class FullModel(nn.Module):
             input_dim=8,
             latent_dim=2,
             tau_max=30,
-            B_scale=10.0,
             tenors=None,
             g_hidden=10,
             h_hidden=4,
             r_hidden=4,
             g_bias=True,
-            hr_bias=False
+            hr_bias=False,
+            ab_solver = "chen"
     ):
 
         super().__init__()
@@ -45,8 +47,9 @@ class FullModel(nn.Module):
         self.input_dim = input_dim
         self.latent_dim = latent_dim
 
+        self.ab_solver = ab_solver
+
         self.tau_max = tau_max  # build discount curve 1..tau_max
-        self.B_scale = B_scale  # c in B(tau)=tau/c
 
         # observed tenors
         self.tenors = tenors if tenors is not None else [1, 2, 3, 5, 10, 15, 20, 30]
@@ -58,7 +61,7 @@ class FullModel(nn.Module):
         self.H = HSigma(latent_dim, h_hidden, hr_bias)
         self.R = RShort(latent_dim, r_hidden, hr_bias)
 
-    def forward(self, S_in):
+    def forward(self, S_in, do_arb_checks: bool = False):
         # ensure batch
         squeeze_back = False
 
@@ -73,7 +76,7 @@ class FullModel(nn.Module):
         z = self.encoder(S_in)
 
         # 2) maturity grid
-        tau = torch.arange(0, self.tau_max + 1, device=device, dtype=dtype)
+        tau = torch.linspace(0.0, float(self.tau_max), self.tau_max + 1, device=device, dtype=dtype)
 
         # 3) Evaluate G(z,tau) in the grid -> (B,T)
         G_vals = self.G(z, tau)
@@ -102,15 +105,24 @@ class FullModel(nn.Module):
             r_tilde=r_tilde,
         )
 
-        A_vals, B_vals = solve_AB_rk38(tau, alpha, beta, gamma)
+        A_vals, B_vals = solve_AB(tau, alpha, beta, gamma, solver=self.ab_solver)
 
         # 5) Discount Factors
         P = torch.exp(A_vals - B_vals * G_vals)  # (B,T)
 
-        # should be ~1 at tau=0
-        if torch.is_grad_enabled():
-            if not torch.allclose(P[:, 0], torch.ones_like(P[:, 0]), atol=1e-3, rtol=1e-3):
-                print("Warning: P(tau=0) not ~1. min/max:", float(P[:, 0].min()), float(P[:, 0].max()))
+        if do_arb_checks:
+            with torch.no_grad():
+                if not torch.allclose(P[:, 0], torch.ones_like(P[:, 0]), atol=1e-3, rtol=1e-3):
+                    print("Warning: P(tau=0) not ~1. min/max:", float(P[:, 0].min()), float(P[:, 0].max()))
+
+                if torch.any(P <= 0):
+                    print("Negative discount factor detected!")
+
+                viol = check_monotonicity(P)
+                neg_forwards = (instantaneous_forward(P, tau) < -1e-8).sum().item()
+
+                print("Monotonicity violations:", int(viol))
+                print("Negative forward rates:", int(neg_forwards))
 
         # 6) Swap rates at observed tenors
         P_1T = P[:, 1:]  # drop tau=0, keep 1..tau_max
