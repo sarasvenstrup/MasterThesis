@@ -74,7 +74,6 @@ class FullModel(nn.Module):
 
         # 2) maturity grid
         tau = torch.arange(0, self.tau_max + 1, device=device, dtype=dtype)
-        # tau_in = tau / float(self.tau_max)  # [0,1]
 
         # 3) Evaluate G(z,tau) in the grid -> (B,T)
         G_vals = self.G(z, tau)
@@ -85,13 +84,6 @@ class FullModel(nn.Module):
         r_tilde = self.R(z)
 
         sigma = L_from_sigmas_rhos(sigmas, rhos) # (B,d,d) = Cholesky L
-
-        with torch.no_grad():
-            G0 = G_vals[:, 0]
-            print("G(z,0) min/max:", float(G0.min()), float(G0.max()))
-            print("r_tilde min/max:", float(r_tilde.min()), float(r_tilde.max()))
-            beta0 = (r_tilde.view(-1) / (G0 + 1e-12))
-            print("beta(0)=r/G0 min/max:", float(beta0.min()), float(beta0.max()))
 
         def G_single(z_single):
             return self.G(z_single.unsqueeze(0), tau).squeeze(0)  # (N,)
@@ -111,11 +103,6 @@ class FullModel(nn.Module):
         )
 
         A_vals, B_vals = solve_AB_rk38(tau, alpha, beta, gamma)
-
-        with torch.no_grad():
-            print("B(0) min/max:", float(B_vals[:, 0].min()), float(B_vals[:, 0].max()))
-            print("B(1) min/max:", float(B_vals[:, 1].min()), float(B_vals[:, 1].max()))
-            print("A(1) min/max:", float(A_vals[:, 1].min()), float(A_vals[:, 1].max()))
 
         # 5) Discount Factors
         P = torch.exp(A_vals - B_vals * G_vals)  # (B,T)
