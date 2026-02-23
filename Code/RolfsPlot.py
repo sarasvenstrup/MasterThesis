@@ -12,7 +12,6 @@ import seaborn as sns
 from cycler import cycler
 
 
-
 def set_paper_theme():
     # 1) Use seaborn only to define a nice clean theme (works for matplotlib plots too)
     sns.set_theme(context="paper", style="darkgrid", font_scale=1.05)
@@ -92,9 +91,6 @@ custom_palette = set_paper_theme()
 
 
 # ABOVE IS THE FIGURE SETTINGS =================
-
-
-
 
 try:
     REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -342,7 +338,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 1000
+EPOCHS = 100
 
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
@@ -391,7 +387,7 @@ for epoch in range(EPOCHS):
     epoch_loss = running / max(n_obs, 1)
     train_losses.append(epoch_loss)
 
-    if epoch % 100 == 0 or epoch == EPOCHS - 1:
+    if epoch % 10 == 0 or epoch == EPOCHS - 1:
         print(
             f"epoch={epoch:4d} loss={epoch_loss:.6e} "
             f"used_obs={n_obs} nan_batches={nan_batches} total_nan_batches={nan_batches_total}"

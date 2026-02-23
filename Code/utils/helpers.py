@@ -182,7 +182,7 @@ def plot_param_over_time(params_df: pd.DataFrame, col: str, cfg: PlotConfig, tit
 
     fig.tight_layout(rect=[0, 0.12, 1, 1])
     save_figure(fig, cfg, f"{col}_over_time")
-    plt.show()
+    #plt.show()
 
 
 def hist_param(params_df: pd.DataFrame, col: str, cfg: PlotConfig, bins: int = 50):
@@ -191,7 +191,7 @@ def hist_param(params_df: pd.DataFrame, col: str, cfg: PlotConfig, bins: int = 5
     ax.set_title(f"Histogram of {col}")
     ax.grid(True)
     save_figure(fig, cfg, f"hist_{col}")
-    plt.show()
+    #plt.show()
 
 
 def plot_recon_on_date(
@@ -227,7 +227,7 @@ def plot_recon_on_date(
     ax.grid(True)
 
     save_figure(fig, cfg, f"reconstruction_{date_pick.date()}")
-    plt.show()
+    #plt.show()
 
 def rmse_bps_per_currency_paper(S_true, S_pred, meta_df):
     """
@@ -251,3 +251,31 @@ def rmse_bps_per_currency_paper(S_true, S_pred, meta_df):
     out = pd.Series(rmses).sort_values()
     out.loc["Average"] = out.mean()
     return out
+
+def check_monotonicity(P):
+    # P: (B,T)
+    violations = (P[:, 1:] - P[:, :-1]) > 1e-8
+    n_viol = violations.sum().item()
+    return n_viol
+
+def instantaneous_forward(P: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
+    # P: (B,T), tau: (T,)
+    logP = torch.log(P)
+    dlogP = torch.zeros_like(logP)
+
+    # forward/backward at boundaries
+    dlogP[:, 0] = (logP[:, 1] - logP[:, 0]) / (tau[1] - tau[0])
+    dlogP[:, -1] = (logP[:, -1] - logP[:, -2]) / (tau[-1] - tau[-2])
+
+    # central differences in interior
+    denom = (tau[2:] - tau[:-2]).unsqueeze(0)  # (1,T-2)
+    dlogP[:, 1:-1] = (logP[:, 2:] - logP[:, :-2]) / denom
+
+    f = -dlogP
+    return f
+
+def finite_minmax(x: torch.Tensor):
+    xf = x[torch.isfinite(x)]
+    if xf.numel() == 0:
+        return float("nan"), float("nan")
+    return float(xf.min().detach().cpu()), float(xf.max().detach().cpu())

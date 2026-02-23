@@ -23,7 +23,7 @@ from Code.utils.ode import (
     solve_AB
 )
 
-from Code.utils.helpers import check_monotonicity, instantaneous_forward
+from Code.utils.helpers import check_monotonicity, instantaneous_forward, finite_minmax
 
 class FullModel(nn.Module):
 
@@ -107,8 +107,22 @@ class FullModel(nn.Module):
 
         A_vals, B_vals = solve_AB(tau, alpha, beta, gamma, solver=self.ab_solver)
 
-        # 5) Discount Factors
-        P = torch.exp(A_vals - B_vals * G_vals)  # (B,T)
+        if A_vals.dim() == 1:
+            A_vals = A_vals.unsqueeze(0).expand(G_vals.shape[0], -1)
+        if B_vals.dim() == 1:
+            B_vals = B_vals.unsqueeze(0).expand(G_vals.shape[0], -1)
+
+        Xexp = A_vals - B_vals * G_vals
+
+        if self.training:
+            Xexp = Xexp.clamp(-80.0, 80.0)
+
+        if do_arb_checks:
+            print("finite Xexp:", torch.isfinite(Xexp).all().item())
+            xmin, xmax = finite_minmax(Xexp)
+            print("Xexp finite min/max:", xmin, xmax)
+
+        P = torch.exp(Xexp)
 
         if do_arb_checks:
             with torch.no_grad():

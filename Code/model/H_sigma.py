@@ -49,9 +49,9 @@ class HSigma(nn.Module):
 
         # 2) Correlations (in (-1,1))
         if self.n_corr > 0:
-            atanh_rhos = raw[:, self.d:]      # (B,n_corr)
-            rhos = torch.tanh(atanh_rhos)
+            atanh_rhos = raw[:, self.d:]  # (B,n_corr)
+            rhos = torch.tanh(atanh_rhos).clamp(-0.999, 0.999)
         else:
-            rhos = raw[:, :0]                 # (B,0) empty
+            rhos = raw[:, :0]  # (B,0) empty
 
         return sigmas, rhos
