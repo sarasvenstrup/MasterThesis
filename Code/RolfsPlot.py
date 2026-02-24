@@ -379,7 +379,13 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # Pick ONE date to match the paper style
 date_pick = meta_eval["as_of_date"].iloc[0]  # or choose a specific date
-df_date = meta_eval[meta_eval["as_of_date"] == date_pick].copy()
+
+meta_eval["as_of_date"] = pd.to_datetime(meta_eval["as_of_date"])
+date_pick = pd.Timestamp("2014-12-28")
+df_date = meta_eval[meta_eval["as_of_date"] == date_pick]
+print("Rows on that date:", len(df_date))
+
+# df_date = meta_eval[meta_eval["as_of_date"] == date_pick].copy()
 
 print("Sharpe ratio plot date:", date_pick, "rows:", len(df_date))
 
