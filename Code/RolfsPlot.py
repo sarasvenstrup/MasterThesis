@@ -6,10 +6,9 @@ import torch
 import torch.nn as nn
 torch.set_num_threads(4) # --- Torch thread settings MUST be first Torch-related thing ---
 torch.set_num_interop_threads(2)
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from typing import Dict, Union, Optional
+from typing import Union
 
 
 # ============================= Environment Setup & Imports ===============================
@@ -221,7 +220,7 @@ def run_model(
     if not return_full:
         if return_dict:
             return {"S_hat": S_hat_all, "z": z_all}
-        return (S_hat_all, z_all)
+        return S_hat_all, z_all
 
     mu_all          = torch.cat(mus, dim=0)
     sigma_or_L_all  = torch.cat(sigmas_or_Ls, dim=0)
@@ -236,7 +235,7 @@ def run_model(
             "r_tilde": r_tilde_all,
         }
 
-    return (S_hat_all, z_all, mu_all, sigma_or_L_all, r_tilde_all)
+    return S_hat_all, z_all, mu_all, sigma_or_L_all, r_tilde_all
 
 S_hat_all, z_all_full, mu_all_full, sigma_all_full, r_all_full = run_model(
     model,
