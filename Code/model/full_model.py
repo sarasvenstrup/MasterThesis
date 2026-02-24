@@ -116,25 +116,7 @@ class FullModel(nn.Module):
         # 7) Discount factors
         Xexp = A_vals - B_vals * G_vals
 
-        if do_arb_checks:
-            print("finite Xexp:", torch.isfinite(Xexp).all().item())
-            xmin, xmax = finite_minmax(Xexp)
-            print("Xexp finite min/max:", xmin, xmax)
-
         P = torch.exp(Xexp)  # (B,N)
-
-        if do_arb_checks:
-            with torch.no_grad():
-                if not torch.allclose(P[:, 0], torch.ones_like(P[:, 0]), atol=1e-3, rtol=1e-3):
-                    print("Warning: P(tau=0) not ~1. min/max:", float(P[:, 0].min()), float(P[:, 0].max()))
-
-                if torch.any(P <= 0):
-                    print("Negative discount factor detected!")
-
-                viol = check_monotonicity(P)
-                neg_forwards = (instantaneous_forward(P, tau) < -1e-8).sum().item()
-                print("Monotonicity violations:", int(viol))
-                print("Negative forward rates:", int(neg_forwards))
 
         # 8) Swap rates at observed tenors (drop tau=0)
         P_1T = P[:, 1:]  # (B, tau_max)
