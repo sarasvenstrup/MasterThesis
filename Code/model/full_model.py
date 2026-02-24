@@ -36,13 +36,11 @@ class FullModel(nn.Module):
         r_hidden=4,
         g_bias=True,
         hr_bias=False,
-        ab_solver="rk38",
     ):
         super().__init__()
 
         self.input_dim = input_dim
         self.latent_dim = latent_dim
-        self.ab_solver = ab_solver
 
         self.tau_max = tau_max  # build discount curve 0..tau_max
         self.tenors = tenors if tenors is not None else [1, 2, 3, 5, 10, 15, 20, 30]
@@ -106,7 +104,7 @@ class FullModel(nn.Module):
 
 
         # 6) Solve ODE for (A,B)
-        A_vals, B_vals = solve_AB(tau, alpha, beta, gamma, solver=self.ab_solver)  # both (B,N)
+        A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)  # both (B,N)
 
 
         # Hard asserts (instead of silent expand)
