@@ -1,3 +1,7 @@
+
+
+# ============================= Import Packages ===============================
+
 import os
 import sys
 import torch
@@ -12,10 +16,11 @@ import seaborn as sns
 from cycler import cycler
 
 
+# ============================= Set Figure/Plot Theme ===============================
+
 def set_paper_theme():
     # 1) Use seaborn only to define a nice clean theme (works for matplotlib plots too)
     sns.set_theme(context="paper", style="darkgrid", font_scale=1.05)
-
 
     # Customize tab20b palette
     full_palette = sns.color_palette("tab20b", 20)
@@ -29,7 +34,6 @@ def set_paper_theme():
         "figure.dpi": 180,
         "savefig.dpi": 300,
         "savefig.bbox": "tight",
-
 
         # Light grey full frame
         "axes.spines.top": True,
@@ -64,8 +68,6 @@ def set_paper_theme():
     mpl.rcParams["axes.prop_cycle"] = cycler(color=palette)
 
     return palette
-
-
 def style_axis(ax, title=None, xlabel=None, ylabel=None, legend=True, legend_kwargs=None):
     """Optional helper you can call per-figure for consistent finishing touches."""
     if title is not None:
@@ -86,11 +88,15 @@ def style_axis(ax, title=None, xlabel=None, ylabel=None, legend=True, legend_kwa
             kw.update(legend_kwargs)
         ax.legend(**kw)
 
-# Call this once, early in your script
+# We now call the above function to ensure the wanted theme of the outputs from this script.
 custom_palette = set_paper_theme()
 
 
-# ABOVE IS THE FIGURE SETTINGS =================
+
+
+# ============================= Environment Setup & Imports ===============================
+
+# First we set out working directory, in order for all our outputs to be saved in the same folder.
 
 try:
     REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -100,12 +106,11 @@ except NameError:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-
+# We now import the needed components, like objects, models, helper functions and data in order to train the model.
 
 from Code.utils import helpers as H
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
 from Code.model.full_model import FullModel
-
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -118,19 +123,20 @@ else:
 
 print("Using device:", device)
 
-# Helps on many CPUs for convs etc.
+# The following line accelerates deep learning operations on CPU, helping us to improve performance when training.
 torch.backends.mkldnn.enabled = True
 
-# Less overhead in optimizer.zero_grad
+# The following line sets all .grad attributes to None instead of zero in order to lessen memory traffic.
 USE_SET_TO_NONE = True
-
 print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop_threads())
+
 
 # -----------------------------
 # 0b) Run config
 # -----------------------------
 USE = "bbg"  # "test" first, then "bbg"
 
+# Where we save our figures, according to the dataset used to train.
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", USE)
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
@@ -174,7 +180,7 @@ currency_rename_map = {
     "eu": "EUR", "EU": "EUR",
     "jy": "JPY", "JY": "JPY",
     "nk": "NOK", "NK": "NOK",
-    "sk": "SEK", "SK": "SEK",
+    "sw": "SEK", "SK": "SEK",
     "uk": "GBP", "UK": "GBP",
     "us": "USD", "US": "USD",
 }
@@ -338,7 +344,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 100
+EPOCHS = 200
 
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)

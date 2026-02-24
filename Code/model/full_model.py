@@ -93,6 +93,7 @@ class FullModel(nn.Module):
             # returns (N,)
             return self.G(z_single.unsqueeze(0), tau).squeeze(0)
 
+
         dG_dtau = d_tau_autograd_nodewise(self.G, z, tau)  # (B,N)
         grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, sigma)  # (B,N,d), (B,N)
 
@@ -106,8 +107,10 @@ class FullModel(nn.Module):
             r_tilde=r_tilde,
         )  # all (B,N)
 
+
         # 6) Solve ODE for (A,B)
         A_vals, B_vals = solve_AB(tau, alpha, beta, gamma, solver=self.ab_solver)  # both (B,N)
+
 
         # Hard asserts (instead of silent expand)
         assert A_vals.shape == G_vals.shape, f"A_vals {A_vals.shape} != G_vals {G_vals.shape}"
