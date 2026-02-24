@@ -37,7 +37,7 @@ def paper_alpha_beta_gamma_trace(
 
     # v = σ^T ∇G  (B,N,d)
     v = torch.einsum("bij,bnj->bni", sigma.transpose(1, 2), grad_z_G)
-    gamma = 0.5 * (v ** 2).sum(dim=d)                           # (B,N)
+    gamma = 0.5 * (v ** 2).sum(dim=2)                           # (B,N)
 
     return alpha, beta, gamma
 

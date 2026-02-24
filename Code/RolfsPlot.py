@@ -1,5 +1,4 @@
 
-
 # ============================= Import Packages ===============================
 
 import os
@@ -10,88 +9,7 @@ torch.set_num_threads(4) # --- Torch thread settings MUST be first Torch-related
 torch.set_num_interop_threads(2)
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import seaborn as sns
-from cycler import cycler
-
-
-# ============================= Set Figure/Plot Theme ===============================
-
-def set_paper_theme():
-    # 1) Use seaborn only to define a nice clean theme (works for matplotlib plots too)
-    sns.set_theme(context="paper", style="darkgrid", font_scale=1.05)
-
-    # Customize tab20b palette
-    full_palette = sns.color_palette("tab20b", 20)
-    selected_indices = [0, 1, 2, 3, 12, 13, 14, 15]
-    palette = [full_palette[i] for i in selected_indices]
-
-
-    # 3) Global matplotlib defaults (applies to ALL figures you create afterwards)
-    mpl.rcParams.update({
-        # Figure / saving
-        "figure.dpi": 180,
-        "savefig.dpi": 300,
-        "savefig.bbox": "tight",
-
-        # Light grey full frame
-        "axes.spines.top": True,
-        "axes.spines.right": True,
-        "axes.spines.left": True,
-        "axes.spines.bottom": True,
-        "axes.edgecolor": "0.8",  # light grey frame
-        "axes.linewidth": 1.0,
-
-        # Grid styling
-        "axes.grid": True,
-        "grid.color": "0.9",
-        "grid.linewidth": 1.0,
-
-        # Text
-        "font.size": 11,
-        "axes.labelcolor": "0.2",
-        "xtick.color": "0.2",
-        "ytick.color": "0.2",
-
-        # Legend
-        "legend.frameon": False,
-
-        # Lines default
-        "lines.linewidth": 1.6,
-        "lines.markersize": 5.0,
-
-
-    })
-
-    # 4) Make the palette the default color cycle for matplotlib
-    mpl.rcParams["axes.prop_cycle"] = cycler(color=palette)
-
-    return palette
-def style_axis(ax, title=None, xlabel=None, ylabel=None, legend=True, legend_kwargs=None):
-    """Optional helper you can call per-figure for consistent finishing touches."""
-    if title is not None:
-        ax.set_title(title)
-    if xlabel is not None:
-        ax.set_xlabel(xlabel)
-    if ylabel is not None:
-        ax.set_ylabel(ylabel)
-
-    # Ensure consistent grid/spines (in case some plots override)
-    ax.grid(True, which="major", axis="both")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    if legend:
-        kw = dict(frameon=False)
-        if legend_kwargs:
-            kw.update(legend_kwargs)
-        ax.legend(**kw)
-
-# We now call the above function to ensure the wanted theme of the outputs from this script.
-custom_palette = set_paper_theme()
-
-
 
 
 # ============================= Environment Setup & Imports ===============================
@@ -109,7 +27,7 @@ if REPO_ROOT not in sys.path:
 # We now import the needed components, like objects, models, helper functions and data in order to train the model.
 
 from Code.utils import helpers as H
-from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
+from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
 
 print("Torch:", torch.__version__)
@@ -131,85 +49,20 @@ USE_SET_TO_NONE = True
 print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop_threads())
 
 
-# -----------------------------
-# 0b) Run config
-# -----------------------------
+#### LOAD DATA AND CONFIG PLOTTING
+
+# Use your theme palette for consistent currency colors
+ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
+currency_color_map = {ccy: custom_palette[i % len(custom_palette)] for i, ccy in enumerate(ccy_order)}
+
 USE = "bbg"  # "test" first, then "bbg"
 
 # Where we save our figures, according to the dataset used to train.
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", USE)
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
+meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
 
-
-# -----------------------------
-# 1) Load data
-# -----------------------------
-data = build_all_dataframes()
-
-if USE == "test":
-    df_wide_full = data["df_wide_test_full"].copy()
-    df_long = data["df_long_test"].copy()
-else:
-    df_wide_full = data["df_wide_bbg_full"].copy()
-    df_long = data["df_long_bbg"].copy()
-
-print("\nLoaded long rows:", len(df_long))
-print("Loaded wide full rows:", len(df_wide_full))
-print("Currencies found:", sorted(df_wide_full["ccy"].unique())[:30])
-
-# Tenor grid
-tenors = np.array([float(x) for x in TARGET_TENORS], dtype=float)
-
-# Ensure columns
-df_wide = df_wide_full[["as_of_date", "ccy"] + list(TARGET_TENORS)].copy()
-df_wide["as_of_date"] = pd.to_datetime(df_wide["as_of_date"])
-df_wide = df_wide[df_wide["as_of_date"] >= "2010-01-01"].copy()
-
-meta = df_wide[["as_of_date", "ccy"]].reset_index(drop=True)
-X = df_wide[list(TARGET_TENORS)].to_numpy(dtype=np.float32)
-print("Wide shape:", X.shape)
-
-# -----------------------------
-# 2) Currency rename + colors
-# -----------------------------
-currency_rename_map = {
-    "ad": "AUD", "AD": "AUD",
-    "cd": "CAD", "CD": "CAD",
-    "dk": "DKK", "DK": "DKK",
-    "eu": "EUR", "EU": "EUR",
-    "jy": "JPY", "JY": "JPY",
-    "nk": "NOK", "NK": "NOK",
-    "sw": "SEK", "SK": "SEK",
-    "uk": "GBP", "UK": "GBP",
-    "us": "USD", "US": "USD",
-}
-meta["ccy"] = meta["ccy"].map(lambda x: currency_rename_map.get(x, x))
-df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
-
-
-# Use your theme palette for consistent currency colors
-ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
-currency_color_map = {ccy: custom_palette[i % len(custom_palette)] for i, ccy in enumerate(ccy_order)}
-
-
-# -----------------------------
-# 3) Scale to decimals (auto-detect)
-# -----------------------------
-median_abs = float(np.nanmedian(np.abs(X)))
-SCALE_IS_PERCENT = median_abs > 0.5
-print("Median |swap|:", median_abs, "=> SCALE_IS_PERCENT =", SCALE_IS_PERCENT)
-
-if SCALE_IS_PERCENT:
-    X = X / 100.0
-
-X_tensor = torch.from_numpy(X)  # (N,8) CPU
-print("X_tensor:", tuple(X_tensor.shape))
-print("First row TRUE:", X_tensor[0].numpy())
-
-# -----------------------------
-# 3b) Helper configs
-# -----------------------------
 plot_cfg = H.PlotConfig(
     figures_dir=FIGURES_DIR,
     use_tag=USE,
@@ -221,120 +74,6 @@ data_cfg = H.DataConfig(
     target_tenors=list(TARGET_TENORS),
     tenor_years=tenors,
     scale_is_percent=SCALE_IS_PERCENT,
-)
-
-# =============================
-# PAPER PLOTS A + B (Observed only)
-#   A) swap curves on one date
-#   B) 10Y time series
-# =============================
-
-def plot_swap_curves_on_date_observed(df_wide_obs: pd.DataFrame,
-                                      target_tenors,
-                                      tenors_years: np.ndarray,
-                                      currency_colors: dict,
-                                      date_pick,
-                                      plot_cfg: H.PlotConfig):
-    date_pick = pd.to_datetime(date_pick)
-    dfo = df_wide_obs.copy()
-    dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
-
-    sel = dfo[dfo["as_of_date"] == date_pick].copy()
-    if sel.empty:
-        raise ValueError(f"No rows found for date {date_pick.date()}")
-
-    # one curve per currency
-    sel = sel.sort_values(["ccy", "as_of_date"]).drop_duplicates(subset=["ccy"], keep="last")
-    Y = sel[list(target_tenors)].to_numpy(dtype=np.float32)
-
-    fig, ax = plt.subplots(figsize=(9, 4))
-    for i, ccy in enumerate(sel["ccy"].values):
-        color = currency_colors.get(ccy, None)
-        ax.plot(
-            tenors_years, Y[i],
-            marker="o",
-            color=color,
-            label=ccy,
-            alpha=0.9,
-            markeredgecolor="white",
-            markeredgewidth=1.0,
-        )
-
-    ax.set_xlabel("Tenor (years)")
-    ax.set_ylabel("Swap rate (decimals)")
-    ax.set_title(f"Observed swap curves on {date_pick.date()}")
-    ax.grid(True)
-
-
-    handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
-    fig.tight_layout(rect=[0, 0.12, 1, 1])
-
-    H.save_figure(fig, plot_cfg, f"paper_fig2a_observed_curves_{date_pick.date()}")
-
-
-def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
-                                           tenor_col,
-                                           currency_colors: dict,
-                                           plot_cfg: H.PlotConfig,
-                                           title: str = None):
-    dfo = df_wide_obs.copy()
-    dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
-
-    fig, ax = plt.subplots(figsize=(10, 4))
-    for ccy, g in dfo.groupby("ccy"):
-        g = g.sort_values("as_of_date")
-        color = currency_colors.get(ccy, None)
-        ax.plot(
-            g["as_of_date"], g[tenor_col].astype(float),
-            color=color,
-            label=ccy,
-            alpha=0.9,
-            marker=None,  # time series usually no markers
-        )
-
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Swap rate (decimals)")
-    ax.set_title(title if title is not None else f"Observed {tenor_col} swap rate over time")
-    ax.grid(True)
-
-    handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
-    fig.tight_layout(rect=[0, 0.12, 1, 1])
-
-    H.save_figure(fig, plot_cfg, f"paper_fig2b_timeseries_{tenor_col}")
-
-
-# Build decimals version of observed df (so plots match model scale)
-df_wide_dec = df_wide.copy()
-if SCALE_IS_PERCENT:
-    for col in TARGET_TENORS:
-        df_wide_dec[col] = df_wide_dec[col].astype(float) / 100.0
-
-# A) Choose paper date if it exists, otherwise first available
-paper_date = pd.to_datetime("2016-08-30")
-date_pick_A = paper_date if (df_wide_dec["as_of_date"] == paper_date).any() else df_wide_dec["as_of_date"].iloc[0]
-
-plot_swap_curves_on_date_observed(
-    df_wide_obs=df_wide_dec,
-    target_tenors=TARGET_TENORS,
-    tenors_years=tenors,
-    currency_colors=currency_color_map,
-    date_pick=date_pick_A,
-    plot_cfg=plot_cfg,
-)
-
-# B) 10Y time series (or closest tenor to 10)
-TENOR_10Y = 10
-if TENOR_10Y not in TARGET_TENORS:
-    TENOR_10Y = min(TARGET_TENORS, key=lambda t: abs(float(t) - 10.0))
-
-plot_swap_timeseries_one_tenor_observed(
-    df_wide_obs=df_wide_dec,
-    tenor_col=TENOR_10Y,
-    currency_colors=currency_color_map,
-    plot_cfg=plot_cfg,
-    title=f"Observed {TENOR_10Y}Y swap rate over time (all currencies)",
 )
 
 # -----------------------------
