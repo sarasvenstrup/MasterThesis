@@ -381,10 +381,12 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 B_DIAG = 64
 S_diag = X_eval[:B_DIAG].to(device)
 
+tau_max = 30
+
 final_term, dbg = final_term_2factor_from_model(
     model,
     S_diag,
-    tau_max=30,
+    tau_max=tau_max,
     use_no_grad_AB=True,   # fast diagnostic mode
 )
 
