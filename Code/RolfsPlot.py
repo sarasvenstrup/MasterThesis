@@ -28,7 +28,7 @@ if REPO_ROOT not in sys.path:
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
-from Code.utils.sharpe_ratio import final_term_2factor_from_model
+from Code.utils.sharpe_ratio import final_term_2factor_from_model, approx_sharpe_from_final_term
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -377,29 +377,15 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # SHARPE RATIO
 
-def approx_sharpe_from_final_term(final_term: torch.Tensor, P_1T: torch.Tensor, sigma_bar: float = 0.006):
-    """
-    Andreasen-style approx Sharpe:
-      SR(τ) = LN(τ) / (τ * N(τ) * sigma_bar)
-
-    Here we use:
-      LN(τ) := final_term(τ) * N(τ)
-    where N(τ)=P(τ) (discount factor).
-    This matches the idea: final_term is the normalized PDE residual; multiplying by N
-    gives the funded bond drift numerator scale.
-    """
-    device = final_term.device
-    dtype  = final_term.dtype
-    tau = torch.arange(1, final_term.shape[1] + 1, device=device, dtype=dtype).view(1, -1)  # (1,T)
-
-    N = P_1T  # (B,T) discount factors for τ=1..T
-    LN = final_term * N
-    SR = LN / (tau * N * sigma_bar)
-    return SR
-
 # Pick ONE date to match the paper style
 date_pick = meta_eval["as_of_date"].iloc[0]  # or choose a specific date
-df_date = meta_eval[meta_eval["as_of_date"] == date_pick].copy()
+
+meta_eval["as_of_date"] = pd.to_datetime(meta_eval["as_of_date"])
+date_pick = pd.Timestamp("2014-12-28")
+df_date = meta_eval[meta_eval["as_of_date"] == date_pick]
+print("Rows on that date:", len(df_date))
+
+# df_date = meta_eval[meta_eval["as_of_date"] == date_pick].copy()
 
 print("Sharpe ratio plot date:", date_pick, "rows:", len(df_date))
 
