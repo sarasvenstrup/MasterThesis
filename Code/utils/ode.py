@@ -36,7 +36,7 @@ def paper_alpha_beta_gamma_trace(
     beta  = r_tilde / G_safe                                    # (B,N) via broadcast
 
     # v = σ^T ∇G  (B,N,d)
-    v = torch.einsum("bij,bnj->bni", sigma.transpose(1, d), grad_z_G)
+    v = torch.einsum("bij,bnj->bni", sigma.transpose(1, 2), grad_z_G)
     gamma = 0.5 * (v ** 2).sum(dim=d)                           # (B,N)
 
     return alpha, beta, gamma
