@@ -404,3 +404,27 @@ ax.set_xlabel("Maturity τ (years)")
 ax.set_ylabel("final_term(τ)")
 ax.set_title("PDE residual diagnostic (one curve)")
 H.save_figure(fig, plot_cfg, "pde_residual_onecurve")
+
+# PER CCY
+
+rows = []
+for ccy, idx in meta_eval.groupby("ccy").groups.items():
+    idx = list(idx)
+    # limit for speed
+    idx = idx[:128]
+    S_ccy = X_eval[idx].to(device)
+
+    final_term, _ = final_term_2factor_from_model(
+        model, S_ccy, tau_max=tau_max, use_no_grad_AB=True
+    )
+    rmse = torch.sqrt((final_term**2).mean()).item()
+    mx   = final_term.abs().max().item()
+    rows.append((ccy, rmse, mx))
+
+pde_df = pd.DataFrame(rows, columns=["ccy", "pde_rmse", "pde_maxabs"]).set_index("ccy")
+print("\n[PDE diag] Per-currency:")
+print(pde_df)
+
+pde_path = os.path.join(FIGURES_DIR, f"pde_diag_{USE}.csv")
+pde_df.to_csv(pde_path)
+print("Saved PDE diagnostic table:", pde_path)
