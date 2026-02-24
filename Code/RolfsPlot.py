@@ -28,6 +28,7 @@ if REPO_ROOT not in sys.path:
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
+from Code.utils.sharpe_ratio import final_term_2factor_from_model
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -375,3 +376,31 @@ for col in mu_cols:
 print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # SHARPE RATIO
+
+# pick a small batch to keep it fast (e.g. 64 curves)
+B_DIAG = 64
+S_diag = X_eval[:B_DIAG].to(device)
+
+final_term, dbg = final_term_2factor_from_model(
+    model,
+    S_diag,
+    tau_max=30,
+    use_no_grad_AB=True,   # fast diagnostic mode
+)
+
+# stats
+pde_rmse = torch.sqrt((final_term ** 2).mean()).item()
+pde_max  = final_term.abs().max().item()
+print(f"[PDE diag] final_term RMSE={pde_rmse:.6e} | max|final_term|={pde_max:.6e}")
+
+# plot one curve's residual term structure
+tau_plot = dbg["tau"].detach().cpu().numpy()
+ft0 = final_term[0].detach().cpu().numpy()
+
+fig, ax = plt.subplots(figsize=(6, 3.5))
+ax.plot(tau_plot, ft0)
+ax.axhline(0.0, linestyle="--", linewidth=1)
+ax.set_xlabel("Maturity τ (years)")
+ax.set_ylabel("final_term(τ)")
+ax.set_title("PDE residual diagnostic (one curve)")
+H.save_figure(fig, plot_cfg, "pde_residual_onecurve")
