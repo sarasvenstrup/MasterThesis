@@ -31,7 +31,7 @@ def paper_alpha_beta_gamma_trace(
     mu: torch.Tensor,              # (B,d)
     sigma: torch.Tensor,           # (B,d,d)
     r_tilde: torch.Tensor,         # (B,) or (B,1)
-    eps: float = 1e-6
+    eps: float = 1e-4
 ):
     """
     alpha = (-dG/dtau + (∇G)^T mu + 1/2 Tr[σ^T H(G) σ]) / G
@@ -131,22 +131,6 @@ def grad_and_trace_cov_hess_G(G_fn, z: torch.Tensor, sigma: torch.Tensor):
 # Poulsen solver: RK4 (3/8 rule)
 # -------------------------
 def solve_AB_rk38(tau: torch.Tensor, alpha: torch.Tensor, beta: torch.Tensor, gamma: torch.Tensor):
-    """
-    Solve the coupled ODEs (Poulsen eq. 23–24) on a fixed grid tau (N,):
-
-        dB/dtau = alpha(tau) * B + beta(tau)
-        dA/dtau = gamma(tau) * B^2
-        with A(0)=0, B(0)=0
-
-    Inputs:
-      tau   : (N,)
-      alpha : (B,N)
-      beta  : (B,N)
-      gamma : (B,N)
-
-    Outputs:
-      A, B  : (B,N)
-    """
     device = alpha.device
     dtype = alpha.dtype
     tau = tau.to(device=device, dtype=dtype)
@@ -156,59 +140,48 @@ def solve_AB_rk38(tau: torch.Tensor, alpha: torch.Tensor, beta: torch.Tensor, ga
     assert gamma.shape == (Bsz, N)
     assert tau.shape[0] == N
 
-    A = torch.zeros(Bsz, N, device=device, dtype=dtype)
-    Bv = torch.zeros(Bsz, N, device=device, dtype=dtype)
+    # Build trajectories without in-place writes to a big (B,N) tensor
+    A_list = []
+    B_list = []
 
-    # 3/8-rule RK4 tableau:
-    # c = [0, 1/3, 2/3, 1]
-    # a21 = 1/3
-    # a31 = -1/3, a32 = 1
-    # a41 = 1, a42 = -1, a43 = 1
-    # b  = [1/8, 3/8, 3/8, 1/8]
+    Acur = torch.zeros(Bsz, device=device, dtype=dtype)
+    Bcur = torch.zeros(Bsz, device=device, dtype=dtype)
 
-    def f(i, Acur, Bcur):
-        # derivative at grid index i (using coeff at i)
-        a = alpha[:, i]
-        b = beta[:, i]
-        g = gamma[:, i]
-        dB = a * Bcur + b
-        dA = g * (Bcur ** 2)
-        return dA, dB
+    A_list.append(Acur)
+    B_list.append(Bcur)
+
+    def interp_coeff(coeff, i, tfrac):
+        return coeff[:, i] + tfrac * (coeff[:, i + 1] - coeff[:, i])
 
     for i in range(N - 1):
         h = tau[i + 1] - tau[i]
-        # If your tau-grid is uniform annual, h=1; if not, this handles nonuniform.
 
-        Acur = A[:, i]
-        Bcur = Bv[:, i]
+        # stage 1 (at i)
+        a1 = alpha[:, i]
+        b1 = beta[:, i]
+        g1 = gamma[:, i]
+        k1B = a1 * Bcur + b1
+        k1A = g1 * (Bcur ** 2)
 
-        # stage 1 at i
-        k1A, k1B = f(i, Acur, Bcur)
-
-        # stage 2 at i + 1/3
+        # stage 2 (i + 1/3)
         A2 = Acur + h * (1.0 / 3.0) * k1A
         B2 = Bcur + h * (1.0 / 3.0) * k1B
-        # coeffs: we evaluate by linear interpolation between i and i+1 for better accuracy on nonuniform
-        # but simplest is to pick nearest; here we interpolate:
-        def interp_coeff(coeff, tfrac):
-            return coeff[:, i] + tfrac * (coeff[:, i + 1] - coeff[:, i])
-
-        a2 = interp_coeff(alpha, 1.0 / 3.0)
-        b2 = interp_coeff(beta,  1.0 / 3.0)
-        g2 = interp_coeff(gamma, 1.0 / 3.0)
+        a2 = interp_coeff(alpha, i, 1.0 / 3.0)
+        b2 = interp_coeff(beta,  i, 1.0 / 3.0)
+        g2 = interp_coeff(gamma, i, 1.0 / 3.0)
         k2B = a2 * B2 + b2
         k2A = g2 * (B2 ** 2)
 
-        # stage 3 at i + 2/3: (-1/3)*k1 + 1*k2
+        # stage 3 (i + 2/3): (-1/3)*k1 + 1*k2
         A3 = Acur + h * ((-1.0 / 3.0) * k1A + 1.0 * k2A)
         B3 = Bcur + h * ((-1.0 / 3.0) * k1B + 1.0 * k2B)
-        a3 = interp_coeff(alpha, 2.0 / 3.0)
-        b3 = interp_coeff(beta,  2.0 / 3.0)
-        g3 = interp_coeff(gamma, 2.0 / 3.0)
+        a3 = interp_coeff(alpha, i, 2.0 / 3.0)
+        b3 = interp_coeff(beta,  i, 2.0 / 3.0)
+        g3 = interp_coeff(gamma, i, 2.0 / 3.0)
         k3B = a3 * B3 + b3
         k3A = g3 * (B3 ** 2)
 
-        # stage 4 at i + 1: 1*k1 -1*k2 +1*k3
+        # stage 4 (i + 1)
         A4 = Acur + h * (1.0 * k1A - 1.0 * k2A + 1.0 * k3A)
         B4 = Bcur + h * (1.0 * k1B - 1.0 * k2B + 1.0 * k3B)
         a4 = alpha[:, i + 1]
@@ -217,10 +190,16 @@ def solve_AB_rk38(tau: torch.Tensor, alpha: torch.Tensor, beta: torch.Tensor, ga
         k4B = a4 * B4 + b4
         k4A = g4 * (B4 ** 2)
 
-        # combine
-        A[:, i + 1] = Acur + h * (1.0 / 8.0 * k1A + 3.0 / 8.0 * k2A + 3.0 / 8.0 * k3A + 1.0 / 8.0 * k4A)
-        Bv[:, i + 1] = Bcur + h * (1.0 / 8.0 * k1B + 3.0 / 8.0 * k2B + 3.0 / 8.0 * k3B + 1.0 / 8.0 * k4B)
+        # Update current state (no in-place into a big A/B tensor)
+        Acur = Acur + h * (1.0/8.0 * k1A + 3.0/8.0 * k2A + 3.0/8.0 * k3A + 1.0/8.0 * k4A)
+        Bcur = Bcur + h * (1.0/8.0 * k1B + 3.0/8.0 * k2B + 3.0/8.0 * k3B + 1.0/8.0 * k4B)
 
+        A_list.append(Acur)
+        B_list.append(Bcur)
+
+    # (N,B) -> (B,N)
+    A = torch.stack(A_list, dim=0).transpose(0, 1).contiguous()
+    Bv = torch.stack(B_list, dim=0).transpose(0, 1).contiguous()
     return A, Bv
 
 
