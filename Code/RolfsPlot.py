@@ -6,10 +6,9 @@ import torch
 import torch.nn as nn
 torch.set_num_threads(4) # --- Torch thread settings MUST be first Torch-related thing ---
 torch.set_num_interop_threads(2)
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from typing import Dict, Union, Optional
+from typing import Union
 
 
 # ============================= Environment Setup & Imports ===============================
@@ -29,6 +28,7 @@ if REPO_ROOT not in sys.path:
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
+from Code.utils.sharpe_ratio import final_term_2factor_from_model
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -221,7 +221,7 @@ def run_model(
     if not return_full:
         if return_dict:
             return {"S_hat": S_hat_all, "z": z_all}
-        return (S_hat_all, z_all)
+        return S_hat_all, z_all
 
     mu_all          = torch.cat(mus, dim=0)
     sigma_or_L_all  = torch.cat(sigmas_or_Ls, dim=0)
@@ -236,7 +236,7 @@ def run_model(
             "r_tilde": r_tilde_all,
         }
 
-    return (S_hat_all, z_all, mu_all, sigma_or_L_all, r_tilde_all)
+    return S_hat_all, z_all, mu_all, sigma_or_L_all, r_tilde_all
 
 S_hat_all, z_all_full, mu_all_full, sigma_all_full, r_all_full = run_model(
     model,
@@ -376,3 +376,55 @@ for col in mu_cols:
 print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # SHARPE RATIO
+
+# pick a small batch to keep it fast (e.g. 64 curves)
+B_DIAG = 64
+S_diag = X_eval[:B_DIAG].to(device)
+
+final_term, dbg = final_term_2factor_from_model(
+    model,
+    S_diag,
+    tau_max=30,
+    use_no_grad_AB=True,   # fast diagnostic mode
+)
+
+# stats
+pde_rmse = torch.sqrt((final_term ** 2).mean()).item()
+pde_max  = final_term.abs().max().item()
+print(f"[PDE diag] final_term RMSE={pde_rmse:.6e} | max|final_term|={pde_max:.6e}")
+
+# plot one curve's residual term structure
+tau_plot = dbg["tau"].detach().cpu().numpy()
+ft0 = final_term[0].detach().cpu().numpy()
+
+fig, ax = plt.subplots(figsize=(6, 3.5))
+ax.plot(tau_plot, ft0)
+ax.axhline(0.0, linestyle="--", linewidth=1)
+ax.set_xlabel("Maturity τ (years)")
+ax.set_ylabel("final_term(τ)")
+ax.set_title("PDE residual diagnostic (one curve)")
+H.save_figure(fig, plot_cfg, "pde_residual_onecurve")
+
+# PER CCY
+
+rows = []
+for ccy, idx in meta_eval.groupby("ccy").groups.items():
+    idx = list(idx)
+    # limit for speed
+    idx = idx[:128]
+    S_ccy = X_eval[idx].to(device)
+
+    final_term, _ = final_term_2factor_from_model(
+        model, S_ccy, tau_max=tau_max, use_no_grad_AB=True
+    )
+    rmse = torch.sqrt((final_term**2).mean()).item()
+    mx   = final_term.abs().max().item()
+    rows.append((ccy, rmse, mx))
+
+pde_df = pd.DataFrame(rows, columns=["ccy", "pde_rmse", "pde_maxabs"]).set_index("ccy")
+print("\n[PDE diag] Per-currency:")
+print(pde_df)
+
+pde_path = os.path.join(FIGURES_DIR, f"pde_diag_{USE}.csv")
+pde_df.to_csv(pde_path)
+print("Saved PDE diagnostic table:", pde_path)
