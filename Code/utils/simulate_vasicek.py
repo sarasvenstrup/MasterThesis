@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 
-from Code.model.vasicek import Vasicek
+from Code.Vasicek.vasicek import Vasicek
 from Code.utils.rates import par_swap_from_discount
 
 

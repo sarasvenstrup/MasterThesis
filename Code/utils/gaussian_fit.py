@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from Code.utils.rates import par_swap_from_discount
-from Code.model.gaussian import Gaussian2F
+from Code.Vasicek.gaussian import Gaussian2F
 
 
 def to_decimals(Y: np.ndarray) -> np.ndarray:

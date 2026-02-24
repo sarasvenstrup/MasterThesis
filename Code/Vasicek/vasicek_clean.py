@@ -32,7 +32,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 from Code.load_swapdata import TARGET_TENORS
 from Code.utils.simulate_vasicek import simulate_vasicek_curves
-from Code.model.vasicek_decoder_model import VasicekDecoderModel
+from Code.Vasicek.vasicek_decoder_model import VasicekDecoderModel
 
 # -----------------------------
 # Config
