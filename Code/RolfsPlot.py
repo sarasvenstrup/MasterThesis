@@ -187,15 +187,17 @@ currency_rename_map = {
 meta["ccy"] = meta["ccy"].map(lambda x: currency_rename_map.get(x, x))
 df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
 
-
 # Use your theme palette for consistent currency colors
 ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 currency_color_map = {ccy: custom_palette[i % len(custom_palette)] for i, ccy in enumerate(ccy_order)}
 
 
 # -----------------------------
-# 3) Scale to decimals (auto-detect)
+# 3) Scale to decimals
 # -----------------------------
+
+# The imported data is stored as percentages, so these are all converted to decimals.
+
 median_abs = float(np.nanmedian(np.abs(X)))
 SCALE_IS_PERCENT = median_abs > 0.5
 print("Median |swap|:", median_abs, "=> SCALE_IS_PERCENT =", SCALE_IS_PERCENT)
@@ -206,6 +208,7 @@ if SCALE_IS_PERCENT:
 X_tensor = torch.from_numpy(X)  # (N,8) CPU
 print("X_tensor:", tuple(X_tensor.shape))
 print("First row TRUE:", X_tensor[0].numpy())
+
 
 # -----------------------------
 # 3b) Helper configs
@@ -352,9 +355,9 @@ loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=Fals
 # -----------------------------
 # 5) Train
 # -----------------------------
-torch.manual_seed(0)
+torch.manual_seed(67)
 
-LATENT_DIM = 2
+LATENT_DIM = 3
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
