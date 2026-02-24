@@ -2,9 +2,13 @@ import os
 import re
 import pandas as pd
 from typing import Tuple, Dict, List
+import numpy as np
+import Code.utils.helpers as H
 
-
-
+import torch
+import matplotlib as mpl
+import seaborn as sns
+from cycler import cycler
 
 # ---------------------------------------------------------
 # 0) Repo-rooted path (no Desktop). Adjust if needed.
@@ -22,6 +26,95 @@ print("Repo root:", REPO_ROOT)
 # If you want both datasets on the same maturity grid (as in your model/paper)
 TARGET_TENORS: List[int] = [1, 2, 3, 5, 10, 15, 20, 30]
 
+# ============================= Set Figure/Plot Theme ===============================
+
+def set_paper_theme():
+    # 1) Use seaborn only to define a nice clean theme (works for matplotlib plots too)
+    sns.set_theme(context="paper", style="darkgrid", font_scale=1.05)
+
+    # Customize tab20b palette
+    full_palette = sns.color_palette("tab20b", 20)
+    selected_indices = [0, 1, 2, 3, 12, 13, 14, 15]
+    palette = [full_palette[i] for i in selected_indices]
+
+
+    # 3) Global matplotlib defaults (applies to ALL figures you create afterwards)
+    mpl.rcParams.update({
+        # Figure / saving
+        "figure.dpi": 180,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+
+        # Light grey full frame
+        "axes.spines.top": True,
+        "axes.spines.right": True,
+        "axes.spines.left": True,
+        "axes.spines.bottom": True,
+        "axes.edgecolor": "0.8",  # light grey frame
+        "axes.linewidth": 1.0,
+
+        # Grid styling
+        "axes.grid": True,
+        "grid.color": "0.9",
+        "grid.linewidth": 1.0,
+
+        # Text
+        "font.size": 11,
+        "axes.labelcolor": "0.2",
+        "xtick.color": "0.2",
+        "ytick.color": "0.2",
+
+        # Legend
+        "legend.frameon": False,
+
+        # Lines default
+        "lines.linewidth": 1.6,
+        "lines.markersize": 5.0,
+
+
+    })
+
+    # 4) Make the palette the default color cycle for matplotlib
+    mpl.rcParams["axes.prop_cycle"] = cycler(color=palette)
+
+    return palette
+def style_axis(ax, title=None, xlabel=None, ylabel=None, legend=True, legend_kwargs=None):
+    """Optional helper you can call per-figure for consistent finishing touches."""
+    if title is not None:
+        ax.set_title(title)
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+
+    # Ensure consistent grid/spines (in case some plots override)
+    ax.grid(True, which="major", axis="both")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    if legend:
+        kw = dict(frameon=False)
+        if legend_kwargs:
+            kw.update(legend_kwargs)
+        ax.legend(**kw)
+
+# We now call the above function to ensure the wanted theme of the outputs from this script.
+custom_palette = set_paper_theme()
+
+# -----------------------------
+# Currency rename + colors
+# -----------------------------
+currency_rename_map = {
+    "ad": "AUD", "AD": "AUD",
+    "cd": "CAD", "CD": "CAD",
+    "dk": "DKK", "DK": "DKK",
+    "eu": "EUR", "EU": "EUR",
+    "jy": "JPY", "JY": "JPY",
+    "nk": "NOK", "NK": "NOK",
+    "sw": "SEK", "SK": "SEK",
+    "uk": "GBP", "UK": "GBP",
+    "us": "USD", "US": "USD",
+}
 
 # ---------------------------------------------------------
 # 1) Helpers
@@ -248,33 +341,102 @@ def build_all_dataframes(root: str = ROOT, target_tenors: List[int] = TARGET_TEN
         "root_used": root,
     }
 
+def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
+    data = build_all_dataframes()
 
-# ---------------------------------------------------------
-# 2) Example usage (no file writing)
-# ---------------------------------------------------------
-data = build_all_dataframes()
+    if use == "test":
+        df_wide_full = data["df_wide_test_full"].copy()
+        df_long = data["df_long_test"].copy()
+    else:
+        df_wide_full = data["df_wide_bbg_full"].copy()
+        df_long = data["df_long_bbg"].copy()
 
-df_long_test = data["df_long_test"]
-df_long_bbg  = data["df_long_bbg"]
+    # Tenor grid
+    tenors = np.array([float(x) for x in target_tenors], dtype=float)
 
-df_wide_test = data["df_wide_test"]
-df_wide_bbg  = data["df_wide_bbg"]
+    # Ensure columns
+    df_wide = df_wide_full[["as_of_date", "ccy"] + list(target_tenors)].copy()
+    df_wide["as_of_date"] = pd.to_datetime(df_wide["as_of_date"])
+    df_wide = df_wide[df_wide["as_of_date"] >= "2010-01-01"].copy()
 
-df_wide_test_aligned = data["df_wide_test_aligned"]
-df_wide_bbg_aligned  = data["df_wide_bbg_aligned"]
+    meta = df_wide[["as_of_date", "ccy"]].reset_index(drop=True)
+    X = df_wide[list(target_tenors)].to_numpy(dtype=np.float32)
 
-df_wide_test_full = data["df_wide_test_full"]
-df_wide_bbg_full  = data["df_wide_bbg_full"]
+    median_abs = float(np.nanmedian(np.abs(X)))
+    SCALE_IS_PERCENT = median_abs > 0.5
 
-print("\nRoot used:", data["root_used"])
-print("Target tenors:", data["target_tenors"])
+    if SCALE_IS_PERCENT:
+        X = X / 100.0
 
-print("\ndf_long_test:", df_long_test.shape, "df_wide_test:", df_wide_test.shape,
-      "df_wide_test_aligned:", df_wide_test_aligned.shape, "df_wide_test_full:", df_wide_test_full.shape)
+    X_tensor = torch.from_numpy(X)  # (N,8) CPU
 
-print("df_long_bbg :", df_long_bbg.shape,  "df_wide_bbg :", df_wide_bbg.shape,
-      "df_wide_bbg_aligned :", df_wide_bbg_aligned.shape, "df_wide_bbg_full:", df_wide_bbg_full.shape)
+    meta["ccy"] = meta["ccy"].map(lambda x: currency_rename_map.get(x, x))
+    df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
 
-print("\nTest tenors:", data["tenors_test"])
-print("BBG  tenors:", data["tenors_bbg"])
-print("Errors test:", len(data["errors_test"]), "Errors bbg:", len(data["errors_bbg"]))
+    return meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT
+
+
+if __name__ == "__main__":
+
+    # =============================
+    # PAPER PLOTS A + B (Observed only)
+    #   A) swap curves on one date
+    #   B) 10Y time series
+    # =============================
+
+    # Use your theme palette for consistent currency colors
+    ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
+    currency_color_map = {ccy: custom_palette[i % len(custom_palette)] for i, ccy in enumerate(ccy_order)}
+
+    USE = "bbg"  # "test" first, then "bbg"
+
+    # Where we save our figures, according to the dataset used to train.
+    FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", USE)
+    os.makedirs(FIGURES_DIR, exist_ok=True)
+
+    meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use = USE)
+
+    plot_cfg = H.PlotConfig(
+        figures_dir=FIGURES_DIR,
+        use_tag=USE,
+        currency_colors=currency_color_map,
+        dpi=300,
+    )
+
+    data_cfg = H.DataConfig(
+        target_tenors=list(TARGET_TENORS),
+        tenor_years=tenors,
+        scale_is_percent=SCALE_IS_PERCENT,
+    )
+
+    # Build decimals version of observed df (so plots match model scale)
+    df_wide_dec = df_wide.copy()
+    if SCALE_IS_PERCENT:
+        for col in TARGET_TENORS:
+            df_wide_dec[col] = df_wide_dec[col].astype(float) / 100.0
+
+    # A) Choose paper date if it exists, otherwise first available
+    paper_date = pd.to_datetime("2016-08-30")
+    date_pick_A = paper_date if (df_wide_dec["as_of_date"] == paper_date).any() else df_wide_dec["as_of_date"].iloc[0]
+
+    H.plot_swap_curves_on_date_observed(
+        df_wide_obs=df_wide_dec,
+        target_tenors=TARGET_TENORS,
+        tenors_years=tenors,
+        currency_colors=currency_color_map,
+        date_pick=date_pick_A,
+        plot_cfg=plot_cfg,
+    )
+
+    # B) 10Y time series (or closest tenor to 10)
+    TENOR_10Y = 10
+    if TENOR_10Y not in TARGET_TENORS:
+        TENOR_10Y = min(TARGET_TENORS, key=lambda t: abs(float(t) - 10.0))
+
+    H.plot_swap_timeseries_one_tenor_observed(
+        df_wide_obs=df_wide_dec,
+        tenor_col=TENOR_10Y,
+        currency_colors=currency_color_map,
+        plot_cfg=plot_cfg,
+        title=f"Observed {TENOR_10Y}Y swap rate over time (all currencies)",
+    )

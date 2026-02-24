@@ -279,3 +279,77 @@ def finite_minmax(x: torch.Tensor):
     if xf.numel() == 0:
         return float("nan"), float("nan")
     return float(xf.min().detach().cpu()), float(xf.max().detach().cpu())
+
+def plot_swap_curves_on_date_observed(df_wide_obs: pd.DataFrame,
+                                      target_tenors,
+                                      tenors_years: np.ndarray,
+                                      currency_colors: dict,
+                                      date_pick,
+                                      plot_cfg: H.PlotConfig):
+    date_pick = pd.to_datetime(date_pick)
+    dfo = df_wide_obs.copy()
+    dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
+
+    sel = dfo[dfo["as_of_date"] == date_pick].copy()
+    if sel.empty:
+        raise ValueError(f"No rows found for date {date_pick.date()}")
+
+    # one curve per currency
+    sel = sel.sort_values(["ccy", "as_of_date"]).drop_duplicates(subset=["ccy"], keep="last")
+    Y = sel[list(target_tenors)].to_numpy(dtype=np.float32)
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    for i, ccy in enumerate(sel["ccy"].values):
+        color = currency_colors.get(ccy, None)
+        ax.plot(
+            tenors_years, Y[i],
+            marker="o",
+            color=color,
+            label=ccy,
+            alpha=0.9,
+            markeredgecolor="white",
+            markeredgewidth=1.0,
+        )
+
+    ax.set_xlabel("Tenor (years)")
+    ax.set_ylabel("Swap rate (decimals)")
+    ax.set_title(f"Observed swap curves on {date_pick.date()}")
+    ax.grid(True)
+
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
+    fig.tight_layout(rect=[0, 0.12, 1, 1])
+
+    save_figure(fig, plot_cfg, f"paper_fig2a_observed_curves_{date_pick.date()}")
+
+
+def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
+                                            tenor_col,
+                                            currency_colors: dict,
+                                            plot_cfg: H.PlotConfig,
+                                            title: str = None):
+    dfo = df_wide_obs.copy()
+    dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    for ccy, g in dfo.groupby("ccy"):
+        g = g.sort_values("as_of_date")
+        color = currency_colors.get(ccy, None)
+        ax.plot(
+            g["as_of_date"], g[tenor_col].astype(float),
+            color=color,
+            label=ccy,
+            alpha=0.9,
+            marker=None,  # time series usually no markers
+        )
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Swap rate (decimals)")
+    ax.set_title(title if title is not None else f"Observed {tenor_col} swap rate over time")
+    ax.grid(True)
+
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
+    fig.tight_layout(rect=[0, 0.12, 1, 1])
+
+    save_figure(fig, plot_cfg, f"paper_fig2b_timeseries_{tenor_col}")
