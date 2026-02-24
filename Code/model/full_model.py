@@ -39,10 +39,7 @@ class FullModel(nn.Module):
         r_hidden=4,
         g_bias=True,
         hr_bias=False,
-        ab_solver="rk38",            # <-- FINAL default: Poulsen RK4 3/8
-        clamp_exp_in_train=True,
-        exp_clamp_min=-80.0,
-        exp_clamp_max=80.0,
+        ab_solver="rk38",
     ):
         super().__init__()
 
@@ -52,10 +49,6 @@ class FullModel(nn.Module):
 
         self.tau_max = tau_max  # build discount curve 0..tau_max
         self.tenors = tenors if tenors is not None else [1, 2, 3, 5, 10, 15, 20, 30]
-
-        self.clamp_exp_in_train = clamp_exp_in_train
-        self.exp_clamp_min = exp_clamp_min
-        self.exp_clamp_max = exp_clamp_max
 
         # Networks
         self.encoder = Encoder(input_dim, latent_dim)
@@ -119,9 +112,6 @@ class FullModel(nn.Module):
 
         # 7) Discount factors
         Xexp = A_vals - B_vals * G_vals
-
-        if self.training and self.clamp_exp_in_train:
-            Xexp = Xexp.clamp(self.exp_clamp_min, self.exp_clamp_max)
 
         if do_arb_checks:
             print("finite Xexp:", torch.isfinite(Xexp).all().item())
