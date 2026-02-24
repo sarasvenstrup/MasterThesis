@@ -377,56 +377,75 @@ print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # SHARPE RATIO
 
-# pick a small batch to keep it fast (e.g. 64 curves)
-B_DIAG = 64
-S_diag = X_eval[:B_DIAG].to(device)
+def approx_sharpe_from_final_term(final_term: torch.Tensor, P_1T: torch.Tensor, sigma_bar: float = 0.006):
+    """
+    Andreasen-style approx Sharpe:
+      SR(τ) = LN(τ) / (τ * N(τ) * sigma_bar)
 
-tau_max = 30
+    Here we use:
+      LN(τ) := final_term(τ) * N(τ)
+    where N(τ)=P(τ) (discount factor).
+    This matches the idea: final_term is the normalized PDE residual; multiplying by N
+    gives the funded bond drift numerator scale.
+    """
+    device = final_term.device
+    dtype  = final_term.dtype
+    tau = torch.arange(1, final_term.shape[1] + 1, device=device, dtype=dtype).view(1, -1)  # (1,T)
 
+    N = P_1T  # (B,T) discount factors for τ=1..T
+    LN = final_term * N
+    SR = LN / (tau * N * sigma_bar)
+    return SR
+
+# Pick ONE date to match the paper style
+date_pick = meta_eval["as_of_date"].iloc[0]  # or choose a specific date
+df_date = meta_eval[meta_eval["as_of_date"] == date_pick].copy()
+
+print("Sharpe ratio plot date:", date_pick, "rows:", len(df_date))
+
+# We’ll take one curve per currency on that date (first occurrence)
+rows_idx = []
+for ccy in sorted(df_date["ccy"].unique()):
+    idx_ccy = df_date.index[df_date["ccy"] == ccy]
+    if len(idx_ccy) > 0:
+        rows_idx.append(idx_ccy[0])
+
+rows_idx = torch.tensor(rows_idx, dtype=torch.long)
+S_in = X_eval[rows_idx].to(device)  # (n_ccy, 8)
+
+# Run model to get P(τ) (we need N(τ)=P(τ))
+with torch.no_grad():
+    out = model(S_in)
+    P_full = out[2]          # (B, tau_max+1) includes τ=0
+P_1T = P_full[:, 1:]         # (B, 30)
+
+# Compute PDE residual ("final_term") as diagnostic
 final_term, dbg = final_term_2factor_from_model(
     model,
-    S_diag,
-    tau_max=tau_max,
-    use_no_grad_AB=True,   # fast diagnostic mode
+    S_in,
+    tau_max=30,
+    use_no_grad_AB=True,     # diagnostic mode; fast
 )
 
-# stats
-pde_rmse = torch.sqrt((final_term ** 2).mean()).item()
-pde_max  = final_term.abs().max().item()
-print(f"[PDE diag] final_term RMSE={pde_rmse:.6e} | max|final_term|={pde_max:.6e}")
+# Convert to approx Sharpe ratio term structure
+sigma_bar = 0.006  # Andreasen uses 0.60% proxy often; adjust if you want
+SR = approx_sharpe_from_final_term(final_term, P_1T, sigma_bar=sigma_bar)  # (B,30)
 
-# plot one curve's residual term structure
-tau_plot = dbg["tau"].detach().cpu().numpy()
-ft0 = final_term[0].detach().cpu().numpy()
+# Plot
+tau_plot = torch.arange(1, 31).cpu().numpy()
 
-fig, ax = plt.subplots(figsize=(6, 3.5))
-ax.plot(tau_plot, ft0)
+fig, ax = plt.subplots(figsize=(7.2, 4.2))
+
+for i, idx in enumerate(rows_idx.tolist()):
+    ccy = meta_eval.loc[idx, "ccy"]
+    color = currency_color_map.get(ccy, None)
+    ax.plot(tau_plot, SR[i].detach().cpu().numpy(), label=ccy, color=color, linewidth=1.6, alpha=0.95)
+
 ax.axhline(0.0, linestyle="--", linewidth=1)
-ax.set_xlabel("Maturity τ (years)")
-ax.set_ylabel("final_term(τ)")
-ax.set_title("PDE residual diagnostic (one curve)")
-H.save_figure(fig, plot_cfg, "pde_residual_onecurve")
+ax.set_xlabel("Tenor (year)")
+ax.set_ylabel("Approximate Sharpe ratio")
+ax.set_title(f"Approx Sharpe ratio on {date_pick}")
+ax.grid(True)
+ax.legend(ncol=3, fontsize=9, frameon=True)
 
-# PER CCY
-
-rows = []
-for ccy, idx in meta_eval.groupby("ccy").groups.items():
-    idx = list(idx)
-    # limit for speed
-    idx = idx[:128]
-    S_ccy = X_eval[idx].to(device)
-
-    final_term, _ = final_term_2factor_from_model(
-        model, S_ccy, tau_max=tau_max, use_no_grad_AB=True
-    )
-    rmse = torch.sqrt((final_term**2).mean()).item()
-    mx   = final_term.abs().max().item()
-    rows.append((ccy, rmse, mx))
-
-pde_df = pd.DataFrame(rows, columns=["ccy", "pde_rmse", "pde_maxabs"]).set_index("ccy")
-print("\n[PDE diag] Per-currency:")
-print(pde_df)
-
-pde_path = os.path.join(FIGURES_DIR, f"pde_diag_{USE}.csv")
-pde_df.to_csv(pde_path)
-print("Saved PDE diagnostic table:", pde_path)
+H.save_figure(fig, plot_cfg, f"approx_sharpe_ratio_{pd.to_datetime(date_pick).date()}")
