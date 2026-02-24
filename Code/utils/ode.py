@@ -30,7 +30,7 @@ def paper_alpha_beta_gamma_trace(
     sgn = torch.where(sgn == 0, torch.ones_like(sgn), sgn)
     G_safe = torch.where(G.abs() >= eps, G, eps * sgn)
 
-    gTmu = (grad_z_G * mu.unsqueeze(1)).sum(dim=d)  # (B,N)
+    gTmu = (grad_z_G * mu.unsqueeze(1)).sum(dim=2)  # (B,N)
 
     alpha = (-dG_dtau + gTmu + 0.5 * trace_cov_hess) / G_safe   # (B,N)
     beta  = r_tilde / G_safe                                    # (B,N) via broadcast
