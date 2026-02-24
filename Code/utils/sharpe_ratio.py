@@ -602,3 +602,23 @@ def final_term_2factor_from_model(
     }
 
     return final_term, debug
+
+def approx_sharpe_from_final_term(final_term: torch.Tensor, P_1T: torch.Tensor, sigma_bar: float = 0.006):
+    """
+    Andreasen-style approx Sharpe:
+      SR(τ) = LN(τ) / (τ * N(τ) * sigma_bar)
+
+    Here we use:
+      LN(τ) := final_term(τ) * N(τ)
+    where N(τ)=P(τ) (discount factor).
+    This matches the idea: final_term is the normalized PDE residual; multiplying by N
+    gives the funded bond drift numerator scale.
+    """
+    device = final_term.device
+    dtype  = final_term.dtype
+    tau = torch.arange(1, final_term.shape[1] + 1, device=device, dtype=dtype).view(1, -1)  # (1,T)
+
+    N = P_1T  # (B,T) discount factors for τ=1..T
+    LN = final_term * N
+    SR = LN / (tau * N * sigma_bar)
+    return SR
