@@ -9,7 +9,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
-from Code.utils.vasicek_fit import fit_r0_single_curve, fit_global_params_and_r0s
+from Code.Vasicek.vasicek_fit import fit_r0_single_curve, fit_global_params_and_r0s
 from Code.utils.rates import par_swap_from_discount
 
 
