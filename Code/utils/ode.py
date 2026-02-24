@@ -1,21 +1,3 @@
-"""
-ODE script (Poulsen) – endelig version
-
-- Beregner alpha, beta, gamma som i Poulsen-paper (eq. 23–25).
-- Løser (A,B)-ODE med:
-    (a) RK4 3/8-regel (forward solve som i paperet)
-    (b) "Chen" = adjoint backprop via torchdiffeq, men stadig RK4 forward
-
-Brug:
-    A, B = solve_AB(tau_grid, alpha, beta, gamma, solver="rk38")
-eller
-    A, B = solve_AB(tau_grid, alpha, beta, gamma, solver="chen")
-
-Krav:
-    - torch>=2.0 (for torch.func)
-    - optional: pip install torchdiffeq  (kun hvis solver="chen")
-"""
-
 import torch
 import torch.nn as nn
 from torch.func import vmap, jvp, jacfwd
@@ -41,12 +23,14 @@ def paper_alpha_beta_gamma_trace(
     if r_tilde.ndim == 1:
         r_tilde = r_tilde.unsqueeze(1)  # (B,1)
 
+    B, d = mu.shape
+
     # stabiliser division med G
     sgn = torch.sign(G)
     sgn = torch.where(sgn == 0, torch.ones_like(sgn), sgn)
     G_safe = torch.where(G.abs() >= eps, G, eps * sgn)
 
-    gTmu = (grad_z_G * mu.unsqueeze(1)).sum(dim=2)  # (B,N)
+    gTmu = (grad_z_G * mu.unsqueeze(1)).sum(dim=d)  # (B,N)
 
     alpha = (-dG_dtau + gTmu + 0.5 * trace_cov_hess) / G_safe   # (B,N)
     beta  = r_tilde / G_safe                                    # (B,N) via broadcast
@@ -102,7 +86,6 @@ def grad_and_trace_cov_hess_G(G_fn, z: torch.Tensor, sigma: torch.Tensor):
       grad_z_G: (B,N,d)
       trace_cov_hess: (B,N) = Tr[σ^T H(G) σ]  (per maturity)
     """
-    B, d = z.shape
 
     # jac_single: (d,) -> (N,d)
     jac_single = jacfwd(G_fn)

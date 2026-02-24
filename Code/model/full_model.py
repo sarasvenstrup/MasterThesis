@@ -58,8 +58,10 @@ class FullModel(nn.Module):
         self.R = RShort(latent_dim, r_hidden, hr_bias)
 
     def forward(self, S_in: torch.Tensor, do_arb_checks: bool = False):
+
         # ensure batch
         squeeze_back = False
+
         if S_in.dim() == 1:
             S_in = S_in.unsqueeze(0)
             squeeze_back = True
@@ -75,6 +77,7 @@ class FullModel(nn.Module):
 
         # 3) Evaluate G(z,tau) on the grid -> (B,N)
         G_vals = self.G(z, tau)
+
         if G_vals.dim() == 1:
             G_vals = G_vals.unsqueeze(0)
 
