@@ -10,6 +10,7 @@ torch.set_num_interop_threads(2)
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from typing import Dict, Union, Optional
 
 
 # ============================= Environment Setup & Imports ===============================
@@ -143,27 +144,109 @@ print("Training done.")
 
 model.eval()
 
-xb = X_tensor[:3].to(device)
-out = model(xb)
-z = out[1]  # (3,d)
-
 # -----------------------------
 # 6) Inference (in-sample)
 # -----------------------------
 @torch.no_grad()
-def run_model_batches(model, X_tensor_cpu, batch_size=256, device="cpu"):
+def run_model(
+    model,
+    X_tensor_cpu: torch.Tensor,
+    batch_size: int = 256,
+    device: Union[str, torch.device] = "cpu",
+    return_full: bool = False,
+    return_dict: bool = True,
+):
+    """
+    Batched forward pass for your FullModel.
+
+    Assumes model(x) returns a tuple/list where:
+      out[0] = S_hat
+      out[1] = z
+      out[6] = mu
+      out[7] = sigma_or_L
+      out[8] = r_tilde
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+    X_tensor_cpu : torch.Tensor
+        Input on CPU (or any device, name kept from your code).
+    batch_size : int
+    device : str or torch.device
+    return_full : bool
+        If False: return only (S_hat, z).
+        If True : also return (mu, sigma_or_L, r_tilde).
+    return_dict : bool
+        If True: returns a dict with named outputs.
+        If False: returns a tuple.
+
+    Returns
+    -------
+    If return_full == False:
+        dict: {"S_hat": (N,8), "z": (N,latent_dim)}
+        or tuple: (S_hat, z)
+
+    If return_full == True:
+        dict: {"S_hat": ..., "z": ..., "mu": ..., "sigma_or_L": ..., "r_tilde": ...}
+        or tuple: (S_hat, z, mu, sigma_or_L, r_tilde)
+    """
     model.eval()
+
     S_hats, zs = [], []
+    mus, sigmas_or_Ls, rts = [], [], []
+
     N = X_tensor_cpu.shape[0]
+
     for i in range(0, N, batch_size):
         xb = X_tensor_cpu[i : i + batch_size].to(device)
         out = model(xb)
-        S_hat, z = out[0], out[1]
+
+        # Always collect these
+        S_hat = out[0]
+        z = out[1]
         S_hats.append(S_hat.detach().cpu())
         zs.append(z.detach().cpu())
-    return torch.cat(S_hats, dim=0), torch.cat(zs, dim=0)
 
-S_hat_all, z_all = run_model_batches(model, X_tensor, batch_size=256, device=device)
+        # Optionally collect dynamics pieces
+        if return_full:
+            mu = out[6]
+            sigma_or_L = out[7]
+            r_tilde = out[8]
+            mus.append(mu.detach().cpu())
+            sigmas_or_Ls.append(sigma_or_L.detach().cpu())
+            rts.append(r_tilde.detach().cpu())
+
+    S_hat_all = torch.cat(S_hats, dim=0)
+    z_all     = torch.cat(zs, dim=0)
+
+    if not return_full:
+        if return_dict:
+            return {"S_hat": S_hat_all, "z": z_all}
+        return (S_hat_all, z_all)
+
+    mu_all          = torch.cat(mus, dim=0)
+    sigma_or_L_all  = torch.cat(sigmas_or_Ls, dim=0)
+    r_tilde_all     = torch.cat(rts, dim=0)
+
+    if return_dict:
+        return {
+            "S_hat": S_hat_all,
+            "z": z_all,
+            "mu": mu_all,
+            "sigma_or_L": sigma_or_L_all,
+            "r_tilde": r_tilde_all,
+        }
+
+    return (S_hat_all, z_all, mu_all, sigma_or_L_all, r_tilde_all)
+
+S_hat_all, z_all_full, mu_all_full, sigma_all_full, r_all_full = run_model(
+    model,
+    X_tensor,
+    batch_size=256,
+    device=device,
+    return_full=True,
+    return_dict=False
+)
 
 # -----------------------------
 # 7) Filter non-finite rows
@@ -248,41 +331,11 @@ def plot_latents_over_time(z_eval_t: torch.Tensor, meta_eval_df: pd.DataFrame, c
     fig.tight_layout(rect=[0, 0.06, 1, 1])
     H.save_figure(fig, cfg, "latent_factors")
 
-plot_latents_over_time(z_all[mask], meta_eval, plot_cfg)
+plot_latents_over_time(z_all_full[mask], meta_eval, plot_cfg)
 
 # -----------------------------
 # 10) Parameter-model plots
 # -----------------------------
-@torch.no_grad()
-def run_model_full_batches(model, X_tensor_cpu, batch_size=256, device="cpu"):
-    model.eval()
-    zs, mus, sigmas_or_Ls, rts = [], [], [], []
-    N = X_tensor_cpu.shape[0]
-
-    for i in range(0, N, batch_size):
-        xb = X_tensor_cpu[i : i + batch_size].to(device)
-        out = model(xb)
-
-        z = out[1]
-        mu = out[6]
-        sigma_or_L = out[7]
-        r_tilde = out[8]
-
-        zs.append(z.detach().cpu())
-        mus.append(mu.detach().cpu())
-        sigmas_or_Ls.append(sigma_or_L.detach().cpu())
-        rts.append(r_tilde.detach().cpu())
-
-    return (
-        torch.cat(zs, dim=0),
-        torch.cat(mus, dim=0),
-        torch.cat(sigmas_or_Ls, dim=0),
-        torch.cat(rts, dim=0),
-    )
-
-z_all_full, mu_all_full, sigma_all_full, r_all_full = run_model_full_batches(
-    model, X_tensor, batch_size=256, device=device
-)
 
 mu_eval = mu_all_full[mask]
 sigma_eval = sigma_all_full[mask]
@@ -324,7 +377,6 @@ for col in mu_cols:
 print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # SHARPE RATIO
-
 
 # ============================================================
 # 11) Andreasen Sharpe-ratio diagnostics: N, LN, SR + plots
