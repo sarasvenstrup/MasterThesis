@@ -1,5 +1,4 @@
 import os, sys
-import numpy as np
 import pandas as pd
 import torch
 import matplotlib.pyplot as plt
@@ -10,7 +9,7 @@ if REPO_ROOT not in sys.path:
 
 from Code.load_swapdata import build_all_dataframes, TARGET_TENORS
 from Code.utils.rates import par_swap_from_discount
-from Code.utils.gaussian_fit import (
+from Code.Vasicek.gaussian_fit import (
     to_decimals,
     compute_rmse_bps,
     fit_optionA_2f,
