@@ -10,7 +10,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Union
 
-
 # ============================= Environment Setup & Imports ===============================
 
 # First we set out working directory, in order for all our outputs to be saved in the same folder.
@@ -83,7 +82,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 200
+EPOCHS = 100
 
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
@@ -192,7 +191,7 @@ def run_model(
     model.eval()
 
     S_hats, zs = [], []
-    mus, sigmas_or_Ls, rts = [], [], []
+    mus, sigmas_or_Ls, rts, SRs = [], [], [], []
 
     N = X_tensor_cpu.shape[0]
 
@@ -211,9 +210,11 @@ def run_model(
             mu = out[6]
             sigma_or_L = out[7]
             r_tilde = out[8]
+            arb = out[9]
             mus.append(mu.detach().cpu())
             sigmas_or_Ls.append(sigma_or_L.detach().cpu())
             rts.append(r_tilde.detach().cpu())
+            SRs.append(arb["SR_tau"].cpu())
 
     S_hat_all = torch.cat(S_hats, dim=0)
     z_all     = torch.cat(zs, dim=0)
@@ -226,6 +227,7 @@ def run_model(
     mu_all          = torch.cat(mus, dim=0)
     sigma_or_L_all  = torch.cat(sigmas_or_Ls, dim=0)
     r_tilde_all     = torch.cat(rts, dim=0)
+    SR_all         = torch.cat(SRs, dim=0)
 
     if return_dict:
         return {
@@ -234,11 +236,12 @@ def run_model(
             "mu": mu_all,
             "sigma_or_L": sigma_or_L_all,
             "r_tilde": r_tilde_all,
+            "arb": SR_all
         }
 
-    return S_hat_all, z_all, mu_all, sigma_or_L_all, r_tilde_all
+    return S_hat_all, z_all, mu_all, sigma_or_L_all, r_tilde_all, SR_all
 
-S_hat_all, z_all_full, mu_all_full, sigma_all_full, r_all_full = run_model(
+S_hat_all, z_all_full, mu_all_full, sigma_all_full, r_all_full, SR_all_full = run_model(
     model,
     X_tensor,
     batch_size=256,
@@ -285,7 +288,7 @@ ax.set_title(f"Training loss (in-sample) — USE={USE}")
 H.save_figure(fig, plot_cfg, "training_loss")
 
 # 9b) Actual vs reconstructed on one date
-date_pick = meta_eval["as_of_date"].iloc[0]
+date_pick = pd.to_datetime("2014-12-31")
 df_wide_eval = df_wide.loc[mask.numpy()].reset_index(drop=True)
 
 H.plot_recon_on_date(
@@ -375,63 +378,35 @@ for col in mu_cols:
 
 print(f"Done. Figures saved to: {FIGURES_DIR}")
 
-# SHARPE RATIO
+# =============================
+# Approx Sharpe Ratio (Fig 3) – FULL CODE BLOCK
+# =============================
 
-# Pick ONE date to match the paper style
-date_pick = meta_eval["as_of_date"].iloc[0]  # or choose a specific date
+sel = (meta_eval["as_of_date"] == date_pick) & (meta_eval["ccy"].isin(ccy_order))
+idx = meta_eval.index[sel].to_numpy()
 
-meta_eval["as_of_date"] = pd.to_datetime(meta_eval["as_of_date"])
-date_pick = pd.Timestamp("2014-12-28")
-df_date = meta_eval[meta_eval["as_of_date"] == date_pick]
-print("Rows on that date:", len(df_date))
+# Keep one per currency (first occurrence)
+m_day = meta_eval.loc[idx].copy()
+m_day["ccy"] = pd.Categorical(m_day["ccy"], categories=ccy_order, ordered=True)
+m_day = m_day.sort_values("ccy").drop_duplicates("ccy", keep="first")
 
-# df_date = meta_eval[meta_eval["as_of_date"] == date_pick].copy()
+idx9 = m_day.index.to_numpy()
+labels = m_day["ccy"].astype(str).tolist()
 
-print("Sharpe ratio plot date:", date_pick, "rows:", len(df_date))
+SR_tau_9 = SR_all_full[idx9]  # shape (9, N)
 
-# We’ll take one curve per currency on that date (first occurrence)
-rows_idx = []
-for ccy in sorted(df_date["ccy"].unique()):
-    idx_ccy = df_date.index[df_date["ccy"] == ccy]
-    if len(idx_ccy) > 0:
-        rows_idx.append(idx_ccy[0])
+tau = torch.linspace(0, float(model.tau_max), model.tau_max + 1)
+tau_np = tau.numpy()[1:]
+sr_np  = SR_tau_9.numpy()[:, 1:]
 
-rows_idx = torch.tensor(rows_idx, dtype=torch.long)
-S_in = X_eval[rows_idx].to(device)  # (n_ccy, 8)
+plt.figure(figsize=(7.2, 4.6), dpi=160)
+for i in range(sr_np.shape[0]):
+    plt.plot(tau_np, sr_np[i], linewidth=1.0, label=labels[i])
 
-# Run model to get P(τ) (we need N(τ)=P(τ))
-with torch.no_grad():
-    out = model(S_in)
-    P_full = out[2]          # (B, tau_max+1) includes τ=0
-P_1T = P_full[:, 1:]         # (B, 30)
-
-# Compute PDE residual ("final_term") as diagnostic
-final_term, dbg = final_term_2factor_from_model(
-    model,
-    S_in,
-    tau_max=30,
-    use_no_grad_AB=True,     # diagnostic mode; fast
-)
-
-# Convert to approx Sharpe ratio term structure
-sigma_bar = 0.006  # Andreasen uses 0.60% proxy often; adjust if you want
-SR = approx_sharpe_from_final_term(final_term, P_1T, sigma_bar=sigma_bar)  # (B,30)
-
-# Plot
-tau_plot = torch.arange(1, 31).cpu().numpy()
-
-fig, ax = plt.subplots(figsize=(7.2, 4.2))
-
-for i, idx in enumerate(rows_idx.tolist()):
-    ccy = meta_eval.loc[idx, "ccy"]
-    color = currency_color_map.get(ccy, None)
-    ax.plot(tau_plot, SR[i].detach().cpu().numpy(), label=ccy, color=color, linewidth=1.6, alpha=0.95)
-
-ax.axhline(0.0, linestyle="--", linewidth=1)
-ax.set_xlabel("Tenor (year)")
-ax.set_ylabel("Approximate Sharpe ratio")
-ax.set_title(f"Approx Sharpe ratio on {date_pick}")
-ax.grid(True)
-ax.legend(ncol=3, fontsize=9, frameon=True)
-
-H.save_figure(fig, plot_cfg, f"approx_sharpe_ratio_{pd.to_datetime(date_pick).date()}")
+plt.axhline(0.0, linewidth=0.8)
+plt.xlabel("Tenor (year)")
+plt.ylabel("Approximate Sharpe ratio")
+plt.title(f"Approximate Sharpe ratio — {date_pick.date()}")
+plt.legend(ncol=3, fontsize=8, frameon=False)
+plt.tight_layout()
+plt.show()

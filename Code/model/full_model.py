@@ -36,6 +36,7 @@ class FullModel(nn.Module):
         r_hidden=4,
         g_bias=True,
         hr_bias=False,
+        do_arb_checks = False
     ):
         super().__init__()
 
@@ -106,6 +107,42 @@ class FullModel(nn.Module):
         # 6) Solve ODE for (A,B)
         A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)  # both (B,N)
 
+        # SHARPE RATIO
+        # r shape -> (B,1) for broadcast
+        r = r_tilde if r_tilde.ndim == 2 else r_tilde.unsqueeze(1)  # (B,1)
+        r = r.expand(-1, G_vals.shape[1])  # (B,N)
+
+        # gTmu = (∇G)^T μ  (B,N)
+        gTmu = (grad_z_G * mu.unsqueeze(1)).sum(dim=2)
+
+        # bracket = ∂τG - (∇G)^T μ - 1/2 Tr[σ^T H(G) σ]
+        bracket = dG_dtau - gTmu - 0.5 * trace_cov_hess  # (B,N)
+
+        # Use ODE RHS to get A' and B' on-grid (no finite diff needed)
+        dB_dtau = alpha * B_vals + beta            # (B,N)
+        dA_dtau = gamma * (B_vals ** 2)            # (B,N)
+
+        # Residual R = LN/P  (should be ~0)
+        R_tau = (
+            -r
+            - dA_dtau
+            + G_vals * dB_dtau
+            + B_vals * bracket
+            + (B_vals ** 2) * gamma
+        )  # (B,N)
+
+        # Approx Sharpe ratio like Andreasen (optional)
+        sigma_bar = 0.006
+        tau_safe = torch.clamp(tau.unsqueeze(0), min=1e-8)  # (1,N)
+        SR_tau = R_tau / (tau_safe * sigma_bar)
+
+        arb = {
+            "R_tau": R_tau,      # (B,N) main no-arb residual (LN/P)
+            "SR_tau": SR_tau,    # (B,N) approximate SR
+            "max_abs_R": R_tau.abs().max(dim=1).values,      # (B,)
+            "max_abs_SR_1to30": SR_tau[:, 1:].abs().max(dim=1).values,  # (B,) ignore tau=0
+        }
+
 
         # Hard asserts (instead of silent expand)
         assert A_vals.shape == G_vals.shape, f"A_vals {A_vals.shape} != G_vals {G_vals.shape}"
@@ -126,4 +163,4 @@ class FullModel(nn.Module):
         if torch.is_grad_enabled() and (not S_hat.requires_grad):
             raise RuntimeError("S_hat is detached inside FullModel.forward()")
 
-        return S_hat, z, P, A_vals, B_vals, G_vals, mu, sigma, r_tilde
+        return S_hat, z, P, A_vals, B_vals, G_vals, mu, sigma, r_tilde, arb
