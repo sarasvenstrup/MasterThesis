@@ -92,7 +92,7 @@ loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=Fals
 # -----------------------------
 torch.manual_seed(0)
 
-LATENT_DIM = 3
+LATENT_DIM = 2
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
@@ -412,7 +412,5 @@ ax.legend(ncol=3, fontsize=8, frameon=False)
 
 fig.tight_layout()
 
-# Save in same location as training loss
-H.save_figure(fig, plot_cfg, f"approx_sharpe_{date_pick.date()}_ld{LATENT_DIM}")
+H.save_figure(fig, plot_cfg, f"approx_sharpe_{date_pick.date()}_{LATENT_DIM}_factor")
 
-plt.show()
