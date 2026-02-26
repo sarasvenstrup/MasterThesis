@@ -82,7 +82,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 1000
+EPOCHS = 100
 
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
@@ -413,4 +413,5 @@ ax.legend(ncol=3, fontsize=8, frameon=False)
 fig.tight_layout()
 
 H.save_figure(fig, plot_cfg, f"approx_sharpe_{date_pick.date()}_{LATENT_DIM}_factor")
+
 
