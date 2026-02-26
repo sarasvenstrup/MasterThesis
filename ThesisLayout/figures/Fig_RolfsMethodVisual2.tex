@@ -1,0 +1,135 @@
+\begin{figure}[H]
+\centering
+
+\begin{tikzpicture}[
+    scale=0.9,
+    transform shape,
+    >=stealth,
+    neuron/.style={circle, minimum size=9mm, inner sep=0pt},
+    hnode/.style={circle, minimum size=8mm, inner sep=0pt},
+    % OUTPUT NODES: fixed identical size (12mm diameter)
+    outnode/.style={
+        circle,
+        minimum width=13mm,
+        minimum height=13mm,
+        inner sep=0pt,
+        fill=red!20
+    },
+    darkarrow/.style={->, draw=darkgrey, line width=0.6pt}
+]
+
+\definecolor{darkgrey}{RGB}{90,90,90}
+
+% =====================================
+% Latent layer (left)
+% =====================================
+\node[neuron, fill=red!70] (tau) at (0, 6.0) {$\tau$};
+
+\node[neuron, fill=red!70] (z1) at (0, 4.2) {$z_1$};
+\node                      (zvd) at (0, 3.0) {$\vdots$};
+\node[neuron, fill=red!70] (zl) at (0, 1.8) {$z_l$};
+
+% =====================================
+% X positions
+% =====================================
+\def\xHidden{4.3}
+\def\xOut{8.0}
+
+% =====================================
+% Y positions of stacked networks
+% =====================================
+\def\yG{5.0}
+\def\yK{2.5}
+\def\yH{0.0}
+\def\yR{-2.5}
+
+% =====================================
+% Hidden layers: top node + dots + bottom node
+% (your chosen spacing)
+% =====================================
+\def\HiddenSep{0.8}
+
+\newcommand{\HiddenRange}[4]{%
+  \node[hnode, fill=red!40] (#1hTop)  at (\xHidden, {#2+\HiddenSep}) {#3};
+  \node                      (#1hDots) at (\xHidden, {#2}) {$\vdots$};
+  \node[hnode, fill=red!40] (#1hBot)  at (\xHidden, {#2-\HiddenSep}) {#4};
+}
+
+% G: h1 ... h10
+\HiddenRange{G}{\yG}{$h_1^\mathcal{G}$}{$h_{10}^\mathcal{G}$}
+% K: h1 ... h3
+\HiddenRange{K}{\yK}{$h_1^\mathcal{K}$}{$h_{3}^\mathcal{K}$}
+% H: h1 ... h3
+\HiddenRange{H}{\yH}{$h_1^\mathcal{H}$}{$h_{3}^\mathcal{H}$}
+% R: h1 ... h3
+\HiddenRange{R}{\yR}{$h_1^\mathcal{R}$}{$h_{3}^\mathcal{R}$}
+
+% =====================================
+% Output nodes (ALL SAME SIZE)
+% =====================================
+\node[outnode] (Gout) at (\xOut, \yG) {$\mathcal{G}(z,\tau)$};
+\node[outnode] (Kout) at (\xOut, \yK) {$\mathcal{K}(z)$};
+\node[outnode] (Hout) at (\xOut, \yH) {$\mathcal{H}(z)$};
+\node[outnode] (Rout) at (\xOut, \yR) {$\mathcal{R}(z)$};
+
+% =====================================
+% Curved connections only from latent -> hidden (to avoid overlap)
+% Arrowheads separated: use north west / south west
+% =====================================
+
+% ---- z -> G hidden ----
+\draw[darkarrow] (z1.east) to[out=20, in=180] (GhTop.north west);
+\draw[darkarrow] (zl.east) to[out=35, in=180] (GhTop.south west);
+
+\draw[darkarrow] (z1.east) to[out=5,  in=180] (GhBot.north west);
+\draw[darkarrow] (zl.east) to[out=15, in=180] (GhBot.south west);
+
+% tau -> G hidden
+\draw[darkarrow] (tau.east) to[out=-10, in=170] (GhTop.west);
+\draw[darkarrow] (tau.east) to[out=-25, in=170] (GhBot.west);
+
+% ---- z -> K hidden ----
+\draw[darkarrow] (z1.east) to[out=-5,  in=180] (KhTop.north west);
+\draw[darkarrow] (zl.east) to[out=10,  in=180] (KhTop.south west);
+
+\draw[darkarrow] (z1.east) to[out=-20, in=180] (KhBot.north west);
+\draw[darkarrow] (zl.east) to[out=-5,  in=180] (KhBot.south west);
+
+% ---- z -> H hidden ----
+\draw[darkarrow] (z1.east) to[out=-25, in=180] (HhTop.north west);
+\draw[darkarrow] (zl.east) to[out=-10, in=180] (HhTop.south west);
+
+\draw[darkarrow] (z1.east) to[out=-40, in=180] (HhBot.north west);
+\draw[darkarrow] (zl.east) to[out=-25, in=180] (HhBot.south west);
+
+% ---- z -> R hidden ----
+\draw[darkarrow] (z1.east) to[out=-45, in=180] (RhTop.north west);
+\draw[darkarrow] (zl.east) to[out=-35, in=180] (RhTop.south west);
+
+\draw[darkarrow] (z1.east) to[out=-60, in=180] (RhBot.north west);
+\draw[darkarrow] (zl.east) to[out=-50, in=180] (RhBot.south west);
+
+% =====================================
+% Hidden -> outputs (STRAIGHT, NOT CURVED)
+% =====================================
+\draw[darkarrow] (GhTop.east) -- (Gout.west);
+\draw[darkarrow] (GhBot.east) -- (Gout.west);
+
+\draw[darkarrow] (KhTop.east) -- (Kout.west);
+\draw[darkarrow] (KhBot.east) -- (Kout.west);
+
+\draw[darkarrow] (HhTop.east) -- (Hout.west);
+\draw[darkarrow] (HhBot.east) -- (Hout.west);
+
+\draw[darkarrow] (RhTop.east) -- (Rout.west);
+\draw[darkarrow] (RhBot.east) -- (Rout.west);
+
+\end{tikzpicture}
+
+\caption{Branching of the latent factors $z=(z_1,\ldots,z_l)$ into four neural networks.
+Each hidden layer is illustrated by its first and last neuron with vertical dots in between:
+$\mathcal{G}$ has $h_1,\ldots,h_{10}$, while $\mathcal{K}$, $\mathcal{H}$ and $\mathcal{R}$
+have $h_1,\ldots,h_3$. Only $\mathcal{G}(z,\tau)$ additionally depends on the maturity $\tau$.}
+\label{fig:rolf_architecture_details}
+
+\end{figure}
