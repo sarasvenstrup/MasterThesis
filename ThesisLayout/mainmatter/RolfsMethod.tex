@@ -154,22 +154,18 @@ In this way, the decoder transforms the latent factors into arbitrage-free ZCB p
 
 \section{Motivation for Arbitrage-Free Decoding}
 
+To ensure that the generated bond price curve satisfies the no-arbitrage condition by construction, we parameterize bond prices in an affine-inspired form and derive a system of ordinary differential equations (ODEs) for each encoded latent state $z_t$. The derivation of this arbitrage-free structure is presented below.
 
-To ensure that the generated bond price curve satisfies the no-arbitrage condition by construction, we parameterize bond prices in an affine-inspired form and solve a system of ordinary differential equations for each encoded latent state $z_t$.
-
-The following section derives this arbitrage-free structure in detail.
-
-To start off we need to state how we model the short rate. Firstly, note that the short rate pr. \eqref{shortrate} a function of the forward rate. In our framework of the affine-inspired bond prices in \eqref{affineinspiredzcbprices} the instantaneous forward rate is given by
+We begin by specifying the short rate. Recall from \eqref{shortrate} that the short rate is defined as the instantaneous forward rate at zero maturity. Under the affine-inspired bond price representation \eqref{affineinspiredzcbprices}, the instantaneous forward rate is given by
 \begin{align*}
     f(t,\tau)&=-\frac{\partial\log(P(z_t,\tau))}{\partial \tau}\\
     &=-\partial_{\tau}A_{z_t}(\tau)+\partial_{\tau}B_{z_t}(\tau)\mathcal{G}(z_t,\tau)+\partial_{\tau}\mathcal{G}(z_t,\tau)B_{z_t}(\tau)
 \end{align*}
-from which we can conclude that $r(t)$ must be a function of the latent factors $z_t$.
+Taking the limit as $\tau\rightarrow0$ therefore implies that the short rate must be a function of the latent state $z_t$.
 
+Furthermore, comparing the affine-inspired representation \eqref{affineinspiredzcbprices} with the risk neutral pricing formula \eqref{riskneturalbondpriceformula} shows that the bond prices depend only on the current latent state. Hence, under absence of arbitrage, the \textcolor{red}{latent factors(or latent state???)} $z_t$ must form a Markov process under the risk-neutral measure $\mathbb{Q}$.
 
-Comparing \eqref{affineinspiredzcbprices} and \eqref{riskneturalbondpriceformula} means that the conditional expectation must depend only on $z_t$, and this results in the conclusion that $z_t$ is a markov process under the risk neutral measure $\mathbb{Q}$.
-
-To conclude, once bond prices are assumed to be functions of the current latent factors only, absence of arbitrage implies that the latent factors $z_t$ must follow a Markov process under the risk neutral measure. It is thus natural to impose dynamics on $z_t$ and assume that $r(t)$ is a continuous transformation $\tilde{r}$ of $z_t$
+It is therefore natural to impose diffusion dynamics on the latent factors and to model the short rate as a continuous transformation of $z_t$:
 \begin{equation}
     dz_t=\mu(z_t)dt+\sigma(z_t)dW_t^\mathbb{Q}
     \label{latentdynamics}
@@ -178,17 +174,18 @@ To conclude, once bond prices are assumed to be functions of the current latent 
     r(t)=\tilde{r}(z_t)
     \label{shortratedynamic}
 \end{equation}
+where $W_t^\mathbb{Q}$ is a standard Brownian motion under the risk neutral measure $\mathbb{Q}$.
 
-where $W_t^\mathbb{Q}$ is a standard brownian motion under the risk neutral measure $\mathbb{Q}$.
+\textcolor{red}{INSERT EXPLANATION WHY} Equation \eqref{shortratedynamic} serves as a hard constraint on the model. Since the short rate is defined as $r(t)=\lim_{\tau\rightarrow0}f(t,\tau)=\tilde{r}(z_t)$, the system of ODEs governing $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ will be constructed such that the limit coincides exactly with $\tilde{r}(z_t)$. In this way, the neural function $\mathcal{G}$ and the affine-inspired representation are restricted to ensure consistency between the forward-rate limit and the modeled short rate. 
 
-\textcolor{red}{INSERT EXPLANATION WHY} \eqref{shortratedynamic} serves as a hard constraint for $\mathcal{G}$ such that $r(t)=\lim_{\tau\rightarrow0}f(t,\tau)=\tilde{r}(z_t)$ is satisfied by construction.
-
-We have now admitted that the bond price admits the markov factor representation
+Having established that bond prices admit the Markov factor representation
 $$P(t,T)=P(z_t,\tau),\;\;\;\tau=T-t$$
 
-and that $z_t$ follows a diffusion process. Since $P$ is a smooth funtion of a diffusion, Itô's lemma gives
+and that $z_t$ follows a diffusion process, we can apply Itô's lemma. Since $P$ is a smooth function of a diffusion, we obtain
 $$dP=(\partial_\tau P+\nabla_z P^\top\mu(z_t)+\frac{1}{2}Tr\left[\sigma^\top(z_t)H_zP\sigma(z_t)\right])dt+\nabla_zP^\top\sigma(z_t)dW_t^\mathbb{Q}$$
 
+
+\newpage
 
 \begin{mdframed}
 \textbf{Maybe a derivation that can be put into theory/appendix?}\\
