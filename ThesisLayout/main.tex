@@ -215,6 +215,10 @@
     labelfont=bf
 }
 \usepackage{float}
+\usepackage{subcaption}
+\usepackage{mdframed}
+\usepackage{pgfplotstable}
+
 
 
 % *********************************************************
@@ -327,10 +331,11 @@ Just write text... for now.
 
 \input{ThesisLayout/mainmatter/RolfsMethod}
 
+\input{ThesisLayout/mainmatter/data}
 
 \input{ThesisLayout/mainmatter/results}
 
-\input{ThesisLayout/mainmatter/data}
+
 
 
 
@@ -348,13 +353,16 @@ Just write text... for now.
 \clearpage
 \printbibliography
 
-% --------------------------
-% APPENDIX
-% --------------------------
-\appendix
-\clearpage
+\input{ThesisLayout/mainmatter/appendix}
 
-\chapter{Additional Material}
-Appendix text.
+
+
+
+
+
+
+
+
+
 
 \end{document}

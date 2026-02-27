@@ -6,12 +6,43 @@
 After implementation,
 
 
+
+
+\begin{table}[h!]
+\centering
+\pgfplotstabletypeset[
+  col sep=comma,
+  header=true,
+  string type,
+  columns={0,1},
+  columns/0/.style={column name=Currency, column type=l},
+  columns/1/.style={column name={RMSE (bps)}, column type=r, fixed, precision=2},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+  empty cells with={},
+]{Figures/bbg/rmse_bps_bbg.csv}
+\caption{Out-of-sample RMSE in basis points}
+\end{table}
+
+
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{approx_sharpe.png}
+    \includegraphics[width=0.9\textwidth]{Figures/bbg/approx_sharpe_2014-12-31_2_factor_bbg.png}
     \caption{XXX}
 \end{figure}
 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Code/Figures/bbg/reconstruction_2014-12-31_bbg.pdf}
+    \caption{XXX}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/bbg/latent_factors_over_time_2_factor_bbg.png}
+    \caption{XXX}
+\end{figure}
 
 
 

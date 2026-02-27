@@ -2,6 +2,43 @@
 \label{chap:rationale}
 
 
-Theory about swaprate construction
+
+\section{Term Structure Theory}
+
+Absence of arbitrage implies that the discounted bond price process must be a martingale under $\mathbb{Q}$. This condition yields a partial differential equation governing bond prices.
+
+
+
+short rate:
+
+\begin{equation}
+    r(t)=\lim_{\tau\rightarrow0}f(t,\tau)
+    \label{shortrate}
+\end{equation}
+
+
+
+The absence of arbitrage implies that bond prices under the risk-neutral measure $\mathbb{Q}$, can be written as a risk-neutral expectation oof the bank account
+
+\begin{equation}
+P(t,t+\tau)
+=
+\mathbb{E}_t^{\mathbb{Q}}
+\left[
+e^{-\int_t^{t+\tau} r(u)\,du}
+\right], \;\;T=t+\tau
+
+\label{riskneturalbondpriceformula}
+\end{equation}
+
+where $r(t)$ denotes the short rate.
+
+
+
+
+\textcolor{red}{INSERT MARKOV ARGUMENT for the latent factor process!}
+
+
+\subsection{Swap Rates}
 
 In practice, equation~\eqref{estimatedswaprates} does not hold by equality due to basis spreads between discount and forward curves. However, for modeling purposes we assume perfect consistency between discount factors and swap rates.
