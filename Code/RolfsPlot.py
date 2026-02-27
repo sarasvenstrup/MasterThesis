@@ -281,7 +281,7 @@ rmse_df.index.name = "Currency"
 print(rmse_df)
 
 # Save to CSV (no rounding applied)
-rmse_path = os.path.join(FIGURES_DIR, f"rmse_bps_{USE}.csv")
+rmse_path = os.path.join(FIGURES_DIR, f"rmse_{USE}_factor_{LATENT_DIM}.csv")
 rmse_df.to_csv(rmse_path)
 
 print("Saved RMSE table:", rmse_path)
