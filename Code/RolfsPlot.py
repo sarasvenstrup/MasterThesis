@@ -82,7 +82,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 100
+EPOCHS = 1000
 
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
@@ -264,16 +264,26 @@ X_eval = X_tensor[mask]
 S_eval = S_hat_all[mask]
 meta_eval = meta.loc[mask.numpy()].reset_index(drop=True)
 
+
 # -----------------------------
 # 8) RMSE per currency (bps) + save table
 # -----------------------------
 rmse_series = H.rmse_bps_per_currency_paper(X_eval, S_eval, meta_eval)
 
 print("\nSteady-state in-sample RMSE (bps) per currency:")
-print(rmse_series.to_frame("RMSE (bps)"))
 
+# Convert to DataFrame and clean structure
+rmse_df = rmse_series.to_frame(name="RMSE_bps")
+
+# Name the index properly (this becomes the first column header)
+rmse_df.index.name = "Currency"
+
+print(rmse_df)
+
+# Save to CSV (no rounding applied)
 rmse_path = os.path.join(FIGURES_DIR, f"rmse_bps_{USE}.csv")
-rmse_series.to_frame("RMSE (bps)").to_csv(rmse_path)
+rmse_df.to_csv(rmse_path)
+
 print("Saved RMSE table:", rmse_path)
 
 # -----------------------------
