@@ -6,22 +6,29 @@
 After implementation,
 
 
-
-
 \begin{table}[h!]
 \centering
 \pgfplotstabletypeset[
   col sep=comma,
   header=true,
-  string type,
-  columns={0,1},
-  columns/0/.style={column name=Currency, column type=l},
-  columns/1/.style={column name={RMSE (bps)}, column type=r, fixed, precision=2},
+  columns/Currency/.style={
+      column type=l,
+      string type
+  },
+  columns/RMSE_bps/.style={
+      column name={RMSE (bps)},
+      column type=r,
+      fixed,
+      precision=2,
+      fixed zerofill
+  },
   every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={after row=\bottomrule},
-  empty cells with={},
+  every last row/.style={
+      before row=\midrule,
+      after row=\bottomrule
+  },
 ]{Figures/bbg/rmse_bps_bbg.csv}
-\caption{Out-of-sample RMSE in basis points}
+\caption{In-sample RMSE in basis points}
 \end{table}
 
 
