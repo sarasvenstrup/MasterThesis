@@ -27,9 +27,38 @@ After implementation,
       before row=\midrule,
       after row=\bottomrule
   },
-]{Figures/bbg/rmse_bps_bbg.csv}
+]{Figures/bbg/rmse_bbg_factor_2.csv}
 \caption{In-sample RMSE in basis points}
 \end{table}
+
+\begin{table}[h!]
+\centering
+\pgfplotstabletypeset[
+  col sep=comma,
+  header=true,
+  columns/Currency/.style={
+      column type=l,
+      string type
+  },
+  columns/RMSE_bps/.style={
+      column name={RMSE (bps)},
+      column type=r,
+      fixed,
+      precision=2,
+      fixed zerofill
+  },
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={
+      before row=\midrule,
+      after row=\bottomrule
+  },
+]{Figures/bbg/rmse_bbg_factor_3.csv}
+\caption{In-sample RMSE in basis points}
+\end{table}
+
+\textcolor{red}{COMBINE THESE TWO TABLES SO SO THAT THEY ARE SIDE BY SIDE}
+
+
 
 
 \begin{figure}[H]
