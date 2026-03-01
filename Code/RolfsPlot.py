@@ -27,7 +27,7 @@ if REPO_ROOT not in sys.path:
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
-from Code.utils.sharpe_ratio import final_term_2factor_from_model, approx_sharpe_from_final_term
+
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -62,6 +62,8 @@ os.makedirs(FIGURES_DIR, exist_ok=True)
 
 meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
 
+X_tensor = X_tensor.float()
+
 plot_cfg = H.PlotConfig(
     figures_dir=FIGURES_DIR,
     use_tag=USE,
@@ -82,7 +84,8 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 1000
+EPOCHS = 5000
+TARGET_MSE = 1e-6
 
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
@@ -92,7 +95,7 @@ loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=Fals
 # -----------------------------
 torch.manual_seed(0)
 
-LATENT_DIM = 3
+LATENT_DIM = 2
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
@@ -131,6 +134,14 @@ for epoch in range(EPOCHS):
     nan_batches_total += nan_batches
     epoch_loss = running / max(n_obs, 1)
     train_losses.append(epoch_loss)
+
+    if epoch_loss <= TARGET_MSE:
+        rmse = epoch_loss ** 0.5
+        print(
+            f"Early stop: reached target. "
+            f"epoch={epoch} MSE={epoch_loss:.3e} RMSE={rmse:.3e} (~{rmse / 1e-4:.1f} bps)"
+        )
+        break
 
     if epoch % 50 == 0 or epoch == EPOCHS - 1:
         print(
