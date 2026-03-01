@@ -1,0 +1,154 @@
+% --------------------------
+% APPENDIX
+% --------------------------
+\appendix
+\clearpage
+
+\chapter{Additional Material}
+Appendix text.
+
+\section{PDE Derivations (TITLE?)}
+
+Define for convenience
+\[
+\Phi(z,\tau):=A_z(\tau)-B_z(\tau)\,G(z,\tau),
+\qquad\text{so that}\qquad
+P(z,\tau)=e^{\Phi(z,\tau)}.
+\]
+
+\textbf{(i) $\tau$-derivative.}
+By the chain rule,
+\[
+\partial_\tau P = (\partial_\tau \Phi)\,P.
+\]
+Moreover,
+\[
+\partial_\tau \Phi
+=
+\partial_\tau A_z(\tau) - \partial_\tau\!\big(B_z(\tau)\,G(z,\tau)\big)
+=
+\partial_\tau A_z(\tau)
+-
+(\partial_\tau B_z(\tau))\,G(z,\tau)
+-
+B_z(\tau)\,\partial_\tau G(z,\tau).
+\]
+Hence,
+\[
+\boxed{
+\partial_\tau P
+=
+\Big(
+\partial_\tau A_z
+-
+(\partial_\tau B_z)\,G
+-
+B_z\,\partial_\tau G
+\Big)P.
+}
+\]
+
+\textbf{(ii) Gradient in $z$.}
+Assuming $A_z(\tau)$ and $B_z(\tau)$ are treated as functions of $\tau$ only (i.e. no $z$-derivatives),
+the $z$-dependence of $\Phi$ comes only through $G(z,\tau)$:
+\[
+\nabla_z \Phi = -B_z(\tau)\,\nabla_z G(z,\tau).
+\]
+Thus,
+\[
+\boxed{
+\nabla_z P
+=
+(\nabla_z \Phi)\,P
+=
+\big(-B_z\,\nabla_z G\big)P.
+}
+\] 
+
+\textbf{(iii) Hessian in $z$.}
+A standard identity for $P=e^{\Phi}$ is
+\[
+H_z P = P\big(H_z\Phi + (\nabla_z\Phi)(\nabla_z\Phi)^\top\big).
+\]
+We have
+\[
+H_z\Phi = -B_z(\tau)\,H_z G(z,\tau),
+\qquad
+(\nabla_z\Phi)(\nabla_z\Phi)^\top
+=
+B_z(\tau)^2\,\nabla_z G(z,\tau)\,\nabla_z G(z,\tau)^\top.
+\]
+Therefore,
+\[
+\boxed{
+H_z P
+=
+P\Big(
+-B_z\,H_z G
++
+B_z^2\,\nabla_z G\,\nabla_z G^\top
+\Big).
+}
+\] 
+
+
+
+
+
+
+
+
+\section{Results from Rolfs method (TITLE?)}
+
+\begin{figure}[H]
+    \centering
+    
+    \begin{subfigure}{\textwidth}
+        \centering
+        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/mu1_over_time_bbg.png}
+        \caption{$\mu_1$ over time}
+    \end{subfigure}
+    
+    \vspace{0.25cm}
+    
+    \begin{subfigure}{\textwidth}
+        \centering
+        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/mu2_over_time_bbg.png}
+        \caption{$\mu_2$ over time}
+    \end{subfigure}
+    
+    \vspace{0.25cm}
+    
+    \begin{subfigure}{\textwidth}
+        \centering
+        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/r_tilde_over_time_bbg.png}
+        \caption{$\tilde r_t$ over time}
+    \end{subfigure}
+    
+    \vspace{0.25cm}
+    
+    \begin{subfigure}{\textwidth}
+        \centering
+        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/sigma1_over_time_bbg.png}
+        \caption{$\sigma_1$ over time}
+    \end{subfigure}
+    
+    \vspace{0.25cm}
+    
+    \begin{subfigure}{\textwidth}
+        \centering
+        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/sigma2_over_time_bbg.png}
+        \caption{$\sigma_2$ over time}
+    \end{subfigure}
+    
+    \vspace{0.25cm}
+    
+    \begin{subfigure}{\textwidth}
+        \centering
+        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/rho12_over_time_bbg.png}
+        \caption{$\rho_{12}$ over time}
+    \end{subfigure}
+    
+    \caption{Estimated drift, short rate and volatility parameters over time.}
+    \label{fig:model_parameters_over_time}
+\end{figure}

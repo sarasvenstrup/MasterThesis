@@ -1,2 +1,96 @@
 \chapter{Results}
 \label{chap:res}
+
+
+
+After implementation,
+
+
+\begin{table}[h!]
+\centering
+\pgfplotstabletypeset[
+  col sep=comma,
+  header=true,
+  columns/Currency/.style={
+      column type=l,
+      string type
+  },
+  columns/RMSE_bps/.style={
+      column name={RMSE (bps)},
+      column type=r,
+      fixed,
+      precision=2,
+      fixed zerofill
+  },
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={
+      before row=\midrule,
+      after row=\bottomrule
+  },
+]{Figures/bbg/rmse_bbg_factor_2.csv}
+\caption{In-sample RMSE in basis points}
+\end{table}
+
+\begin{table}[h!]
+\centering
+\pgfplotstabletypeset[
+  col sep=comma,
+  header=true,
+  columns/Currency/.style={
+      column type=l,
+      string type
+  },
+  columns/RMSE_bps/.style={
+      column name={RMSE (bps)},
+      column type=r,
+      fixed,
+      precision=2,
+      fixed zerofill
+  },
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={
+      before row=\midrule,
+      after row=\bottomrule
+  },
+]{Figures/bbg/rmse_bbg_factor_3.csv}
+\caption{In-sample RMSE in basis points}
+\end{table}
+
+\textcolor{red}{COMBINE THESE TWO TABLES SO SO THAT THEY ARE SIDE BY SIDE}
+
+
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/bbg/approx_sharpe_2014-12-31_2_factor_bbg.png}
+    \caption{XXX}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Code/Figures/bbg/reconstruction_2014-12-31_bbg.pdf}
+    \caption{XXX}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/bbg/latent_factors_over_time_2_factor_bbg.png}
+    \caption{XXX}
+\end{figure}
+
+
+
+
+
+
+
+
+
+\textcolor{red}{We must be very clear on how we want to compare Rolfs method to PCA, in order to avoid comparing bananas and apples. The comparison must be based on the reconstruction accuracy (RMSE of swaps in our case), then PCA is a valid baseline.
+PCA - how many statistical factors explain most variance
+Rolf - can we achieve similiar fit while imposing no-arbitrage and dynamics.
+PCA serves as a purely statistical benchmark for cross-sectional reconstruction accuracy.
+Rolf’s model can then be evaluated relative to this benchmark while imposing additional economic structure (no-arbitrage and dynamics).
+In order to compare the three-factor extension of Rolf’s model with a purely statistical benchmark, we introduce Principal Component Analysis (PCA). PCA provides a model-free method for dimensionality reduction and is widely used in empirical term structure analysis.}

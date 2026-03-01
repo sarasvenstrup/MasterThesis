@@ -39,7 +39,7 @@ def L_from_sigmas_rhos_2d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     return L
 
 
-def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+def L_from_sigmas_rhos_3d_old(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
     sigmas: (B,3) positive [sigma1, sigma2, sigma3]
     rhos:   (B,3) in (-1,1) ordered as [rho12, rho13, rho23]
@@ -88,6 +88,62 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     L[:, 2, 2] = L22
 
     return L
+
+
+def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    """
+    sigmas: (B,3) positive [sigma1, sigma2, sigma3]
+    rhos:   (B,3) in (-1,1) ordered as [rho12, rho13, rho23_cond1]
+            where rho23_cond1 = Corr(z2, z3 | z1) is a PARTIAL correlation.
+
+    returns:
+      L: (B,3,3) lower-triangular Cholesky factor such that Sigma = L L^T
+    """
+    device, dtype = sigmas.device, sigmas.dtype
+    B = sigmas.shape[0]
+
+    s1 = torch.clamp(sigmas[:, 0], min=eps)
+    s2 = torch.clamp(sigmas[:, 1], min=eps)
+    s3 = torch.clamp(sigmas[:, 2], min=eps)
+
+    # 1) Interpret rhos as partial-correlation parameterization
+    rho12 = torch.clamp(rhos[:, 0], min=-1.0 + eps, max=1.0 - eps)
+    rho13 = torch.clamp(rhos[:, 1], min=-1.0 + eps, max=1.0 - eps)
+    rho23_c1 = torch.clamp(rhos[:, 2], min=-1.0 + eps, max=1.0 - eps)  # rho23 | 1
+
+    # 2) Convert partial corr -> ordinary corr rho23
+    # rho23 = rho23|1 * sqrt((1-rho12^2)(1-rho13^2)) + rho12*rho13
+    term = torch.sqrt(torch.clamp((1.0 - rho12**2) * (1.0 - rho13**2), min=eps))
+    rho23 = rho23_c1 * term + rho12 * rho13
+    rho23 = torch.clamp(rho23, min=-1.0 + eps, max=1.0 - eps)
+
+    # 3) Now build Cholesky of covariance using your closed-form Cholesky for 3x3
+    one_minus_r12_sq = torch.clamp(1.0 - rho12**2, min=eps)
+    sqrt_one_minus_r12_sq = torch.sqrt(one_minus_r12_sq)
+
+    # L entries
+    L00 = s1
+    L10 = rho12 * s2
+    L11 = s2 * sqrt_one_minus_r12_sq
+
+    L20 = rho13 * s3
+    L21 = s3 * (rho23 - rho12 * rho13) / sqrt_one_minus_r12_sq
+
+    inside = 1.0 - rho13**2 - ((rho23 - rho12 * rho13) ** 2) / one_minus_r12_sq
+    inside = torch.clamp(inside, min=eps)
+    L22 = s3 * torch.sqrt(inside)
+
+    L = torch.zeros(B, 3, 3, device=device, dtype=dtype)
+    L[:, 0, 0] = L00
+    L[:, 1, 0] = L10
+    L[:, 1, 1] = L11
+    L[:, 2, 0] = L20
+    L[:, 2, 1] = L21
+    L[:, 2, 2] = L22
+
+    return L
+
+
 
 
 def L_from_sigmas_rhos(sigmas: torch.Tensor, rhos: torch.Tensor | None = None, eps: float = 1e-12) -> torch.Tensor:

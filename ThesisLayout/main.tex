@@ -46,6 +46,7 @@
   bottom=3cm
 ]{geometry}
 
+
 % --------------------------------------------------
 % Line spacing
 % --------------------------------------------------
@@ -215,6 +216,10 @@
     labelfont=bf
 }
 \usepackage{float}
+\usepackage{subcaption}
+\usepackage{mdframed}
+\usepackage{pgfplotstable}
+
 
 
 % *********************************************************
@@ -323,20 +328,18 @@ Just write text... for now.
 
 \input{ThesisLayout/mainmatter/introduction}
 
+\input{ThesisLayout/mainmatter/theory}
+
 \input{ThesisLayout/mainmatter/RolfsMethod}
 
-\input{ThesisLayout/mainmatter/methods}
-
-\input{ThesisLayout/mainmatter/rationale}
-
-\input{ThesisLayout/mainmatter/methods}
-
+\input{ThesisLayout/mainmatter/data}
 
 \input{ThesisLayout/mainmatter/results}
 
-\input{ThesisLayout/mainmatter/discussion}
 
-\input{ThesisLayout/mainmatter/perspectives}
+
+
+
 
 \input{ThesisLayout/mainmatter/conclusion}
 
@@ -351,13 +354,16 @@ Just write text... for now.
 \clearpage
 \printbibliography
 
-% --------------------------
-% APPENDIX
-% --------------------------
-\appendix
-\clearpage
+\input{ThesisLayout/mainmatter/appendix}
 
-\chapter{Additional Material}
-Appendix text.
+
+
+
+
+
+
+
+
+
 
 \end{document}

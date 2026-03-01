@@ -82,7 +82,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 100
+EPOCHS = 1000
 
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
@@ -92,7 +92,7 @@ loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=Fals
 # -----------------------------
 torch.manual_seed(0)
 
-LATENT_DIM = 2
+LATENT_DIM = 3
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
@@ -132,7 +132,7 @@ for epoch in range(EPOCHS):
     epoch_loss = running / max(n_obs, 1)
     train_losses.append(epoch_loss)
 
-    if epoch % 10 == 0 or epoch == EPOCHS - 1:
+    if epoch % 50 == 0 or epoch == EPOCHS - 1:
         print(
             f"epoch={epoch:4d} loss={epoch_loss:.6e} "
             f"used_obs={n_obs} nan_batches={nan_batches} total_nan_batches={nan_batches_total}"
@@ -264,16 +264,26 @@ X_eval = X_tensor[mask]
 S_eval = S_hat_all[mask]
 meta_eval = meta.loc[mask.numpy()].reset_index(drop=True)
 
+
 # -----------------------------
 # 8) RMSE per currency (bps) + save table
 # -----------------------------
 rmse_series = H.rmse_bps_per_currency_paper(X_eval, S_eval, meta_eval)
 
 print("\nSteady-state in-sample RMSE (bps) per currency:")
-print(rmse_series.to_frame("RMSE (bps)"))
 
-rmse_path = os.path.join(FIGURES_DIR, f"rmse_bps_{USE}.csv")
-rmse_series.to_frame("RMSE (bps)").to_csv(rmse_path)
+# Convert to DataFrame and clean structure
+rmse_df = rmse_series.to_frame(name="RMSE_bps")
+
+# Name the index properly (this becomes the first column header)
+rmse_df.index.name = "Currency"
+
+print(rmse_df)
+
+# Save to CSV (no rounding applied)
+rmse_path = os.path.join(FIGURES_DIR, f"rmse_{USE}_factor_{LATENT_DIM}.csv")
+rmse_df.to_csv(rmse_path)
+
 print("Saved RMSE table:", rmse_path)
 
 # -----------------------------
@@ -283,9 +293,9 @@ print("Saved RMSE table:", rmse_path)
 fig, ax = plt.subplots(figsize=(6, 3.5))
 ax.plot(train_losses)
 ax.set_xlabel("Epoch")
-ax.set_ylabel("Train MSE")
-ax.set_title(f"Training loss (in-sample) — USE={USE}")
-H.save_figure(fig, plot_cfg, "training_loss")
+ax.set_ylabel("RMSE")
+ax.set_title(f"Training loss")
+H.save_figure(fig, plot_cfg, f"training_loss_{LATENT_DIM}_factor")
 
 # 9b) Actual vs reconstructed on one date
 date_pick = pd.to_datetime("2014-12-31")
@@ -325,13 +335,13 @@ def plot_latents_over_time(z_eval_t: torch.Tensor, meta_eval_df: pd.DataFrame, c
                 alpha=0.9,
             )
 
-        ax.set_title(f"Latent factor z{k+1}")
+        ax.set_title(f"Latent factors for {k+1}-factor model")
         ax.grid(True)
 
     handles, labels = axes[-1].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
     fig.tight_layout(rect=[0, 0.06, 1, 1])
-    H.save_figure(fig, cfg, "latent_factors")
+    H.save_figure(fig, cfg, f"latent_factors_over_time_{LATENT_DIM}_factor")
 
 plot_latents_over_time(z_all_full[mask], meta_eval, plot_cfg)
 
@@ -379,7 +389,7 @@ for col in mu_cols:
 print(f"Done. Figures saved to: {FIGURES_DIR}")
 
 # =============================
-# Approx Sharpe Ratio (Fig 3) – FULL CODE BLOCK
+# Approx Sharpe Ratio (Fig 3)
 # =============================
 
 sel = (meta_eval["as_of_date"] == date_pick) & (meta_eval["ccy"].isin(ccy_order))
@@ -399,14 +409,19 @@ tau = torch.linspace(0, float(model.tau_max), model.tau_max + 1)
 tau_np = tau.numpy()[1:]
 sr_np  = SR_tau_9.numpy()[:, 1:]
 
-plt.figure(figsize=(7.2, 4.6), dpi=160)
-for i in range(sr_np.shape[0]):
-    plt.plot(tau_np, sr_np[i], linewidth=1.0, label=labels[i])
+fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
 
-plt.axhline(0.0, linewidth=0.8)
-plt.xlabel("Tenor (year)")
-plt.ylabel("Approximate Sharpe ratio")
-plt.title(f"Approximate Sharpe ratio — {date_pick.date()}")
-plt.legend(ncol=3, fontsize=8, frameon=False)
-plt.tight_layout()
-plt.show()
+for i in range(sr_np.shape[0]):
+    ax.plot(tau_np, sr_np[i], linewidth=1.0, label=labels[i])
+
+ax.axhline(0.0, linewidth=0.8)
+ax.set_xlabel("Tenor (year)")
+ax.set_ylabel("Approximate Sharpe ratio")
+ax.set_title(f"Approximate Sharpe ratio — {date_pick.date()}")
+ax.legend(ncol=3, fontsize=8, frameon=False)
+
+fig.tight_layout()
+
+H.save_figure(fig, plot_cfg, f"approx_sharpe_{date_pick.date()}_{LATENT_DIM}_factor")
+
+
