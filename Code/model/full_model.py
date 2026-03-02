@@ -34,7 +34,7 @@ class FullModel(nn.Module):
         g_hidden=10,
         h_hidden=4,
         r_hidden=4,
-        g_bias=True,
+        g_bias=False,
         hr_bias=False,
         do_arb_checks = False
     ):
@@ -69,7 +69,7 @@ class FullModel(nn.Module):
         z = self.encoder(S_in)
 
         # 2) maturity grid 0..tau_max inclusive
-        tau = torch.linspace(0.0, float(self.tau_max), self.tau_max + 1, device=device, dtype=dtype)  # (N,)
+        tau = torch.arange(1, self.tau_max + 1, device=device, dtype=dtype)  # (30,)
 
         # 3) Evaluate G(z,tau) on the grid -> (B,N)
         G_vals = self.G(z, tau)
@@ -154,8 +154,7 @@ class FullModel(nn.Module):
         P = torch.exp(Xexp)  # (B,N)
 
         # 8) Swap rates at observed tenors (drop tau=0)
-        P_1T = P[:, 1:]  # (B, tau_max)
-        S_hat = par_swap_from_discount(P_1T, self.tenors)  # (B,8)
+        S_hat = par_swap_from_discount(P, self.tenors)  # (B,8)
 
         if squeeze_back:
             S_hat = S_hat.squeeze(0)
