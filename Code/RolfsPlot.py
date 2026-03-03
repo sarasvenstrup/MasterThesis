@@ -84,7 +84,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 5000
+EPOCHS = 100
 TARGET_MSE = 1e-6
 
 dataset = TensorDataset(X_tensor)
@@ -414,14 +414,13 @@ m_day = m_day.sort_values("ccy").drop_duplicates("ccy", keep="first")
 idx9 = m_day.index.to_numpy()
 labels = m_day["ccy"].astype(str).tolist()
 
-SR_tau_9 = SR_all_full[idx9]  # shape (9, N)
+SR_tau_9 = SR_all_full[idx9]              # (9, 30) because model tau is 1..30
+tau = torch.arange(1, model.tau_max + 1)  # (30,)
 
-tau = torch.linspace(0, float(model.tau_max), model.tau_max + 1)
-tau_np = tau.numpy()[1:]
-sr_np  = SR_tau_9.numpy()[:, 1:]
+tau_np = tau.numpy()                      # (30,)
+sr_np  = SR_tau_9.numpy()                 # (9, 30)
 
 fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-
 for i in range(sr_np.shape[0]):
     ax.plot(tau_np, sr_np[i], linewidth=1.0, label=labels[i])
 
@@ -430,9 +429,6 @@ ax.set_xlabel("Tenor (year)")
 ax.set_ylabel("Approximate Sharpe ratio")
 ax.set_title(f"Approximate Sharpe ratio — {date_pick.date()}")
 ax.legend(ncol=3, fontsize=8, frameon=False)
-
 fig.tight_layout()
 
 H.save_figure(fig, plot_cfg, f"approx_sharpe_{date_pick.date()}_{LATENT_DIM}_factor")
-
-
