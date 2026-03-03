@@ -101,9 +101,22 @@ model.train()
 
 optim = torch.optim.Adam(model.parameters(), lr=LR)
 
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optim,
+    mode="min",
+    factor=0.5,        # halve LR
+    patience=8,        # wait 8 epochs without improvement
+    threshold=1e-3,
+    threshold_mode="rel",
+    cooldown=0,
+    min_lr=1e-6,
+    verbose=True,
+)
+
 loss_fn = nn.MSELoss()
 
 train_losses = []
+lrs = []
 nan_batches_total = 0
 
 for epoch in range(EPOCHS):
@@ -135,17 +148,21 @@ for epoch in range(EPOCHS):
     epoch_loss = running / max(n_obs, 1)
     train_losses.append(epoch_loss)
 
+    scheduler.step(epoch_loss)
+    lrs.append(optim.param_groups[0]["lr"])
+
     if epoch_loss <= TARGET_MSE:
-        rmse = epoch_loss ** 0.5
+        rmse_epoch = epoch_loss ** 0.5
         print(
-            f"Early stop: reached target. "
-            f"epoch={epoch} MSE={epoch_loss:.3e} RMSE={rmse:.3e} (~{rmse / 1e-4:.1f} bps)"
+            f"epoch={epoch:4d} rmse={rmse_epoch:.6e} lr={optim.param_groups[0]['lr']:.2e} "
+            f"used_obs={n_obs} nan_batches={nan_batches} total_nan_batches={nan_batches_total}"
         )
         break
 
     if epoch % 50 == 0 or epoch == EPOCHS - 1:
+        rmse_epoch = epoch_loss ** 0.5
         print(
-            f"epoch={epoch:4d} loss={epoch_loss:.6e} "
+            f"epoch={epoch:4d} rmse={rmse_epoch:.6e} lr={optim.param_groups[0]['lr']:.2e} "
             f"used_obs={n_obs} nan_batches={nan_batches} total_nan_batches={nan_batches_total}"
         )
 
@@ -304,9 +321,18 @@ print("Saved RMSE table:", rmse_path)
 fig, ax = plt.subplots(figsize=(6, 3.5))
 ax.plot(train_losses)
 ax.set_xlabel("Epoch")
-ax.set_ylabel("RMSE")
+ax.set_ylabel("MSE")
 ax.set_title(f"Training loss")
 H.save_figure(fig, plot_cfg, f"training_loss_{LATENT_DIM}_factor")
+
+# 9d) Learning rate over epochs
+fig, ax = plt.subplots(figsize=(6, 3.5))
+ax.plot(lrs)
+ax.set_xlabel("Epoch")
+ax.set_ylabel("Learning rate")
+ax.set_yscale("log")  # very useful for decay schedulers
+ax.set_title("Learning rate schedule")
+H.save_figure(fig, plot_cfg, f"learning_rate_{LATENT_DIM}_factor")
 
 # 9b) Actual vs reconstructed on one date
 date_pick = pd.to_datetime("2014-12-31")
