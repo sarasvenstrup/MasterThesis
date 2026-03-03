@@ -34,7 +34,7 @@ class FullModel(nn.Module):
         g_hidden=10,
         h_hidden=4,
         r_hidden=4,
-        g_bias=False,
+        g_bias=True,
         hr_bias=False,
         do_arb_checks = False
     ):
@@ -69,7 +69,7 @@ class FullModel(nn.Module):
         z = self.encoder(S_in)
 
         # 2) maturity grid 0..tau_max inclusive
-        tau = torch.arange(0, self.tau_max + 1, device=device, dtype=dtype)  # (30,)
+        tau = torch.arange(1, self.tau_max + 1, device=device, dtype=dtype)  # (30,)
 
         # 3) Evaluate G(z,tau) on the grid -> (B,N)
         G_vals = self.G(z, tau)
