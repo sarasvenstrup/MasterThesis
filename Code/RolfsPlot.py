@@ -84,7 +84,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
 LR = 1e-3
-EPOCHS = 100
+EPOCHS = 1000
 TARGET_MSE = 1e-6
 
 dataset = TensorDataset(X_tensor)
@@ -99,16 +99,16 @@ LATENT_DIM = 2
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-#optim = torch.optim.Adam(model.parameters(), lr=LR)
-optim = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
+optim = torch.optim.Adam(model.parameters(), lr=LR)
+#optim = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
 
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optim,
-    max_lr=3e-3,
+    max_lr=1e-3,
     steps_per_epoch=len(loader),
     epochs=EPOCHS,
-    pct_start=0.2,
-    div_factor=10.0,
+    pct_start=0.3,
+    div_factor=1.0,
     final_div_factor=1000.0
 )
 
