@@ -99,19 +99,19 @@ LATENT_DIM = 2
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-optim = torch.optim.Adam(model.parameters(), lr=LR)
+#optim = torch.optim.Adam(model.parameters(), lr=LR)
+optim = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
 
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optim,
-    mode="min",
-    factor=0.5,        # halve LR
-    patience=8,        # wait 8 epochs without improvement
-    threshold=1e-3,
-    threshold_mode="rel",
-    cooldown=0,
-    min_lr=1e-6,
-    verbose=True,
+    max_lr=3e-3,
+    steps_per_epoch=len(loader),
+    epochs=EPOCHS,
+    pct_start=0.2,
+    div_factor=10.0,
+    final_div_factor=1000.0
 )
+
 
 loss_fn = nn.MSELoss()
 
@@ -140,6 +140,7 @@ for epoch in range(EPOCHS):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optim.step()
+        scheduler.step()
 
         running += float(loss.detach().cpu()) * xb.shape[0]
         n_obs += xb.shape[0]
@@ -148,7 +149,6 @@ for epoch in range(EPOCHS):
     epoch_loss = running / max(n_obs, 1)
     train_losses.append(epoch_loss)
 
-    scheduler.step(epoch_loss)
     lrs.append(optim.param_groups[0]["lr"])
 
     if epoch_loss <= TARGET_MSE:
