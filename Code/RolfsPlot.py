@@ -99,17 +99,17 @@ LATENT_DIM = 2
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-optim = torch.optim.Adam(model.parameters(), lr=LR)
+#optim = torch.optim.Adam(model.parameters(), lr=LR)
 
-scheduler = torch.optim.lr_scheduler.OneCycleLR(
-    optim,
-    max_lr=1e-3,
-    steps_per_epoch=len(loader),
-    epochs=EPOCHS,
-    pct_start=0.3,
-    div_factor=10,
-    final_div_factor=1000
-)
+gamma0 = 1e-3   # initial LR
+a = 1.0
+K = 800.0       # decay timescale (tune this)
+
+optim = torch.optim.Adam(model.parameters(), lr=gamma0)
+
+lr_lambda = lambda e: K / (K + max(e, 1) ** a)
+
+scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_lambda)
 
 loss_fn = nn.MSELoss()
 
@@ -138,11 +138,11 @@ for epoch in range(EPOCHS):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optim.step()
-        scheduler.step()
 
         running += float(loss.detach().cpu()) * xb.shape[0]
         n_obs += xb.shape[0]
 
+    scheduler.step()
     nan_batches_total += nan_batches
     epoch_loss = running / max(n_obs, 1)
     train_losses.append(epoch_loss)
