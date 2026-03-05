@@ -42,7 +42,6 @@ class FullModel(nn.Module):
 
         self.input_dim = input_dim
         self.latent_dim = latent_dim
-        self.sub_steps = 4  # e.g. 4 steps per year => dt=0.25
 
         self.tau_max = tau_max  # build discount curve 0..tau_max
         self.tenors = tenors if tenors is not None else [1, 2, 3, 5, 10, 15, 20, 30]
@@ -69,14 +68,10 @@ class FullModel(nn.Module):
         # 1) Encode: (B,8) -> (B,d)
         z = self.encoder(S_in)
 
-        # 2) maturity grid 0..tau_max inclusive
-        sub = self.sub_steps
-
-        tau = torch.arange(0, self.tau_max + 1, device=device, dtype=dtype)  # (30,)
-        tau_fine = torch.arange(0, self.tau_max * sub + 1, device=device, dtype=dtype) / sub
+        tau = torch.arange(0, self.tau_max + 1, device=device, dtype=dtype)
 
         # 3) Evaluate G(z,tau) on the grid -> (B,N)
-        G_vals = self.G(z, tau_fine)
+        G_vals = self.G(z, tau)
 
         if G_vals.dim() == 1:
             G_vals = G_vals.unsqueeze(0)
@@ -91,10 +86,9 @@ class FullModel(nn.Module):
         # 5) Derivatives needed for alpha/beta/gamma
         def G_single(z_single: torch.Tensor) -> torch.Tensor:
             # returns (N,)
-            return self.G(z_single.unsqueeze(0), tau_fine).squeeze(0)
+            return self.G(z_single.unsqueeze(0), tau).squeeze(0)
 
-
-        dG_dtau = d_tau_autograd_nodewise(self.G, z, tau_fine)  # (B,N)
+        dG_dtau = d_tau_autograd_nodewise(self.G, z, tau)  # (B,N)
         grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, sigma)  # (B,N,d), (B,N)
 
         alpha, beta, gamma = paper_alpha_beta_gamma_trace(
@@ -109,7 +103,7 @@ class FullModel(nn.Module):
 
 
         # 6) Solve ODE for (A,B)
-        A_vals, B_vals = solve_AB(tau_fine, alpha, beta, gamma)  # both (B,N)
+        A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)  # both (B,N)
 
         # SHARPE RATIO
         # r shape -> (B,1) for broadcast
@@ -137,7 +131,7 @@ class FullModel(nn.Module):
 
         # Approx Sharpe ratio like Andreasen (optional)
         sigma_bar = 0.006
-        tau_safe = torch.clamp(tau_fine.unsqueeze(0), min=1e-8)  # (1,N)
+        tau_safe = torch.clamp(tau.unsqueeze(0), min=1e-8)  # (1,N)
         SR_tau = R_tau / (tau_safe * sigma_bar)
 
         arb = {
@@ -147,29 +141,13 @@ class FullModel(nn.Module):
             "max_abs_SR_1to30": SR_tau[:, 1:].abs().max(dim=1).values,  # (B,) ignore tau=0
         }
 
-
         # Hard asserts (instead of silent expand)
         assert A_vals.shape == G_vals.shape, f"A_vals {A_vals.shape} != G_vals {G_vals.shape}"
         assert B_vals.shape == G_vals.shape, f"B_vals {B_vals.shape} != G_vals {G_vals.shape}"
 
-        idx_int = torch.arange(0, self.tau_max * sub + 1, step=sub, device=device)
-        A_int = A_vals[:, idx_int]  # (B,31)
-        B_int = B_vals[:, idx_int]  # (B,31)
-        G_int = G_vals[:, idx_int]  # (B,31)
-
-        P_full = torch.exp(A_int - B_int * G_int)  # (B,31)
+        P_full = torch.exp(A_vals - B_vals * G_vals)  # (B,31)
         P_mkt = P_full[:, 1:]  # (B,30)
         S_hat = par_swap_from_discount(P_mkt, self.tenors)
-
-        # 7) Discount factors
-        #Xexp = A_vals - B_vals * G_vals
-
-        #P_full = torch.exp(Xexp)  # (B,N)
-
-        #P_mkt  = P_full[:, 1:]
-
-        # 8) Swap rates at observed tenors (drop tau=0)
-        #S_hat = par_swap_from_discount(P_mkt, self.tenors)  # (B,8)
 
         if squeeze_back:
             S_hat = S_hat.squeeze(0)
