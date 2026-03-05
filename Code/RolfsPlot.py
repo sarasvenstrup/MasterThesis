@@ -103,7 +103,7 @@ model.train()
 
 gamma0 = 1e-3   # initial LR
 a = 1.0
-K = 800.0       # decay timescale (tune this)
+K = 1500.0       # decay timescale (tune this)
 
 optim = torch.optim.Adam(model.parameters(), lr=gamma0)
 

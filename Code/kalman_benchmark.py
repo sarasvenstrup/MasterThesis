@@ -4,17 +4,22 @@
 # - currency-specific fixed-leg frequency for swap pricing
 # - complex-step Jacobian (stable/accurate)
 # - Joseph-form covariance update (PSD-stable)
-# - diagonal tenor-dependent measurement covariance R estimated from residuals (two-pass "quasi-EM")
 # - per-currency grid search for lambda
-# - two-pass update of A (phi) and Q from smoothed states (quasi-EM)
-# - prints and saves:
+# - two-pass quasi-EM:
+#     * estimates FULL A (not diagonal)
+#     * estimates DIAGONAL Q
+#     * estimates DIAGONAL R
+# - saves:
 #     * RMSE table for 2F
 #     * RMSE table for 3F
-#     * Comparison table: RMSE(2F) vs RMSE(3F) + improvements
-# - NEW:
-#     * residual plots per currency (by tenor, and RMSE over time), saved under each model folder:
-#         Figures/bbg/kalman_benchmark/ekf_dns_2f/residuals/
-#         Figures/bbg/kalman_benchmark/ekf_dns_3f/residuals/
+#     * comparison table (2F vs 3F)
+#     * per-currency factors, fitted swaps, residual plots
+#
+# Output folders:
+#   Figures/bbg/kalman_benchmark/ekf_dns_2f/
+#   Figures/bbg/kalman_benchmark/ekf_dns_3f/
+
+from __future__ import annotations
 
 import os
 import numpy as np
@@ -35,10 +40,7 @@ def plot_residuals_time_series(
     out_path: str,
     max_legend_cols: int = 4,
 ):
-    """
-    Plots residuals over time for each tenor.
-    resid_bps = (y_true - y_fit) in basis points.
-    """
+    """Plots residuals over time for each tenor."""
     fig, ax = plt.subplots(figsize=(12, 5))
     for j, T in enumerate(tenors):
         ax.plot(dates, resid_bps[:, j], label=f"{int(T)}Y")
@@ -64,19 +66,14 @@ def plot_rmse_over_time(
     title: str,
     out_path: str,
 ):
-    """
-    Plots cross-tenor RMSE at each date:
-      rmse_t = sqrt(mean_j resid(t,j)^2)
-    """
+    """Plots cross-tenor RMSE at each date."""
     rmse_t = np.sqrt(np.mean(resid_bps ** 2, axis=1))  # (T,)
-
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.plot(dates, rmse_t)
     ax.set_title(title)
     ax.set_xlabel("Date")
     ax.set_ylabel("RMSE (bps)")
     ax.grid(True)
-
     fig.tight_layout()
     fig.savefig(out_path, dpi=300)
     plt.close(fig)
@@ -150,7 +147,7 @@ def jacobian_cs(func, x: np.ndarray, h: float = 1e-20) -> np.ndarray:
 
 
 # -----------------------------
-# EKF + RTS smoother (dimension-agnostic)
+# EKF + RTS smoother
 # -----------------------------
 def ekf_filter_smoother(
     Y: np.ndarray,              # (T, m) observed swaps
@@ -182,9 +179,11 @@ def ekf_filter_smoother(
     P_prev = P0.copy()
 
     for t in range(T):
+        # ---- Transition (prediction) ----
         xp = A @ x_prev
         Pp = A @ P_prev @ A.T + Q
 
+        # ---- Measurement (update) ----
         yp = np.asarray(h(xp), dtype=float)
         H = jacobian_cs(h, xp)  # (m,n)
 
@@ -194,7 +193,7 @@ def ekf_filter_smoother(
 
         xf = xp + K @ v
 
-        # Joseph form update (PSD-stable)
+        # Joseph form covariance update (PSD-stable)
         KH = K @ H
         Pf = (I - KH) @ Pp @ (I - KH).T + K @ R @ K.T
 
@@ -223,25 +222,50 @@ def rmse_bps(y_true: np.ndarray, y_fit: np.ndarray) -> float:
 
 
 # -----------------------------
-# Quasi-EM updates for A, Q, R (diagonal)
+# Quasi-EM style updates: FULL A, DIAGONAL Q, DIAGONAL R
 # -----------------------------
-def estimate_AQ_from_smoothed(X: np.ndarray, jitter: float = 1e-12):
-    X0 = X[:-1]
-    X1 = X[1:]
-    denom = (X0 ** 2).sum(axis=0) + jitter
-    phi = (X1 * X0).sum(axis=0) / denom
-    phi = np.clip(phi, -0.995, 0.995)
-    A = np.diag(phi)
+def estimate_A_full_Q_diag_from_smoothed(
+    X: np.ndarray,
+    jitter: float = 1e-10,
+    A_shrink: float = 0.00,     # shrink A toward diagonal if needed (0 = none)
+):
+    """
+    Estimate FULL A by least squares:
+        A = (X1^T X0) (X0^T X0)^{-1}
+    then innovations:
+        eps = X1 - A X0
+    but force diagonal Q:
+        Q = diag(var(eps))
+    """
+    X0 = X[:-1]  # (T-1, n)
+    X1 = X[1:]   # (T-1, n)
+    n = X.shape[1]
 
-    innov = X1 - (X0 * phi)
-    q = innov.var(axis=0) + jitter
-    Q = np.diag(q)
+    XtX = X0.T @ X0 + jitter * np.eye(n)
+    A = (X1.T @ X0) @ np.linalg.inv(XtX)
+
+    if A_shrink > 0:
+        A = (1.0 - A_shrink) * A + A_shrink * np.diag(np.diag(A))
+
+    eps = X1 - (X0 @ A.T)  # (T-1, n)
+
+    q = np.var(eps, axis=0)  # (n,)
+    Q = np.diag(q) + jitter * np.eye(n)
     return A, Q
 
 
-def estimate_R_from_residuals(resid: np.ndarray, jitter: float = 1e-12):
-    r = resid.var(axis=0) + jitter
-    return np.diag(r)
+def estimate_R_diag_from_residuals(
+    resid: np.ndarray,
+    jitter: float = 1e-10,
+):
+    """
+    Diagonal measurement covariance:
+        R = diag(var(resid))
+    """
+    m = resid.shape[1]
+    r = np.var(resid, axis=0)  # (m,)
+    R = np.diag(r) + jitter * np.eye(m)
+    return R
 
 
 # -----------------------------
@@ -255,13 +279,16 @@ def run_model(
     LAM_GRID: np.ndarray,
     out_root: str,
     P0_scale: float = 1.0,
+    # kept for API compatibility (not used for diagonal Q/R)
+    R_shrink: float = 0.05,
+    Q_shrink: float = 0.05,
+    A_shrink: float = 0.00,
 ):
     m = len(tenors)
 
     out_dir = os.path.join(out_root, f"ekf_dns_{n_factors}f")
     os.makedirs(out_dir, exist_ok=True)
 
-    # residual plot directory
     resid_dir = os.path.join(out_dir, "residuals")
     os.makedirs(resid_dir, exist_ok=True)
 
@@ -270,34 +297,30 @@ def run_model(
     rows = []
     for ccy in sorted(df["ccy"].unique()):
         dfi = df[df["ccy"] == ccy].sort_values("as_of_date").copy()
-        Y = dfi[TARGET_TENORS].astype(float).to_numpy()
+        Y = dfi[TARGET_TENORS].astype(float).to_numpy()  # (T,m)
         dates = dfi["as_of_date"].to_numpy()
         freq = CCY_FREQ.get(ccy, 1)
 
         best = None
 
         for lam in LAM_GRID:
-            # init from OLS on day 0
+            # init from OLS on day 0 (standard starting point)
             H0 = ns_loadings(tenors, lam, n_factors=n_factors)
             x0, *_ = np.linalg.lstsq(H0, Y[0], rcond=None)
+
             P0 = np.eye(n_factors) * P0_scale
 
-            # conservative init (updated after pass 1)
-            if n_factors == 2:
-                A = np.diag([0.95, 0.90])
-                Q = np.diag([1e-6, 1e-6])
-            else:
-                A = np.diag([0.95, 0.90, 0.85])
-                Q = np.diag([1e-6, 1e-6, 1e-6])
-
-            R = np.eye(m) * 1e-6
+            # conservative initial dynamics
+            A = 0.90 * np.eye(n_factors)
+            Q = 1e-6 * np.eye(n_factors)  # diagonal
+            R = 1e-6 * np.eye(m)          # diagonal
 
             # Pass 1
             Xs1, Ps1, Yfit1 = ekf_filter_smoother(Y, tenors, lam, A, Q, R, x0, P0, freq=freq)
 
-            # quasi-EM update
-            A2, Q2 = estimate_AQ_from_smoothed(Xs1)
-            R2 = estimate_R_from_residuals(Y - Yfit1)
+            # quasi-EM update: FULL A, DIAG Q, DIAG R
+            A2, Q2 = estimate_A_full_Q_diag_from_smoothed(Xs1, A_shrink=A_shrink)
+            R2 = estimate_R_diag_from_residuals(Y - Yfit1)
 
             # Pass 2
             Xs2, Ps2, Yfit2 = ekf_filter_smoother(Y, tenors, lam, A2, Q2, R2, x0, P0, freq=freq)
@@ -314,7 +337,6 @@ def run_model(
                     "Yfit": Yfit2,
                 }
 
-        # record
         rows.append({"ccy": ccy, "rmse_bps": best["rmse"], "lambda": best["lam"]})
         print(f"{ccy} ({n_factors}F): RMSE = {best['rmse']:.2f} bps | lambda* = {best['lam']:.3f}")
 
@@ -329,11 +351,8 @@ def run_model(
         out_df = pd.concat([pd.DataFrame({"as_of_date": dates}), true_df, fit_df], axis=1)
         out_df.to_csv(os.path.join(out_dir, f"ekf_dns_swaps_fit_{ccy}.csv"), index=False)
 
-        # -----------------------------
-        # NEW: Residual plots (bps)
-        # -----------------------------
+        # residual plots
         resid_bps = (Y - best["Yfit"]) * 1e4  # (T,m)
-
         plot_residuals_time_series(
             dates=dates,
             resid_bps=resid_bps,
@@ -341,7 +360,6 @@ def run_model(
             title=f"{ccy} ({n_factors}F) residuals by tenor (bps)",
             out_path=os.path.join(resid_dir, f"residuals_by_tenor_{ccy}.png"),
         )
-
         plot_rmse_over_time(
             dates=dates,
             resid_bps=resid_bps,
@@ -349,23 +367,24 @@ def run_model(
             out_path=os.path.join(resid_dir, f"rmse_over_time_{ccy}.png"),
         )
 
-        # save diagonal params
-        diagA = np.diag(best["A"]).copy()
-        diagQ = np.diag(best["Q"]).copy()
-        diagR = np.diag(best["R"]).copy()
-        pd.DataFrame({"phi": diagA, "q": diagQ}).to_csv(os.path.join(out_dir, f"ekf_dns_params_AQ_{ccy}.csv"), index=False)
-        pd.DataFrame({"tenor": TARGET_TENORS, "r": diagR}).to_csv(os.path.join(out_dir, f"ekf_dns_params_R_{ccy}.csv"), index=False)
+        # save params (still saved as matrices; now Q and R are diagonal matrices)
+        pd.DataFrame(best["A"]).to_csv(os.path.join(out_dir, f"ekf_dns_params_A_{ccy}.csv"), index=False)
+        pd.DataFrame(best["Q"]).to_csv(os.path.join(out_dir, f"ekf_dns_params_Q_{ccy}.csv"), index=False)
+        pd.DataFrame(best["R"], index=TARGET_TENORS, columns=TARGET_TENORS).to_csv(
+            os.path.join(out_dir, f"ekf_dns_params_R_{ccy}.csv")
+        )
 
     rmse_df = pd.DataFrame(rows).sort_values("rmse_bps", na_position="last")
     avg_rmse = rmse_df["rmse_bps"].mean()
     rmse_df.loc[len(rmse_df)] = {"ccy": "Average", "rmse_bps": avg_rmse, "lambda": np.nan}
 
-    rmse_df.to_csv(os.path.join(out_dir, "ekf_dns_rmse_bps.csv"), index=False)
+    rmse_path = os.path.join(out_dir, "ekf_dns_rmse_bps.csv")
+    rmse_df.to_csv(rmse_path, index=False)
 
     print(f"\nEKF DNS RMSE (par swaps, bps) — {n_factors} factors:")
     print(rmse_df)
     print(f"\nAverage EKF DNS RMSE across currencies ({n_factors}F): {avg_rmse:.2f} bps")
-    print(f"\nSaved: {os.path.join(out_dir, 'ekf_dns_rmse_bps.csv')}\n")
+    print(f"\nSaved: {rmse_path}\n")
 
     return rmse_df, out_dir
 
@@ -376,9 +395,20 @@ def run_model(
 if __name__ == "__main__":
     USE = "bbg"
 
-    CCY_FREQ = {"USD": 2, "GBP": 2, "JPY": 2, "CAD": 2, "AUD": 2, "EUR": 1, "DKK": 1, "SEK": 1, "NOK": 1}
+    CCY_FREQ = {
+        "USD": 2, "GBP": 2, "JPY": 2, "CAD": 2, "AUD": 2,
+        "EUR": 1, "DKK": 1, "SEK": 1, "NOK": 1
+    }
+
+    # Lambda grid
     LAM_GRID = np.linspace(0.05, 2.00, 30)
+
+    # Stability knobs
+    # (R_shrink/Q_shrink are not used anymore because Q/R are forced diagonal)
     P0_scale = 1.0
+    R_shrink = 0.05
+    Q_shrink = 0.05
+    A_shrink = 0.00
 
     meta, X_tensor, tenors_meta, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
 
@@ -392,13 +422,18 @@ if __name__ == "__main__":
 
     tenors = np.array(TARGET_TENORS, dtype=float)
 
-    # Root output folder (BBG Kalman benchmark)
     out_root = os.path.join(os.getcwd(), "Figures", "bbg", "kalman_benchmark")
     os.makedirs(out_root, exist_ok=True)
 
     # Run 2F and 3F
-    rmse_2f, dir_2f = run_model(df, tenors, 2, CCY_FREQ, LAM_GRID, out_root, P0_scale=P0_scale)
-    rmse_3f, dir_3f = run_model(df, tenors, 3, CCY_FREQ, LAM_GRID, out_root, P0_scale=P0_scale)
+    rmse_2f, dir_2f = run_model(
+        df, tenors, 2, CCY_FREQ, LAM_GRID, out_root,
+        P0_scale=P0_scale, R_shrink=R_shrink, Q_shrink=Q_shrink, A_shrink=A_shrink
+    )
+    rmse_3f, dir_3f = run_model(
+        df, tenors, 3, CCY_FREQ, LAM_GRID, out_root,
+        P0_scale=P0_scale, R_shrink=R_shrink, Q_shrink=Q_shrink, A_shrink=A_shrink
+    )
 
     # -----------------------------
     # Comparison table: RMSE 2F vs RMSE 3F
@@ -410,7 +445,6 @@ if __name__ == "__main__":
     comp["abs_improvement_bps"] = comp["rmse_bps_2f"] - comp["rmse_bps_3f"]
     comp["rel_improvement_pct"] = 100.0 * comp["abs_improvement_bps"] / comp["rmse_bps_2f"]
 
-    # Add average row
     avg_row = {
         "ccy": "Average",
         "rmse_bps_2f": df2["rmse_bps"].mean(),
