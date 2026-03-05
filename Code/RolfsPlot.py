@@ -9,6 +9,7 @@ torch.set_num_interop_threads(2)
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Union
+from torch.optim.lr_scheduler import OneCycleLR
 
 # ============================= Environment Setup & Imports ===============================
 
@@ -83,8 +84,8 @@ data_cfg = H.DataConfig(
 from torch.utils.data import TensorDataset, DataLoader
 
 BATCH_SIZE = 32
-LR = 1e-4
-EPOCHS = 1000
+#LR = 1e-4
+#EPOCHS = 1000
 TARGET_MSE = 1e-6
 
 dataset = TensorDataset(X_tensor)
@@ -105,11 +106,27 @@ gamma0 = 1e-3   # initial LR
 a = 1.0
 K = 800.0       # decay timescale (tune this)
 
-optim = torch.optim.Adam(model.parameters(), lr=gamma0)
+#optim = torch.optim.Adam(model.parameters(), lr=gamma0)
 
-lr_lambda = lambda e: K / (K + max(e, 1) ** a)
+max_lr = 3e-3
+optim = torch.optim.Adam(model.parameters(), lr=max_lr)
 
-scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_lambda)
+#lr_lambda = lambda e: K / (K + max(e, 1) ** a)
+
+#scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_lambda)
+
+EPOCHS = 1500
+max_lr = 3e-3
+
+scheduler = OneCycleLR(
+    optim,
+    max_lr=max_lr,
+    steps_per_epoch=len(loader),
+    epochs=EPOCHS,
+    pct_start=0.3,
+    div_factor=1.0,
+    final_div_factor=3000.0
+)
 
 loss_fn = nn.MSELoss()
 
@@ -138,11 +155,11 @@ for epoch in range(EPOCHS):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optim.step()
+        scheduler.step()
 
         running += float(loss.detach().cpu()) * xb.shape[0]
         n_obs += xb.shape[0]
 
-    scheduler.step()
     nan_batches_total += nan_batches
     epoch_loss = running / max(n_obs, 1)
     train_losses.append(epoch_loss)
