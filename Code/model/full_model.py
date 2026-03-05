@@ -134,11 +134,13 @@ class FullModel(nn.Module):
         tau_safe = torch.clamp(tau.unsqueeze(0), min=1e-8)  # (1,N)
         SR_tau = R_tau / (tau_safe * sigma_bar)
 
+        # After computing R_tau and SR_tau on (B,31)
         arb = {
-            "R_tau": R_tau,      # (B,N) main no-arb residual (LN/P)
-            "SR_tau": SR_tau,    # (B,N) approximate SR
-            "max_abs_R": R_tau.abs().max(dim=1).values,      # (B,)
-            "max_abs_SR_1to30": SR_tau[:, 1:].abs().max(dim=1).values,  # (B,) ignore tau=0
+            "R_tau": R_tau[:, 1:],  # (B,30)
+            "SR_tau": SR_tau[:, 1:],  # (B,30)
+            "tau_grid": tau[1:],  # (30,) optional
+            "max_abs_R": R_tau[:, 1:].abs().max(dim=1).values,
+            "max_abs_SR_1to30": SR_tau[:, 1:].abs().max(dim=1).values,
         }
 
         # Hard asserts (instead of silent expand)
