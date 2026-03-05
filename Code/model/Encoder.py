@@ -15,4 +15,4 @@ class Encoder(nn.Module):
     def forward(self, x):
         return self.lin(x)
 
-# This code defines a new neural netowrk class called Encoder, just like in the article where there is no bias.
+# This code defines a new neural network class called Encoder, just like in the article where there is no bias.
