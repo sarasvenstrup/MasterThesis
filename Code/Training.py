@@ -48,7 +48,6 @@ torch.backends.mkldnn.enabled = True
 USE_SET_TO_NONE = True
 print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop_threads())
 
-
 #### LOAD DATA AND CONFIG PLOTTING
 
 # Use your theme palette for consistent currency colors
@@ -188,110 +187,39 @@ model.eval()
 # -----------------------------
 # 6) Inference (in-sample)
 # -----------------------------
-@torch.no_grad()
-def run_model(
-    model,
-    X_tensor_cpu: torch.Tensor,
-    batch_size: int = 256,
-    device: Union[str, torch.device] = "cpu",
-    return_full: bool = False,
-    return_dict: bool = True,
-):
-    """
-    Batched forward pass for your FullModel.
 
-    Assumes model(x) returns a tuple/list where:
-      out[0] = S_hat
-      out[1] = z
-      out[6] = mu
-      out[7] = sigma_or_L
-      out[8] = r_tilde
+batch_size=256
 
-    Parameters
-    ----------
-    model : torch.nn.Module
-    X_tensor_cpu : torch.Tensor
-        Input on CPU (or any device, name kept from your code).
-    batch_size : int
-    device : str or torch.device
-    return_full : bool
-        If False: return only (S_hat, z).
-        If True : also return (mu, sigma_or_L, r_tilde).
-    return_dict : bool
-        If True: returns a dict with named outputs.
-        If False: returns a tuple.
+S_hats, zs = [], []
+mus, sigmas_or_Ls, rts, SRs = [], [], [], []
 
-    Returns
-    -------
-    If return_full == False:
-        dict: {"S_hat": (N,8), "z": (N,latent_dim)}
-        or tuple: (S_hat, z)
+N = X_tensor.shape[0]
 
-    If return_full == True:
-        dict: {"S_hat": ..., "z": ..., "mu": ..., "sigma_or_L": ..., "r_tilde": ...}
-        or tuple: (S_hat, z, mu, sigma_or_L, r_tilde)
-    """
-    model.eval()
+for i in range(0, N, batch_size):
+    xb = X_tensor[i : i + batch_size].to(device)
+    out = model(xb)
 
-    S_hats, zs = [], []
-    mus, sigmas_or_Ls, rts, SRs = [], [], [], []
+    # Always collect these
+    S_hat = out[0]
+    z = out[1]
+    S_hats.append(S_hat.detach().cpu())
+    zs.append(z.detach().cpu())
 
-    N = X_tensor_cpu.shape[0]
+    mu = out[6]
+    sigma_or_L = out[7]
+    r_tilde = out[8]
+    arb = out[9]
+    mus.append(mu.detach().cpu())
+    sigmas_or_Ls.append(sigma_or_L.detach().cpu())
+    rts.append(r_tilde.detach().cpu())
+    SRs.append(arb["SR_tau"].cpu())
 
-    for i in range(0, N, batch_size):
-        xb = X_tensor_cpu[i : i + batch_size].to(device)
-        out = model(xb)
-
-        # Always collect these
-        S_hat = out[0]
-        z = out[1]
-        S_hats.append(S_hat.detach().cpu())
-        zs.append(z.detach().cpu())
-
-        # Optionally collect dynamics pieces
-        if return_full:
-            mu = out[6]
-            sigma_or_L = out[7]
-            r_tilde = out[8]
-            arb = out[9]
-            mus.append(mu.detach().cpu())
-            sigmas_or_Ls.append(sigma_or_L.detach().cpu())
-            rts.append(r_tilde.detach().cpu())
-            SRs.append(arb["SR_tau"].cpu())
-
-    S_hat_all = torch.cat(S_hats, dim=0)
-    z_all     = torch.cat(zs, dim=0)
-
-    if not return_full:
-        if return_dict:
-            return {"S_hat": S_hat_all, "z": z_all}
-        return S_hat_all, z_all
-
-    mu_all          = torch.cat(mus, dim=0)
-    sigma_or_L_all  = torch.cat(sigmas_or_Ls, dim=0)
-    r_tilde_all     = torch.cat(rts, dim=0)
-    SR_all         = torch.cat(SRs, dim=0)
-
-    if return_dict:
-        return {
-            "S_hat": S_hat_all,
-            "z": z_all,
-            "mu": mu_all,
-            "sigma_or_L": sigma_or_L_all,
-            "r_tilde": r_tilde_all,
-            "arb": SR_all
-        }
-
-    return S_hat_all, z_all, mu_all, sigma_or_L_all, r_tilde_all, SR_all
-
-S_hat_all, z_all_full, mu_all_full, sigma_all_full, r_all_full, SR_all_full = run_model(
-    model,
-    X_tensor,
-    batch_size=256,
-    device=device,
-    return_full=True,
-    return_dict=False
-)
+S_hat_all = torch.cat(S_hats, dim=0)
+z_all     = torch.cat(zs, dim=0)
+mu_all          = torch.cat(mus, dim=0)
+sigma_or_L_all  = torch.cat(sigmas_or_Ls, dim=0)
+r_tilde_all     = torch.cat(rts, dim=0)
+SR_all         = torch.cat(SRs, dim=0)
 
 # -----------------------------
 # 7) Filter non-finite rows
@@ -306,7 +234,6 @@ print(f"Non-finite rows: {n_bad} / {len(mask)}")
 X_eval = X_tensor[mask]
 S_eval = S_hat_all[mask]
 meta_eval = meta.loc[mask.numpy()].reset_index(drop=True)
-
 
 # -----------------------------
 # 8) RMSE per currency (bps) + save table
@@ -363,47 +290,16 @@ H.plot_recon_on_date(
 )
 
 # 9c) Latent factors over time (fix ordering)
-def plot_latents_over_time(z_eval_t: torch.Tensor, meta_eval_df: pd.DataFrame, cfg: H.PlotConfig):
-    order = meta_eval_df.sort_values(["ccy", "as_of_date"]).index.to_numpy()
-    m = meta_eval_df.loc[order].reset_index(drop=True)
-    z_np = z_eval_t.detach().cpu().numpy()[order]
 
-    d = z_np.shape[1]
-    fig, axes = plt.subplots(nrows=d, ncols=1, figsize=(11, 3.5 * d), sharex=False)
-    if d == 1:
-        axes = [axes]
-
-    for k in range(d):
-        ax = axes[k]
-        m_k = m.copy()
-        m_k[f"z{k+1}"] = z_np[:, k]
-
-        for ccy, g in m_k.groupby("ccy"):
-            color = cfg.currency_colors.get(ccy) if cfg.currency_colors else None
-            ax.plot(
-                g["as_of_date"], g[f"z{k + 1}"],
-                color=color,
-                label=ccy,
-                alpha=0.9,
-            )
-
-        ax.set_title(f"Latent factors for {k+1}-factor model")
-        ax.grid(True)
-
-    handles, labels = axes[-1].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
-    fig.tight_layout(rect=[0, 0.06, 1, 1])
-    H.save_figure(fig, cfg, f"latent_factors_over_time_{LATENT_DIM}_factor")
-
-plot_latents_over_time(z_all_full[mask], meta_eval, plot_cfg)
+H.plot_latents_over_time(z_all[mask], meta_eval, plot_cfg)
 
 # -----------------------------
 # 10) Parameter-model plots
 # -----------------------------
 
-mu_eval = mu_all_full[mask]
-sigma_eval = sigma_all_full[mask]
-r_eval = r_all_full[mask]
+mu_eval = mu_all[mask]
+sigma_eval = sigma_or_L_all[mask]
+r_eval = r_tilde_all[mask]
 if r_eval.ndim == 2 and r_eval.shape[1] == 1:
     r_eval = r_eval.squeeze(1)
 
@@ -455,7 +351,7 @@ m_day = m_day.sort_values("ccy").drop_duplicates("ccy", keep="first")
 idx9 = m_day.index.to_numpy()
 labels = m_day["ccy"].astype(str).tolist()
 
-SR_tau_9 = SR_all_full[idx9]              # (9, 30) because model tau is 1..30
+SR_tau_9 = SR_all[idx9]              # (9, 30) because model tau is 1..30
 tau = torch.arange(1, model.tau_max + 1)  # (30,)
 
 tau_np = tau.numpy()                      # (30,)

@@ -353,3 +353,35 @@ def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
     fig.tight_layout(rect=[0, 0.12, 1, 1])
 
     save_figure(fig, plot_cfg, f"paper_fig2b_timeseries_{tenor_col}")
+
+def plot_latents_over_time(z_eval_t: torch.Tensor, meta_eval_df: pd.DataFrame, cfg: H.PlotConfig):
+    order = meta_eval_df.sort_values(["ccy", "as_of_date"]).index.to_numpy()
+    m = meta_eval_df.loc[order].reset_index(drop=True)
+    z_np = z_eval_t.detach().cpu().numpy()[order]
+
+    d = z_np.shape[1]
+    fig, axes = plt.subplots(nrows=d, ncols=1, figsize=(11, 3.5 * d), sharex=False)
+    if d == 1:
+        axes = [axes]
+
+    for k in range(d):
+        ax = axes[k]
+        m_k = m.copy()
+        m_k[f"z{k+1}"] = z_np[:, k]
+
+        for ccy, g in m_k.groupby("ccy"):
+            color = cfg.currency_colors.get(ccy) if cfg.currency_colors else None
+            ax.plot(
+                g["as_of_date"], g[f"z{k + 1}"],
+                color=color,
+                label=ccy,
+                alpha=0.9,
+            )
+
+        ax.set_title(f"Latent factors for {k+1}-factor model")
+        ax.grid(True)
+
+    handles, labels = axes[-1].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=9)
+    fig.tight_layout(rect=[0, 0.06, 1, 1])
+    H.save_figure(fig, cfg, f"latent_factors_over_time_{LATENT_DIM}_factor")
