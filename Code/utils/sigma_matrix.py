@@ -68,12 +68,6 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     L20 = rho13 * s3
     L21 = s3 * (rho23 - rho12 * rho13) / sqrt_one_minus_r12_sq
 
-    # PSD check via det(R) >= 0 for 3x3 correlation matrix
-    detR = 1.0 - rho12**2 - rho13**2 - rho23**2 + 2.0 * rho12 * rho13 * rho23
-    if torch.any(detR < 0):
-        # Keep this lightweight; printing every batch can slow training a lot.
-        print("Warning: correlation matrix not PSD. min detR:", float(detR.min()))
-
     # last diagonal must be real
     inside = 1.0 - rho13**2 - ((rho23 - rho12 * rho13)**2) / one_minus_r12_sq
     inside = torch.clamp(inside, min=eps)
@@ -89,41 +83,6 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
 
     return L
 
-def L_from_sigmas_rhos_3d_old(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
-    """
-    sigmas: (B,3) positive
-    rhos:   (B,3) in (-1,1), interpreted as [rho12, rho13, rho23|1] (partial corr)
-    returns:
-      L: (B,3,3) lower-triangular such that Cov = L L^T is PSD by construction
-    """
-    device, dtype = sigmas.device, sigmas.dtype
-    B = sigmas.shape[0]
-
-    s1 = torch.clamp(sigmas[:, 0], min=eps)
-    s2 = torch.clamp(sigmas[:, 1], min=eps)
-    s3 = torch.clamp(sigmas[:, 2], min=eps)
-
-    p12 = torch.clamp(rhos[:, 0], -1.0 + eps, 1.0 - eps)
-    p13 = torch.clamp(rhos[:, 1], -1.0 + eps, 1.0 - eps)
-    p23 = torch.clamp(rhos[:, 2], -1.0 + eps, 1.0 - eps)  # this is rho23|1
-
-    c11 = torch.sqrt(torch.clamp(1.0 - p12**2, min=eps))
-    c31 = p23 * torch.sqrt(torch.clamp(1.0 - p13**2, min=eps))
-    c33 = torch.sqrt(torch.clamp((1.0 - p13**2) * (1.0 - p23**2), min=eps))
-
-    L = torch.zeros(B, 3, 3, device=device, dtype=dtype)
-
-    # L = diag(sigmas) @ C  (C is correlation Cholesky)
-    L[:, 0, 0] = s1
-
-    L[:, 1, 0] = s2 * p12
-    L[:, 1, 1] = s2 * c11
-
-    L[:, 2, 0] = s3 * p13
-    L[:, 2, 1] = s3 * c31
-    L[:, 2, 2] = s3 * c33
-
-    return L
 
 def L_from_sigmas_rhos(sigmas: torch.Tensor, rhos: torch.Tensor | None = None, eps: float = 1e-12) -> torch.Tensor:
     d = sigmas.shape[1]
