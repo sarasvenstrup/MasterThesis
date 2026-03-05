@@ -1,5 +1,6 @@
 # ============================= Import Packages ===============================
-
+import time
+import numpy as np
 import os
 import sys
 import torch
@@ -29,7 +30,6 @@ from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
 
-
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
 print("MPS available:", hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
@@ -48,74 +48,35 @@ torch.backends.mkldnn.enabled = True
 USE_SET_TO_NONE = True
 print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop_threads())
 
-#### LOAD DATA AND CONFIG PLOTTING
 
-# Use your theme palette for consistent currency colors
-ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
-currency_color_map = {ccy: custom_palette[i % len(custom_palette)] for i, ccy in enumerate(ccy_order)}
+# ==========================================================
+# Settings
+# ==========================================================
+LATENT_DIM = 2
+EPOCHS = 5000                      # <-- YOU WANTED 5000
+LOG_EVERY = 500                    # <-- save metrics every 500 epochs
+BATCH_SIZE = 32
+EVAL_BATCH_SIZE = 256
 
-USE = "bbg"  # "test" first, then "bbg"
+TARGET_MSE = 1e-6  # keep if you still want early-stop; otherwise set to -1 or remove
 
-# Where we save our figures, according to the dataset used to train.
-FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", USE)
+FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", f"dim{LATENT_DIM}", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
+USE = "bbg"
 meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
-
 X_tensor = X_tensor.float()
 
-plot_cfg = H.PlotConfig(
-    figures_dir=FIGURES_DIR,
-    use_tag=USE,
-    currency_colors=currency_color_map,
-    dpi=300,
-)
-
-data_cfg = H.DataConfig(
-    target_tenors=list(TARGET_TENORS),
-    tenor_years=tenors,
-    scale_is_percent=SCALE_IS_PERCENT,
-)
-
-# -----------------------------
-# 4) DataLoader (paper settings)
-# -----------------------------
 from torch.utils.data import TensorDataset, DataLoader
-
-BATCH_SIZE = 32
-#LR = 1e-4
-#EPOCHS = 1000
-TARGET_MSE = 1e-6
-
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
-# -----------------------------
-# 5) Train
-# -----------------------------
 torch.manual_seed(0)
-
-LATENT_DIM = 2
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-#optim = torch.optim.Adam(model.parameters(), lr=LR)
-
-gamma0 = 1e-3   # initial LR
-a = 1.0
-K = 1500.0       # decay timescale (tune this)
-
-#optim = torch.optim.Adam(model.parameters(), lr=gamma0)
-
 max_lr = 3e-3
 optim = torch.optim.Adam(model.parameters(), lr=max_lr)
-
-#lr_lambda = lambda e: K / (K + max(e, 1) ** a)
-
-#scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_lambda)
-
-EPOCHS = 1500
-max_lr = 3e-3
 
 scheduler = OneCycleLR(
     optim,
@@ -129,11 +90,80 @@ scheduler = OneCycleLR(
 
 loss_fn = nn.MSELoss()
 
+# ==========================================================
+# Helpers: inference + RMSE logging
+# ==========================================================
+def row_finite_mask(t: torch.Tensor) -> torch.Tensor:
+    return torch.isfinite(t).all(dim=1)
+
+@torch.no_grad()
+def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    model.eval()
+    outs = []
+    N = X.shape[0]
+    for i in range(0, N, batch_size):
+        xb = X[i:i+batch_size].to(device)
+        out = model(xb)
+        S_hat = out[0]
+        outs.append(S_hat.detach().cpu())
+    return torch.cat(outs, dim=0)
+
+def eval_rmse_bps(model: nn.Module, X_full: torch.Tensor, meta_full: pd.DataFrame, batch_size: int = 256):
+    """
+    Returns:
+      rmse_per_ccy (pd.Series): index=ccy, values=RMSE in bps
+      avg_rmse_bps (float): mean across currencies in rmse_per_ccy
+      n_bad (int): filtered rows (non-finite)
+      n_good (int): kept rows
+    """
+    S_hat_all = predict_S_hat(model, X_full, batch_size=batch_size)
+
+    mask = row_finite_mask(X_full) & row_finite_mask(S_hat_all)
+    n_bad = int((~mask).sum().item())
+    n_good = int(mask.sum().item())
+
+    X_eval = X_full[mask]
+    S_eval = S_hat_all[mask]
+    meta_eval = meta_full.loc[mask.numpy()].reset_index(drop=True)
+
+    # Your helper already returns RMSE in bps per currency
+    rmse_per_ccy = H.rmse_bps_per_currency_paper(X_eval, S_eval, meta_eval)  # pd.Series
+    avg_rmse_bps = float(rmse_per_ccy.mean())
+
+    return rmse_per_ccy, avg_rmse_bps, n_bad, n_good
+
+# ==========================================================
+# CSV logger setup
+# ==========================================================
+ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
+csv_path = os.path.join(FIGURES_DIR, f"train_rmse_log_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.csv")
+
+# Prepare header
+csv_cols = (
+    ["epoch", "time_total_sec", "time_interval_sec", "train_mse", "train_rmse", "avg_rmse_bps", "n_good", "n_bad"]
+    + [f"rmse_bps_{ccy}" for ccy in ccy_order]
+)
+
+# write header once
+pd.DataFrame(columns=csv_cols).to_csv(csv_path, index=False)
+print("Logging to:", csv_path)
+
+# ==========================================================
+# Train (with timing + periodic eval)
+# ==========================================================
 train_losses = []
-lrs = []
+lrs_per_step = []          # per-batch LR (best for OneCycle)
+lrs_per_epoch = []         # optional per-epoch snapshot
+avg_rmse_bps_hist = []     # (epoch, avg_rmse_bps)
 nan_batches_total = 0
 
+t0 = time.perf_counter()
+t_last_log = t0
+
+global_step = 0
+
 for epoch in range(EPOCHS):
+    model.train()
     running = 0.0
     n_obs = 0
     nan_batches = 0
@@ -146,7 +176,6 @@ for epoch in range(EPOCHS):
         S_hat = out[0]
 
         loss = loss_fn(S_hat, xb)
-
         if not torch.isfinite(loss):
             nan_batches += 1
             continue
@@ -156,216 +185,96 @@ for epoch in range(EPOCHS):
         optim.step()
         scheduler.step()
 
+        # record LR per batch (so you can really see OneCycle shape)
+        lrs_per_step.append(optim.param_groups[0]["lr"])
+        global_step += 1
+
         running += float(loss.detach().cpu()) * xb.shape[0]
         n_obs += xb.shape[0]
 
     nan_batches_total += nan_batches
-    epoch_loss = running / max(n_obs, 1)
-    train_losses.append(epoch_loss)
+    epoch_mse = running / max(n_obs, 1)
+    train_losses.append(epoch_mse)
+    lrs_per_epoch.append(optim.param_groups[0]["lr"])
 
-    lrs.append(optim.param_groups[0]["lr"])
+    epoch_rmse = epoch_mse ** 0.5
 
-    if epoch_loss <= TARGET_MSE:
-        rmse_epoch = epoch_loss ** 0.5
-        print(
-            f"epoch={epoch:4d} rmse={rmse_epoch:.6e} lr={optim.param_groups[0]['lr']:.2e} "
-            f"used_obs={n_obs} nan_batches={nan_batches} total_nan_batches={nan_batches_total}"
+    # Optional early stop
+    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE:
+        print(f"[STOP] epoch={epoch} train_rmse={epoch_rmse:.6e} lr={optim.param_groups[0]['lr']:.2e}")
+        # still log metrics at stop
+        do_log = True
+    else:
+        do_log = ((epoch + 1) % LOG_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
+
+    if do_log:
+        t_now = time.perf_counter()
+        time_total = t_now - t0
+        time_interval = t_now - t_last_log
+        t_last_log = t_now
+
+        rmse_per_ccy, avg_rmse_bps, n_bad, n_good = eval_rmse_bps(
+            model, X_tensor, meta, batch_size=EVAL_BATCH_SIZE
         )
+        avg_rmse_bps_hist.append((epoch, avg_rmse_bps))
+
+        # Build one row for CSV (ensure every ccy column exists)
+        row = {
+            "epoch": epoch,
+            "time_total_sec": time_total,
+            "time_interval_sec": time_interval,
+            "train_mse": epoch_mse,
+            "train_rmse": epoch_rmse,
+            "avg_rmse_bps": avg_rmse_bps,
+            "n_good": n_good,
+            "n_bad": n_bad,
+        }
+        for ccy in ccy_order:
+            row[f"rmse_bps_{ccy}"] = float(rmse_per_ccy.get(ccy, np.nan))
+
+        pd.DataFrame([row], columns=csv_cols).to_csv(csv_path, mode="a", header=False, index=False)
+
+        print(
+            f"epoch={epoch:4d} train_rmse={epoch_rmse:.6e} "
+            f"avg_rmse_bps={avg_rmse_bps:.3f} lr={optim.param_groups[0]['lr']:.2e} "
+            f"used_obs={n_obs} nan_batches={nan_batches} total_nan_batches={nan_batches_total} "
+            f"time_total={time_total/60:.1f}min interval={time_interval/60:.1f}min"
+        )
+
+    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE:
         break
-
-    if epoch % 50 == 0 or epoch == EPOCHS - 1:
-        rmse_epoch = epoch_loss ** 0.5
-        print(
-            f"epoch={epoch:4d} rmse={rmse_epoch:.6e} lr={optim.param_groups[0]['lr']:.2e} "
-            f"used_obs={n_obs} nan_batches={nan_batches} total_nan_batches={nan_batches_total}"
-        )
 
 print("Training done.")
 
-model.eval()
-
-# -----------------------------
-# 6) Inference (in-sample)
-# -----------------------------
-
-batch_size=256
-
-S_hats, zs = [], []
-mus, sigmas_or_Ls, rts, SRs = [], [], [], []
-
-N = X_tensor.shape[0]
-
-for i in range(0, N, batch_size):
-    xb = X_tensor[i : i + batch_size].to(device)
-    out = model(xb)
-
-    # Always collect these
-    S_hat = out[0]
-    z = out[1]
-    S_hats.append(S_hat.detach().cpu())
-    zs.append(z.detach().cpu())
-
-    mu = out[6]
-    sigma_or_L = out[7]
-    r_tilde = out[8]
-    arb = out[9]
-    mus.append(mu.detach().cpu())
-    sigmas_or_Ls.append(sigma_or_L.detach().cpu())
-    rts.append(r_tilde.detach().cpu())
-    SRs.append(arb["SR_tau"].cpu())
-
-S_hat_all = torch.cat(S_hats, dim=0)
-z_all     = torch.cat(zs, dim=0)
-mu_all          = torch.cat(mus, dim=0)
-sigma_or_L_all  = torch.cat(sigmas_or_Ls, dim=0)
-r_tilde_all     = torch.cat(rts, dim=0)
-SR_all         = torch.cat(SRs, dim=0)
-
-# -----------------------------
-# 7) Filter non-finite rows
-# -----------------------------
-def row_finite_mask(t: torch.Tensor) -> torch.Tensor:
-    return torch.isfinite(t).all(dim=1)
-
-mask = row_finite_mask(X_tensor) & row_finite_mask(S_hat_all)
-n_bad = int((~mask).sum().item())
-print(f"Non-finite rows: {n_bad} / {len(mask)}")
-
-X_eval = X_tensor[mask]
-S_eval = S_hat_all[mask]
-meta_eval = meta.loc[mask.numpy()].reset_index(drop=True)
-
-# -----------------------------
-# 8) RMSE per currency (bps) + save table
-# -----------------------------
-rmse_series = H.rmse_bps_per_currency_paper(X_eval, S_eval, meta_eval)
-
-print("\nSteady-state in-sample RMSE (bps) per currency:")
-
-# Convert to DataFrame and clean structure
-rmse_df = rmse_series.to_frame(name="RMSE_bps")
-
-# Name the index properly (this becomes the first column header)
-rmse_df.index.name = "Currency"
-
-print(rmse_df)
-
-# Save to CSV (no rounding applied)
-rmse_path = os.path.join(FIGURES_DIR, f"rmse_{USE}_factor_{LATENT_DIM}.csv")
-rmse_df.to_csv(rmse_path)
-
-print("Saved RMSE table:", rmse_path)
-
-# -----------------------------
-# 9) Plots
-# -----------------------------
-# 9a) Training loss
-fig, ax = plt.subplots(figsize=(6, 3.5))
-ax.plot(train_losses)
-ax.set_xlabel("Epoch")
-ax.set_ylabel("MSE")
-ax.set_title(f"Training loss")
-H.save_figure(fig, plot_cfg, f"training_loss_{LATENT_DIM}_factor")
-
-# 9d) Learning rate over epochs
-fig, ax = plt.subplots(figsize=(6, 3.5))
-ax.plot(lrs)
-ax.set_xlabel("Epoch")
-ax.set_ylabel("Learning rate")
-ax.set_yscale("log")  # very useful for decay schedulers
-ax.set_title("Learning rate schedule")
-H.save_figure(fig, plot_cfg, f"learning_rate_{LATENT_DIM}_factor")
-
-# 9b) Actual vs reconstructed on one date
-date_pick = pd.to_datetime("2014-12-31")
-df_wide_eval = df_wide.loc[mask.numpy()].reset_index(drop=True)
-
-H.plot_recon_on_date(
-    df_wide_used=df_wide_eval,
-    S_hat_all_eval=S_hat_all[mask],
-    meta_eval_df=meta_eval,
-    date_pick=date_pick,
-    data_cfg=data_cfg,
-    cfg=plot_cfg,
-)
-
-# 9c) Latent factors over time (fix ordering)
-
-H.plot_latents_over_time(z_all[mask], meta_eval, plot_cfg)
-
-# -----------------------------
-# 10) Parameter-model plots
-# -----------------------------
-
-mu_eval = mu_all[mask]
-sigma_eval = sigma_or_L_all[mask]
-r_eval = r_tilde_all[mask]
-if r_eval.ndim == 2 and r_eval.shape[1] == 1:
-    r_eval = r_eval.squeeze(1)
-
-# Build params_df (auto-detect sigma vs L)
-if sigma_eval.ndim == 3:
-    params_df = H.build_params_df_from_L(meta_eval, mu_eval, sigma_eval, r_eval)
-elif sigma_eval.ndim == 2:
-    params_df = H.build_params_df_from_diag_vol(meta_eval, mu_eval, sigma_eval, r_eval)
-else:
-    raise ValueError(f"Unexpected sigma/L shape: {tuple(sigma_eval.shape)}")
-
-mu_cols = sorted(H.cols_matching(params_df, r"^mu\d+$"), key=lambda s: int(s[2:]))
-sigma_cols = sorted(H.cols_matching(params_df, r"^sigma\d+$"), key=lambda s: int(s[5:]))
-rho_cols = sorted(H.cols_matching(params_df, r"^rho\d+\d+$"))
-
-H.plot_param_over_time(params_df, "r_tilde", cfg=plot_cfg, title="Short rate mapping r̃(z)")
-
-for col in sigma_cols:
-    H.plot_param_over_time(params_df, col, cfg=plot_cfg, title=f"Volatility {col}(z)")
-
-for col in rho_cols:
-    H.plot_param_over_time(params_df, col, cfg=plot_cfg, title=f"Correlation {col}")
-
-for col in mu_cols:
-    H.plot_param_over_time(params_df, col, cfg=plot_cfg, title=f"Drift {col}(z)")
-
-H.hist_param(params_df, "r_tilde", cfg=plot_cfg)
-for col in sigma_cols:
-    H.hist_param(params_df, col, cfg=plot_cfg)
-for col in rho_cols:
-    H.hist_param(params_df, col, cfg=plot_cfg)
-for col in mu_cols:
-    H.hist_param(params_df, col, cfg=plot_cfg)
-
-print(f"Done. Figures saved to: {FIGURES_DIR}")
-
-# =============================
-# Approx Sharpe Ratio (Fig 3)
-# =============================
-
-sel = (meta_eval["as_of_date"] == date_pick) & (meta_eval["ccy"].isin(ccy_order))
-idx = meta_eval.index[sel].to_numpy()
-
-# Keep one per currency (first occurrence)
-m_day = meta_eval.loc[idx].copy()
-m_day["ccy"] = pd.Categorical(m_day["ccy"], categories=ccy_order, ordered=True)
-m_day = m_day.sort_values("ccy").drop_duplicates("ccy", keep="first")
-
-idx9 = m_day.index.to_numpy()
-labels = m_day["ccy"].astype(str).tolist()
-
-SR_tau_9 = SR_all[idx9]              # (9, 30) because model tau is 1..30
-tau = torch.arange(1, model.tau_max + 1)  # (30,)
-
-tau_np = tau.numpy()                      # (30,)
-sr_np  = SR_tau_9.numpy()                 # (9, 30)
-
+# ==========================================================
+# Plots
+# ==========================================================
+# 1) Learning rate plot (per step)
 fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-for i in range(sr_np.shape[0]):
-    ax.plot(tau_np, sr_np[i], linewidth=1.0, label=labels[i])
-
-ax.axhline(0.0, linewidth=0.8)
-ax.set_xlabel("Tenor (year)")
-ax.set_ylabel("Approximate Sharpe ratio")
-ax.set_title(f"Approximate Sharpe ratio — {date_pick.date()}")
-ax.legend(ncol=3, fontsize=8, frameon=False)
+ax.plot(np.arange(len(lrs_per_step)), lrs_per_step, linewidth=1.0)
+ax.set_xlabel("Training step (batch)")
+ax.set_ylabel("Learning rate")
+ax.set_title(f"Learning rate schedule — OneCycleLR (dim={LATENT_DIM}, ep={EPOCHS})")
 fig.tight_layout()
+lr_fig_path = os.path.join(FIGURES_DIR, f"lr_schedule_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png")
+fig.savefig(lr_fig_path, dpi=300)
+plt.close(fig)
+print("Saved LR plot:", lr_fig_path)
 
-H.save_figure(fig, plot_cfg, f"approx_sharpe_{date_pick.date()}_{LATENT_DIM}_factor")
+# 2) Average RMSE (bps) convergence plot (logged every 500 epochs)
+if len(avg_rmse_bps_hist) > 0:
+    epochs_logged = [e for e, v in avg_rmse_bps_hist]
+    avg_logged = [v for e, v in avg_rmse_bps_hist]
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
+    ax.plot(epochs_logged, avg_logged, marker="o", linewidth=1.0)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Average RMSE (bps)")
+    ax.set_title(f"Average RMSE across currencies (bps) — convergence (dim={LATENT_DIM})")
+    fig.tight_layout()
+    rmse_fig_path = os.path.join(FIGURES_DIR, f"avg_rmse_bps_convergence_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png")
+    fig.savefig(rmse_fig_path, dpi=300)
+    plt.close(fig)
+    print("Saved avg RMSE plot:", rmse_fig_path)
+else:
+    print("No RMSE history to plot (avg_rmse_bps_hist empty).")
