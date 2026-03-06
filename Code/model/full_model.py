@@ -36,7 +36,6 @@ class FullModel(nn.Module):
         r_hidden=4,
         g_bias=True,
         hr_bias=False,
-        do_arb_checks = False
     ):
         super().__init__()
 
