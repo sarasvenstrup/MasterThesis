@@ -345,22 +345,18 @@ def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
     data = build_all_dataframes()
 
     if use == "test":
-        df_wide_full = data["df_wide_test_full"].copy()
-        df_long = data["df_long_test"].copy()
+        df_wide_complete = data["df_wide_test_full"].copy()
     else:
-        df_wide_full = data["df_wide_bbg_full"].copy()
-        df_long = data["df_long_bbg"].copy()
+        df_wide_complete = data["df_wide_bbg_full"].copy()
 
-    # Tenor grid
     tenors = np.array([float(x) for x in target_tenors], dtype=float)
 
-    # Ensure datetime
-    df_wide_full["as_of_date"] = pd.to_datetime(df_wide_full["as_of_date"])
+    df_wide_complete["as_of_date"] = pd.to_datetime(df_wide_complete["as_of_date"])
 
-    # ---------- FULL DATA (NO DATE CUT) ----------
-    df_wide_all = df_wide_full[["as_of_date", "ccy"] + list(target_tenors)].copy()
-
+    # full sample before date cut
+    df_wide_all = df_wide_complete[["as_of_date", "ccy"] + list(target_tenors)].copy()
     meta_full = df_wide_all[["as_of_date", "ccy"]].reset_index(drop=True)
+
     X_full = df_wide_all[list(target_tenors)].to_numpy(dtype=np.float32)
 
     median_abs = float(np.nanmedian(np.abs(X_full)))
@@ -371,23 +367,23 @@ def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
 
     X_tensor_full = torch.from_numpy(X_full)
 
-    # ---------- TRAINING DATA (DATE CUT) ----------
+    # training sample after date cut
     df_wide = df_wide_all[df_wide_all["as_of_date"] >= "2010-01-01"].copy()
-
     meta = df_wide[["as_of_date", "ccy"]].reset_index(drop=True)
-    X = df_wide[list(target_tenors)].to_numpy(dtype=np.float32)
 
+    X = df_wide[list(target_tenors)].to_numpy(dtype=np.float32)
     if SCALE_IS_PERCENT:
         X = X / 100.0
 
     X_tensor = torch.from_numpy(X)
 
-    # Rename currencies
+    # rename currencies consistently
     meta["ccy"] = meta["ccy"].map(lambda x: currency_rename_map.get(x, x))
-    df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
     meta_full["ccy"] = meta_full["ccy"].map(lambda x: currency_rename_map.get(x, x))
+    df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
+    df_wide_all["ccy"] = df_wide_all["ccy"].map(lambda x: currency_rename_map.get(x, x))
 
-    return meta, X_tensor, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT
+    return meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT
 
 
 if __name__ == "__main__":
@@ -408,7 +404,7 @@ if __name__ == "__main__":
     FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", USE)
     os.makedirs(FIGURES_DIR, exist_ok=True)
 
-    meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use = USE)
+    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT = my_data(use = USE)
 
     plot_cfg = H.PlotConfig(
         figures_dir=FIGURES_DIR,
