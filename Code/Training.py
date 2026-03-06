@@ -38,7 +38,7 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # ==========================================================
 # Settings
 # ==========================================================
-LATENT_DIM = 2
+LATENT_DIM = 1
 EPOCHS = 5000
 
 # IMPORTANT CHANGE:
@@ -50,7 +50,7 @@ LOG_EVERY = 500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
-TARGET_MSE = 1e-6  # set to -1 to disable early stop
+TARGET_MSE = 1e-8  # set to -1 to disable early stop
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", f"dim{LATENT_DIM}", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
