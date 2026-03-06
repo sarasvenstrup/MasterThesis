@@ -354,26 +354,40 @@ def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
     # Tenor grid
     tenors = np.array([float(x) for x in target_tenors], dtype=float)
 
-    # Ensure columns
-    df_wide = df_wide_full[["as_of_date", "ccy"] + list(target_tenors)].copy()
-    df_wide["as_of_date"] = pd.to_datetime(df_wide["as_of_date"])
-    df_wide = df_wide[df_wide["as_of_date"] >= "2010-01-01"].copy()
+    # Ensure datetime
+    df_wide_full["as_of_date"] = pd.to_datetime(df_wide_full["as_of_date"])
+
+    # ---------- FULL DATA (NO DATE CUT) ----------
+    df_wide_all = df_wide_full[["as_of_date", "ccy"] + list(target_tenors)].copy()
+
+    meta_full = df_wide_all[["as_of_date", "ccy"]].reset_index(drop=True)
+    X_full = df_wide_all[list(target_tenors)].to_numpy(dtype=np.float32)
+
+    median_abs = float(np.nanmedian(np.abs(X_full)))
+    SCALE_IS_PERCENT = median_abs > 0.5
+
+    if SCALE_IS_PERCENT:
+        X_full = X_full / 100.0
+
+    X_tensor_full = torch.from_numpy(X_full)
+
+    # ---------- TRAINING DATA (DATE CUT) ----------
+    df_wide = df_wide_all[df_wide_all["as_of_date"] >= "2010-01-01"].copy()
 
     meta = df_wide[["as_of_date", "ccy"]].reset_index(drop=True)
     X = df_wide[list(target_tenors)].to_numpy(dtype=np.float32)
 
-    median_abs = float(np.nanmedian(np.abs(X)))
-    SCALE_IS_PERCENT = median_abs > 0.5
-
     if SCALE_IS_PERCENT:
         X = X / 100.0
 
-    X_tensor = torch.from_numpy(X)  # (N,8) CPU
+    X_tensor = torch.from_numpy(X)
 
+    # Rename currencies
     meta["ccy"] = meta["ccy"].map(lambda x: currency_rename_map.get(x, x))
     df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
+    meta_full["ccy"] = meta_full["ccy"].map(lambda x: currency_rename_map.get(x, x))
 
-    return meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT
+    return meta, X_tensor, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT
 
 
 if __name__ == "__main__":
