@@ -744,13 +744,13 @@ The estimator is therefore defined as
 \arg\min_{\Omega}\mathcal{L}(\Omega).
 \end{equation}
 
-The loss function targets cross-sectional pricing accuracy only. No additional penalty terms are required to enforce absence of arbitrage, since this property is already embedded in the decoder architecture through the ODE-based bond-pricing representation.
+\textcolor{red}{The loss function targets cross-sectional pricing accuracy only. No additional penalty terms are required to enforce absence of arbitrage, since this property is already embedded in the decoder architecture through the ODE-based bond-pricing representation.}
 
 %--------------------------------------------------------
 \subsection{Gradient-Based Optimization}
 %--------------------------------------------------------
 
-The optimization problem in \eqref{eq:training_loss} is solved using stochastic gradient-based methods, as described in the machine learning section. Parameter updates are obtained by backpropagating the loss through the full computational graph.
+The optimization problem in \eqref{eq:training_loss} is solved using stochastic gradient-based methods, as described in the machine learning section \textcolor{red}{REFERENCE}. Parameter updates are obtained by backpropagating the loss through the full computational graph.
 
 A key feature of the implementation is that differentiation extends through the numerical ODE solver. Since the Runge--Kutta recursion is implemented using elementary tensor operations, automatic differentiation propagates gradients through
 
