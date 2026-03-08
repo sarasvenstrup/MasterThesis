@@ -38,7 +38,7 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # ==========================================================
 # Settings
 # ==========================================================
-LATENT_DIM = 1
+LATENT_DIM = 4
 EPOCHS = 5000
 
 # IMPORTANT CHANGE:
@@ -56,7 +56,7 @@ FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", f"dim{LATENT_DIM}", f"ep{EPOCHS
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 USE = "bbg"
-meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
+meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
 X_tensor = X_tensor.float()
 
 from torch.utils.data import TensorDataset, DataLoader

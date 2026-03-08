@@ -71,10 +71,10 @@ oos_csv_path = os.path.join(
 SAVE_PER_ROLL_PLOTS = True  # set False if you only want the overall curve plot
 
 # ============================= Load Data ===============================
-meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
-X_tensor = X_tensor.float()
+meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
+X_tensor = X_tensor_full.float()
 
-meta = meta.copy()
+meta = meta_full.copy()
 meta["as_of_date"] = pd.to_datetime(meta["as_of_date"])
 meta = meta.reset_index(drop=True)
 

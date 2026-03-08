@@ -56,11 +56,13 @@ FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{LATENT_DIM}", f
 os.makedirs(FIGURES_DIR, exist_ok=True)
 print("Output dir:", FIGURES_DIR)
 
-# ── load data ──────────────────────────────────────────────────────────────────
-meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
-X_tensor = X_tensor.float()
 
-meta = meta.copy()
+
+# ── load data ──────────────────────────────────────────────────────────────────
+meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
+X_tensor = X_tensor_full.float()
+
+meta = meta_full.copy()
 meta["as_of_date"] = pd.to_datetime(meta["as_of_date"])
 meta = meta.reset_index(drop=True)
 
