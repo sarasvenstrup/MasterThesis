@@ -589,73 +589,55 @@ defined on the maturity grid
 \[
 \{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\}.
 \]
-
 The forward pass mirrors the theoretical architecture introduced earlier.  
 First, the observed swap curve is encoded into a latent state
-
 \[
 z_t = A_1 \mathbf{S}_t,
 \]
-
 where $z_t$ represents the low-dimensional state variable driving the model.
 
 Conditional on $z_t$, the decoder evaluates the function $G(z_t,\tau)$ together with the parametrizations of the drift $\mu(z_t)$, the diffusion matrix $\sigma(z_t)$, and the short rate $\tilde r(z_t)$. The drift is modeled as an affine transformation of the latent state, while the volatility and short-rate functions are obtained from neural network mappings. The volatility network outputs transformed volatility and correlation parameters, from which a lower-triangular diffusion matrix is constructed. The instantaneous covariance matrix is therefore given by
-
 \[
 \Sigma(z_t)=\sigma(z_t)\sigma(z_t)^\top,
 \]
-
 which is positive semidefinite by construction.
 
 Using automatic differentiation, the derivatives of $G(z_t,\tau)$ required for the coefficient functions
-
 \[
 \alpha_{z_t}(\tau), \qquad
 \beta_{z_t}(\tau), \qquad
 \gamma_{z_t}(\tau)
 \]
-
 are computed on the full annual grid
-
 \[
 \tau \in \{0,1,\dots,30\}.
 \]
-
 The inclusion of $\tau=0$ allows the boundary conditions
-
 \[
 A_{z_t}(0)=0, \qquad B_{z_t}(0)=0
 \]
-
 to be imposed directly.
 
 For each realized latent state $z_t$, the coupled ODE system
-
 \begin{align}
 \partial_\tau B_{z_t}(\tau) &= \alpha_{z_t}(\tau) B_{z_t}(\tau) + \beta_{z_t}(\tau), \\
 \partial_\tau A_{z_t}(\tau) &= B_{z_t}(\tau)^2 \gamma_{z_t}(\tau),
 \end{align}
-
 is solved numerically on this grid using a fourth-order Runge-Kutta scheme with the 3/8-rule.
 
 The resulting functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ are substituted into the affine-inspired bond price representation
-
 \[
 P(z_t,\tau)
 =
 \exp\!\big(A_{z_t}(\tau)-B_{z_t}(\tau)G(z_t,\tau)\big),
 \]
-
 yielding zero-coupon bond prices on maturities $1,\dots,30$.
 
 Finally, the model-implied swap rates are obtained from these bond prices using the swap pricing relation in \eqref{estimatedswaprates}. While the discount curve is constructed on the full grid $\{1,\dots,30\}$, swap rates are reconstructed only at the observed maturities
-
 \[
 \{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\}.
 \]
-
 Each forward pass therefore maps an observed swap curve $\mathbf{S}_t$ to a reconstructed swap curve $\tilde{\mathbf{S}}_t$ through the sequence
-
 \[
 \mathbf{S}_t
 \;\longrightarrow\;
@@ -671,7 +653,6 @@ P(z_t,\tau)
 \;\longrightarrow\;
 \tilde{\mathbf{S}}_t .
 \]
-
 Because all steps are implemented using differentiable tensor operations, the entire pricing map remains differentiable with respect to the model parameters.
 
 %--------------------------------------------------------

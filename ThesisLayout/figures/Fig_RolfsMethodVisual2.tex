@@ -7,7 +7,6 @@
     >=stealth,
     neuron/.style={circle, minimum size=9mm, inner sep=0pt},
     hnode/.style={circle, minimum size=8mm, inner sep=0pt},
-    % OUTPUT NODES: fixed identical size (12mm diameter)
     outnode/.style={
         circle,
         minimum width=13mm,
@@ -44,8 +43,7 @@
 \def\yR{-2.5}
 
 % =====================================
-% Hidden layers: top node + dots + bottom node
-% (your chosen spacing)
+% Hidden layers
 % =====================================
 \def\HiddenSep{0.8}
 
@@ -57,15 +55,13 @@
 
 % G: h1 ... h10
 \HiddenRange{G}{\yG}{$h_1^\mathcal{G}$}{$h_{10}^\mathcal{G}$}
-% K: h1 ... h3
-\HiddenRange{K}{\yK}{$h_1^\mathcal{K}$}{$h_{3}^\mathcal{K}$}
-% H: h1 ... h3
+% H: h1 ... h4
 \HiddenRange{H}{\yH}{$h_1^\mathcal{H}$}{$h_{4}^\mathcal{H}$}
-% R: h1 ... h3
+% R: h1 ... h4
 \HiddenRange{R}{\yR}{$h_1^\mathcal{R}$}{$h_{4}^\mathcal{R}$}
 
 % =====================================
-% Output nodes (ALL SAME SIZE)
+% Output nodes
 % =====================================
 \node[outnode] (Gout) at (\xOut, \yG) {$\mathcal{G}(z,\tau)$};
 \node[outnode] (Kout) at (\xOut, \yK) {$\mathcal{K}(z)$};
@@ -73,11 +69,8 @@
 \node[outnode] (Rout) at (\xOut, \yR) {$\mathcal{R}(z)$};
 
 % =====================================
-% Curved connections only from latent -> hidden (to avoid overlap)
-% Arrowheads separated: use north west / south west
+% Latent -> G hidden
 % =====================================
-
-% ---- z -> G hidden ----
 \draw[darkarrow] (z1.east) to[out=20, in=180] (GhTop.north west);
 \draw[darkarrow] (zl.east) to[out=35, in=180] (GhTop.south west);
 
@@ -88,21 +81,23 @@
 \draw[darkarrow] (tau.east) to[out=-10, in=170] (GhTop.west);
 \draw[darkarrow] (tau.east) to[out=-25, in=170] (GhBot.west);
 
-% ---- z -> K hidden ----
-\draw[darkarrow] (z1.east) to[out=-5,  in=180] (KhTop.north west);
-\draw[darkarrow] (zl.east) to[out=10,  in=180] (KhTop.south west);
+% =====================================
+% Latent -> K output (direct, no hidden layer)
+% =====================================
+\draw[darkarrow] (z1.east) to[out=-20, in=180] (Kout.west);
+\draw[darkarrow] (zl.east) to[out=-20, in=180] (Kout.west);
 
-\draw[darkarrow] (z1.east) to[out=-20, in=180] (KhBot.north west);
-\draw[darkarrow] (zl.east) to[out=-5,  in=180] (KhBot.south west);
-
-% ---- z -> H hidden ----
+% =====================================
+% Latent -> H hidden
+% =====================================
 \draw[darkarrow] (z1.east) to[out=-25, in=180] (HhTop.north west);
 \draw[darkarrow] (zl.east) to[out=-10, in=180] (HhTop.south west);
-
 \draw[darkarrow] (z1.east) to[out=-40, in=180] (HhBot.north west);
 \draw[darkarrow] (zl.east) to[out=-25, in=180] (HhBot.south west);
 
-% ---- z -> R hidden ----
+% =====================================
+% Latent -> R hidden
+% =====================================
 \draw[darkarrow] (z1.east) to[out=-45, in=180] (RhTop.north west);
 \draw[darkarrow] (zl.east) to[out=-35, in=180] (RhTop.south west);
 
@@ -110,13 +105,10 @@
 \draw[darkarrow] (zl.east) to[out=-50, in=180] (RhBot.south west);
 
 % =====================================
-% Hidden -> outputs (STRAIGHT, NOT CURVED)
+% Hidden -> outputs
 % =====================================
 \draw[darkarrow] (GhTop.east) -- (Gout.west);
 \draw[darkarrow] (GhBot.east) -- (Gout.west);
-
-\draw[darkarrow] (KhTop.east) -- (Kout.west);
-\draw[darkarrow] (KhBot.east) -- (Kout.west);
 
 \draw[darkarrow] (HhTop.east) -- (Hout.west);
 \draw[darkarrow] (HhBot.east) -- (Hout.west);
@@ -128,8 +120,9 @@
 
 \caption{Branching of the latent factors $z=(z_1,\ldots,z_l)$ into four neural networks.
 Each hidden layer is illustrated by its first and last neuron with vertical dots in between:
-$\mathcal{G}$ has $h_1,\ldots,h_{10}$, while $\mathcal{K}$, $\mathcal{H}$ and $\mathcal{R}$
-have $h_1,\ldots,h_3$. Only $\mathcal{G}(z,\tau)$ additionally depends on the maturity $\tau$.}
+$\mathcal{G}$ has $h_1,\ldots,h_{10}$, while $\mathcal{H}$ and $\mathcal{R}$
+have $h_1,\ldots,h_4$. The output $\mathcal{K}(z)$ is connected directly to the latent
+factors without a hidden layer. Only $\mathcal{G}(z,\tau)$ additionally depends on the maturity $\tau$.}
 \label{fig:rolf_architecture_details}
 
 \end{figure}
