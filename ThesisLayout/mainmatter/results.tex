@@ -6,63 +6,109 @@ After implementation and training of the arbitrage-free encoder-decoder model, w
 
 \begin{table}[h!]
 \centering
+{\small
+\pgfplotstableread[col sep=comma]{Figures/dim1/ep5000/train_rmse_log_bbg_dim1_ep5000.csv}\datone
+\pgfplotstableread[col sep=comma]{Figures/dim2/ep5000/train_rmse_log_bbg_dim2_ep5000.csv}\dattwo
+\pgfplotstableread[col sep=comma]{Figures/dim3/ep5000/train_rmse_log_bbg_dim3_ep5000.csv}\datthree
+\pgfplotstableread[col sep=comma]{Figures/dim4/ep5000/train_rmse_log_bbg_dim4_ep5000.csv}\datfour
 
-\begin{minipage}{0.48\textwidth}
-\centering
-\pgfplotstabletypeset[
-  col sep=comma,
-  header=true,
-  columns/Currency/.style={
-      column type=l,
-      string type
-  },
-  columns/RMSE_bps/.style={
-      column name={RMSE (bps)},
-      column type=r,
-      fixed,
-      precision=2,
-      fixed zerofill
-  },
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={
-      before row=\midrule,
-      after row=\bottomrule
-  },
-]{Figures/bbg/rmse_bbg_factor_2.csv}
-\caption*{2-factor model}
-\end{minipage}
-\hfill
-\begin{minipage}{0.48\textwidth}
-\centering
-\pgfplotstabletypeset[
-  col sep=comma,
-  header=true,
-  columns/Currency/.style={
-      column type=l,
-      string type
-  },
-  columns/RMSE_bps/.style={
-      column name={RMSE (bps)},
-      column type=r,
-      fixed,
-      precision=2,
-      fixed zerofill
-  },
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={
-      before row=\midrule,
-      after row=\bottomrule
-  },
-]{Figures/bbg/rmse_bbg_factor_3.csv}
-\caption*{3-factor model}
-\end{minipage}
+\pgfplotstablecreatecol[copy column from table={\datone}{avg_rmse_bps}]{factor1}{\dattwo}
+\pgfplotstablecreatecol[copy column from table={\datthree}{avg_rmse_bps}]{factor3}{\dattwo}
+\pgfplotstablecreatecol[copy column from table={\datfour}{avg_rmse_bps}]{factor4}{\dattwo}
 
-\caption{In-sample RMSE (in basis points) for the two- and three-factor models across the observed swap maturities.}
-\label{tab:rmse_combined}
+\pgfplotstabletypeset[
+  columns={epoch, factor1, avg_rmse_bps, factor3, factor4},
+  columns/epoch/.style={column type=r},
+  columns/factor1/.style={column name={1-factor}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/avg_rmse_bps/.style={column name={2-factor}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/factor3/.style={column name={3-factor}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/factor4/.style={column name={4-factor}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={before row=\midrule, after row=\bottomrule},
+]{\dattwo}
+}
+\caption{Average RMSE (in basis points) across epochs for the 1- to 4-factor models.}
+\label{tab:avg_rmse_comparison}
 \end{table}
 
 
-Table~\ref{tab:rmse_combined} shows that the two-factor model outperforms the three-factor specification in terms of average RMSE. Overall error levels are modest, indicating that a low-dimensional latent representation captures most of the cross-sectional variation in swap curves.
+\begin{table}[h!]
+\centering
+{\small
+
+% Read all four summary tables
+\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim1/ep1500/rmse_summary.csv}\sumone
+\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim2/ep1500/rmse_summary.csv}\sumtwo
+\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim3/ep1500/rmse_summary.csv}\sumthree
+\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim4/ep1500/rmse_summary.csv}\sumfour
+
+% Extract the Average row (row index 1, since Average is the 2nd row)
+\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumone \let\ISmeani\pgfplotsretval
+\pgfplotstablegetelem{1}{IS std (bps)}\of\sumone \let\ISstdi\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumone \let\OOSmeani\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumone \let\OOSstdi\pgfplotsretval
+
+\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumtwo \let\ISmeanii\pgfplotsretval
+\pgfplotstablegetelem{1}{IS std (bps)}\of\sumtwo \let\ISstdii\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumtwo \let\OOSmeanii\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumtwo \let\OOSstdii\pgfplotsretval
+
+\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumthree \let\ISmeaniii\pgfplotsretval
+\pgfplotstablegetelem{1}{IS std (bps)}\of\sumthree \let\ISstdiii\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumthree \let\OOSmeaniii\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumthree \let\OOSstdiii\pgfplotsretval
+
+\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumfour \let\ISmeaniv\pgfplotsretval
+\pgfplotstablegetelem{1}{IS std (bps)}\of\sumfour \let\ISstdiv\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumfour \let\OOSmeaniv\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumfour \let\OOSstdiv\pgfplotsretval
+
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Model} & \textbf{IS mean (bps)} & \textbf{IS std (bps)} & \textbf{OOS mean (bps)} & \textbf{OOS std (bps)} \\
+\midrule
+1-factor & \rounded{\ISmeani} & \rounded{\ISstdi} & \rounded{\OOSmeani} & \rounded{\OOSstdi} \\
+2-factor & \rounded{\ISmeanii} & \rounded{\ISstdii} & \rounded{\OOSmeanii} & \rounded{\OOSstdii} \\
+3-factor & \rounded{\ISmeaniii} & \rounded{\ISstdiii} & \rounded{\OOSmeaniii} & \rounded{\OOSstdiii} \\
+4-factor & \rounded{\ISmeaniv} & \rounded{\ISstdiv} & \rounded{\OOSmeaniv} & \rounded{\OOSstdiv} \\
+\bottomrule
+\end{tabular}
+}
+\caption{Average in-sample and out-of-sample RMSE (in basis points) across factor models.}
+\label{tab:rmse_summary_comparison}
+\end{table}
+
+
+
+\begin{table}[h!]
+\centering
+{\scriptsize
+\pgfplotstabletypeset[
+  col sep=comma,
+  header=true,
+  columns={epoch, time_total_sec, avg_rmse_bps, rmse_bps_AUD, rmse_bps_CAD, rmse_bps_DKK, rmse_bps_EUR, rmse_bps_JPY, rmse_bps_NOK, rmse_bps_SEK, rmse_bps_GBP, rmse_bps_USD},
+  columns/epoch/.style={column type=r},
+  columns/time_total_sec/.style={column name={Time (s)}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/avg_rmse_bps/.style={column name={Avg RMSE (bps)}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_AUD/.style={column name={AUD}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_CAD/.style={column name={CAD}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_DKK/.style={column name={DKK}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_EUR/.style={column name={EUR}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_JPY/.style={column name={JPY}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_NOK/.style={column name={NOK}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_SEK/.style={column name={SEK}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_GBP/.style={column name={GBP}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_USD/.style={column name={USD}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={before row=\midrule, after row=\bottomrule},
+]{Figures/dim3/ep5000/train_rmse_log_bbg_dim3_ep5000.csv}
+}
+\caption{Training RMSE (in basis points) across epochs for the 3-factor model.}
+\label{tab:train_rmse}
+\end{table}
+
+
+Table~\ref{tab:train_rmse} shows that the two-factor model outperforms the three-factor specification in terms of average RMSE. Overall error levels are modest, indicating that a low-dimensional latent representation captures most of the cross-sectional variation in swap curves.
 Interestingly, introducing a third latent factor does not systematically improveme reconstruction accuracy. The marginal benefit of the extra dimension appears limited, suggesting that the first two latent factors already capture the primary level and slope movements of the yield curve. 
 
 
