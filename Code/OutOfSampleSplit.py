@@ -35,8 +35,8 @@ print("Using device:", device)
 
 # ── config ─────────────────────────────────────────────────────────────────────
 USE        = "bbg"
-LATENT_DIM = 4
-EPOCHS     = 1500
+LATENT_DIM = 2
+EPOCHS     = 2500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 N_SEEDS    = 3        # train N times with different seeds, report average
