@@ -1,29 +1,22 @@
-# Code/kalman_dns_kf_benchmark_compare.py
-# Standard (linear) Kalman filter DNS on *yields* (linear measurement), with:
-# - runs BOTH 2F and 3F
-# - per-currency grid search for lambda
-# - Kalman filter + RTS smoother (linear-Gaussian)
-# - two-pass quasi-EM:
-#     * estimates FULL A (not diagonal)
-#     * estimates DIAGONAL Q
-#     * estimates DIAGONAL R
-# - saves:
-#     * RMSE table for 2F
-#     * RMSE table for 3F
-#     * comparison table (2F vs 3F)
-#     * per-currency factors, fitted yields, residual plots
+# Code/kalman_dns_kf_oos.py
 #
-# Output folders:
-#   Figures/bbg/kalman_benchmark/kf_dns_2f/
-#   Figures/bbg/kalman_benchmark/kf_dns_3f/
+# Correct OOS evaluation — standard LINEAR Kalman filter DNS on yields:
+#   1. Estimate lambda, A, Q, R on TRAIN data only (2004-2020)
+#      - lambda grid search + 2-pass quasi-EM + RTS smoother (all in-sample, fine)
+#   2. Freeze parameters and run FORWARD-ONLY KF on TEST data (2021-2022)
+#      - No RTS smoother on test (that would use future info)
+#      - No re-estimation on test
 #
-# Notes:
-# - This is the "standard" DNS state-space model:
-#       x_t = A x_{t-1} + w_t
-#       y_t = H(lam) x_t + e_t
-#   where H is Nelson–Siegel loadings evaluated at the observed tenors (taus).
-# - It assumes the observed instruments are *yields* at those maturities (linear in x).
-# - If your TARGET_TENORS are par swap rates (not zero yields), this is a model change.
+# Supports n_factors in {1, 2, 3, 4}
+#
+# Produces (per factor model):
+#   - rmse_summary.csv  (IS mean, IS std, OOS mean, OOS std)  <- matches OutOfSampleSplit.py
+#   - oos_fitted_vs_actual.png                                <- same layout as autoencoder plot
+#   - is_fitted_vs_actual.png
+#   - latent_factors_train.png / latent_factors_oos.png
+#
+# Output folder:
+#   Figures/kalman_benchmark_oos/kf_dns_{n_factors}f/
 
 from __future__ import annotations
 
@@ -34,317 +27,343 @@ import matplotlib.pyplot as plt
 
 from Code.load_swapdata import my_data, TARGET_TENORS
 
+# ── config ─────────────────────────────────────────────────────────────────────
+TRAIN_START = "2004-01-01"
+TRAIN_END   = "2020-12-31"
+TEST_START  = "2021-01-01"
+TEST_END    = "2022-12-31"
 
-# -----------------------------
-# Helper functions for plotting residuals
-# -----------------------------
-def plot_residuals_time_series(
-    dates: np.ndarray,
-    resid_bps: np.ndarray,          # (T,m)
-    tenors: np.ndarray,             # (m,)
-    title: str,
-    out_path: str,
-    max_legend_cols: int = 4,
-):
-    """Plots residuals over time for each tenor."""
-    fig, ax = plt.subplots(figsize=(12, 5))
-    for j, T in enumerate(tenors):
-        ax.plot(dates, resid_bps[:, j], label=f"{int(T)}Y")
+ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
-    ax.axhline(0.0, linewidth=1, linestyle="--")
-    ax.set_title(title)
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Residual (bps)")
-    ax.grid(True)
+LAM_GRID = np.linspace(0.05, 2.00, 30)
+P0_scale = 1.0
+A_shrink = 0.00
 
-    n = len(tenors)
-    ncol = min(max_legend_cols, max(1, n // 2))
-    ax.legend(ncol=ncol, fontsize=8, frameon=True)
-
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300)
-    plt.close(fig)
+FACTOR_COLS = {
+    1: ["Level"],
+    2: ["Level", "Slope"],
+    3: ["Level", "Slope", "Curvature"],
+    4: ["Level", "Slope", "Curvature", "LongCurv"],
+}
 
 
-def plot_rmse_over_time(
-    dates: np.ndarray,
-    resid_bps: np.ndarray,          # (T,m)
-    title: str,
-    out_path: str,
-):
-    """Plots cross-tenor RMSE at each date."""
-    rmse_t = np.sqrt(np.mean(resid_bps ** 2, axis=1))  # (T,)
-    fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(dates, rmse_t)
-    ax.set_title(title)
-    ax.set_xlabel("Date")
-    ax.set_ylabel("RMSE (bps)")
-    ax.grid(True)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300)
-    plt.close(fig)
+# ══════════════════════════════════════════════════════════════════════════════
+# Nelson-Siegel loadings
+# ══════════════════════════════════════════════════════════════════════════════
 
-
-# -----------------------------
-# Nelson–Siegel loadings (2 or 3 factors)
-# -----------------------------
-def ns_loadings(taus: np.ndarray, lam: float, n_factors: int) -> np.ndarray:
+def ns_loadings(taus, lam, n_factors):
     taus = np.asarray(taus, dtype=float)
     a = (1.0 - np.exp(-lam * taus)) / (lam * taus)
-    if n_factors == 2:
-        return np.column_stack([np.ones_like(taus), a])  # (m,2)
+    b = a - np.exp(-lam * taus)
+    c = taus * np.exp(-lam * taus)
+    if n_factors == 1:
+        return np.column_stack([np.ones_like(taus)])
+    elif n_factors == 2:
+        return np.column_stack([np.ones_like(taus), a])
     elif n_factors == 3:
-        b = a - np.exp(-lam * taus)
-        return np.column_stack([np.ones_like(taus), a, b])  # (m,3)
-    else:
-        raise ValueError("n_factors must be 2 or 3")
+        return np.column_stack([np.ones_like(taus), a, b])
+    elif n_factors == 4:
+        return np.column_stack([np.ones_like(taus), a, b, c])
+    raise ValueError("n_factors must be 1, 2, 3, or 4")
 
 
-# -----------------------------
-# Standard linear Kalman filter + RTS smoother
-# -----------------------------
-def kf_filter_smoother(
-    Y: np.ndarray,              # (T, m) observed yields
-    H: np.ndarray,              # (m, n) NS loadings at tenors for a fixed lambda
-    A: np.ndarray,              # (n, n)
-    Q: np.ndarray,              # (n, n) (diagonal in our estimation)
-    R: np.ndarray,              # (m, m) (diagonal in our estimation)
-    x0: np.ndarray,             # (n,)
-    P0: np.ndarray,             # (n, n)
-):
+# ══════════════════════════════════════════════════════════════════════════════
+# Linear KF + RTS smoother  (used on TRAIN only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def kf_filter_smoother(Y, H, A, Q, R, x0, P0):
     T, m = Y.shape
     n = A.shape[0]
-    assert H.shape == (m, n)
-    assert A.shape == (n, n) and Q.shape == (n, n) and P0.shape == (n, n)
-    assert x0.shape == (n,) and R.shape == (m, m)
-
     I = np.eye(n)
 
-    x_pred = np.zeros((T, n))
-    P_pred = np.zeros((T, n, n))
-    x_filt = np.zeros((T, n))
-    P_filt = np.zeros((T, n, n))
-
-    x_prev = x0.copy()
-    P_prev = P0.copy()
+    x_pred = np.zeros((T, n)); P_pred = np.zeros((T, n, n))
+    x_filt = np.zeros((T, n)); P_filt = np.zeros((T, n, n))
+    x_prev, P_prev = x0.copy(), P0.copy()
 
     for t in range(T):
-        # ---- Transition (prediction) ----
         xp = A @ x_prev
         Pp = A @ P_prev @ A.T + Q
-
-        # ---- Measurement (update): linear ----
         yp = H @ xp
-        v = Y[t] - yp
-        S = H @ Pp @ H.T + R
-        K = Pp @ H.T @ np.linalg.inv(S)
-
+        v  = Y[t] - yp
+        S  = H @ Pp @ H.T + R
+        K  = Pp @ H.T @ np.linalg.inv(S)
         xf = xp + K @ v
-
-        # Joseph form covariance update (still good practice)
         KH = K @ H
         Pf = (I - KH) @ Pp @ (I - KH).T + K @ R @ K.T
-
         x_pred[t], P_pred[t] = xp, Pp
         x_filt[t], P_filt[t] = xf, Pf
-
         x_prev, P_prev = xf, Pf
 
-    # RTS smoother (linear)
-    x_smooth = x_filt.copy()
-    P_smooth = P_filt.copy()
-
+    # RTS smoother (backward pass — fine on train only)
+    x_smooth = x_filt.copy(); P_smooth = P_filt.copy()
     for t in range(T - 2, -1, -1):
-        Pp_next = P_pred[t + 1]
-        G = P_filt[t] @ A.T @ np.linalg.inv(Pp_next)
+        G = P_filt[t] @ A.T @ np.linalg.inv(P_pred[t + 1])
         x_smooth[t] = x_filt[t] + G @ (x_smooth[t + 1] - x_pred[t + 1])
-        P_smooth[t] = P_filt[t] + G @ (P_smooth[t + 1] - Pp_next) @ G.T
+        P_smooth[t] = P_filt[t] + G @ (P_smooth[t + 1] - P_pred[t + 1]) @ G.T
 
-    Y_fit = x_smooth @ H.T  # (T,n)(n,m) = (T,m)
+    Y_fit = x_smooth @ H.T  # (T, m)
     return x_smooth, P_smooth, Y_fit
 
 
-def rmse_bps(y_true: np.ndarray, y_fit: np.ndarray) -> float:
-    err = y_fit - y_true
-    return float(np.sqrt(np.mean(err ** 2)) * 1e4)
+# ══════════════════════════════════════════════════════════════════════════════
+# Forward-only linear KF  (used on TEST — no future info)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def kf_forward_only(Y, H, A, Q, R, x0, P0):
+    """Sequential forward KF with frozen parameters. No smoother."""
+    T, m = Y.shape
+    n = A.shape[0]
+    I = np.eye(n)
+
+    x_filt = np.zeros((T, n))
+    x_prev, P_prev = x0.copy(), P0.copy()
+
+    for t in range(T):
+        xp = A @ x_prev
+        Pp = A @ P_prev @ A.T + Q
+        yp = H @ xp
+        v  = Y[t] - yp
+        S  = H @ Pp @ H.T + R
+        K  = Pp @ H.T @ np.linalg.inv(S)
+        xf = xp + K @ v
+        KH = K @ H
+        Pf = (I - KH) @ Pp @ (I - KH).T + K @ R @ K.T
+        x_filt[t] = xf
+        x_prev, P_prev = xf, Pf
+
+    Y_fit = x_filt @ H.T  # (T, m)
+    return x_filt, Y_fit
 
 
-# -----------------------------
-# Quasi-EM style updates: FULL A, DIAGONAL Q, DIAGONAL R
-# -----------------------------
-def estimate_A_full_Q_diag_from_smoothed(
-    X: np.ndarray,
-    jitter: float = 1e-10,
-    A_shrink: float = 0.00,     # shrink A toward diagonal if needed (0 = none)
-):
-    """
-    Given smoothed states X (T,n), estimate:
-      A = (X1^T X0) (X0^T X0)^{-1}   (FULL)
-      Q = diag(var(eps))             (DIAGONAL)
-    where eps_t = x_t - A x_{t-1}.
-    """
-    X0 = X[:-1]  # (T-1, n)
-    X1 = X[1:]   # (T-1, n)
+# ══════════════════════════════════════════════════════════════════════════════
+# Quasi-EM parameter estimation (train only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def estimate_A_Q(X, jitter=1e-10, A_shrink=0.0):
+    X0, X1 = X[:-1], X[1:]
     n = X.shape[1]
-
     XtX = X0.T @ X0 + jitter * np.eye(n)
     A = (X1.T @ X0) @ np.linalg.inv(XtX)
-
     if A_shrink > 0:
-        A = (1.0 - A_shrink) * A + A_shrink * np.diag(np.diag(A))
-
-    eps = X1 - (X0 @ A.T)  # (T-1, n)
-
-    q = np.var(eps, axis=0)  # (n,)
-    Q = np.diag(q) + jitter * np.eye(n)
+        A = (1 - A_shrink) * A + A_shrink * np.diag(np.diag(A))
+    eps = X1 - X0 @ A.T
+    Q = np.diag(np.var(eps, axis=0)) + jitter * np.eye(n)
     return A, Q
 
 
-def estimate_R_diag_from_residuals(
-    resid: np.ndarray,
-    jitter: float = 1e-10,
-):
+def estimate_R(resid, jitter=1e-10):
+    return np.diag(np.var(resid, axis=0)) + jitter * np.eye(resid.shape[1])
+
+
+def rmse_bps(y_true, y_fit):
+    return float(np.sqrt(np.nanmean((y_fit - y_true) ** 2)) * 1e4)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Main model runner
+# ══════════════════════════════════════════════════════════════════════════════
+
+def run_model_oos(df_train, df_test, tenors, n_factors, LAM_GRID,
+                  out_dir, P0_scale=1.0, A_shrink=0.0):
     """
-    Diagonal measurement covariance:
-      R = diag(var(resid))
+    For each currency:
+      1. Grid-search lambda + quasi-EM on train  -> best params
+      2. Forward-only KF on test with frozen params
+    Returns IS and OOS per-currency RMSE.
     """
-    m = resid.shape[1]
-    r = np.var(resid, axis=0)  # (m,)
-    R = np.diag(r) + jitter * np.eye(m)
-    return R
-
-
-# -----------------------------
-# Run one model (2F or 3F) and return its RMSE table
-# -----------------------------
-def run_model(
-    df: pd.DataFrame,
-    tenors: np.ndarray,
-    n_factors: int,
-    LAM_GRID: np.ndarray,
-    out_root: str,
-    P0_scale: float = 1.0,
-    A_shrink: float = 0.00,
-):
-    m = len(tenors)
-
-    out_dir = os.path.join(out_root, f"kf_dns_{n_factors}f")
     os.makedirs(out_dir, exist_ok=True)
+    factor_cols = FACTOR_COLS[n_factors]
 
-    resid_dir = os.path.join(out_dir, "residuals")
-    os.makedirs(resid_dir, exist_ok=True)
+    is_rmse_rows  = []
+    oos_rmse_rows = []
+    fit_store     = {}
 
-    factor_cols = ["Level", "Slope"] if n_factors == 2 else ["Level", "Slope", "Curvature"]
+    for ccy in ccy_order:
+        dfi_tr = df_train[df_train["ccy"] == ccy].sort_values("as_of_date")
+        dfi_te = df_test[df_test["ccy"] == ccy].sort_values("as_of_date")
 
-    rows = []
-    for ccy in sorted(df["ccy"].unique()):
-        dfi = df[df["ccy"] == ccy].sort_values("as_of_date").copy()
-        Y = dfi[TARGET_TENORS].astype(float).to_numpy()  # (T,m)  (treated as yields)
-        dates = dfi["as_of_date"].to_numpy()
+        if len(dfi_tr) == 0:
+            continue
+
+        Y_tr     = dfi_tr[TARGET_TENORS].astype(float).to_numpy()
+        dates_tr = dfi_tr["as_of_date"].to_numpy()
+
+        Y_te     = dfi_te[TARGET_TENORS].astype(float).to_numpy() if len(dfi_te) > 0 else None
+        dates_te = dfi_te["as_of_date"].to_numpy() if len(dfi_te) > 0 else None
 
         best = None
 
+        # ── Step 1: grid search + quasi-EM on train ───────────────────────────
         for lam in LAM_GRID:
-            # Measurement matrix for this lambda (linear measurement)
-            H = ns_loadings(tenors, lam, n_factors=n_factors)  # (m,n)
-
-            # init from OLS on day 0: y0 ≈ H x0
-            x0, *_ = np.linalg.lstsq(H, Y[0], rcond=None)
+            H = ns_loadings(tenors, lam, n_factors)   # (m, n) — fixed for linear KF
+            x0, *_ = np.linalg.lstsq(H, Y_tr[0], rcond=None)
             P0 = np.eye(n_factors) * P0_scale
-
-            # conservative initial dynamics
-            A = 0.90 * np.eye(n_factors)
-            Q = 1e-6 * np.eye(n_factors)  # diagonal
-            R = 1e-6 * np.eye(m)          # diagonal
+            A  = 0.90 * np.eye(n_factors)
+            Q  = 1e-6 * np.eye(n_factors)
+            R  = 1e-6 * np.eye(len(tenors))
 
             # Pass 1
-            Xs1, Ps1, Yfit1 = kf_filter_smoother(Y, H, A, Q, R, x0, P0)
-
-            # quasi-EM update: FULL A, DIAG Q, DIAG R
-            A2, Q2 = estimate_A_full_Q_diag_from_smoothed(Xs1, A_shrink=A_shrink)
-            R2 = estimate_R_diag_from_residuals(Y - Yfit1)
-
+            Xs1, _, Yfit1 = kf_filter_smoother(Y_tr, H, A, Q, R, x0, P0)
+            # Quasi-EM update
+            A2, Q2 = estimate_A_Q(Xs1, A_shrink=A_shrink)
+            R2     = estimate_R(Y_tr - Yfit1)
             # Pass 2
-            Xs2, Ps2, Yfit2 = kf_filter_smoother(Y, H, A2, Q2, R2, x0, P0)
-            bps = rmse_bps(Y, Yfit2)
+            Xs2, _, Yfit2 = kf_filter_smoother(Y_tr, H, A2, Q2, R2, x0, P0)
 
-            if (best is None) or (bps < best["rmse"]):
-                best = {
-                    "lam": float(lam),
-                    "rmse": float(bps),
-                    "A": A2,
-                    "Q": Q2,
-                    "R": R2,
-                    "Xs": Xs2,
-                    "Yfit": Yfit2,
-                }
+            bps = rmse_bps(Y_tr, Yfit2)
+            if best is None or bps < best["rmse_is"]:
+                best = dict(lam=lam, H=H, A=A2, Q=Q2, R=R2,
+                            x0=x0, P0=P0,
+                            Xs_tr=Xs2, Yfit_tr=Yfit2,
+                            rmse_is=bps)
 
-        rows.append({"ccy": ccy, "rmse_bps": best["rmse"], "lambda": best["lam"]})
-        print(f"{ccy} ({n_factors}F): RMSE = {best['rmse']:.2f} bps | lambda* = {best['lam']:.3f}")
+        is_rmse_rows.append({"Currency": ccy, "RMSE_bps": best["rmse_is"]})
+        print(f"  {ccy} ({n_factors}F)  IS RMSE = {best['rmse_is']:.2f} bps | lambda* = {best['lam']:.3f}")
 
-        # save factors
-        fac_df = pd.DataFrame(best["Xs"], columns=factor_cols)
-        fac_df.insert(0, "as_of_date", dates)
-        fac_df.to_csv(os.path.join(out_dir, f"kf_dns_factors_{ccy}.csv"), index=False)
+        # ── Step 2: forward-only KF on test with frozen params ────────────────
+        oos_bps = np.nan
+        Xs_te, Yfit_te = None, None
 
-        # save fitted vs true "yields"
-        fit_df = pd.DataFrame(best["Yfit"], columns=[f"fit_{t}" for t in TARGET_TENORS])
-        true_df = pd.DataFrame(Y, columns=[f"true_{t}" for t in TARGET_TENORS])
-        out_df = pd.concat([pd.DataFrame({"as_of_date": dates}), true_df, fit_df], axis=1)
-        out_df.to_csv(os.path.join(out_dir, f"kf_dns_yields_fit_{ccy}.csv"), index=False)
+        if Y_te is not None and len(Y_te) > 0:
+            x_init = best["Xs_tr"][-1]
+            P_init = np.eye(n_factors) * P0_scale
 
-        # residual plots
-        resid_bps = (Y - best["Yfit"]) * 1e4  # (T,m)
-        plot_residuals_time_series(
-            dates=dates,
-            resid_bps=resid_bps,
-            tenors=tenors,
-            title=f"{ccy} ({n_factors}F) residuals by tenor (bps)",
-            out_path=os.path.join(resid_dir, f"residuals_by_tenor_{ccy}.png"),
-        )
-        plot_rmse_over_time(
-            dates=dates,
-            resid_bps=resid_bps,
-            title=f"{ccy} ({n_factors}F) cross-tenor RMSE over time (bps)",
-            out_path=os.path.join(resid_dir, f"rmse_over_time_{ccy}.png"),
+            Xs_te, Yfit_te = kf_forward_only(
+                Y_te, best["H"],
+                best["A"], best["Q"], best["R"],
+                x_init, P_init
+            )
+            oos_bps = rmse_bps(Y_te, Yfit_te)
+            print(f"  {ccy} ({n_factors}F) OOS RMSE = {oos_bps:.2f} bps")
+
+        oos_rmse_rows.append({"Currency": ccy, "RMSE_bps": oos_bps})
+
+        fit_store[ccy] = dict(
+            dates_tr=dates_tr, Y_tr=Y_tr,  Yfit_tr=best["Yfit_tr"], Xs_tr=best["Xs_tr"],
+            dates_te=dates_te, Y_te=Y_te,  Yfit_te=Yfit_te,         Xs_te=Xs_te,
         )
 
-        # save params
-        pd.DataFrame(best["A"]).to_csv(os.path.join(out_dir, f"kf_dns_params_A_{ccy}.csv"), index=False)
-        pd.DataFrame(best["Q"]).to_csv(os.path.join(out_dir, f"kf_dns_params_Q_{ccy}.csv"), index=False)
-        pd.DataFrame(best["R"], index=TARGET_TENORS, columns=TARGET_TENORS).to_csv(
-            os.path.join(out_dir, f"kf_dns_params_R_{ccy}.csv")
-        )
+        # Save per-currency CSVs
+        pd.DataFrame(best["Xs_tr"], columns=factor_cols).assign(as_of_date=dates_tr)\
+          .to_csv(os.path.join(out_dir, f"factors_train_{ccy}.csv"), index=False)
+        if Xs_te is not None:
+            pd.DataFrame(Xs_te, columns=factor_cols).assign(as_of_date=dates_te)\
+              .to_csv(os.path.join(out_dir, f"factors_oos_{ccy}.csv"), index=False)
 
-    rmse_df = pd.DataFrame(rows).sort_values("rmse_bps", na_position="last")
-    avg_rmse = rmse_df["rmse_bps"].mean()
-    rmse_df.loc[len(rmse_df)] = {"ccy": "Average", "rmse_bps": avg_rmse, "lambda": np.nan}
-
-    rmse_path = os.path.join(out_dir, "kf_dns_rmse_bps.csv")
-    rmse_df.to_csv(rmse_path, index=False)
-
-    print(f"\nKF DNS RMSE (linear yields, bps) — {n_factors} factors:")
-    print(rmse_df)
-    print(f"\nAverage KF DNS RMSE across currencies ({n_factors}F): {avg_rmse:.2f} bps")
-    print(f"\nSaved: {rmse_path}\n")
-
-    return rmse_df, out_dir
+    return is_rmse_rows, oos_rmse_rows, fit_store
 
 
-# -----------------------------
-# Main
-# -----------------------------
+# ══════════════════════════════════════════════════════════════════════════════
+# Plotting helpers  (same layout as OutOfSampleSplit.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_fitted_vs_actual(fit_store, tenors, split, out_path, n_factors):
+    fig, axes = plt.subplots(3, 3, figsize=(14, 10))
+    axes = axes.flatten()
+
+    for ax, ccy in zip(axes, ccy_order):
+        if ccy not in fit_store:
+            ax.set_visible(False)
+            continue
+
+        d = fit_store[ccy]
+        if split == "train":
+            dates = pd.to_datetime(d["dates_tr"])
+            Y     = d["Y_tr"]
+            Y_fit = d["Yfit_tr"]
+        else:
+            if d["Y_te"] is None:
+                ax.set_visible(False)
+                continue
+            dates = pd.to_datetime(d["dates_te"])
+            Y     = d["Y_te"]
+            Y_fit = d["Yfit_te"]
+
+        mid_date = dates.min() + (dates.max() - dates.min()) / 2
+        deltas = pd.to_numeric((dates - mid_date).abs())
+        idx = int(deltas.argmin())
+
+        ax.plot(tenors, Y[idx] * 100,     "o-",  label="Actual", linewidth=1.8)
+        ax.plot(tenors, Y_fit[idx] * 100, "s--", label="Fitted", linewidth=1.8)
+        ax.set_title(f"{ccy}  ({dates[idx].strftime('%Y-%m-%d')})")
+        ax.set_xlabel("Tenor (years)")
+        ax.set_ylabel("Rate (%)")
+        ax.legend(fontsize=7)
+
+    split_label = "OOS" if split == "oos" else "In-Sample"
+    fig.suptitle(f"{split_label}: Fitted vs Actual Swap Curves — KF DNS {n_factors}F",
+                 fontsize=13, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    print(f"Saved: {out_path}")
+
+
+def plot_latent_factors(fit_store, split, out_path, n_factors):
+    factor_names = FACTOR_COLS[n_factors]
+    fig, axes = plt.subplots(n_factors, 1, figsize=(12, 3 * n_factors), sharex=True)
+    if n_factors == 1:
+        axes = [axes]
+
+    for ccy in ccy_order:
+        if ccy not in fit_store:
+            continue
+        d      = fit_store[ccy]
+        dates  = d["dates_tr"] if split == "train" else d["dates_te"]
+        Xs     = d["Xs_tr"]    if split == "train" else d["Xs_te"]
+        if dates is None or Xs is None:
+            continue
+        sort_idx = np.argsort(dates)
+        for i, ax in enumerate(axes):
+            ax.plot(dates[sort_idx], Xs[sort_idx, i],
+                    linewidth=1.2, label=ccy, alpha=0.85)
+
+    for i, ax in enumerate(axes):
+        ax.set_ylabel(factor_names[i])
+        ax.axhline(0, color="black", linewidth=0.5, linestyle="--")
+        if i == 0:
+            ax.legend(ncol=3, fontsize=7)
+
+    axes[-1].set_xlabel("Date")
+    split_label = "OOS" if split == "oos" else "train"
+    fig.suptitle(f"Latent factor paths — {split_label} — KF DNS {n_factors}F",
+                 fontsize=13, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    print(f"Saved: {out_path}")
+
+
+def save_rmse_summary(is_rows, oos_rows, out_path):
+    """
+    Saves rmse_summary.csv in the same format as OutOfSampleSplit.py:
+      Currency | IS mean (bps) | IS std (bps) | OOS mean (bps) | OOS std (bps)
+    Std = NaN for Kalman (single run, no seeds).
+    """
+    is_df  = pd.DataFrame(is_rows).set_index("Currency")
+    oos_df = pd.DataFrame(oos_rows).set_index("Currency")
+
+    summary = pd.DataFrame({
+        "IS mean (bps)":  is_df["RMSE_bps"],
+        "IS std (bps)":   np.nan,
+        "OOS mean (bps)": oos_df["RMSE_bps"],
+        "OOS std (bps)":  np.nan,
+    })
+    summary.loc["Average"] = summary.mean()
+    summary.to_csv(out_path)
+    print(f"\nRMSE summary:\n{summary.to_string()}")
+    print(f"Saved: {out_path}")
+    return summary
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Entry point
+# ══════════════════════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
     USE = "bbg"
 
-    # Lambda grid
-    LAM_GRID = np.linspace(0.05, 2.00, 30)
-
-    # Stability knobs
-    P0_scale = 1.0
-    A_shrink = 0.00
-
-    meta, X_tensor, tenors_meta, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
+    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
 
     df = df_wide.copy()
     if SCALE_IS_PERCENT:
@@ -352,54 +371,60 @@ if __name__ == "__main__":
             df[col] = df[col].astype(float) / 100.0
 
     df["as_of_date"] = pd.to_datetime(df["as_of_date"])
-    df["ccy"] = df["ccy"].astype(str)
+    df["ccy"]        = df["ccy"].astype(str)
+
+    df_train = df[(df["as_of_date"] >= TRAIN_START) & (df["as_of_date"] <= TRAIN_END)]
+    df_test  = df[(df["as_of_date"] >= TEST_START)  & (df["as_of_date"] <= TEST_END)]
+
+    print(f"Train: {TRAIN_START} – {TRAIN_END}  n={len(df_train)}")
+    print(f"Test:  {TEST_START}  – {TEST_END}   n={len(df_test)}")
 
     tenors = np.array(TARGET_TENORS, dtype=float)
 
-    out_root = os.path.join(os.getcwd(), "Figures", "bbg", "kalman_benchmark")
-    os.makedirs(out_root, exist_ok=True)
+    for n_factors in [1, 2, 3, 4]:
+        print(f"\n{'='*60}")
+        print(f"Running KF DNS  {n_factors}-factor model")
+        print(f"{'='*60}")
 
-    # Run 2F and 3F
-    rmse_2f, dir_2f = run_model(
-        df, tenors, 2, LAM_GRID, out_root,
-        P0_scale=P0_scale, A_shrink=A_shrink
-    )
-    rmse_3f, dir_3f = run_model(
-        df, tenors, 3, LAM_GRID, out_root,
-        P0_scale=P0_scale, A_shrink=A_shrink
-    )
+        out_dir = os.path.join(
+            os.getcwd(), "Figures", "kalman_benchmark_oos", f"kf_dns_{n_factors}f"
+        )
+        os.makedirs(out_dir, exist_ok=True)
 
-    # -----------------------------
-    # Comparison table: RMSE 2F vs RMSE 3F
-    # -----------------------------
-    df2 = rmse_2f[rmse_2f["ccy"] != "Average"].copy()
-    df3 = rmse_3f[rmse_3f["ccy"] != "Average"].copy()
+        is_rows, oos_rows, fit_store = run_model_oos(
+            df_train, df_test, tenors, n_factors,
+            LAM_GRID, out_dir,
+            P0_scale=P0_scale, A_shrink=A_shrink,
+        )
 
-    comp = df2.merge(df3, on="ccy", how="inner", suffixes=("_2f", "_3f"))
-    comp["abs_improvement_bps"] = comp["rmse_bps_2f"] - comp["rmse_bps_3f"]
-    comp["rel_improvement_pct"] = 100.0 * comp["abs_improvement_bps"] / comp["rmse_bps_2f"]
+        # RMSE summary table
+        save_rmse_summary(
+            is_rows, oos_rows,
+            os.path.join(out_dir, "rmse_summary.csv")
+        )
 
-    avg_row = {
-        "ccy": "Average",
-        "rmse_bps_2f": df2["rmse_bps"].mean(),
-        "lambda_2f": np.nan,
-        "rmse_bps_3f": df3["rmse_bps"].mean(),
-        "lambda_3f": np.nan,
-    }
-    avg_row["abs_improvement_bps"] = avg_row["rmse_bps_2f"] - avg_row["rmse_bps_3f"]
-    avg_row["rel_improvement_pct"] = 100.0 * avg_row["abs_improvement_bps"] / avg_row["rmse_bps_2f"]
+        # Fitted vs actual plots
+        plot_fitted_vs_actual(
+            fit_store, tenors, split="train",
+            out_path=os.path.join(out_dir, "is_fitted_vs_actual.png"),
+            n_factors=n_factors,
+        )
+        plot_fitted_vs_actual(
+            fit_store, tenors, split="oos",
+            out_path=os.path.join(out_dir, "oos_fitted_vs_actual.png"),
+            n_factors=n_factors,
+        )
 
-    comp = comp.sort_values("rmse_bps_3f").reset_index(drop=True)
-    comp = pd.concat([comp, pd.DataFrame([avg_row])], ignore_index=True)
+        # Latent factor path plots
+        plot_latent_factors(
+            fit_store, split="train",
+            out_path=os.path.join(out_dir, "latent_factors_train.png"),
+            n_factors=n_factors,
+        )
+        plot_latent_factors(
+            fit_store, split="oos",
+            out_path=os.path.join(out_dir, "latent_factors_oos.png"),
+            n_factors=n_factors,
+        )
 
-    print("\nRMSE comparison table: 2F vs 3F")
-    print(comp[[
-        "ccy",
-        "rmse_bps_2f", "lambda_2f",
-        "rmse_bps_3f", "lambda_3f",
-        "abs_improvement_bps", "rel_improvement_pct"
-    ]])
-
-    comp_path = os.path.join(out_root, "rmse_comparison_2f_vs_3f.csv")
-    comp.to_csv(comp_path, index=False)
-    print(f"\nSaved RMSE comparison table: {comp_path}")
+        print(f"\nAll outputs saved to: {out_dir}")

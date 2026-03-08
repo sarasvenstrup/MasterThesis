@@ -35,7 +35,7 @@ print("Using device:", device)
 
 # ── config ─────────────────────────────────────────────────────────────────────
 USE        = "bbg"
-LATENT_DIM = 3
+LATENT_DIM = 4
 EPOCHS     = 1500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
