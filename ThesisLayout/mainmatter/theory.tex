@@ -27,7 +27,6 @@ P(t,t+\tau)
 \left[
 e^{-\int_t^{t+\tau} r(u)\,du}
 \right], \;\;T=t+\tau
-
 \label{riskneturalbondpriceformula}
 \end{equation}
 
@@ -42,3 +41,483 @@ where $r(t)$ denotes the short rate.
 \subsection{Swap Rates}
 
 In practice, equation~\eqref{estimatedswaprates} does not hold by equality due to basis spreads between discount and forward curves. However, for modeling purposes we assume perfect consistency between discount factors and swap rates.
+
+
+\section{Term Structure Framework}
+
+We consider a filtered probability space
+$(\Omega,\mathcal{F},\{\mathcal{F}_t\}_{t \ge 0},\mathbb{Q})$
+supporting a $d$-dimensional Brownian motion
+$W_t^{\mathbb{Q}}$.
+All stochastic processes are assumed to satisfy the
+regularity conditions required for the application of Itô's lemma.
+
+We let $P(t,T)$ denote the time-$t$ price of a default-free
+zero-coupon bond maturing at time $T$.
+We define the time-to-maturity by
+\[
+\tau = T - t,
+\]
+and write $P(t,T) = P(t,t+\tau)$.
+
+%========================================================
+\section{Absence of Arbitrage}
+%========================================================
+
+We let the money-market account be given by
+\begin{equation}
+B(t)
+=
+\exp\!\left(
+\int_0^t r(u)\,du
+\right),
+\label{eq:bank_account}
+\end{equation}
+where $r(t)$ denotes the instantaneous short rate.
+
+We assume absence of arbitrage.
+It follows that there exists a probability measure
+$\mathbb{Q}$ under which discounted asset prices are martingales.
+In particular,
+\begin{equation}
+P(t,T)
+=
+\mathbb{E}_t^{\mathbb{Q}}
+\left[
+\frac{B(t)}{B(T)}
+\right]
+=
+\mathbb{E}_t^{\mathbb{Q}}
+\left[
+\exp\!\left(
+-\int_t^T r(u)\,du
+\right)
+\right].
+\label{eq:riskneutral_bond}
+\end{equation}
+
+We define the instantaneous forward rate by
+\begin{equation}
+f(t,\tau)
+=
+-
+\frac{\partial}{\partial \tau}
+\log P(t,t+\tau),
+\label{eq:forward_rate}
+\end{equation}
+and we define the short rate as
+\begin{equation}
+r(t)
+=
+\lim_{\tau \to 0} f(t,\tau).
+\label{eq:short_rate}
+\end{equation}
+
+%========================================================
+\section{Finite-Dimensional Markov Representation}
+%========================================================
+
+We assume that the term structure is driven by a
+finite-dimensional state process
+$Z_t \in \mathbb{R}^d$.
+We therefore assume that bond prices admit the representation
+\begin{equation}
+P(t,T)
+=
+P(Z_t,\tau),
+\qquad
+\tau = T - t.
+\label{eq:state_representation}
+\end{equation}
+
+Since bond prices determine the short rate through
+\eqref{eq:short_rate},
+it follows that the short rate must be a function
+of the state variable,
+\begin{equation}
+r(t) = \tilde r(Z_t).
+\label{eq:short_rate_state}
+\end{equation}
+
+We assume that the state process follows a Markov diffusion
+under the risk-neutral measure,
+\begin{equation}
+dZ_t
+=
+\mu(Z_t)\,dt
++
+\sigma(Z_t)\,dW_t^{\mathbb{Q}},
+\label{eq:state_dynamics}
+\end{equation}
+where $\mu : \mathbb{R}^d \to \mathbb{R}^d$
+and $\sigma : \mathbb{R}^d \to \mathbb{R}^{d\times d}$.
+
+Applying Itô's lemma to $P(Z_t,\tau)$
+and imposing that the discounted bond price
+$P(t,T)/B(t)$ is a martingale yields the bond pricing equation
+
+\begin{equation}
+-
+\frac{\partial P}{\partial \tau}
+-
+\tilde r(Z) P
++
+\nabla_Z P^\top \mu(Z)
++
+\frac{1}{2}
+\mathrm{Tr}
+\left(
+\sigma^\top(Z)
+H_Z P
+\sigma(Z)
+\right)
+=
+0.
+\label{eq:bond_pde}
+\end{equation}
+
+Equation \eqref{eq:bond_pde}
+characterizes arbitrage-free term structure models.
+
+%========================================================
+\section{Affine Term Structure Models}
+%========================================================
+
+We consider the class of exponential-affine representations
+given by
+\begin{equation}
+P(x,\tau)
+=
+\exp\!\left(
+A(\tau)
++
+\sum_{i=1}^{d} B_i(\tau) x_i
+\right).
+\label{eq:affine_form}
+\end{equation}
+
+Substituting \eqref{eq:affine_form} into
+\eqref{eq:bond_pde}
+reduces the partial differential equation
+to a system of ordinary differential equations
+for the functions $A(\tau)$ and $B_i(\tau)$.
+The infinite-dimensional bond pricing problem
+is thereby reduced to a finite-dimensional system in maturity time.
+
+%========================================================
+\section{Swap Rates}
+%========================================================
+
+We consider a fixed-for-floating interest rate swap
+with inception date $t$ and maturity $T=t+\tau$.
+We let
+\[
+t < T_1 < \dots < T_n = T
+\]
+denote the payment dates and define
+\[
+\Delta_i := T_i - T_{i-1}.
+\]
+
+We let $N$ denote the notional.
+The fixed leg pays $N S(t,\tau)\Delta_i$
+at each payment date $T_i$.
+Risk-neutral valuation yields
+\begin{equation}
+V_{\mathrm{fix}}(t)
+=
+N S(t,\tau)
+\sum_{i=1}^{n}
+\Delta_i P(t,T_i).
+\end{equation}
+
+We let $L(T_{i-1},T_i)$ denote the floating rate
+set at time $T_{i-1}$.
+Under the single-curve assumption,
+\[
+1+\Delta_i L(t;T_{i-1},T_i)
+=
+\frac{P(t,T_{i-1})}{P(t,T_i)}.
+\]
+
+It follows that the value of the floating leg equals
+\begin{equation}
+V_{\mathrm{float}}(t)
+=
+N\bigl(1-P(t,T)\bigr).
+\end{equation}
+
+We define the par swap rate as the fixed rate
+that satisfies
+\[
+V_{\mathrm{float}}(t) - V_{\mathrm{fix}}(t) = 0.
+\]
+
+Solving for $S(t,\tau)$ yields
+\begin{equation}
+S(t,\tau)
+=
+\frac{1-P(t,T)}
+{\sum_{i=1}^{n} \Delta_i P(t,T_i)}.
+\label{eq:swap_rate}
+\end{equation}
+
+Hence swap rates are nonlinear functionals
+of the discount curve.
+
+
+
+\section{Cholesky Parameterization of the Diffusion Matrix}
+
+In continuous-time term structure models, the latent state vector \(X_t \in \mathbb{R}^d\) is typically modeled as a diffusion process of the form
+\[
+dX_t = \mu(X_t)\,dt + \Sigma(X_t)\,dW_t,
+\]
+where \(W_t \in \mathbb{R}^d\) is a vector of independent Brownian motions and \(\Sigma(X_t)\) is the diffusion matrix governing the instantaneous volatility of the state variables.
+
+The instantaneous covariance matrix of the state increments is therefore
+\[
+\mathrm{Cov}(dX_t) = \Sigma(X_t)\Sigma(X_t)^\top dt.
+\]
+For the model to be well-defined, this covariance matrix must be positive semidefinite for all states \(X_t\). Directly parameterizing the covariance matrix can make it difficult to guarantee this property during estimation or neural network training.
+
+To ensure positive semidefiniteness by construction, it is common to parameterize the covariance matrix using a Cholesky decomposition. Specifically, we write
+\[
+\Sigma = L L^\top,
+\]
+where \(L\) is a lower triangular matrix with positive diagonal elements. Since any matrix of the form \(L L^\top\) is automatically positive semidefinite, this representation guarantees that the diffusion covariance matrix is valid.
+
+In addition, it is convenient to separate the scale of the volatilities from the correlations between the factors. Let
+\[
+\Sigma = D R D,
+\qquad
+D = \operatorname{diag}(\sigma_1,\dots,\sigma_d),
+\]
+where \(\sigma_i > 0\) represent factor volatilities and \(R\) is the correlation matrix. Applying a Cholesky decomposition to the correlation matrix,
+\[
+R = C C^\top,
+\]
+we obtain
+\[
+L = D C.
+\]
+This parameterization has two main advantages. First, it guarantees that the covariance matrix remains positive semidefinite during model estimation. Second, it allows the volatility parameters \(\sigma_i\) and correlations \(\rho_{ij}\) to be interpreted directly in terms of the scale and dependence structure of the latent factors.
+
+In the neural network implementation of the model, the parameters \(\sigma_i\) and \(\rho_{ij}\) are produced by the network and transformed to satisfy their natural constraints. The volatilities are restricted to be positive, while the correlations are bounded within the interval \((-1,1)\). The Cholesky construction then produces a valid diffusion matrix at every evaluation of the model.
+
+This approach is widely used in multi-factor diffusion models because it ensures numerical stability and preserves the probabilistic interpretation of the latent state dynamics.
+
+%========================================================
+\section{Machine Learning}
+%========================================================
+
+Machine learning methods provide flexible tools for approximating complex functional relationships in high-dimensional data. In financial applications, neural networks have increasingly been applied to model nonlinear structures such as yield curves, volatility surfaces, and option pricing functions Their ability to extract low-dimensional latent representations from high-dimensional observations makes them particularly well suited for term structure modeling.
+
+The framework considered in this thesis relies on neural networks embedded within an encoder-decoder architecture. Such architectures perform dimensionality reduction by mapping observed market data into a small set of latent factors, from which the original data can be reconstructed. This approach combines modern machine learning techniques with classical financial modeling.
+
+%--------------------------------------------------------
+\subsection{Neural Networks}
+%--------------------------------------------------------
+
+A neural network is a parameterized function that maps an input vector to an output vector through a sequence of linear transformations and nonlinear activation functions.
+
+Consider a feedforward neural network with $m$ layers. Let $x_0 \in \mathbb{R}^{n_0}$ denote the input vector and $x_m \in \mathbb{R}^{n_m}$ the output. The intermediate vectors $x_1,\dots,x_{m-1}$ are referred to as hidden layers.
+
+The network is defined recursively as
+
+\begin{equation}
+x_h = \phi_h(A_h x_{h-1} + b_h), \qquad h = 1,\dots,m,
+\end{equation}
+
+where
+
+\begin{itemize}
+\item $A_h \in \mathbb{R}^{n_h \times n_{h-1}}$ denotes the weight matrix,
+\item $b_h \in \mathbb{R}^{n_h}$ denotes the bias vector,
+\item $\phi_h(\cdot)$ is an activation function applied element-wise.
+\end{itemize}
+
+The complete set of parameters is
+
+\begin{equation}
+\Omega = \{A_h, b_h\}_{h=1}^{m}.
+\end{equation}
+
+Activation functions introduce nonlinearity into the network and enable the approximation of complex functional relationships. Common choices include the logistic function, the hyperbolic tangent, and the rectified linear unit (ReLU). \textcolor{red}{Under mild regularity conditions, sufficiently large neural networks can approximate any continuous function on compact domains. This property is often referred to as the \emph{universal approximation theorem} and forms the theoretical foundation for many applications of neural networks.}
+
+%--------------------------------------------------------
+\subsection{Encoder--Decoder Architectures}
+%--------------------------------------------------------
+
+An encoder-decoder architecture is a neural network designed to learn a compressed representation of the input data. The architecture consists of two main components.
+
+\begin{enumerate}
+\item \textbf{Encoder}: maps the input vector to a lower-dimensional latent
+representation.
+\item \textbf{Decoder}: reconstructs the output from this latent representation.
+\end{enumerate}
+
+Let $x$ denote the input vector and $z$ the latent representation. The encoder and decoder can be written as
+
+\begin{equation}
+z = E(x),
+\end{equation}
+
+\begin{equation}
+\hat{x} = D(z).
+\end{equation}
+
+The latent vector $z$ typically has significantly lower dimension than the input vector, forcing the network to extract the most relevant features of the data.
+
+When the input and output domains coincide, the architecture is commonly referred to as an \emph{autoencoder}. \textcolor{red}{Autoencoders can be interpreted as nonlinear generalizations of principal component analysis since they perform dimensionality reduction while retaining the information necessary to reconstruct the original data.}
+
+\textcolor{red}{In financial applications, encoder-decoder models have been used to extract latent factors from yield curves and other financial surfaces. Empirical evidence suggests that the majority of yield curve variation can be explained by only a few latent factors.}
+
+%--------------------------------------------------------
+\subsection{Backpropagation and Automatic Differentiation}
+%--------------------------------------------------------
+
+Training a neural network involves determining the parameters $\Omega$ that minimize a specified loss function.  This requires computation of the gradient of the loss function with respect to all network parameters.
+
+Let the loss function be denoted
+
+\begin{equation}
+\mathcal{L}(\Omega).
+\end{equation}
+
+The gradient required for optimization is
+
+\begin{equation}
+\nabla_{\Omega}\mathcal{L}(\Omega).
+\end{equation}
+
+Efficient computation of this gradient is achieved through the \emph{backpropagation algorithm}, which applies the chain rule of calculus to propagate derivatives backward through the layers of the network.
+
+\textcolor{red}{Modern machine learning frameworks implement this procedure using \emph{automatic differentiation}. During the forward pass, the computational graph of the model is recorded. During the backward pass, derivatives are evaluated automatically by traversing this graph in reverse order.}
+
+Backpropagation enables efficient training even for neural networks with a large number of parameters.
+
+%--------------------------------------------------------
+\subsection{Mini-Batch Stochastic Gradient Descent}
+%--------------------------------------------------------
+
+Neural network training is typically formulated as a numerical optimization problem. Let the dataset be
+
+\begin{equation}
+\mathcal{D} = \{x_1, x_2, \dots, x_N\}.
+\end{equation}
+
+The objective is to minimize a loss function of the form
+
+\begin{equation}
+\mathcal{L}(\Omega)
+=
+\frac{1}{N}
+\sum_{t=1}^{N}
+\ell(x_t;\Omega).
+\end{equation}
+
+Computing gradients using the entire dataset at each iteration can be computationally expensive. Instead, stochastic gradient descent methods are commonly used.
+
+At each iteration a subset
+
+\begin{equation}
+\mathcal{B} \subset \mathcal{D}, \qquad |\mathcal{B}| = B
+\end{equation}
+
+is sampled randomly, where $B$ denotes the batch size. The loss function is then approximated by
+
+\begin{equation}
+\mathcal{L}_{\mathcal{B}}(\Omega)
+=
+\frac{1}{B}
+\sum_{x_t \in \mathcal{B}}
+\ell(x_t;\Omega).
+\end{equation}
+
+The resulting gradient
+
+\begin{equation}
+\nabla_{\Omega} \mathcal{L}_{\mathcal{B}}(\Omega)
+\end{equation}
+
+serves as a stochastic approximation of the full gradient. Mini-batch stochastic gradient descent reduces computational cost and introduces stochasticity into the optimization process, which can improve convergence properties in highly non-convex optimization problems.
+
+An \emph{epoch} corresponds to one complete pass through the entire dataset.
+
+%--------------------------------------------------------
+\subsection{Optimization and Learning Rate Scheduling}
+%--------------------------------------------------------
+
+Parameter updates in stochastic optimization are typically performed using adaptive gradient methods such as the Adam optimizer. Adam maintains exponentially weighted moving averages of the first and second moments of the gradient.
+
+Let
+
+\begin{equation}
+g_k = \nabla_{\Omega}\mathcal{L}_{\mathcal{B}}(\Omega_k)
+\end{equation}
+
+denote the gradient at iteration $k$. The moment estimates are computed as
+
+\begin{align}
+m_k &= \beta_1 m_{k-1} + (1-\beta_1) g_k, \\
+v_k &= \beta_2 v_{k-1} + (1-\beta_2) g_k^2.
+\end{align}
+
+Bias-corrected estimates are given by
+
+\begin{align}
+\hat{m}_k &= \frac{m_k}{1-\beta_1^k}, \\
+\hat{v}_k &= \frac{v_k}{1-\beta_2^k}.
+\end{align}
+
+The parameter update rule is
+
+\begin{equation}
+\Omega_{k+1}
+=
+\Omega_k
+-
+\gamma_k
+\frac{\hat{m}_k}{\sqrt{\hat{v}_k} + \epsilon}.
+\end{equation}
+
+The learning rate $\gamma_k$ determines the step size of the update and plays a central role in optimization stability.
+
+Rather than keeping the learning rate constant, learning rate scheduling is often employed to improve convergence. One commonly used approach is the \emph{OneCycle learning rate schedule}. This schedule increases the learning rate during the initial stage of training to encourage exploration of the parameter space and subsequently decreases it to allow fine adjustments of the parameters.
+
+%--------------------------------------------------------
+\subsection{Training and Out-of-Sample Evaluation}
+%--------------------------------------------------------
+
+Evaluation of machine learning models requires careful separation between training and testing data. In financial applications, chronological splitting of the dataset is typically employed in order to avoid look-ahead bias.
+
+Let the dataset consist of observations
+\[
+\{S_t(\tau)\}_{t=1}^{N}.
+\]
+
+The model is estimated using historical observations and subsequently evaluated on future data that was not used during training.
+
+Model accuracy is commonly measured using the root mean squared error (RMSE)
+
+\begin{equation}
+\text{RMSE}
+=
+\sqrt{
+\frac{1}{N}
+\sum_{t=1}^{N}
+\sum_{\tau}
+\left(
+S_t(\tau) - \tilde{S}_t(\tau)
+\right)^2
+}.
+\end{equation}
+
+In addition to a fixed train--test split, rolling window evaluation is often applied. For a window length $W$, the model is repeatedly estimated using the observations
+
+\[
+\{t_{k-W+1},\dots,t_k\}
+\]
+
+and evaluated on the subsequent observation $t_{k+1}$. This procedure reflects the practical use of financial models, where parameter estimation relies solely on information available up to the current time. Rolling window analysis therefore provides insight into the stability and predictive performance of the model across different market regimes.

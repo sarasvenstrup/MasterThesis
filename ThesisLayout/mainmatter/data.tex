@@ -1,24 +1,51 @@
 \chapter{Data}
-\label{chap:persp}
+\label{chap:per}
 
+This chapter describes the dataset used to estimate and evaluate the
+affine-inspired arbitrage-free encoder--decoder framework.
 
+The data consists of monthly quoted par swap rates across currencies over the period 2004–2024, with lack of data of the yen currency from 2004 to 2010.
+For each observation date, swap rates are available at the maturities
+\[
+\{1\text{Y}, 2\text{Y}, 3\text{Y}, 5\text{Y}, 7\text{Y} 10\text{Y}, 15\text{Y}, 20\text{Y}, 30\text{Y}\}.
+\]
+All rates are expressed in percentages and transformed to decimal form. 
 
+Figure~\ref{fig:observed_curves} displays observed swap curves across currencies on a representative date.
+Several stylized features are immediately apparent.
+Most yield curves are upward sloping at short maturities,
+while intermediate maturities exhibit visible curvature.
+The overall level of rates differs substantially across currencies, reflecting differences in monetary policy regimes and macroeconomic conditions.
+In particular, the Danish and Euro curves are closely aligned, consistent with Denmark’s exchange rate policy and its long-standing peg to the euro.
+In contrast, the Japanese curve is persistently lower and flatter, illustrating Japan’s prolonged low-rate environment during the sample period.
 
-
-The data consists of monthly quoted par swap rates from 
-
-
+\textcolor{red}{comment on the different curvature for the yen, reflecting somethign about the japan economy}
 
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.9\textwidth]{Code/Figures/bbg/paper_fig2a_observed_curves_2010-01-29_bbg.png}
-    \caption{XXX}
+    \caption{Observed swap curves across currencies on 2010-01-29.}
+    \label{fig:observed_curves}
 \end{figure}
+
+Figure~\ref{fig:timeseries_10y} presents the time series of 10-year swap rates across currencies over the data set.
+The dynamics reveal pronounced regime variation.
+Rates decline steadily from 2010 until the low-rate environment around 2019–2020, followed by a sharp upward adjustment beginning in 2022.
+Strong cross-currency comovement is evident throughout the sample, particularly between Denmark and the euro,
+whose rates move almost in parallel.
+This reflects the close monetary linkage between the two economies.
+By contrast, Japanese long-term rates display markedly lower volatility and significantly weaker upward adjustment during the tightening cycle after 2022.
+The relative stability of Japanese rates highlights the persistence of unconventional monetary policy and yield-curve control during much of the sample.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{Code/Figures/bbg/paper_fig2b_timeseries_10_bbg.png}
-    \caption{XXX}
+    \includegraphics[width=0.95\textwidth]{Code/Figures/bbg/paper_fig2b_timeseries_10_bbg.png}
+    \caption{Time series of 10-year swap rates across currencies (2010–2024).}
+    \label{fig:timeseries_10y}
 \end{figure}
+
+\textcolor{red}{SKRIV MERE SOM ET AFSNIT OG IKKE TESKT TIL HVER FIGUR }
+
+\textcolor{red}{Den japanske yenn kommer til at lave et ret så stort hop fra 2024 til 2025, så nu vi får et større dataset på et tidspunkt, som vi så ville også skulle visualisere i dette kapitel, så kunne det være interessant og se om modellen ville kun forudsige det eller ej.}
 
