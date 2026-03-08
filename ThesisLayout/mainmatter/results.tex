@@ -11,20 +11,29 @@ After implementation and training of the arbitrage-free encoder-decoder model, w
 
 
 
-
+% Autoencoder reconstruction comparison across factors
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{Figures/kalman_benchmark_oos/comparison_is_fitted_vs_actual.png}
+    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/autoencoder_comparison_oos.png}
     \caption{XXX}
 \end{figure}
 
-
+% Autoencoder reconstruction comparison across factors
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{Figures/OOS_split_dim3/ep1500/oos_fitted_vs_actual.png}
+    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_2f_oos.png}
     \caption{XXX}
 \end{figure}
-
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_3f_oos.png}
+    \caption{XXX}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_4f_oos.png}
+    \caption{XXX}
+\end{figure}
 
 
 
@@ -63,10 +72,10 @@ After implementation and training of the arbitrage-free encoder-decoder model, w
 \centering
 {\small
 % ── Autoencoder ──────────────────────────────────────────────────────────────
-\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim1/ep1500/rmse_summary.csv}\sumone
-\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim2/ep1500/rmse_summary.csv}\sumtwo
-\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim3/ep1500/rmse_summary.csv}\sumthree
-\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim4/ep1500/rmse_summary.csv}\sumfour
+\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim1/ep2500/rmse_summary.csv}\sumone
+\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim2/ep2500/rmse_summary.csv}\sumtwo
+\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim3/ep2500/rmse_summary.csv}\sumthree
+\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim4/ep2500/rmse_summary.csv}\sumfour
 % ── EKF Kalman ───────────────────────────────────────────────────────────────
 \pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_1f/rmse_summary.csv}\ekfone
 \pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_2f/rmse_summary.csv}\ekftwo
@@ -184,12 +193,7 @@ Interestingly, introducing a third latent factor does not systematically improve
 Importantly, the decoder enforces no-arbitrage as a hard constraint through the ODE system for zero coupon bond prices. While this reduces flexibility relative to unconstrained autoencoders, the empirical results indicate that the associated loss in cross-sectional fit is modest. The model therefore achieves competitive reconstruction accuracy while ensuring internally consistent bond price dynamics by construction.
 
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/bbg/approx_sharpe_2014-12-31_2_factor_bbg.png}
-    \caption{XXX}
-    \label{fig:sharperatioplot}
-\end{figure}
+\textcolor{red}{INSERT GRAPH OF SHARPE RATIOS - BOTH IN SAMPLE AND OOS}
 
 However, reconstruction accuracy alone is not sufficient to evalute the model. We must also verify that it is arbitrage-free, which we do by calculating the Sharpe ratio (\textcolor{red}{create a section in the theory regarding this}) as defined in \textcolor{insert reference to theory section}. The result for a representative date is visualized in Figure~\ref{fig:sharperatioplot}.
 
@@ -199,30 +203,13 @@ However, reconstruction accuracy alone is not sufficient to evalute the model. W
 After verifying these things we look at the reconstructed swaprates vs. the actual:
 
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Code/Figures/bbg/reconstruction_2014-12-31_bbg.pdf}
-    \caption{XXX}
-\end{figure}
 
 
 
 
+\textcolor{red}{Insert LATENT FACTORS OVER TIME}
 
 
-
-
-
-
-
-
-
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/bbg/latent_factors_over_time_2_factor_bbg.png}
-    \caption{XXX}
-\end{figure}
 
 
 
