@@ -2,9 +2,13 @@
 \label{chap:res}
 
 
-\textcolor{red}{Mangler at kode SHARPE RATIO PLOTS i TRAINING!}
+\textcolor{red}{Mangler at kode SHARPE RATIO PLOTS i TRAINING!}\\
+\textcolor{red}{Vi skal få kørt out of sample resultater på noget der er højere end 1500 epochs - men hvor meget højere? 2500?}\\
+\textcolor{red}{Vi mangler også plots af vores parameter over tid}
 
 After implementation and training of the arbitrage-free encoder-decoder model, we evaluate the cross-sectional reconstruction accuracy of the two- and three-factor specifications. Following \cite{MatinWanPoulsen2025}, performance is measured by the in-sample root mean square error (RMSE).
+
+
 
 
 
@@ -25,7 +29,7 @@ After implementation and training of the arbitrage-free encoder-decoder model, w
 
 
 
-
+% Average RMSE across epochs
 \begin{table}[h!]
 \centering
 {\small
@@ -54,17 +58,22 @@ After implementation and training of the arbitrage-free encoder-decoder model, w
 \end{table}
 
 
+% Oos and IS comparison for Autoencoder and EKF
 \begin{table}[h!]
 \centering
 {\small
-
-% Read all four summary tables
+% ── Autoencoder ──────────────────────────────────────────────────────────────
 \pgfplotstableread[col sep=comma]{Figures/OOS_split_dim1/ep1500/rmse_summary.csv}\sumone
 \pgfplotstableread[col sep=comma]{Figures/OOS_split_dim2/ep1500/rmse_summary.csv}\sumtwo
 \pgfplotstableread[col sep=comma]{Figures/OOS_split_dim3/ep1500/rmse_summary.csv}\sumthree
 \pgfplotstableread[col sep=comma]{Figures/OOS_split_dim4/ep1500/rmse_summary.csv}\sumfour
+% ── EKF Kalman ───────────────────────────────────────────────────────────────
+\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_1f/rmse_summary.csv}\ekfone
+\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_2f/rmse_summary.csv}\ekftwo
+\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_3f/rmse_summary.csv}\ekfthree
+\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_4f/rmse_summary.csv}\ekffour
 
-% Extract the Average row (row index 1, since Average is the 2nd row)
+% ── Extract Average row — Autoencoder ────────────────────────────────────────
 \pgfplotstablegetelem{1}{IS mean (bps)}\of\sumone \let\ISmeani\pgfplotsretval
 \pgfplotstablegetelem{1}{IS std (bps)}\of\sumone \let\ISstdi\pgfplotsretval
 \pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumone \let\OOSmeani\pgfplotsretval
@@ -85,26 +94,52 @@ After implementation and training of the arbitrage-free encoder-decoder model, w
 \pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumfour \let\OOSmeaniv\pgfplotsretval
 \pgfplotstablegetelem{1}{OOS std (bps)}\of\sumfour \let\OOSstdiv\pgfplotsretval
 
-\begin{tabular}{lrrrr}
+% ── Extract Average row — EKF Kalman ─────────────────────────────────────────
+\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekfone \let\EKFISmeani\pgfplotsretval
+\pgfplotstablegetelem{1}{IS std (bps)}\of\ekfone \let\EKFISstdi\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekfone \let\EKFOOSmeani\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekfone \let\EKFOOSstdi\pgfplotsretval
+
+\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekftwo \let\EKFISmeanii\pgfplotsretval
+\pgfplotstablegetelem{1}{IS std (bps)}\of\ekftwo \let\EKFISstdii\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekftwo \let\EKFOOSmeanii\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekftwo \let\EKFOOSstdii\pgfplotsretval
+
+\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekfthree \let\EKFISmeaniii\pgfplotsretval
+\pgfplotstablegetelem{1}{IS std (bps)}\of\ekfthree \let\EKFISstdiii\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekfthree \let\EKFOOSmeaniii\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekfthree \let\EKFOOSstdiii\pgfplotsretval
+
+\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekffour \let\EKFISmeaniv\pgfplotsretval
+\pgfplotstablegetelem{1}{IS std (bps)}\of\ekffour \let\EKFISstdiv\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekffour \let\EKFOOSmeaniv\pgfplotsretval
+\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekffour \let\EKFOOSstdiv\pgfplotsretval
+
+\begin{tabular}{llrrrr}
 \toprule
-\textbf{Model} & \textbf{IS mean (bps)} & \textbf{IS std (bps)} & \textbf{OOS mean (bps)} & \textbf{OOS std (bps)} \\
+\textbf{Model} & \textbf{Factors} & \textbf{IS mean} & \textbf{IS std} & \textbf{OOS mean} & \textbf{OOS std} \\
 \midrule
-1-factor & \rounded{\ISmeani} & \rounded{\ISstdi} & \rounded{\OOSmeani} & \rounded{\OOSstdi} \\
-2-factor & \rounded{\ISmeanii} & \rounded{\ISstdii} & \rounded{\OOSmeanii} & \rounded{\OOSstdii} \\
-3-factor & \rounded{\ISmeaniii} & \rounded{\ISstdiii} & \rounded{\OOSmeaniii} & \rounded{\OOSstdiii} \\
-4-factor & \rounded{\ISmeaniv} & \rounded{\ISstdiv} & \rounded{\OOSmeaniv} & \rounded{\OOSstdiv} \\
+\multirow{4}{*}{Autoencoder}
+ & 1 & \rounded{\ISmeani}   & \rounded{\ISstdi}   & \rounded{\OOSmeani}   & \rounded{\OOSstdi}   \\
+ & 2 & \rounded{\ISmeanii}  & \rounded{\ISstdii}  & \rounded{\OOSmeanii}  & \rounded{\OOSstdii}  \\
+ & 3 & \rounded{\ISmeaniii} & \rounded{\ISstdiii} & \rounded{\OOSmeaniii} & \rounded{\OOSstdiii} \\
+ & 4 & \rounded{\ISmeaniv}  & \rounded{\ISstdiv}  & \rounded{\OOSmeaniv}  & \rounded{\OOSstdiv}  \\
+\midrule
+\multirow{4}{*}{EKF DNS}
+ & 1 & \rounded{\EKFISmeani}   & \rounded{\EKFISstdi}   & \rounded{\EKFOOSmeani}   & \rounded{\EKFOOSstdi}   \\
+ & 2 & \rounded{\EKFISmeanii}  & \rounded{\EKFISstdii}  & \rounded{\EKFOOSmeanii}  & \rounded{\EKFOOSstdii}  \\
+ & 3 & \rounded{\EKFISmeaniii} & \rounded{\EKFISstdiii} & \rounded{\EKFOOSmeaniii} & \rounded{\EKFOOSstdiii} \\
+ & 4 & \rounded{\EKFISmeaniv}  & \rounded{\EKFISstdiv}  & \rounded{\EKFOOSmeaniv}  & \rounded{\EKFOOSstdiv}  \\
 \bottomrule
 \end{tabular}
 }
-\caption{Average in-sample and out-of-sample RMSE (in basis points) across factor models.}
+\caption{Average in-sample and out-of-sample RMSE (in basis points) across factor models and estimation methods.}
 \label{tab:rmse_summary_comparison}
 \end{table}
 
 
 
-
-
-
+% Average RMSE across epochs for all ccy's for 3-factor
 \begin{table}[h!]
 \centering
 {\scriptsize

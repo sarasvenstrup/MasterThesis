@@ -163,29 +163,26 @@ dP
 
 Under absence of arbitrage, the discounted bond price process 
 \(
-M_t = \frac{P(t,T)}{B(t)}
+\tilde{P}_t := \frac{P(t,T)}{B(t)}
 \)
 must be a martingale under $\mathbb Q$. 
-Imposing this martingale condition eliminates the drift term in $dM_t$ 
+Imposing this martingale condition eliminates the drift term in $d\tilde{P}_t$ 
 and yields the bond-pricing partial differential equation.
 
 Consequently, ensuring arbitrage-free bond prices reduces to solving this PDE. 
 Under the affine-inspired ansatz \eqref{affineinspiredzcbprices}, 
 the PDE collapses to a system of ordinary differential equations 
 for $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$. 
-Identifying these functions therefore guarantees that the resulting 
-zero-coupon bond prices satisfy the risk-neutral pricing condition.
+Solving for these functions therefore guarantees that the resulting 
+zero-coupon bond prices satisfy the risk-neutral pricing condition. 
+
+
 
 \newpage
 
-\begin{mdframed}
-\textbf{Maybe a derivation that can be put into theory/appendix?}\\
-\textcolor{red}{THIS BOX IS REGARDING THE DERIVATION OF THE ODE SYSTEM THAT WE HAVE TO SOLVE, THAT ENSURES ARBTIAGE-FREE PRICES}.
-
-
-Then setting $M_t:=P(t,T)/B(t)$ and using the product rule for semimartingales
+We will now derive this ODE system. Setting $\tilde{P}_t:=P(t,T)/B(t)$ and using the product rule for semimartingales we obtain
 \begin{align*}
-   dM_t&=d\left(\frac{P(t,T)}{B(t)}\right)=\frac{1}{B(t)}dP(t,T)+P(t,T)d\left(\frac{1}{B(t)}\right)+d\left\langle P(t,T),\frac{1}{B(t)}\right\rangle \\
+   d\tilde{P}_t&=d\left(\frac{P(t,T)}{B(t)}\right)=\frac{1}{B(t)}dP(t,T)+P(t,T)d\left(\frac{1}{B(t)}\right)+d\left\langle P(t,T),\frac{1}{B(t)}\right\rangle \\
     &=\frac{1}{B(t)}dP(t,T)-r(t)\frac{P(t,T)}{B(t)}dt
 \end{align*}
 inserting the expression for $dP(t,T)$
@@ -194,7 +191,7 @@ inserting the expression for $dP(t,T)$
   &\textcolor{white}{=}+\frac{1}{B(t)}\nabla_zP^\top\sigma(z_t)dW_t^\mathbb{Q}  
 \end{align*}
 
-No-arbitrage requires the drift of $P_t$ to equal $r_t P_t = \tilde r(z_t)\,P(z_t,\tau_t)$.
+\textcolor{red}{No-arbitrage requires the drift of $P_t$ to equal $r_t P_t = \tilde r(z_t)\,P(z_t,\tau_t)$.}
 Hence, for all $(z,\tau)$,
 \[
 \nabla_z P(z,\tau)^\top \mu(z)
@@ -208,7 +205,6 @@ Hence, for all $(z,\tau)$,
 
 Rearranging yields the bond pricing PDE in $(z,\tau)$:
 \[
-\boxed{
 -\partial_\tau P(z,\tau)
 +
 \nabla_z P(z,\tau)^\top \mu(z)
@@ -218,17 +214,13 @@ Rearranging yields the bond pricing PDE in $(z,\tau)$:
 \tilde r(z)\,P(z,\tau)
 =
 0
-}.
 \]
-
 with the boundary condition, that a ZCB-price pays 1 at maturity so at at $\tau=0$:
-\[
+\(
 P(z,0)=1.
-\]
-
-NEXT STEP
-
-Compute derivatives of $P=\exp(A-BG)$ and substitute into the PDE, these derivations are taken out in the appendix:
+\)
+In order to further derive the ODE system, we must compute the derivatives of $P=\exp(A-BG)$ such that we can substitute into them into the above PDE. We refer to \ref{sec:PDE Derivations Helper} in the appendix to see the derivations of these following 
+results
 \begin{align}
     \partial_\tau P
 &=
@@ -250,33 +242,6 @@ P\Big(
 B_z^2\,\nabla_z G\,\nabla_z G^\top
 \Big)
 \end{align}
-
-
-
-
-Fix $z\in\mathbb{R}^d$ and $\tau\ge 0$. Assume the model bond price is
-\[
-P(z,\tau)=\exp\!\big(A_z(\tau)-B_z(\tau)\,G(z,\tau)\big),
-\]
-where $A_z(\tau),B_z(\tau)\in\mathbb{R}$ depend on $\tau$ (and parametrically on $z$), and
-$G(z,\tau)\in\mathbb{R}$ is a sufficiently smooth function of $(z,\tau)$.
-
-
-
-Then we are ready to Substitute these expressions into the no-arbitrage PDE.
-Recall the PDE:
-\[
--\partial_\tau P
-+
-\nabla_z P^\top \mu(z)
-+
-\frac12 \mathrm{Tr}\!\left(\sigma(z)\sigma(z)^\top H_z P\right)
--
-\tilde r(z)\,P
-=
-0.
-\]
-Substitute the expressions above.
 
 
 \emph{Term 1:} using the $\partial_\tau P$ formula,
@@ -351,11 +316,6 @@ Finally, rearrange to isolate $\partial_\tau A_z$ and $\partial_\tau B_z$:
 -\tilde r(z)
 =0.
 \]
-
-\textcolor{red}{OUT PUT IS AN IDENTITY THAT MUST HOLD, AND THIS WE MOVE FORWARD WITH:}
-\end{mdframed}
-
-
 
 This identity must hold for all $\tau\ge 0$. The next step is to \emph{group terms by powers of $B_z(\tau)$}
 (constant term, $B_z$ term, and $B_z^2$ term) and choose ODEs for $A_z(\tau)$ and $B_z(\tau)$
