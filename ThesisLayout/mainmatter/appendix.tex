@@ -93,9 +93,461 @@ B_z^2\,\nabla_z G\,\nabla_z G^\top
 
 
 
+\section{Cholesky Parameterization of the Volatility Matrix in Dimensions 2--4}
+
+To ensure that the instantaneous covariance matrix is positive semidefinite, we parameterize it through a lower-triangular Cholesky factor. Let
+\[
+\Sigma = L L^\top,
+\]
+where \(L\) is lower triangular. We further write
+\[
+\Sigma = D R D,
+\qquad
+D = \operatorname{diag}(\sigma_1,\dots,\sigma_d),
+\]
+where \(\sigma_i > 0\) are factor volatilities and \(R\) is the correlation matrix. Hence, if
+\[
+R = C C^\top,
+\]
+then
+\[
+L = D C.
+\]
+
+Below we derive the explicit form of \(L\) for dimensions \(d=2,3,4\).
+
+\subsection{Two-dimensional case}
+
+In dimension \(2\), the correlation matrix is
+\[
+R =
+\begin{bmatrix}
+1 & \rho_{12} \\
+\rho_{12} & 1
+\end{bmatrix}.
+\]
+We seek a lower-triangular Cholesky factor
+\[
+C =
+\begin{bmatrix}
+c_{11} & 0 \\
+c_{21} & c_{22}
+\end{bmatrix}
+\]
+such that
+\[
+R = C C^\top.
+\]
+Matching entries gives
+\[
+c_{11}^2 = 1,
+\qquad
+c_{11}c_{21} = \rho_{12},
+\qquad
+c_{21}^2 + c_{22}^2 = 1.
+\]
+Choosing the positive diagonal gives
+\[
+c_{11}=1,
+\qquad
+c_{21}=\rho_{12},
+\qquad
+c_{22}=\sqrt{1-\rho_{12}^2}.
+\]
+Therefore,
+\[
+C =
+\begin{bmatrix}
+1 & 0 \\
+\rho_{12} & \sqrt{1-\rho_{12}^2}
+\end{bmatrix}.
+\]
+Multiplying by \(D=\operatorname{diag}(\sigma_1,\sigma_2)\) yields
+\[
+L = D C =
+\begin{bmatrix}
+\sigma_1 & 0 \\
+\rho_{12}\sigma_2 & \sigma_2\sqrt{1-\rho_{12}^2}
+\end{bmatrix}.
+\]
+
+\subsection{Three-dimensional case}
+
+In dimension \(3\), the correlation matrix is
+\[
+R =
+\begin{bmatrix}
+1 & \rho_{12} & \rho_{13} \\
+\rho_{12} & 1 & \rho_{23} \\
+\rho_{13} & \rho_{23} & 1
+\end{bmatrix}.
+\]
+We write
+\[
+C =
+\begin{bmatrix}
+1 & 0 & 0 \\
+c_{21} & c_{22} & 0 \\
+c_{31} & c_{32} & c_{33}
+\end{bmatrix}
+\]
+and impose \(R = C C^\top\). Matching entries row by row:
+
+From the \((2,1)\)-entry,
+\[
+c_{21} = \rho_{12}.
+\]
+From the \((2,2)\)-entry,
+\[
+c_{21}^2 + c_{22}^2 = 1
+\quad\Longrightarrow\quad
+c_{22} = \sqrt{1-\rho_{12}^2}.
+\]
+From the \((3,1)\)-entry,
+\[
+c_{31} = \rho_{13}.
+\]
+From the \((3,2)\)-entry,
+\[
+c_{31}c_{21} + c_{32}c_{22} = \rho_{23}.
+\]
+Substituting \(c_{21}=\rho_{12}\), \(c_{22}=\sqrt{1-\rho_{12}^2}\), and \(c_{31}=\rho_{13}\), we obtain
+\[
+c_{32}
+=
+\frac{\rho_{23}-\rho_{12}\rho_{13}}{\sqrt{1-\rho_{12}^2}}.
+\]
+Finally, from the \((3,3)\)-entry,
+\[
+c_{31}^2 + c_{32}^2 + c_{33}^2 = 1,
+\]
+hence
+\[
+c_{33}
+=
+\sqrt{
+1-\rho_{13}^2
+-\frac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}.
+\]
+Thus,
+\[
+C =
+\begin{bmatrix}
+1 & 0 & 0 \\
+\rho_{12} & \sqrt{1-\rho_{12}^2} & 0 \\
+\rho_{13} &
+\dfrac{\rho_{23}-\rho_{12}\rho_{13}}{\sqrt{1-\rho_{12}^2}} &
+\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}
+\end{bmatrix}.
+\]
+Therefore,
+\[
+L = D C =
+\begin{bmatrix}
+\sigma_1 & 0 & 0 \\
+\rho_{12}\sigma_2 & \sigma_2\sqrt{1-\rho_{12}^2} & 0 \\
+\rho_{13}\sigma_3 &
+\sigma_3\dfrac{\rho_{23}-\rho_{12}\rho_{13}}{\sqrt{1-\rho_{12}^2}} &
+\sigma_3\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}
+\end{bmatrix}.
+\]
+
+\subsection{Four-dimensional case}
+
+In dimension \(4\), the correlation matrix is
+\[
+R =
+\begin{bmatrix}
+1 & \rho_{12} & \rho_{13} & \rho_{14} \\
+\rho_{12} & 1 & \rho_{23} & \rho_{24} \\
+\rho_{13} & \rho_{23} & 1 & \rho_{34} \\
+\rho_{14} & \rho_{24} & \rho_{34} & 1
+\end{bmatrix}.
+\]
+We write
+\[
+C =
+\begin{bmatrix}
+1 & 0 & 0 & 0 \\
+c_{21} & c_{22} & 0 & 0 \\
+c_{31} & c_{32} & c_{33} & 0 \\
+c_{41} & c_{42} & c_{43} & c_{44}
+\end{bmatrix}
+\]
+and again impose \(R=C C^\top\).
+
+The first three rows follow exactly as in the three-dimensional case:
+\[
+c_{21}=\rho_{12},
+\qquad
+c_{22}=\sqrt{1-\rho_{12}^2},
+\]
+\[
+c_{31}=\rho_{13},
+\qquad
+c_{32}=\frac{\rho_{23}-\rho_{12}\rho_{13}}{\sqrt{1-\rho_{12}^2}},
+\]
+\[
+c_{33}
+=
+\sqrt{
+1-\rho_{13}^2
+-\frac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}.
+\]
+
+For the fourth row, the \((4,1)\)-entry gives
+\[
+c_{41}=\rho_{14}.
+\]
+The \((4,2)\)-entry gives
+\[
+c_{41}c_{21}+c_{42}c_{22}=\rho_{24},
+\]
+hence
+\[
+c_{42}
+=
+\frac{\rho_{24}-\rho_{12}\rho_{14}}{\sqrt{1-\rho_{12}^2}}.
+\]
+The \((4,3)\)-entry gives
+\[
+c_{41}c_{31}+c_{42}c_{32}+c_{43}c_{33}=\rho_{34},
+\]
+so
+\[
+c_{43}
+=
+\frac{\rho_{34}-\rho_{13}\rho_{14}-c_{32}c_{42}}{c_{33}}.
+\]
+Substituting the expressions for \(c_{32}\) and \(c_{42}\),
+\[
+c_{43}
+=
+\frac{
+\rho_{34}-\rho_{13}\rho_{14}
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})(\rho_{24}-\rho_{12}\rho_{14})}{1-\rho_{12}^2}
+}{
+\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}
+}.
+\]
+Finally, the \((4,4)\)-entry gives
+\[
+c_{41}^2+c_{42}^2+c_{43}^2+c_{44}^2=1,
+\]
+hence
+\[
+c_{44}
+=
+\sqrt{1-\rho_{14}^2-c_{42}^2-c_{43}^2}.
+\]
+Equivalently,
+\[
+c_{44}
+=
+\sqrt{
+1-\rho_{14}^2
+-\frac{(\rho_{24}-\rho_{12}\rho_{14})^2}{1-\rho_{12}^2}
+-\left(
+\frac{
+\rho_{34}-\rho_{13}\rho_{14}
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})(\rho_{24}-\rho_{12}\rho_{14})}{1-\rho_{12}^2}
+}{
+\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}
+}
+\right)^2
+}.
+\]
+
+Therefore,
+\[
+C =
+\begin{bmatrix}
+1 & 0 & 0 & 0 \\[0.4em]
+\rho_{12} & \sqrt{1-\rho_{12}^2} & 0 & 0 \\[0.6em]
+\rho_{13} &
+\dfrac{\rho_{23}-\rho_{12}\rho_{13}}{\sqrt{1-\rho_{12}^2}} &
+\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+} & 0 \\[1em]
+\rho_{14} &
+\dfrac{\rho_{24}-\rho_{12}\rho_{14}}{\sqrt{1-\rho_{12}^2}} &
+\dfrac{
+\rho_{34}-\rho_{13}\rho_{14}
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})(\rho_{24}-\rho_{12}\rho_{14})}{1-\rho_{12}^2}
+}{
+\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}
+} &
+c_{44}
+\end{bmatrix},
+\]
+with \(c_{44}\) given above. Hence,
+\[
+L = D C.
+\]
+
+\subsection{Final expressions for the volatility matrix}
+
+Collecting the results, the Cholesky factor \(L\) used in the model is:
+
+\paragraph{Dimension \(2\):}
+\[
+L =
+\begin{bmatrix}
+\sigma_1 & 0 \\
+\rho_{12}\sigma_2 & \sigma_2\sqrt{1-\rho_{12}^2}
+\end{bmatrix}.
+\]
+
+\paragraph{Dimension \(3\):}
+\[
+L =
+\begin{bmatrix}
+\sigma_1 & 0 & 0 \\
+\rho_{12}\sigma_2 & \sigma_2\sqrt{1-\rho_{12}^2} & 0 \\
+\rho_{13}\sigma_3 &
+\sigma_3\dfrac{\rho_{23}-\rho_{12}\rho_{13}}{\sqrt{1-\rho_{12}^2}} &
+\sigma_3\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}
+\end{bmatrix}.
+\]
+
+\paragraph{Dimension \(4\):}
+\[
+L =
+\begin{bmatrix}
+\sigma_1 & 0 & 0 & 0 \\[0.4em]
+\rho_{12}\sigma_2 & \sigma_2\sqrt{1-\rho_{12}^2} & 0 & 0 \\[0.6em]
+\rho_{13}\sigma_3 &
+\sigma_3\dfrac{\rho_{23}-\rho_{12}\rho_{13}}{\sqrt{1-\rho_{12}^2}} &
+\sigma_3\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+} & 0 \\[1em]
+\rho_{14}\sigma_4 &
+\sigma_4\dfrac{\rho_{24}-\rho_{12}\rho_{14}}{\sqrt{1-\rho_{12}^2}} &
+\sigma_4\dfrac{
+\rho_{34}-\rho_{13}\rho_{14}
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})(\rho_{24}-\rho_{12}\rho_{14})}{1-\rho_{12}^2}
+}{
+\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}
+} &
+\sigma_4 c_{44}
+\end{bmatrix},
+\]
+where
+\[
+c_{44}
+=
+\sqrt{
+1-\rho_{14}^2
+-\frac{(\rho_{24}-\rho_{12}\rho_{14})^2}{1-\rho_{12}^2}
+-\left(
+\frac{
+\rho_{34}-\rho_{13}\rho_{14}
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})(\rho_{24}-\rho_{12}\rho_{14})}{1-\rho_{12}^2}
+}{
+\sqrt{
+1-\rho_{13}^2
+-\dfrac{(\rho_{23}-\rho_{12}\rho_{13})^2}{1-\rho_{12}^2}
+}
+}
+\right)^2
+}.
+\]
+
+\subsection{Remark}
+
+This construction guarantees that \(\Sigma = L L^\top\) is positive semidefinite whenever the implied correlation matrix \(R\) is itself valid. In dimension \(2\), the condition \(|\rho_{12}| \leq 1\) is sufficient. In dimensions \(3\) and \(4\), however, bounding each pairwise correlation in \([-1,1]\) is not enough: the full correlation matrix must also be positive semidefinite.
 
 
+\section{Numerical Solution of the ODE System Using the Runge--Kutta 3/8 Method}
+\label{app:rk38}
 
+In the affine-inspired encoder--decoder framework, the bond pricing functions are obtained as the solution of a system of ordinary differential equations (ODEs). Closed-form solutions are generally not available once the coefficient functions are represented by neural networks. Consequently, the system must be solved numerically.
+
+To this end, we employ a fourth-order explicit Runge--Kutta scheme, specifically the \emph{Runge--Kutta 3/8 method}. This method offers a good balance between numerical accuracy and computational efficiency, while remaining straightforward to implement within automatic differentiation frameworks used for neural network training.
+
+\subsection{General ODE formulation}
+
+Consider an ODE of the form
+\[
+\frac{dy}{dt} = f(t,y),
+\qquad
+y(t_0) = y_0,
+\]
+where \(y(t)\in\mathbb{R}^n\) and \(f\) is a sufficiently smooth function. The goal is to compute an approximation of the solution at discrete time points \(t_n = t_0 + nh\), where \(h\) denotes the step size.
+
+\subsection{Runge--Kutta methods}
+
+Runge--Kutta methods approximate the solution by evaluating the derivative function \(f(t,y)\) at several intermediate points within each step. The classical fourth-order Runge--Kutta family achieves local truncation error of order \(O(h^5)\) and global error of order \(O(h^4)\).
+
+Among these schemes, the Runge--Kutta 3/8 rule is a particular fourth-order method characterized by a symmetric weighting structure. It is defined by four intermediate slope evaluations.
+
+\subsection{Runge--Kutta 3/8 scheme}
+
+Let \(y_n\) denote the approximation to \(y(t_n)\). The Runge--Kutta 3/8 update from \(t_n\) to \(t_{n+1}=t_n+h\) is given by
+
+\[
+k_1 = f(t_n, y_n),
+\]
+
+\[
+k_2 = f\left(t_n+\frac{h}{3},\; y_n + \frac{h}{3}k_1\right),
+\]
+
+\[
+k_3 = f\left(t_n+\frac{2h}{3},\; y_n + h\left(-\frac{1}{3}k_1 + k_2\right)\right),
+\]
+
+\[
+k_4 = f\left(t_n+h,\; y_n + h\left(k_1 - k_2 + k_3\right)\right).
+\]
+
+The solution is then updated according to
+
+\[
+y_{n+1}
+=
+y_n
++
+\frac{h}{8}
+\left(
+k_1 + 3k_2 + 3k_3 + k_4
+\right).
+\]
+
+This scheme achieves fourth-order accuracy while requiring only four evaluations of the function \(f\) per step.
+
+\subsection{Application in the model}
+
+In the implementation of the affine-inspired encoder--decoder model, the Runge--Kutta 3/8 scheme is used to numerically integrate the ODE system governing the bond pricing functions. The maturity variable plays the role of the time variable in the ODE, and the integration proceeds along the maturity dimension.
+
+Because the scheme is explicit and differentiable, it integrates naturally with modern deep learning frameworks such as PyTorch. Automatic differentiation can therefore propagate gradients through the numerical solver during model training.
+
+The use of the Runge--Kutta 3/8 method ensures stable and accurate numerical solutions of the ODE system while maintaining compatibility with gradient-based optimization.
 
 
 \section{Results from Rolfs method (TITLE?)}

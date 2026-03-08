@@ -576,6 +576,7 @@
 %                straight (title in the middle)
 \RequirePackage{titlesec}
 %
+
 % > formats: \part
 \titleclass{\part}{top} % <-- display:
 \assignpagestyle{\part}{empty}	% <-- no page numbers/decorations
@@ -672,6 +673,13 @@
 	% {}%
 	% {}%
 	% []
+% > formats: \paragraph
+\titleformat{\paragraph}[runin]%
+  {\usekomafont{paragraph}}%
+  {}%
+  {0pt}%
+  {}%
+  [.]
 %
 %
 % **************************************************

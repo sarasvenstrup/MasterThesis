@@ -1,12 +1,13 @@
 \chapter{Results}
 \label{chap:res}
 
-
-
-After implementation,
+After implementation and training of the arbitrage-free encoder-decoder model, we evaluate the cross-sectional reconstruction accuracy of the two- and three-factor specifications. Following \cite{MatinWanPoulsen2025}, performance is measured by the in-sample root mean square error (RMSE).
 
 
 \begin{table}[h!]
+\centering
+
+\begin{minipage}{0.48\textwidth}
 \centering
 \pgfplotstabletypeset[
   col sep=comma,
@@ -28,10 +29,10 @@ After implementation,
       after row=\bottomrule
   },
 ]{Figures/bbg/rmse_bbg_factor_2.csv}
-\caption{In-sample RMSE in basis points}
-\end{table}
-
-\begin{table}[h!]
+\caption*{2-factor model}
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\textwidth}
 \centering
 \pgfplotstabletypeset[
   col sep=comma,
@@ -53,19 +54,43 @@ After implementation,
       after row=\bottomrule
   },
 ]{Figures/bbg/rmse_bbg_factor_3.csv}
-\caption{In-sample RMSE in basis points}
+\caption*{3-factor model}
+\end{minipage}
+
+\caption{In-sample RMSE (in basis points) for the two- and three-factor models across the observed swap maturities.}
+\label{tab:rmse_combined}
 \end{table}
 
-\textcolor{red}{COMBINE THESE TWO TABLES SO SO THAT THEY ARE SIDE BY SIDE}
+
+Table~\ref{tab:rmse_combined} shows that the two-factor model outperforms the three-factor specification in terms of average RMSE. Overall error levels are modest, indicating that a low-dimensional latent representation captures most of the cross-sectional variation in swap curves.
+Interestingly, introducing a third latent factor does not systematically improveme reconstruction accuracy. The marginal benefit of the extra dimension appears limited, suggesting that the first two latent factors already capture the primary level and slope movements of the yield curve. 
 
 
+\textcolor{red}{Conclusion: We have learned that when we extend the model, it is important to let the model run for more epochs relative to when it was only two dimensions to see good results. This is due to the more weights and parameters that the model must take into account.}
+
+
+%This finding is consistent with the well-known empirical %evidence that yield curve dynamics are largely driven by a %small number of factors.
+
+% Ved ikke hvad det følgende betyder?
+%Across currencies, reconstruction errors are relatively stable and typically lie in the low-to-mid teens. Some dispersion remains, with certain currencies exhibiting slightly higher errors, which may reflect differences in curvature dynamics or prolonged periods of atypical interest rate regimes. Nevertheless, the variation is modest and does not materially affect the overall conclusions.
+
+
+Importantly, the decoder enforces no-arbitrage as a hard constraint through the ODE system for zero coupon bond prices. While this reduces flexibility relative to unconstrained autoencoders, the empirical results indicate that the associated loss in cross-sectional fit is modest. The model therefore achieves competitive reconstruction accuracy while ensuring internally consistent bond price dynamics by construction.
 
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.9\textwidth]{Figures/bbg/approx_sharpe_2014-12-31_2_factor_bbg.png}
     \caption{XXX}
+    \label{fig:sharperatioplot}
 \end{figure}
+
+However, reconstruction accuracy alone is not sufficient to evalute the model. We must also verify that it is arbitrage-free, which we do by calculating the Sharpe ratio (\textcolor{red}{create a section in the theory regarding this}) as defined in \textcolor{insert reference to theory section}. The result for a representative date is visualized in Figure~\ref{fig:sharperatioplot}.
+
+
+\textcolor{red}{So maybe we can create a table with the average sharpe ratio for each tenor for each currency across time, and then visuazzlie just one date like we already have.}
+
+After verifying these things we look at the reconstructed swaprates vs. the actual:
 
 
 \begin{figure}[H]
@@ -73,6 +98,19 @@ After implementation,
     \includegraphics[width=0.9\textwidth]{Code/Figures/bbg/reconstruction_2014-12-31_bbg.pdf}
     \caption{XXX}
 \end{figure}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 \begin{figure}[H]
     \centering
@@ -88,9 +126,3 @@ After implementation,
 
 
 
-\textcolor{red}{We must be very clear on how we want to compare Rolfs method to PCA, in order to avoid comparing bananas and apples. The comparison must be based on the reconstruction accuracy (RMSE of swaps in our case), then PCA is a valid baseline.
-PCA - how many statistical factors explain most variance
-Rolf - can we achieve similiar fit while imposing no-arbitrage and dynamics.
-PCA serves as a purely statistical benchmark for cross-sectional reconstruction accuracy.
-Rolf’s model can then be evaluated relative to this benchmark while imposing additional economic structure (no-arbitrage and dynamics).
-In order to compare the three-factor extension of Rolf’s model with a purely statistical benchmark, we introduce Principal Component Analysis (PCA). PCA provides a model-free method for dimensionality reduction and is widely used in empirical term structure analysis.}
