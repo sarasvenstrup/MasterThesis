@@ -2,21 +2,22 @@
 #
 # Correct OOS evaluation:
 #   1. Estimate lambda, A, Q, R on TRAIN data only (2004-2020)
-#      - lambda grid search + 2-pass quasi-EM + RTS smoother (all in-sample, fine)
 #   2. Freeze parameters and run FORWARD-ONLY EKF on TEST data (2021-2022)
-#      - No RTS smoother on test (that would use future info)
-#      - No re-estimation on test
 #
 # Supports n_factors in {1, 2, 3, 4}
 #
-# Produces (per factor model):
-#   - rmse_summary.csv  (IS mean, IS std, OOS mean, OOS std)  <- matches OutOfSampleSplit.py
-#   - oos_fitted_vs_actual.png                                <- same layout as autoencoder plot
+# Produces per factor model:
+#   - rmse_summary.csv
 #   - is_fitted_vs_actual.png
-#   - latent_factors_train.png / latent_factors_oos.png
+#   - oos_fitted_vs_actual.png
+#   - latent_factors_train.png
+#   - latent_factors_oos.png
 #
-# Output folder:
-#   Figures/kalman_benchmark_oos/ekf_dns_{n_factors}f/
+# Produces comparison plots (one subplot per currency, 4 lines: Actual, 2F, 3F, 4F):
+#   - comparison_oos_fitted_vs_actual.png
+#   - comparison_is_fitted_vs_actual.png
+#
+# Output folder: Figures/kalman_benchmark_oos/
 
 from __future__ import annotations
 
@@ -53,16 +54,11 @@ FACTOR_COLS = {
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Helper: find index closest to mid-period (numpy-based, no pandas timedelta)
+# Helper: find index closest to mid-period (numpy-based)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def mid_period_idx(dates):
-    """
-    Takes a DatetimeIndex or array of datetimes.
-    Returns the integer index of the date closest to the midpoint.
-    Uses numpy int64 timestamps to avoid TimedeltaIndex.abs() issues.
-    """
-    ts = np.array(dates, dtype="datetime64[ns]").astype(np.int64)
+    ts  = np.array(dates, dtype="datetime64[ns]").astype(np.int64)
     mid = (ts.min() + ts.max()) // 2
     return int(np.abs(ts - mid).argmin())
 
@@ -145,7 +141,6 @@ def ekf_filter_smoother(Y, tenors, lam, A, Q, R, x0, P0, freq=1):
         x_filt[t], P_filt[t] = xf, Pf
         x_prev, P_prev = xf, Pf
 
-    # RTS smoother (backward pass — fine on train only)
     x_smooth = x_filt.copy(); P_smooth = P_filt.copy()
     for t in range(T - 2, -1, -1):
         G = P_filt[t] @ A.T @ np.linalg.inv(P_pred[t + 1])
@@ -161,7 +156,6 @@ def ekf_filter_smoother(Y, tenors, lam, A, Q, R, x0, P0, freq=1):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def ekf_forward_only(Y, tenors, lam, A, Q, R, x0, P0, freq=1):
-    """Sequential forward EKF with frozen parameters. No smoother."""
     T, m = Y.shape
     n = A.shape[0]
     I = np.eye(n)
@@ -221,7 +215,6 @@ def rmse_bps(y_true, y_fit):
 def run_model_oos(df_train, df_test, tenors, n_factors, CCY_FREQ, LAM_GRID,
                   out_dir, P0_scale=1.0, A_shrink=0.0):
     os.makedirs(out_dir, exist_ok=True)
-    factor_cols = FACTOR_COLS[n_factors]
 
     is_rmse_rows  = []
     oos_rmse_rows = []
@@ -243,7 +236,6 @@ def run_model_oos(df_train, df_test, tenors, n_factors, CCY_FREQ, LAM_GRID,
 
         best = None
 
-        # ── Step 1: grid search + quasi-EM on train ───────────────────────────
         for lam in LAM_GRID:
             H0 = ns_loadings(tenors, lam, n_factors)
             x0, *_ = np.linalg.lstsq(H0, Y_tr[0], rcond=None)
@@ -267,14 +259,12 @@ def run_model_oos(df_train, df_test, tenors, n_factors, CCY_FREQ, LAM_GRID,
         is_rmse_rows.append({"Currency": ccy, "RMSE_bps": best["rmse_is"]})
         print(f"  {ccy} ({n_factors}F)  IS RMSE = {best['rmse_is']:.2f} bps | lambda* = {best['lam']:.3f}")
 
-        # ── Step 2: forward-only EKF on test with frozen params ───────────────
         oos_bps = np.nan
         Xs_te, Yfit_te = None, None
 
         if Y_te is not None and len(Y_te) > 0:
             x_init = best["Xs_tr"][-1]
             P_init = np.eye(n_factors) * P0_scale
-
             Xs_te, Yfit_te = ekf_forward_only(
                 Y_te, tenors, best["lam"],
                 best["A"], best["Q"], best["R"],
@@ -290,17 +280,11 @@ def run_model_oos(df_train, df_test, tenors, n_factors, CCY_FREQ, LAM_GRID,
             dates_te=dates_te, Y_te=Y_te,  Yfit_te=Yfit_te,         Xs_te=Xs_te,
         )
 
-        pd.DataFrame(best["Xs_tr"], columns=factor_cols).assign(as_of_date=dates_tr)\
-          .to_csv(os.path.join(out_dir, f"factors_train_{ccy}.csv"), index=False)
-        if Xs_te is not None:
-            pd.DataFrame(Xs_te, columns=factor_cols).assign(as_of_date=dates_te)\
-              .to_csv(os.path.join(out_dir, f"factors_oos_{ccy}.csv"), index=False)
-
     return is_rmse_rows, oos_rmse_rows, fit_store
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Plotting helpers  (same layout as OutOfSampleSplit.py)
+# Per-model plots
 # ══════════════════════════════════════════════════════════════════════════════
 
 def plot_fitted_vs_actual(fit_store, tenors, split, out_path, n_factors):
@@ -309,25 +293,18 @@ def plot_fitted_vs_actual(fit_store, tenors, split, out_path, n_factors):
 
     for ax, ccy in zip(axes, ccy_order):
         if ccy not in fit_store:
-            ax.set_visible(False)
-            continue
+            ax.set_visible(False); continue
 
         d = fit_store[ccy]
         if split == "train":
-            dates = d["dates_tr"]
-            Y     = d["Y_tr"]
-            Y_fit = d["Yfit_tr"]
+            dates = d["dates_tr"]; Y = d["Y_tr"]; Y_fit = d["Yfit_tr"]
         else:
             if d["Y_te"] is None:
-                ax.set_visible(False)
-                continue
-            dates = d["dates_te"]
-            Y     = d["Y_te"]
-            Y_fit = d["Yfit_te"]
+                ax.set_visible(False); continue
+            dates = d["dates_te"]; Y = d["Y_te"]; Y_fit = d["Yfit_te"]
 
-        # use numpy int64 timestamps to find mid-period index safely
-        idx       = mid_period_idx(dates)
-        date_str  = pd.Timestamp(dates[idx]).strftime("%Y-%m-%d")
+        idx      = mid_period_idx(dates)
+        date_str = pd.Timestamp(dates[idx]).strftime("%Y-%m-%d")
 
         ax.plot(tenors, Y[idx] * 100,     "o-",  label="Actual", linewidth=1.8)
         ax.plot(tenors, Y_fit[idx] * 100, "s--", label="Fitted", linewidth=1.8)
@@ -383,7 +360,6 @@ def plot_latent_factors(fit_store, split, out_path, n_factors):
 def save_rmse_summary(is_rows, oos_rows, out_path):
     is_df  = pd.DataFrame(is_rows).set_index("Currency")
     oos_df = pd.DataFrame(oos_rows).set_index("Currency")
-
     summary = pd.DataFrame({
         "IS mean (bps)":  is_df["RMSE_bps"],
         "IS std (bps)":   np.nan,
@@ -395,6 +371,75 @@ def save_rmse_summary(is_rows, oos_rows, out_path):
     print(f"\nRMSE summary:\n{summary.to_string()}")
     print(f"Saved: {out_path}")
     return summary
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Comparison plot: 3x3 grid, one subplot per currency
+# Each subplot: Actual + 2F fitted + 3F fitted + 4F fitted
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_comparison(fit_stores, tenors, split, out_path, factor_list=(2, 3, 4)):
+    """
+    fit_stores: {n_factors: fit_store}
+    3x3 grid, one subplot per currency.
+    Each subplot shows: Actual swap curve + one fitted line per factor model.
+    """
+    styles = {
+        2: ("s--", "2-factor"),
+        3: ("^-.", "3-factor"),
+        4: ("D:",  "4-factor"),
+    }
+
+    fig, axes = plt.subplots(3, 3, figsize=(14, 10))
+    axes = axes.flatten()
+
+    for ax, ccy in zip(axes, ccy_order):
+        # Get dates and actual from any factor model (they share the same actual data)
+        ref_store = fit_stores[factor_list[0]]
+        if ccy not in ref_store:
+            ax.set_visible(False); continue
+
+        d_ref = ref_store[ccy]
+        if split == "train":
+            dates  = d_ref["dates_tr"]
+            Y_actual = d_ref["Y_tr"]
+        else:
+            if d_ref["Y_te"] is None:
+                ax.set_visible(False); continue
+            dates    = d_ref["dates_te"]
+            Y_actual = d_ref["Y_te"]
+
+        idx      = mid_period_idx(dates)
+        date_str = pd.Timestamp(dates[idx]).strftime("%Y-%m-%d")
+
+        # Plot actual
+        ax.plot(tenors, Y_actual[idx] * 100, "o-", color="black",
+                label="Actual", linewidth=1.8)
+
+        # Plot one fitted line per factor model
+        for n_factors in factor_list:
+            if n_factors not in fit_stores:
+                continue
+            d = fit_stores[n_factors][ccy]
+            Y_fit = d["Yfit_tr"] if split == "train" else d["Yfit_te"]
+            if Y_fit is None:
+                continue
+            marker_style, label = styles[n_factors]
+            ax.plot(tenors, Y_fit[idx] * 100, marker_style,
+                    label=label, linewidth=1.5)
+
+        ax.set_title(f"{ccy}  ({date_str})")
+        ax.set_xlabel("Tenor (years)")
+        ax.set_ylabel("Rate (%)")
+        ax.legend(fontsize=7)
+
+    split_label = "OOS" if split == "oos" else "In-Sample"
+    fig.suptitle(f"{split_label}: Fitted vs Actual Swap Curves — EKF DNS 2F / 3F / 4F",
+                 fontsize=13, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    print(f"Saved: {out_path}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -422,14 +467,15 @@ if __name__ == "__main__":
 
     tenors = np.array(TARGET_TENORS, dtype=float)
 
+    root_dir   = os.path.join(os.getcwd(), "Figures", "kalman_benchmark_oos")
+    fit_stores = {}  # {n_factors: fit_store}
+
     for n_factors in [1, 2, 3, 4]:
         print(f"\n{'='*60}")
         print(f"Running EKF DNS  {n_factors}-factor model")
         print(f"{'='*60}")
 
-        out_dir = os.path.join(
-            os.getcwd(), "Figures", "kalman_benchmark_oos", f"ekf_dns_{n_factors}f"
-        )
+        out_dir = os.path.join(root_dir, f"ekf_dns_{n_factors}f")
         os.makedirs(out_dir, exist_ok=True)
 
         is_rows, oos_rows, fit_store = run_model_oos(
@@ -437,32 +483,38 @@ if __name__ == "__main__":
             CCY_FREQ, LAM_GRID, out_dir,
             P0_scale=P0_scale, A_shrink=A_shrink,
         )
+        fit_stores[n_factors] = fit_store
 
-        save_rmse_summary(
-            is_rows, oos_rows,
-            os.path.join(out_dir, "rmse_summary.csv")
-        )
+        save_rmse_summary(is_rows, oos_rows,
+                          os.path.join(out_dir, "rmse_summary.csv"))
 
-        plot_fitted_vs_actual(
-            fit_store, tenors, split="train",
-            out_path=os.path.join(out_dir, "is_fitted_vs_actual.png"),
-            n_factors=n_factors,
-        )
-        plot_fitted_vs_actual(
-            fit_store, tenors, split="oos",
-            out_path=os.path.join(out_dir, "oos_fitted_vs_actual.png"),
-            n_factors=n_factors,
-        )
+        plot_fitted_vs_actual(fit_store, tenors, split="train",
+                              out_path=os.path.join(out_dir, "is_fitted_vs_actual.png"),
+                              n_factors=n_factors)
 
-        plot_latent_factors(
-            fit_store, split="train",
-            out_path=os.path.join(out_dir, "latent_factors_train.png"),
-            n_factors=n_factors,
-        )
-        plot_latent_factors(
-            fit_store, split="oos",
-            out_path=os.path.join(out_dir, "latent_factors_oos.png"),
-            n_factors=n_factors,
-        )
+        plot_fitted_vs_actual(fit_store, tenors, split="oos",
+                              out_path=os.path.join(out_dir, "oos_fitted_vs_actual.png"),
+                              n_factors=n_factors)
 
-        print(f"\nAll outputs saved to: {out_dir}")
+        plot_latent_factors(fit_store, split="train",
+                            out_path=os.path.join(out_dir, "latent_factors_train.png"),
+                            n_factors=n_factors)
+
+        plot_latent_factors(fit_store, split="oos",
+                            out_path=os.path.join(out_dir, "latent_factors_oos.png"),
+                            n_factors=n_factors)
+
+        print(f"All outputs saved to: {out_dir}")
+
+    # ── comparison plots (saved in root folder) ───────────────────────────────
+    print(f"\n{'='*60}")
+    print("Generating comparison plots (2F / 3F / 4F)")
+    print(f"{'='*60}")
+
+    plot_comparison(fit_stores, tenors, split="oos",
+                    out_path=os.path.join(root_dir, "comparison_oos_fitted_vs_actual.png"))
+
+    plot_comparison(fit_stores, tenors, split="train",
+                    out_path=os.path.join(root_dir, "comparison_is_fitted_vs_actual.png"))
+
+    print(f"\nComparison plots saved to: {root_dir}")
