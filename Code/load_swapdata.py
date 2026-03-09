@@ -383,7 +383,7 @@ def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
     df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
     df_wide_all["ccy"] = df_wide_all["ccy"].map(lambda x: currency_rename_map.get(x, x))
 
-    return meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT
+    return meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT
 
 
 if __name__ == "__main__":
@@ -404,7 +404,7 @@ if __name__ == "__main__":
     FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", USE)
     os.makedirs(FIGURES_DIR, exist_ok=True)
 
-    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT = my_data(use = USE)
+    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use = USE)
 
     plot_cfg = H.PlotConfig(
         figures_dir=FIGURES_DIR,
@@ -420,21 +420,33 @@ if __name__ == "__main__":
     )
 
     # Build decimals version of observed df (so plots match model scale)
-    df_wide_dec = df_wide.copy()
+    df_wide_dec = df_wide_all.copy()
     if SCALE_IS_PERCENT:
         for col in TARGET_TENORS:
             df_wide_dec[col] = df_wide_dec[col].astype(float) / 100.0
 
+    print(df_wide_dec["as_of_date"])
+
     # A) Choose paper date if it exists, otherwise first available
     paper_date = pd.to_datetime("2016-08-30")
-    date_pick_A = paper_date if (df_wide_dec["as_of_date"] == paper_date).any() else df_wide_dec["as_of_date"].iloc[0]
+
+    print("Date range:", df_wide_dec["as_of_date"].min(), "to", df_wide_dec["as_of_date"].max())
+    print("Paper date exists:", (df_wide_dec["as_of_date"] == paper_date).any())
+
+    print(df_wide_dec[df_wide_dec["as_of_date"] == paper_date])
+
+    closest_idx = (df_wide_dec["as_of_date"] - paper_date).abs().argsort().iloc[0]
+    closest_date = df_wide_dec["as_of_date"].iloc[closest_idx]
+    print("Closest available date:", closest_date)
+
+    #date_pick_A = paper_date if (df_wide_dec["as_of_date"] == paper_date).any() else df_wide_dec["as_of_date"].iloc[0]
 
     H.plot_swap_curves_on_date_observed(
         df_wide_obs=df_wide_dec,
         target_tenors=TARGET_TENORS,
         tenors_years=tenors,
         currency_colors=currency_color_map,
-        date_pick=date_pick_A,
+        date_pick=closest_date,
         plot_cfg=plot_cfg,
     )
 
