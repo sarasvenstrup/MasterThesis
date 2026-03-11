@@ -44,7 +44,7 @@ def fit_pca_reconstruct(X: np.ndarray, k: int):
 
 def main(USE="bbg"):
 
-    meta, X_tensor, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
+    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=USE)
 
     # X already decimals
     X = X_tensor.detach().cpu().numpy()
