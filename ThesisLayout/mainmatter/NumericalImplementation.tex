@@ -1,0 +1,130 @@
+
+%========================================================
+\chapter{Numerical Implementation and Estimation Strategy}
+\label{chap:implementation_training}
+%========================================================
+
+This section describes how the affine-inspired encoder--decoder framework developed in Section \ref{chap:encoderdecodermodel} is implemented numerically and trained on the data described in Section \ref{chap:datadescription}. The implementation follows the theoretical construction closely: the encoder maps observed swap rates to a latent state, the decoder produces the quantities entering the no-arbitrage ODE system, and the resulting bond prices are transformed into model-implied swap rates. Since the arbitrage restrictions are embedded directly in the bond-pricing structure, they remain satisfied throughout.
+
+The model is implemented in \texttt{Python} using the \texttt{PyTorch} library, which provides efficient tensor-based computation and automatic differentiation, allowing the entire \textcolor{red}{pricing pipeline(synes vi skal uddybe hvad den er)}, including the numerical ODE solver, to be treated as a differentiable computational graph. In the following, we set $M=8$ corresponding to the maturity grid
+\[
+\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
+\]
+and consider latent dimensions $l\in\{1,2,3,4\}$.
+
+%--------------------------------------------------------
+\section{Forward Pass and Numerical Solution}
+%--------------------------------------------------------
+
+For each observation date $t$, the input consists of the observed par swap rate vector
+\(
+\mathbf{S}_t \in \mathbb{R}^8.
+\)
+The forward pass mirrors the theoretical architecture introduced in Section~\ref{chap
+:encoderdecodermodel}. First, the observed swap curve is encoded into a latent state
+\[
+z_t = A_1 \mathbf{S}_t, \qquad z_t\in\mathbb{R}^l,
+\]
+where $A_1\in\mathb{R}^{l\times 8}$ is the learned encoder matrix.
+
+Conditional on $z_t$, the decoder evaluates $\mathcal{G}(z_t,\tau)$ together with the parameterizations of the drift $\mu(z_t)$, the volatility matrix $\sigma(z_t)$, and the short rate $\tilde r(z_t)$. The drift is modeled as an affine transformation of the latent state, while the volatility and short-rate functions are obtained from the neural networks $\mathcal{H}$ and $\mathcal{H}$ respectively. The volatility network outputs is constructed, ensuring that instantaneous covariance matrix 
+\[
+\Sigma(z_t)=\sigma(z_t)\sigma(z_t)^\top,
+\]
+is positive semidefinite by construction.
+
+Using automatic differentiation, the derivatives of $\mathcal{G}(z_t,\tau)$ required for the coefficient functions $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ are computed on the \textcolor{red}{full annual grid (husk lige at snakke om dette, og skal der så med 0 i figuren?)}
+\[
+\tau \in \{0,1,\dots,30\}.
+\]
+The inclusion of $\tau=0$ allows the boundary conditions $A_{z_t}(0)=B_{z_t}(0)=0$ to be imposed directly.
+
+For each realized latent state $z_t$, the coupled ODE system
+\begin{align}
+\partial_\tau B_{z_t}(\tau) &= \alpha_{z_t}(\tau) B_{z_t}(\tau) + \beta_{z_t}(\tau), \\
+\partial_\tau A_{z_t}(\tau) &= B_{z_t}(\tau)^2 \gamma_{z_t}(\tau),
+\end{align}
+is solved numerically on this grid using a fourth-order Runge-Kutta scheme with the 3/8-rule. \textcolor{red}{(refer til appendix?)}
+
+The resulting functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ are substituted into \eqref{affineinspiredzcbprices}, yielding zero-coupon bond prices on maturities $\tau\in\{1,...,30\}$. Model-implied swap rates are then obtained from these bond prices using \eqref{estimatedswaprates}, evaluated at the $M=8$ observed maturities.
+
+
+Each forward pass therefore maps an observed swap curve $\mathbf{S}_t$ to a reconstructed swap curve $\tilde{\mathbf{S}}_t$ through the sequence
+\[
+\mathbf{S}_t
+\;\longrightarrow\;
+z_t
+\;\longrightarrow\;
+(G,\mu,\sigma,\tilde r)
+\;\longrightarrow\;
+(\alpha,\beta,\gamma)
+\;\longrightarrow\;
+(A,B)
+\;\longrightarrow\;
+P(z_t,\tau)
+\;\longrightarrow\;
+\tilde{\mathbf{S}}_t .
+\]
+Because all steps are implemented using differentiable tensor operations, the entire pricing map remains differentiable with respect to the model parameters.
+
+%--------------------------------------------------------
+\section{Estimation Objective}
+%--------------------------------------------------------
+
+Let $\Omega$ denote the collection of all trainable parameters in the model, including the encoder matrix $A_1$ and the parameters governing the decoder components $\mathcal{G}, \mathcal{K}, \mathcal{H}$ and $\mathcal{R}$. The model is \textcolor{red}{trained} by minimizing the mean squared error between observed and reconstructed swap rates across the \textcolor{red}{sample},
+\begin{equation}
+\mathcal{L}(\Omega)
+=
+\frac{1}{N}
+\sum_{t=1}^{N}
+\sum_{\tau \in M}
+\left(
+S_t(\tau)-\tilde S_t(\tau;\Omega)
+\right)^2,
+\label{eq:training_loss}
+\end{equation}
+where $N$ denotes the number of observations. The estimator is defined as
+\begin{equation}
+\hat{\Omega}
+=
+\arg\min_{\Omega}\mathcal{L}(\Omega).
+\end{equation}
+
+
+%--------------------------------------------------------
+\section{Gradient-Based Optimization}
+%--------------------------------------------------------
+
+The optimization problem in \eqref{eq:training_loss} is solved using stochastic gradient-based method\textcolor{red}{s}, as described in Section X \textcolor{red}{REFERENCE to machine learning theory}. Parameter updates are obtained by backpropagating the loss through the full computational graph. 
+
+\textcolor{red}{A key feature of the implementation is that differentiation extends through the numerical ODE solver.}
+
+Since the Runge--Kutta recursion is implemented using elementary tensor operations, automatic differentiation propagates gradients through
+\begin{itemize}
+    \item the encoder mapping $A_1 \mathbf{S}_t$,
+    \item the parameterizations of $\mathcal{G}(z_t,\tau)$, $\mu(z_t)$, $\sigma(z_t)$, and $\tilde r(z_t)$,
+    \item the construction of the coefficient functions $\alpha_{z_t}(\tau)$, $\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$,
+    \item the numerical solution of the ODE system for $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$,
+    \item and the final transformation from bond prices to swap rates.
+\end{itemize}
+
+Each parameter update therefore reflects the effect of the corresponding model component on the entire reconstructed term structure.
+
+Training is performed using mini-batch stochastic gradient descent together with the Adam optimizer and learning rate scheduling, as discussed in the machine learning section. \textcolor{red}{har vi ikke allerede nævnt dette tidligere, og hvorfor ikek bare skrevet netop dette og så kun en gang?}
+
+
+
+CONCLUSION
+
+The fitted parameters $\hat{\Omega}$ define a term strucutre model that simultaneously extracts a low dimensional representation of the observed swap curve and prices zero-coupon bonds consistently with the risk-neutral no-arbitrage condition.
+
+
+%--------------------------------------------------------
+\section{Interpretation}
+%--------------------------------------------------------
+
+\textcolor{red}{Ville mene at dette afsnit er unødvendigt, da alle tingene er blevet nævnt tidligere, og endda flere gange tidligere}
+
+The numerical implementation is a direct computational counterpart of the theoretical model. The encoder extracts a low-dimensional representation of the observed swap curve, while the decoder maps this latent state into an arbitrage-free zero-coupon bond curve by solving the no-arbitrage ODE system derived earlier. Estimation therefore amounts to learning the parameters of a structured neural architecture in which financial consistency is enforced by construction rather than imposed through ex post corrections.
+
+This distinction is important. In alternative neural yield curve models, no-arbitrage restrictions may be introduced through penalty terms added to the loss function. In the present framework, the pricing structure itself ensures that the generated discount curves satisfy the no-arbitrage condition whenever the ODE system is solved. The estimation problem is therefore restricted to fitting the data within a model class that is already economically admissible.
