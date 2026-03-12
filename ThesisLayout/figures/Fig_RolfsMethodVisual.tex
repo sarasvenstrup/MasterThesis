@@ -2,7 +2,7 @@
 \centering
 
 \begin{tikzpicture}[
-    scale=0.7,
+    scale=0.65,
     transform shape,
     neuron/.style={circle, minimum size=10mm, inner sep=0pt},
     >=stealth
@@ -17,11 +17,12 @@
 \def\TickSkew{6pt}
 
 % ======================
-% Input layer (8 nodes)
+% Input layer (3 visible nodes)
 % ======================
-\foreach \i in {1,...,8} {
-    \node[neuron, fill=grey!40] (S\i) at (0, {(4.5-\i)*1.2}) {$S_{\i}$};
-}
+\node[neuron, fill=grey!40] (S1)  at (0,  2.5) {$S_{1}$};
+\node[neuron, fill=grey!40] (S2)  at (0,  1.0) {$S_{2}$};
+\node at (0, -0.2) {$\vdots$};
+\node[neuron, fill=grey!40] (SM)  at (0, -2.2) {$S_{M}$};
 
 % ======================
 % Latent layer
@@ -54,14 +55,14 @@
 \node[neuron, fill=grey!10] (St1) at (16,  2.5) {$\tilde{S}_{1}$};
 \node[neuron, fill=grey!10] (St2) at (16,  1.0) {$\tilde{S}_{2}$};
 \node at (16, -0.2) {$\vdots$};
-\node[neuron, fill=grey!10] (St8) at (16, -2.2) {$\tilde{S}_{8}$};
+\node[neuron, fill=grey!10] (StM) at (16, -2.2) {$\tilde{S}_{M}$};
 
 % ======================
 % Connections
 % ======================
-\foreach \i in {1,...,8} {
-    \draw[->, draw=darkgrey] (S\i) -- (Z1);
-    \draw[->, draw=darkgrey] (S\i) -- (Zd);
+\foreach \s in {S1,S2,SM} {
+    \draw[->, draw=darkgrey] (\s) -- (Z1);
+    \draw[->, draw=darkgrey] (\s) -- (Zd);
 }
 
 \foreach \j in {1,...,10} {
@@ -79,12 +80,12 @@
 \draw[->, draw=darkgrey] (P1) -- (St1);
 \draw[->, draw=darkgrey] (P1) -- (St2);
 \draw[->, draw=darkgrey] (P2) -- (St2);
-\draw[->, draw=darkgrey] (P1)  -- (St8);
-\draw[->, draw=darkgrey] (P2)  -- (St8);
-\draw[->, draw=darkgrey] (P30) -- (St8);
+\draw[->, draw=darkgrey] (P1)  -- (StM);
+\draw[->, draw=darkgrey] (P2)  -- (StM);
+\draw[->, draw=darkgrey] (P30) -- (StM);
 
 % ======================
-% Step brackets
+% Brackets
 % ======================
 
 \coordinate (StepY) at ([yshift=\StepRise]H1.north);
@@ -96,33 +97,19 @@
   \node[above=4pt] at ($(#1)!0.5!(#2)$) {\textbf{#3}};
 }
 
-% Step 1
+% Encoder bracket
 \coordinate (B0) at ([xshift=\TickSkew]S1.center |- StepY);
 \coordinate (B1) at ([xshift=-\TickSkew]Ztop.center |- StepY);
-\coordinate (S1L) at (B0);
-\coordinate (S1R) at ([xshift=-\StepGap]B1);
-\StepBracket{S1L}{S1R}{Step 1}
+\coordinate (EncL) at (B0);
+\coordinate (EncR) at ([xshift=-\StepGap]B1);
+\StepBracket{EncL}{EncR}{Encoder}
 
-% Step 2
+% Decoder bracket (spans n1 to n4)
 \coordinate (B2) at ([xshift=\TickSkew]Ztop.center |- StepY);
-\coordinate (B3) at ([xshift=-\TickSkew]H1.center |- StepY);
-\coordinate (S2L) at ([xshift=\StepGap]B2);
-\coordinate (S2R) at ([xshift=-\StepGap]B3);
-\StepBracket{S2L}{S2R}{Step 2}
-
-% Step 3
-\coordinate (B4) at ([xshift=\TickSkew]H1.center |- StepY);
-\coordinate (B5) at ([xshift=-\TickSkew]P1.center |- StepY);
-\coordinate (S3L) at ([xshift=\StepGap]B4);
-\coordinate (S3R) at ([xshift=-\StepGap]B5);
-\StepBracket{S3L}{S3R}{Step 3}
-
-% Step 4
-\coordinate (B6) at ([xshift=\TickSkew]P1.center |- StepY);
-\coordinate (B7) at ([xshift=-\TickSkew]St1.center |- StepY);
-\coordinate (S4L) at ([xshift=\StepGap]B6);
-\coordinate (S4R) at (B7);
-\StepBracket{S4L}{S4R}{Step 4}
+\coordinate (B3) at ([xshift=-\TickSkew]St1.center |- StepY);
+\coordinate (DecL) at ([xshift=\StepGap]B2);
+\coordinate (DecR) at (B3);
+\StepBracket{DecL}{DecR}{Decoder}
 
 % ======================
 % Layer labels
@@ -138,10 +125,7 @@
 \end{tikzpicture}
 
 \caption{
-\textcolor{red}{Neural network representation of Rolf's reconstruction framework.
-Observed swap rates $S_1,\ldots,S_8$ are mapped to latent factors,
-which generate hidden features, bond prices across maturities,
-and finally reconstructed swap rates $\tilde{S}_1,\ldots,\tilde{S}_8$.}
+Architecture of the affine-inspired encoder-decoder model. 
 }
 
 \label{fig:rolf_architecture}

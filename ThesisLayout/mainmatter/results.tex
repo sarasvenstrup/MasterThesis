@@ -1,42 +1,23 @@
 \chapter{Results}
 \label{chap:res}
 
-
 \textcolor{red}{Mangler at kode SHARPE RATIO PLOTS i TRAINING!}\\
 \textcolor{red}{Vi skal få kørt out of sample resultater på noget der er højere end 1500 epochs - men hvor meget højere? 2500?}\\
 \textcolor{red}{Vi mangler også plots af vores parameter over tid}
 
+This chapter presents the empirical results for the arbitrage-free encoder--decoder model. 
+We first examine the in-sample training performance across factor dimensions, and then evaluate out-of-sample reconstruction accuracy relative to the EKF DNS benchmark. 
+Finally, we discuss arbitrage diagnostics based on Sharpe-ratio calculations and the economic interpretation of the extracted latent factors and risk-neutral parameters.
+
+
 After implementation and training of the arbitrage-free encoder-decoder model, we evaluate the cross-sectional reconstruction accuracy of the two- and three-factor specifications. Following \cite{MatinWanPoulsen2025}, performance is measured by the in-sample root mean square error (RMSE).
 
+%========================================================
+\section{In-sample reconstruction performance}
+%========================================================
 
-
-
-% Autoencoder reconstruction comparison across factors
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/autoencoder_comparison_oos.png}
-    \caption{XXX}
-\end{figure}
-
-% Autoencoder reconstruction comparison across factors
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_2f_oos.png}
-    \caption{XXX}
-\end{figure}
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_3f_oos.png}
-    \caption{XXX}
-\end{figure}
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_4f_oos.png}
-    \caption{XXX}
-\end{figure}
-
-
-
+We begin by comparing the in-sample training performance of the one- to four-factor specifications. 
+Table~\ref{tab:avg_rmse_comparison} reports the average root mean square reconstruction error (RMSE), measured in basis points, across training epochs.
 
 % Average RMSE across epochs
 \begin{table}[h!]
@@ -65,6 +46,60 @@ After implementation and training of the arbitrage-free encoder-decoder model, w
 \caption{Average RMSE (in basis points) across epochs for the 1- to 4-factor models.}
 \label{tab:avg_rmse_comparison}
 \end{table}
+
+The results show a clear monotonic improvement in in-sample fit as the latent dimension increases. 
+At the end of training, the average RMSE is approximately 32.71 bps for the one-factor model, 10.13 bps for the two-factor model, 6.08 bps for the three-factor model, and 4.33 bps for the four-factor model. 
+Thus, the one-factor specification is clearly too restrictive, while the addition of second, third, and fourth factors progressively improves cross-sectional reconstruction accuracy.
+
+An important feature of Table~\ref{tab:avg_rmse_comparison} is that the higher-dimensional models converge more slowly. 
+In particular, the three- and four-factor models continue to improve materially after the two-factor model has largely stabilized. 
+This suggests that higher-dimensional specifications require longer training horizons in order to exploit their additional flexibility. 
+Consequently, comparisons across factor dimensions should be based on sufficiently long training runs; otherwise the performance of the richer models may be understated.
+
+To illustrate the cross-sectional fit in more detail, Table~\ref{tab:train_rmse} reports the training RMSE across epochs for the three-factor model by currency.
+
+
+
+% Average RMSE across epochs for all ccy's for 3-factor
+\begin{table}[h!]
+\centering
+{\scriptsize
+\pgfplotstabletypeset[
+  col sep=comma,
+  header=true,
+  columns={epoch, time_total_sec, avg_rmse_bps, rmse_bps_AUD, rmse_bps_CAD, rmse_bps_DKK, rmse_bps_EUR, rmse_bps_JPY, rmse_bps_NOK, rmse_bps_SEK, rmse_bps_GBP, rmse_bps_USD},
+  columns/epoch/.style={column type=r},
+  columns/time_total_sec/.style={column name={Time (s)}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/avg_rmse_bps/.style={column name={Avg RMSE (bps)}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_AUD/.style={column name={AUD}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_CAD/.style={column name={CAD}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_DKK/.style={column name={DKK}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_EUR/.style={column name={EUR}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_JPY/.style={column name={JPY}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_NOK/.style={column name={NOK}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_SEK/.style={column name={SEK}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_GBP/.style={column name={GBP}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/rmse_bps_USD/.style={column name={USD}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={before row=\midrule, after row=\bottomrule},
+]{Figures/dim3/ep5000/train_rmse_log_bbg_dim3_ep5000.csv}
+}
+\caption{Training RMSE (in basis points) across epochs for the 3-factor model.}
+\label{tab:train_rmse}
+\end{table}
+
+The three-factor specification achieves a final average training RMSE of roughly 6 bps, with some heterogeneity across currencies. 
+The reconstruction errors are lowest for CAD, GBP and USD, while JPY remains somewhat harder to fit. 
+This pattern is plausible given that the Japanese term structure exhibits prolonged low-rate and negative-rate regimes that differ substantially from the other markets in the sample.
+
+
+%========================================================
+\section{Out-of-sample reconstruction and benchmark comparison}
+%========================================================
+
+To evaluate generalization performance, we compare in-sample and out-of-sample RMSEs for the autoencoder and the EKF DNS benchmark across factor dimensions. 
+The summary statistics are reported in Table~\ref{tab:rmse_summary_comparison}.
+
 
 
 % Oos and IS comparison for Autoencoder and EKF
@@ -147,34 +182,115 @@ After implementation and training of the arbitrage-free encoder-decoder model, w
 \end{table}
 
 
+Several conclusions emerge from Table~\ref{tab:rmse_summary_comparison}. 
+First, for the autoencoder, out-of-sample performance improves materially as the latent dimension increases from two to four factors. 
+Second, at the reported training horizon, the EKF DNS benchmark attains lower out-of-sample RMSE than the autoencoder for the comparable factor specifications. 
+Thus, while the arbitrage-free autoencoder is capable of achieving a good in-sample fit, its out-of-sample performance remains somewhat weaker than the benchmark in the present implementation.
 
-% Average RMSE across epochs for all ccy's for 3-factor
-\begin{table}[h!]
-\centering
-{\scriptsize
-\pgfplotstabletypeset[
-  col sep=comma,
-  header=true,
-  columns={epoch, time_total_sec, avg_rmse_bps, rmse_bps_AUD, rmse_bps_CAD, rmse_bps_DKK, rmse_bps_EUR, rmse_bps_JPY, rmse_bps_NOK, rmse_bps_SEK, rmse_bps_GBP, rmse_bps_USD},
-  columns/epoch/.style={column type=r},
-  columns/time_total_sec/.style={column name={Time (s)}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/avg_rmse_bps/.style={column name={Avg RMSE (bps)}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_AUD/.style={column name={AUD}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_CAD/.style={column name={CAD}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_DKK/.style={column name={DKK}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_EUR/.style={column name={EUR}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_JPY/.style={column name={JPY}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_NOK/.style={column name={NOK}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_SEK/.style={column name={SEK}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_GBP/.style={column name={GBP}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_USD/.style={column name={USD}, column type=r, fixed, precision=2, fixed zerofill},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={before row=\midrule, after row=\bottomrule},
-]{Figures/dim3/ep5000/train_rmse_log_bbg_dim3_ep5000.csv}
-}
-\caption{Training RMSE (in basis points) across epochs for the 3-factor model.}
-\label{tab:train_rmse}
-\end{table}
+This gap should, however, be interpreted with caution. 
+The training results in Table~\ref{tab:avg_rmse_comparison} indicate that the higher-dimensional autoencoder models continue to improve substantially beyond 2,500 epochs. 
+It is therefore likely that the out-of-sample comparison understates the eventual performance of the three- and four-factor autoencoder specifications. 
+A more definitive benchmark comparison should therefore be based on longer training runs for the out-of-sample experiments as well.
+
+Figures~\ref{fig:autoencoder_oos_compare}--\ref{fig:ekf_vs_auto_4f} provide representative examples of reconstructed and observed curves out of sample.
+
+% Autoencoder reconstruction comparison across factors
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/autoencoder_comparison_oos.png}
+    \caption{XXX}
+\end{figure}
+
+% Autoencoder reconstruction comparison across factors
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_2f_oos.png}
+    \caption{XXX}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_3f_oos.png}
+    \caption{XXX}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_4f_oos.png}
+    \caption{XXX}
+\end{figure}
+
+Visual inspection confirms the quantitative findings. 
+The autoencoder captures the overall level and slope of the swap curves well, but the higher-factor specifications are materially better at reproducing curvature and long-end deviations. 
+The benchmark remains slightly tighter on several representative out-of-sample curves, especially in cases with unusual shape or strong local curvature.
+
+
+%========================================================
+\section{Arbitrage diagnostics}
+%========================================================
+
+Reconstruction accuracy alone is not sufficient for evaluating the model, since the main contribution of the proposed framework is that the decoder is designed to be arbitrage-free by construction. 
+To verify this numerically, we evaluate the implied bond Sharpe ratios. 
+Under exact no-arbitrage, these should be zero up to numerical approximation error.
+
+This diagnostic is closely related to the checks used by Andreasen, who evaluates whether the decoded curves are dynamically close to arbitrage-free through bond Sharpe ratios. 
+In that framework, the curves are only approximately arbitrage-free, whereas in the present model the no-arbitrage condition is imposed directly through the ODE-based decoder. 
+This difference is central to the interpretation of the empirical results.
+
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.8\textwidth]{Figures/...}
+    \caption{Implied Sharpe ratios across maturities for a representative date and all currencies. Values remain close to zero across the maturity spectrum, supporting the numerical arbitrage-free property of the decoder.}
+    \label{fig:sharperatioplot}
+\end{figure}
+
+The Sharpe-ratio calculations confirm that the reconstructed bond curves are numerically consistent with the no-arbitrage restrictions built into the model. 
+Any remaining deviations from zero are attributable to numerical discretization and solver tolerance rather than to an economically meaningful arbitrage signal. 
+This finding is important because it shows that the gain in theoretical consistency is achieved without rendering the reconstruction error unacceptably large.
+
+A useful extension would be to summarize the Sharpe-ratio diagnostics over time and across currencies, for example by reporting mean absolute Sharpe ratios by tenor. 
+Such a table would complement Figure~\ref{fig:sharperatioplot} by documenting whether the near-zero result is stable across the full sample rather than only on a representative date.
+
+
+
+%========================================================
+\section{Latent factors and parameter dynamics}
+%========================================================
+
+Beyond reconstruction accuracy, the model delivers economically interpretable state variables and risk-neutral parameters. 
+The encoded latent factors summarize the cross-sectional shape of the swap curve, while the networks for the short rate, drift, and diffusion translate these latent states into a full arbitrage-free term-structure representation.
+
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{Figures/...}
+    \caption{Estimated latent factors over time across currencies.}
+    \label{fig:latent_factors_time}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{Figures/...}
+    \caption{Estimated risk-neutral parameters over time across currencies.}
+    \label{fig:rn_parameters_time}
+\end{figure}
+
+
+The time-series behavior of the latent factors provides a useful diagnostic of whether the network has learned persistent and interpretable curve movements rather than merely a static curve-fitting device. 
+Likewise, the estimated short rate and diffusion parameters can be compared across currencies and over time to assess whether the model captures major macro-financial regimes, such as prolonged low-rate periods and subsequent tightening cycles.
+
+%========================================================
+\section{Summary of findings}
+%========================================================
+
+Overall, the empirical evidence suggests three main conclusions. 
+First, the arbitrage-free encoder--decoder achieves a strong in-sample fit, and reconstruction accuracy improves substantially as the latent dimension is increased. 
+Second, the higher-dimensional models require longer training horizons, so short training runs may understate their performance, particularly out of sample. 
+Third, the model delivers reconstructions that are numerically consistent with no-arbitrage, which is the key advantage of the proposed framework relative to more flexible but only approximately arbitrage-free alternatives.
+
+The results therefore indicate that the hard no-arbitrage restriction is not excessively costly in terms of fit, while it delivers a structurally coherent term-structure representation that can be interpreted dynamically through the extracted latent factors and risk-neutral parameters.
+
+
+
+
+\subsection{Old notes}
 
 
 Table~\ref{tab:train_rmse} shows that the two-factor model outperforms the three-factor specification in terms of average RMSE. Overall error levels are modest, indicating that a low-dimensional latent representation captures most of the cross-sectional variation in swap curves.
