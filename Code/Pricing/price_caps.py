@@ -23,6 +23,12 @@ if REPO_ROOT not in sys.path:
 from Code.load_swapdata import my_data
 from Code.model.full_model import FullModel
 from Code.utils.sigma_matrix import L_from_sigmas_rhos
+from Code.utils.ode import (
+    d_tau_autograd_nodewise,
+    grad_and_trace_cov_hess_G,
+    paper_alpha_beta_gamma_trace,
+    solve_AB
+)
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
@@ -46,7 +52,12 @@ CHECKPOINT_PATH = os.path.join(
     f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.pt"
 )
 
-OUT_DIR = os.path.join(REPO_ROOT, "Figures", "pricing_debug")
+OUT_DIR = os.path.join(
+    REPO_ROOT,
+    "Figures",
+    "pricing_debug",
+    f"{USE}_dim{LATENT_DIM}_ep{EPOCHS}"
+)
 os.makedirs(OUT_DIR, exist_ok=True)
 
 SEED = 1234
@@ -60,8 +71,9 @@ DT = 1.0 / 12.0      # monthly step
 N_YEARS = 10
 N_STEPS = int(round(N_YEARS / DT))
 
-# how many paths to show in the plot
+# how many paths to show in the plots
 N_PLOT_PATHS = 30
+N_PLOT_YIELD_PATHS = 20
 
 # ==========================================================
 # SECTION 3: Small helpers
@@ -97,7 +109,7 @@ def load_initial_curve(use: str, idx_choice: int, device: torch.device):
     if idx_choice < 0 or idx_choice >= X_tensor.shape[0]:
         raise IndexError(f"idx_choice={idx_choice} out of bounds")
 
-    S0 = X_tensor[idx_choice:idx_choice+1].to(device)
+    S0 = X_tensor[idx_choice:idx_choice + 1].to(device)
     meta_row = meta.iloc[idx_choice] if hasattr(meta, "iloc") else None
     return S0, meta_row, X_tensor, meta
 
@@ -234,6 +246,210 @@ def print_summary(z0: torch.Tensor, meta_row, z_paths: torch.Tensor, r_paths: to
     )
 
 # ==========================================================
+# SECTION 5B: Decode discount curves directly in this script
+# ==========================================================
+@torch.no_grad()
+def decode_from_latent_script(model: FullModel, z: torch.Tensor):
+    """
+    Reproduces the decoder logic from FullModel.forward(),
+    but starts directly from latent state z instead of from S_in.
+
+    Parameters
+    ----------
+    z : (B,d) or (d,)
+
+    Returns
+    -------
+    P_mkt : (B,tau_max) or (tau_max,)
+        Discount factors for maturities 1,...,tau_max
+    A_vals, B_vals, G_vals : tensors on grid tau=0,...,tau_max
+    mu : latent drift
+    sigma : Cholesky volatility matrix
+    r_tilde : short rate output
+    arb : diagnostics dictionary
+    """
+    squeeze_back = False
+
+    if z.dim() == 1:
+        z = z.unsqueeze(0)
+        squeeze_back = True
+
+    device = z.device
+    dtype = z.dtype
+
+    tau = torch.arange(0, model.tau_max + 1, device=device, dtype=dtype)
+
+    # 1) Evaluate G(z,tau)
+    G_vals = model.G(z, tau)
+    if G_vals.dim() == 1:
+        G_vals = G_vals.unsqueeze(0)
+
+    # 2) Risk-neutral parameter nets
+    mu = model.K(z)
+    sigmas, rhos = model.H(z)
+    r_tilde = model.R(z)
+
+    sigma = L_from_sigmas_rhos(sigmas, rhos)
+
+    # 3) Derivatives for alpha/beta/gamma
+    def G_single(z_single: torch.Tensor) -> torch.Tensor:
+        return model.G(z_single.unsqueeze(0), tau).squeeze(0)
+
+    dG_dtau = d_tau_autograd_nodewise(model.G, z, tau)
+    grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, sigma)
+
+    alpha, beta, gamma = paper_alpha_beta_gamma_trace(
+        G=G_vals,
+        dG_dtau=dG_dtau,
+        grad_z_G=grad_z_G,
+        trace_cov_hess=trace_cov_hess,
+        mu=mu,
+        sigma=sigma,
+        r_tilde=r_tilde,
+    )
+
+    # 4) Solve ODE for A,B
+    A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)
+
+    # 5) Arbitrage diagnostics
+    r = r_tilde if r_tilde.ndim == 2 else r_tilde.unsqueeze(1)
+    r = r.expand(-1, G_vals.shape[1])
+
+    gTmu = (grad_z_G * mu.unsqueeze(1)).sum(dim=2)
+    bracket = dG_dtau - gTmu - 0.5 * trace_cov_hess
+
+    dB_dtau = alpha * B_vals + beta
+    dA_dtau = gamma * (B_vals ** 2)
+
+    R_tau = (
+        -r
+        - dA_dtau
+        + G_vals * dB_dtau
+        + B_vals * bracket
+        + (B_vals ** 2) * gamma
+    )
+
+    sigma_bar = 0.006
+    tau_safe = torch.clamp(tau.unsqueeze(0), min=1e-8)
+    SR_tau = R_tau / (tau_safe * sigma_bar)
+
+    arb = {
+        "R_tau": R_tau[:, 1:],
+        "SR_tau": SR_tau[:, 1:],
+        "tau_grid": tau[1:],
+        "max_abs_R": R_tau[:, 1:].abs().max(dim=1).values,
+        "max_abs_SR_1to30": SR_tau[:, 1:].abs().max(dim=1).values,
+    }
+
+    # 6) Discount factors
+    P_full = torch.exp(A_vals - B_vals * G_vals)   # tau=0,...,tau_max
+    P_mkt = P_full[:, 1:]                          # tau=1,...,tau_max
+
+    if squeeze_back:
+        P_mkt = P_mkt.squeeze(0)
+        A_vals = A_vals.squeeze(0)
+        B_vals = B_vals.squeeze(0)
+        G_vals = G_vals.squeeze(0)
+        mu = mu.squeeze(0)
+        sigma = sigma.squeeze(0)
+        if isinstance(r_tilde, torch.Tensor):
+            r_tilde = r_tilde.squeeze(0)
+        arb = {
+            "R_tau": arb["R_tau"].squeeze(0),
+            "SR_tau": arb["SR_tau"].squeeze(0),
+            "tau_grid": arb["tau_grid"],
+            "max_abs_R": arb["max_abs_R"].squeeze(0),
+            "max_abs_SR_1to30": arb["max_abs_SR_1to30"].squeeze(0),
+        }
+
+    return P_mkt, A_vals, B_vals, G_vals, mu, sigma, r_tilde, arb
+
+@torch.no_grad()
+def discount_to_spot_yields(P_tau: torch.Tensor) -> torch.Tensor:
+    """
+    Convert discount factors P(t,t+tau), tau=1,...,N, into spot yields.
+    """
+    if P_tau.dim() == 1:
+        tau = torch.arange(1, P_tau.shape[0] + 1, device=P_tau.device, dtype=P_tau.dtype)
+        return -torch.log(torch.clamp(P_tau, min=1e-12)) / tau
+
+    elif P_tau.dim() == 2:
+        tau = torch.arange(1, P_tau.shape[1] + 1, device=P_tau.device, dtype=P_tau.dtype).unsqueeze(0)
+        return -torch.log(torch.clamp(P_tau, min=1e-12)) / tau
+
+    else:
+        raise ValueError(f"Expected P_tau dim 1 or 2, got {P_tau.dim()}")
+
+@torch.no_grad()
+def decode_curve_at_time_index(model: FullModel, z_paths: torch.Tensor, time_index: int):
+    """
+    Decode discount curves and spot yields across all paths at one simulation time.
+    """
+    z_t = z_paths[:, time_index, :]
+    P_tau, _, _, _, _, _, _, arb = decode_from_latent_script(model, z_t)
+    y_tau = discount_to_spot_yields(P_tau)
+    return P_tau, y_tau, arb
+
+def plot_mean_yield_curves_over_time(
+    model: FullModel,
+    z_paths: torch.Tensor,
+    dt: float,
+    years_to_plot,
+    out_path: str
+):
+    fig, ax = plt.subplots(figsize=(8, 5), dpi=160)
+
+    for yr in years_to_plot:
+        idx = int(round(yr / dt))
+        if idx >= z_paths.shape[1]:
+            raise ValueError(f"Requested year {yr} exceeds simulated horizon")
+
+        _, y_tau, _ = decode_curve_at_time_index(model, z_paths, idx)
+        y_mean = y_tau.mean(dim=0).detach().cpu().numpy()
+
+        maturities = np.arange(1, len(y_mean) + 1)
+        ax.plot(maturities, y_mean, linewidth=1.5, label=f"t={yr:g}Y")
+
+    ax.set_xlabel("Maturity (years)")
+    ax.set_ylabel("Spot yield")
+    ax.set_title("Average simulated spot-yield curves")
+    ax.grid(True, alpha=0.25)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
+
+def plot_sample_yield_curves_at_time(
+    model: FullModel,
+    z_paths: torch.Tensor,
+    dt: float,
+    year_to_plot: float,
+    n_sample_paths: int,
+    out_path: str
+):
+    idx = int(round(year_to_plot / dt))
+    if idx >= z_paths.shape[1]:
+        raise ValueError(f"Requested year {year_to_plot} exceeds simulated horizon")
+
+    _, y_tau, _ = decode_curve_at_time_index(model, z_paths, idx)
+    y_cpu = y_tau.detach().cpu().numpy()
+
+    n_show = min(n_sample_paths, y_cpu.shape[0])
+    maturities = np.arange(1, y_cpu.shape[1] + 1)
+
+    fig, ax = plt.subplots(figsize=(8, 5), dpi=160)
+    for i in range(n_show):
+        ax.plot(maturities, y_cpu[i], linewidth=0.9, alpha=0.75)
+
+    ax.set_xlabel("Maturity (years)")
+    ax.set_ylabel("Spot yield")
+    ax.set_title(f"Sample simulated spot-yield curves at t={year_to_plot:g}Y")
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
+
+# ==========================================================
 # SECTION 6: Run everything
 # ==========================================================
 set_seed(SEED)
@@ -260,6 +476,39 @@ with torch.no_grad():
 
 print_summary(z0, meta_row, z_paths, r_paths)
 
-plot_path = os.path.join(OUT_DIR, "latent_paths_only.png")
+plot_path = os.path.join(
+    OUT_DIR,
+    f"latent_paths_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png"
+)
 plot_latent_paths(z_paths, plot_path, n_plot_paths=N_PLOT_PATHS)
 print("\nSaved plot to:", plot_path)
+
+print("\nDecoding simulated curves...")
+
+years_to_plot = [0, 1, 3, 5, 10]
+mean_curve_plot_path = os.path.join(
+    OUT_DIR,
+    f"mean_simulated_yield_curves_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png"
+)
+plot_mean_yield_curves_over_time(
+    model=model,
+    z_paths=z_paths,
+    dt=DT,
+    years_to_plot=years_to_plot,
+    out_path=mean_curve_plot_path
+)
+print("Saved mean yield-curve plot to:", mean_curve_plot_path)
+
+sample_curve_plot_path = os.path.join(
+    OUT_DIR,
+    f"sample_yield_curves_t5Y_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png"
+)
+plot_sample_yield_curves_at_time(
+    model=model,
+    z_paths=z_paths,
+    dt=DT,
+    year_to_plot=5,
+    n_sample_paths=N_PLOT_YIELD_PATHS,
+    out_path=sample_curve_plot_path
+)
+print("Saved sample yield-curve plot to:", sample_curve_plot_path)
