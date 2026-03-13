@@ -363,7 +363,7 @@ def save_rmse_summary(is_rows, oos_rows, out_path):
 if __name__ == "__main__":
     USE = "bbg"
 
-    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, SCALE_IS_PERCENT = my_data(use=USE)
+    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=USE)
 
     df = df_wide.copy()
     if SCALE_IS_PERCENT:
