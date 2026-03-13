@@ -266,3 +266,25 @@ if len(avg_rmse_bps_hist) > 0:
     print("Saved avg RMSE plot:", rmse_fig_path)
 else:
     print("No RMSE history to plot (avg_rmse_bps_hist empty).")
+
+
+# ==========================================================
+# Save trained model checkpoint
+# ==========================================================
+CHECKPOINT_DIR = os.path.join(REPO_ROOT, "checkpoints")
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+checkpoint_path = os.path.join(
+    CHECKPOINT_DIR,
+    f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.pt"
+)
+
+torch.save({
+    "model_state_dict": model.state_dict(),
+    "latent_dim": LATENT_DIM,
+    "epochs": EPOCHS,
+    "use_data": USE,
+}, checkpoint_path)
+
+print("Saved checkpoint:", checkpoint_path)
+
