@@ -44,7 +44,7 @@ torch.backends.mkldnn.enabled = True
 # ==========================================================
 USE = "bbg"
 LATENT_DIM = 3
-EPOCHS = 5000  # must match saved model
+EPOCHS = 100  # must match saved model
 
 CHECKPOINT_PATH = os.path.join(
     REPO_ROOT,
@@ -77,7 +77,7 @@ N_PLOT_YIELD_PATHS = 20
 
 # simulation mode
 USE_DRIFT = True
-USE_DIFFUSION = False  # drift-only diagnostic
+USE_DIFFUSION = True  # drift-only diagnostic
 
 # diagnostics
 YEARS_TO_PLOT = [0, 1, 3, 5, 10]
