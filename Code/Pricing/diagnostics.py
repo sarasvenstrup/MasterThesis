@@ -44,7 +44,7 @@ torch.backends.mkldnn.enabled = True
 # ==========================================================
 USE = "bbg"
 LATENT_DIM = 3
-EPOCHS = 100  # must match saved model
+EPOCHS = 100
 
 CHECKPOINT_PATH = os.path.join(
     REPO_ROOT,
@@ -61,32 +61,26 @@ OUT_DIR = os.path.join(
 os.makedirs(OUT_DIR, exist_ok=True)
 
 SEED = 1234
+IDX_CHOICE = -1
 
-# choose initial row from your dataset
-IDX_CHOICE = -1  # last row
-
-# simulation controls
 N_PATHS = 200
-DT = 1.0 / 12.0  # monthly step
+DT = 1.0 / 12.0
 N_YEARS = 10
 N_STEPS = int(round(N_YEARS / DT))
 
-# how many paths to show in the plots
 N_PLOT_PATHS = 30
 N_PLOT_YIELD_PATHS = 20
 
-# simulation mode
 USE_DRIFT = True
-USE_DIFFUSION = True  # drift-only diagnostic
+USE_DIFFUSION = True
 
-# diagnostics
 YEARS_TO_PLOT = [0, 1, 3, 5, 10]
 SAMPLE_CURVE_YEAR = 5.0
 CHECK_FINITE_YEAR = 5.0
 
 
 # ==========================================================
-# SECTION 3: Small helpers
+# SECTION 3: Helpers
 # ==========================================================
 def set_seed(seed: int):
     torch.manual_seed(seed)
@@ -161,60 +155,6 @@ def get_r(model: FullModel, z: torch.Tensor) -> torch.Tensor:
 
 
 @torch.no_grad()
-def inspect_mean_reversion(model: FullModel, z_paths: torch.Tensor):
-    z_flat = z_paths[:, :-1, :].reshape(-1, z_paths.shape[-1])
-    mu_flat = get_mu(model, z_flat)
-
-    inner = (z_flat * mu_flat).sum(dim=1)
-
-    print("\n================ MEAN-REVERSION CHECK ================")
-    print("z · K(z):")
-    print(f"  min  = {inner.min().item():.6f}")
-    print(f"  max  = {inner.max().item():.6f}")
-    print(f"  mean = {inner.mean().item():.6f}")
-
-    frac_outward = (inner > 0).float().mean().item()
-    frac_inward = (inner < 0).float().mean().item()
-
-    print(f"Fraction outward (z·K(z) > 0): {frac_outward:.6f}")
-    print(f"Fraction inward  (z·K(z) < 0): {frac_inward:.6f}")
-
-
-@torch.no_grad()
-def inspect_drift_norm(model: FullModel, z_paths: torch.Tensor):
-    z_flat = z_paths[:, :-1, :].reshape(-1, z_paths.shape[-1])
-    mu_flat = get_mu(model, z_flat)
-
-    z_norm = torch.norm(z_flat, dim=1)
-    mu_norm = torch.norm(mu_flat, dim=1)
-    ratio = mu_norm / (z_norm + 1e-8)
-
-    print("\n================ DRIFT-NORM CHECK ================")
-    print(f"z_norm       min={z_norm.min().item():.6f}  max={z_norm.max().item():.6f}  mean={z_norm.mean().item():.6f}")
-    print(
-        f"mu_norm      min={mu_norm.min().item():.6f}  max={mu_norm.max().item():.6f}  mean={mu_norm.mean().item():.6f}")
-    print(f"mu_norm/z    min={ratio.min().item():.6f}  max={ratio.max().item():.6f}  mean={ratio.mean().item():.6f}")
-
-
-@torch.no_grad()
-def compare_training_vs_simulated_latent_ranges(Z_train: torch.Tensor, z_paths: torch.Tensor):
-    z_sim = z_paths.reshape(-1, z_paths.shape[-1])
-
-    train_min = Z_train.min(dim=0).values
-    train_max = Z_train.max(dim=0).values
-    sim_min = z_sim.min(dim=0).values
-    sim_max = z_sim.max(dim=0).values
-
-    print("\n================ TRAINING VS SIMULATED LATENT RANGE ================")
-    for j in range(Z_train.shape[1]):
-        print(
-            f"dim {j + 1}: "
-            f"train[min,max]=({train_min[j].item():.6f}, {train_max[j].item():.6f})   "
-            f"sim[min,max]=({sim_min[j].item():.6f}, {sim_max[j].item():.6f})"
-        )
-
-
-@torch.no_grad()
 def inspect_initial_drift_and_vol(model: FullModel, z0: torch.Tensor):
     mu0 = get_mu(model, z0)
     L0 = get_L(model, z0)
@@ -228,65 +168,49 @@ def inspect_initial_drift_and_vol(model: FullModel, z0: torch.Tensor):
     print("||L(z0)||_F:", torch.linalg.matrix_norm(L0, dim=(1, 2)).detach().cpu().numpy())
     print("r(z0):", r0.detach().cpu().numpy())
 
-
 @torch.no_grad()
 def inspect_K_matrix(model):
-    B = model.K.B.detach().cpu()
-    A = model.K.stable_matrix().detach().cpu()
-    z_star = model.K.z_star.detach().cpu()
+    V = model.K.V.detach().cpu()
+    M = model.K.stable_matrix().detach().cpu()
+    N = model.K.N.detach().cpu() if model.K.N is not None else None
 
     print("\n================ K MATRIX CHECK ================")
-    print("B =")
-    print(B.numpy())
+    print("V =")
+    print(V.numpy())
 
-    print("A = B B^T + eps I =")
-    print(A.numpy())
+    print("M = -(V^T V + eps I) =")
+    print(M.numpy())
 
-    eigvals_A = torch.linalg.eigvals(A).cpu()
-    print("Eigenvalues of A:")
-    print(eigvals_A.numpy())
+    eigvals = torch.linalg.eigvals(M).cpu()
+    print("Eigenvalues of M:")
+    print(eigvals.numpy())
 
-    real_parts_A = eigvals_A.real
-    print("Real parts of eig(A):")
-    print(real_parts_A.numpy())
-    print("Min real part of eig(A):", real_parts_A.min().item())
-    print("Max real part of eig(A):", real_parts_A.max().item())
+    real_parts = eigvals.real
+    print("Real parts:")
+    print(real_parts.numpy())
+    print("Max real part:", real_parts.max().item())
 
-    eigvals_drift = -eigvals_A
-    print("Eigenvalues of drift matrix (-A):")
-    print(eigvals_drift.numpy())
+    if N is not None:
+        print("N =")
+        print(N.numpy())
+        try:
+            z_star = -torch.linalg.solve(M, N)
+            print("Implied fixed point z* = -M^{-1}N:")
+            print(z_star.numpy())
+        except RuntimeError:
+            print("Could not compute fixed point z*; M may be singular.")
 
-    print("Real parts of eig(-A):")
-    print((-real_parts_A).numpy())
-    print("Max real part of eig(-A):", (-real_parts_A).max().item())
-
-    print("z_star:")
-    print(z_star.numpy())
-
-
-# ==========================================================
-# SECTION 4: Simulate latent paths
-# ==========================================================
 @torch.no_grad()
 def simulate_latent_paths(
-        model: FullModel,
-        z0: torch.Tensor,
-        n_paths: int,
-        n_steps: int,
-        dt: float,
-        device: torch.device,
-        use_drift: bool = True,
-        use_diffusion: bool = True,
+    model: FullModel,
+    z0: torch.Tensor,
+    n_paths: int,
+    n_steps: int,
+    dt: float,
+    device: torch.device,
+    use_drift: bool = True,
+    use_diffusion: bool = True,
 ):
-    """
-    Euler simulation:
-        z_{n+1} = z_n + mu(z_n) dt + L(z_n) sqrt(dt) eps_n
-
-    Returns
-    -------
-    z_paths : (n_paths, n_steps+1, d)
-    r_paths : (n_paths, n_steps+1)
-    """
     if z0.dim() != 2 or z0.shape[0] != 1:
         raise ValueError(f"Expected z0 shape (1,d), got {tuple(z0.shape)}")
 
@@ -302,8 +226,8 @@ def simulate_latent_paths(
     r_paths[:, 0] = get_r(model, z)
 
     for t in range(n_steps):
-        mu = get_mu(model, z)  # (M,d)
-        L = get_L(model, z)  # (M,d,d)
+        mu = get_mu(model, z)
+        L = get_L(model, z)
 
         drift = mu * dt if use_drift else torch.zeros_like(z)
 
@@ -324,9 +248,43 @@ def simulate_latent_paths(
     return z_paths, r_paths
 
 
-# ==========================================================
-# SECTION 5: Plot helpers
-# ==========================================================
+@torch.no_grad()
+def inspect_increment_statistics(z_paths: torch.Tensor):
+    dz = z_paths[:, 1:, :] - z_paths[:, :-1, :]
+    dz_flat = dz.reshape(-1, dz.shape[-1])
+
+    mean_inc = dz_flat.mean(dim=0)
+    std_inc = dz_flat.std(dim=0)
+    absmax_inc = dz_flat.abs().max(dim=0).values
+
+    print("\n================ INCREMENT STATISTICS ================")
+    for j in range(dz.shape[-1]):
+        print(
+            f"dim {j+1}: "
+            f"mean(dz)={mean_inc[j].item():.6f}   "
+            f"std(dz)={std_inc[j].item():.6f}   "
+            f"max|dz|={absmax_inc[j].item():.6f}"
+        )
+
+
+@torch.no_grad()
+def compare_training_vs_simulated_latent_ranges(Z_train: torch.Tensor, z_paths: torch.Tensor):
+    z_sim = z_paths.reshape(-1, z_paths.shape[-1])
+
+    train_min = Z_train.min(dim=0).values
+    train_max = Z_train.max(dim=0).values
+    sim_min = z_sim.min(dim=0).values
+    sim_max = z_sim.max(dim=0).values
+
+    print("\n================ TRAINING VS SIMULATED LATENT RANGE ================")
+    for j in range(Z_train.shape[1]):
+        print(
+            f"dim {j + 1}: "
+            f"train[min,max]=({train_min[j].item():.6f}, {train_max[j].item():.6f})   "
+            f"sim[min,max]=({sim_min[j].item():.6f}, {sim_max[j].item():.6f})"
+        )
+
+
 def plot_latent_paths(z_paths: torch.Tensor, out_path: str, n_plot_paths: int = 30):
     z_cpu = z_paths.detach().cpu().numpy()
     n_paths, n_steps1, d = z_cpu.shape
@@ -346,6 +304,56 @@ def plot_latent_paths(z_paths: torch.Tensor, out_path: str, n_plot_paths: int = 
 
     axes[-1].set_xlabel("Simulation step")
     fig.suptitle("Simulated latent paths", y=0.995)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_increment_histograms(z_paths: torch.Tensor, out_path: str):
+    dz = (z_paths[:, 1:, :] - z_paths[:, :-1, :]).detach().cpu().numpy()
+    dz_flat = dz.reshape(-1, dz.shape[-1])
+    d = dz_flat.shape[1]
+
+    fig, axes = plt.subplots(d, 1, figsize=(8, 2.8 * d), dpi=160)
+    if d == 1:
+        axes = [axes]
+
+    for j in range(d):
+        axes[j].hist(dz_flat[:, j], bins=50, alpha=0.8)
+        axes[j].set_xlabel(f"$\\Delta z_{{{j + 1}}}$")
+        axes[j].set_ylabel("Count")
+        axes[j].grid(True, alpha=0.25)
+
+    fig.suptitle("One-step increment histograms", y=0.995)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_latent_range_vs_training(Z_train: torch.Tensor, z_paths: torch.Tensor, out_path: str):
+    Z_train_cpu = Z_train.detach().cpu().numpy()
+    z_sim_cpu = z_paths.reshape(-1, z_paths.shape[-1]).detach().cpu().numpy()
+
+    d = Z_train_cpu.shape[1]
+    fig, axes = plt.subplots(d, 1, figsize=(8, 2.8 * d), dpi=160)
+    if d == 1:
+        axes = [axes]
+
+    for j in range(d):
+        train_min = Z_train_cpu[:, j].min()
+        train_max = Z_train_cpu[:, j].max()
+        sim_min = z_sim_cpu[:, j].min()
+        sim_max = z_sim_cpu[:, j].max()
+
+        axes[j].axvspan(train_min, train_max, alpha=0.3, label="training range")
+        axes[j].axvline(sim_min, linestyle="--", linewidth=1.2, label="sim min")
+        axes[j].axvline(sim_max, linestyle="--", linewidth=1.2, label="sim max")
+        axes[j].set_ylabel(f"$z_{{{j + 1}}}$")
+        axes[j].grid(True, alpha=0.25)
+
+    axes[0].legend()
+    axes[-1].set_xlabel("Latent value")
+    fig.suptitle("Training latent range vs simulated latent range", y=0.995)
     fig.tight_layout()
     fig.savefig(out_path, dpi=300)
     plt.close(fig)
@@ -391,24 +399,6 @@ def print_summary(z0: torch.Tensor, meta_row, z_paths: torch.Tensor, r_paths: to
 # ==========================================================
 @torch.no_grad()
 def decode_from_latent_script(model: FullModel, z: torch.Tensor):
-    """
-    Reproduces the decoder logic from FullModel.forward(),
-    but starts directly from latent state z instead of from S_in.
-
-    Parameters
-    ----------
-    z : (B,d) or (d,)
-
-    Returns
-    -------
-    P_mkt : (B,tau_max) or (tau_max,)
-        Discount factors for maturities 1,...,tau_max
-    A_vals, B_vals, G_vals : tensors on grid tau=0,...,tau_max
-    mu : latent drift
-    sigma : Cholesky volatility matrix
-    r_tilde : short rate output
-    arb : diagnostics dictionary
-    """
     squeeze_back = False
 
     if z.dim() == 1:
@@ -417,22 +407,17 @@ def decode_from_latent_script(model: FullModel, z: torch.Tensor):
 
     device = z.device
     dtype = z.dtype
-
     tau = torch.arange(0, model.tau_max + 1, device=device, dtype=dtype)
 
-    # 1) Evaluate G(z,tau)
     G_vals = model.G(z, tau)
     if G_vals.dim() == 1:
         G_vals = G_vals.unsqueeze(0)
 
-    # 2) Risk-neutral parameter nets
     mu = model.K(z)
     sigmas, rhos = model.H(z)
     r_tilde = model.R(z)
-
     sigma = L_from_sigmas_rhos(sigmas, rhos)
 
-    # 3) Derivatives for alpha/beta/gamma
     def G_single(z_single: torch.Tensor) -> torch.Tensor:
         return model.G(z_single.unsqueeze(0), tau).squeeze(0)
 
@@ -449,10 +434,8 @@ def decode_from_latent_script(model: FullModel, z: torch.Tensor):
         r_tilde=r_tilde,
     )
 
-    # 4) Solve ODE for A,B
     A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)
 
-    # 5) Arbitrage diagnostics
     r = r_tilde if r_tilde.ndim == 2 else r_tilde.unsqueeze(1)
     r = r.expand(-1, G_vals.shape[1])
 
@@ -463,11 +446,11 @@ def decode_from_latent_script(model: FullModel, z: torch.Tensor):
     dA_dtau = gamma * (B_vals ** 2)
 
     R_tau = (
-            -r
-            - dA_dtau
-            + G_vals * dB_dtau
-            + B_vals * bracket
-            + (B_vals ** 2) * gamma
+        -r
+        - dA_dtau
+        + G_vals * dB_dtau
+        + B_vals * bracket
+        + (B_vals ** 2) * gamma
     )
 
     sigma_bar = 0.006
@@ -482,10 +465,9 @@ def decode_from_latent_script(model: FullModel, z: torch.Tensor):
         "max_abs_SR_1to30": SR_tau[:, 1:].abs().max(dim=1).values,
     }
 
-    # 6) Discount factors
     expo = A_vals - B_vals * G_vals
-    P_full = torch.exp(expo)  # tau=0,...,tau_max
-    P_mkt = P_full[:, 1:]  # tau=1,...,tau_max
+    P_full = torch.exp(expo)
+    P_mkt = P_full[:, 1:]
 
     if squeeze_back:
         P_mkt = P_mkt.squeeze(0)
@@ -509,26 +491,18 @@ def decode_from_latent_script(model: FullModel, z: torch.Tensor):
 
 @torch.no_grad()
 def discount_to_spot_yields(P_tau: torch.Tensor) -> torch.Tensor:
-    """
-    Convert discount factors P(t,t+tau), tau=1,...,N, into spot yields.
-    """
     if P_tau.dim() == 1:
         tau = torch.arange(1, P_tau.shape[0] + 1, device=P_tau.device, dtype=P_tau.dtype)
         return -torch.log(torch.clamp(P_tau, min=1e-12)) / tau
-
     elif P_tau.dim() == 2:
         tau = torch.arange(1, P_tau.shape[1] + 1, device=P_tau.device, dtype=P_tau.dtype).unsqueeze(0)
         return -torch.log(torch.clamp(P_tau, min=1e-12)) / tau
-
     else:
         raise ValueError(f"Expected P_tau dim 1 or 2, got {P_tau.dim()}")
 
 
 @torch.no_grad()
 def decode_curve_at_time_index(model: FullModel, z_paths: torch.Tensor, time_index: int):
-    """
-    Decode discount curves and spot yields across all paths at one simulation time.
-    """
     z_t = z_paths[:, time_index, :]
     P_tau, _, _, _, _, _, _, arb = decode_from_latent_script(model, z_t)
     y_tau = discount_to_spot_yields(P_tau)
@@ -541,7 +515,6 @@ def inspect_curve_finiteness_and_monotonicity(model: FullModel, z_paths: torch.T
 
     frac_finite_P = torch.isfinite(P_tau).float().mean().item()
     frac_finite_y = torch.isfinite(y_tau).float().mean().item()
-
     finite_y_by_maturity = torch.isfinite(y_tau).float().mean(dim=0)
     increasing_df_frac = (P_tau[:, 1:] > P_tau[:, :-1]).float().mean().item()
 
@@ -561,11 +534,11 @@ def inspect_curve_finiteness_and_monotonicity(model: FullModel, z_paths: torch.T
 
 
 def plot_mean_yield_curves_over_time(
-        model: FullModel,
-        z_paths: torch.Tensor,
-        dt: float,
-        years_to_plot,
-        out_path: str
+    model: FullModel,
+    z_paths: torch.Tensor,
+    dt: float,
+    years_to_plot,
+    out_path: str
 ):
     fig, ax = plt.subplots(figsize=(8, 5), dpi=160)
 
@@ -591,12 +564,12 @@ def plot_mean_yield_curves_over_time(
 
 
 def plot_sample_yield_curves_at_time(
-        model: FullModel,
-        z_paths: torch.Tensor,
-        dt: float,
-        year_to_plot: float,
-        n_sample_paths: int,
-        out_path: str
+    model: FullModel,
+    z_paths: torch.Tensor,
+    dt: float,
+    year_to_plot: float,
+    n_sample_paths: int,
+    out_path: str
 ):
     idx = int(round(year_to_plot / dt))
     if idx >= z_paths.shape[1]:
@@ -629,8 +602,6 @@ set_seed(SEED)
 print("\nLoading model...")
 model = load_trained_model(CHECKPOINT_PATH, latent_dim=LATENT_DIM, device=device)
 
-inspect_K_matrix(model)
-
 print("Loading initial curve...")
 S0, meta_row, X_tensor, meta = load_initial_curve(USE, IDX_CHOICE, device=device)
 
@@ -657,8 +628,7 @@ with torch.no_grad():
     )
 
 print_summary(z0, meta_row, z_paths, r_paths)
-inspect_mean_reversion(model, z_paths)
-inspect_drift_norm(model, z_paths)
+inspect_increment_statistics(z_paths)
 compare_training_vs_simulated_latent_ranges(Z_train, z_paths)
 
 check_idx = int(round(CHECK_FINITE_YEAR / DT))
@@ -673,6 +643,20 @@ plot_path = os.path.join(
 )
 plot_latent_paths(z_paths, plot_path, n_plot_paths=N_PLOT_PATHS)
 print("\nSaved plot to:", plot_path)
+
+increment_hist_path = os.path.join(
+    OUT_DIR,
+    f"increment_histograms_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_{mode_tag}.png"
+)
+plot_increment_histograms(z_paths, increment_hist_path)
+print("Saved increment histogram plot to:", increment_hist_path)
+
+range_plot_path = os.path.join(
+    OUT_DIR,
+    f"latent_range_vs_training_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_{mode_tag}.png"
+)
+plot_latent_range_vs_training(Z_train, z_paths, range_plot_path)
+print("Saved latent-range comparison plot to:", range_plot_path)
 
 print("\nDecoding simulated curves...")
 
