@@ -287,3 +287,9 @@ torch.save({
 }, checkpoint_path)
 
 print("Saved checkpoint:", checkpoint_path)
+
+# Also save a plain state_dict alongside the training logs so ResultsGenerator
+# can load the ep{EPOCHS} model directly from the Figures/dim{N}/ep{EPOCHS}/ folder.
+figures_ckpt_path = os.path.join(FIGURES_DIR, f"checkpoint_dim{LATENT_DIM}_ep{EPOCHS}.pt")
+torch.save(model.state_dict(), figures_ckpt_path)
+print("Saved figures checkpoint:", figures_ckpt_path)
