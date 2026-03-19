@@ -601,6 +601,7 @@ set_seed(SEED)
 
 print("\nLoading model...")
 model = load_trained_model(CHECKPOINT_PATH, latent_dim=LATENT_DIM, device=device)
+inspect_K_matrix(model)
 
 print("Loading initial curve...")
 S0, meta_row, X_tensor, meta = load_initial_curve(USE, IDX_CHOICE, device=device)
