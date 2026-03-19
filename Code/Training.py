@@ -45,7 +45,7 @@ EPOCHS = 100
 # - We evaluate avg RMSE (bps) every epoch (for plotting)
 # - We still only write CSV / print every LOG_EVERY epochs
 EVAL_EVERY = 1
-LOG_EVERY = 500
+LOG_EVERY = 10
 
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256

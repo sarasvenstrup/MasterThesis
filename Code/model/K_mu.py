@@ -9,67 +9,60 @@ import torch.nn as nn
 
 class KMu(nn.Module):
     """
-    Stable affine linear drift:
-        mu(z) = -A z + N
+    Stable linear drift:
+        mu(z) = M z + N
 
-    where
-        A = B B^T + eps I
+    with
+        M = -(V^T V + eps I),
 
-    so the matrix multiplying z is stable by construction,
-    while N is left completely free.
+    so M is symmetric negative definite and the drift is
+    numerically stable by construction.
 
     Parameters
     ----------
     latent_dim : int
         Dimension of latent state z.
     eps : float
-        Small positive constant to ensure strict stability.
+        Small positive constant ensuring strict negative definiteness.
     bias : bool
-        If True, include a free affine term N.
+        Whether to include free intercept N.
     """
 
-    def __init__(
-        self,
-        latent_dim: int,
-        eps: float = 1e-3,
-        bias: bool = True,
-    ):
+    def __init__(self, latent_dim: int, eps: float = 1e-3, bias: bool = True):
         super().__init__()
         self.latent_dim = latent_dim
         self.eps = eps
 
-        # Free parameter used to build stable matrix A = B B^T + eps I
-        self.B = nn.Parameter(torch.zeros(latent_dim, latent_dim))
+        # Free parameter used to build stable M
+        self.V = nn.Parameter(torch.zeros(latent_dim, latent_dim))
 
-        # Free affine term N
         if bias:
             self.N = nn.Parameter(torch.zeros(latent_dim))
         else:
-            self.register_parameter("N", None)
+            self.N = None
 
     def stable_matrix(self, device=None, dtype=None):
         if device is None:
-            device = self.B.device
+            device = self.V.device
         if dtype is None:
-            dtype = self.B.dtype
+            dtype = self.V.dtype
 
         I = torch.eye(self.latent_dim, device=device, dtype=dtype)
-        A = self.B @ self.B.T + self.eps * I
-        return A
+        M = -(self.V.T @ self.V + self.eps * I)
+        return M
 
     def forward(self, z):
         if z.dim() == 1:
             z = z.unsqueeze(0)
 
-        A = self.stable_matrix(device=z.device, dtype=z.dtype)
-
-        # mu(z) = -A z + N
-        mu = -z @ A.T
+        M = self.stable_matrix(device=z.device, dtype=z.dtype)
+        mu = z @ M.T
 
         if self.N is not None:
             mu = mu + self.N
 
         return mu
+
 
 class old_KMu(nn.Module):
     """
