@@ -1,5 +1,5 @@
 # ==========================================================
-# SECTION 1: Imports and environment
+# DIAGNOSTIC SCRIPT: WHY ARE SIMULATED CURVES FLAT?
 # ==========================================================
 import os
 import sys
@@ -30,6 +30,7 @@ from Code.utils.ode import (
     solve_AB
 )
 
+print("Repo root:", REPO_ROOT)
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
 print("MPS available:", hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
@@ -39,8 +40,9 @@ print("Using device:", device)
 
 torch.backends.mkldnn.enabled = True
 
+
 # ==========================================================
-# SECTION 2: User settings
+# SECTION 1: USER SETTINGS
 # ==========================================================
 USE = "bbg"
 LATENT_DIM = 3
@@ -55,7 +57,7 @@ CHECKPOINT_PATH = os.path.join(
 OUT_DIR = os.path.join(
     REPO_ROOT,
     "Figures",
-    "pricing_debug",
+    "pricing_debug_flatcurve",
     f"{USE}_dim{LATENT_DIM}_ep{EPOCHS}"
 )
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -68,19 +70,21 @@ DT = 1.0 / 12.0
 N_YEARS = 10
 N_STEPS = int(round(N_YEARS / DT))
 
-N_PLOT_PATHS = 30
-N_PLOT_YIELD_PATHS = 20
-
 USE_DRIFT = True
 USE_DIFFUSION = True
 
 YEARS_TO_PLOT = [0, 1, 3, 5, 10]
+CHECK_YEARS = [0, 1, 3, 5, 10]
 SAMPLE_CURVE_YEAR = 5.0
-CHECK_FINITE_YEAR = 5.0
 
+N_PLOT_PATHS = 30
+N_PLOT_YIELD_PATHS = 20
+
+# years on which we decompose the decoder
+DECOMP_YEARS = [0, 1, 3, 5, 10]
 
 # ==========================================================
-# SECTION 3: Helpers
+# SECTION 2: BASIC HELPERS
 # ==========================================================
 def set_seed(seed: int):
     torch.manual_seed(seed)
@@ -117,7 +121,7 @@ def load_initial_curve(use: str, idx_choice: int, device: torch.device):
 
     S0 = X_tensor[idx_choice:idx_choice + 1].to(device)
     meta_row = meta.iloc[idx_choice] if hasattr(meta, "iloc") else None
-    return S0, meta_row, X_tensor, meta
+    return S0, meta_row, X_tensor, meta, tenors
 
 
 @torch.no_grad()
@@ -154,20 +158,9 @@ def get_r(model: FullModel, z: torch.Tensor) -> torch.Tensor:
     return r
 
 
-@torch.no_grad()
-def inspect_initial_drift_and_vol(model: FullModel, z0: torch.Tensor):
-    mu0 = get_mu(model, z0)
-    L0 = get_L(model, z0)
-    r0 = get_r(model, z0)
-
-    print("\n================ INITIAL DRIFT / VOL CHECK ================")
-    print("z0:", z0.detach().cpu().numpy())
-    print("mu(z0):", mu0.detach().cpu().numpy())
-    print("||mu(z0)||:", torch.norm(mu0, dim=1).detach().cpu().numpy())
-    print("L(z0):", L0.detach().cpu().numpy())
-    print("||L(z0)||_F:", torch.linalg.matrix_norm(L0, dim=(1, 2)).detach().cpu().numpy())
-    print("r(z0):", r0.detach().cpu().numpy())
-
+# ==========================================================
+# SECTION 3: LATENT DYNAMICS DIAGNOSTICS
+# ==========================================================
 @torch.no_grad()
 def inspect_K_matrix(model):
     V = model.K.V.detach().cpu()
@@ -199,6 +192,22 @@ def inspect_K_matrix(model):
             print(z_star.numpy())
         except RuntimeError:
             print("Could not compute fixed point z*; M may be singular.")
+
+
+@torch.no_grad()
+def inspect_initial_drift_and_vol(model: FullModel, z0: torch.Tensor):
+    mu0 = get_mu(model, z0)
+    L0 = get_L(model, z0)
+    r0 = get_r(model, z0)
+
+    print("\n================ INITIAL DRIFT / VOL CHECK ================")
+    print("z0:", z0.detach().cpu().numpy())
+    print("mu(z0):", mu0.detach().cpu().numpy())
+    print("||mu(z0)||:", torch.norm(mu0, dim=1).detach().cpu().numpy())
+    print("L(z0):", L0.detach().cpu().numpy())
+    print("||L(z0)||_F:", torch.linalg.matrix_norm(L0, dim=(1, 2)).detach().cpu().numpy())
+    print("r(z0):", r0.detach().cpu().numpy())
+
 
 @torch.no_grad()
 def simulate_latent_paths(
@@ -249,6 +258,42 @@ def simulate_latent_paths(
 
 
 @torch.no_grad()
+def print_summary(z0: torch.Tensor, meta_row, z_paths: torch.Tensor, r_paths: torch.Tensor):
+    print("\n================ INITIAL STATE ================")
+    if meta_row is not None:
+        try:
+            print(meta_row)
+        except Exception:
+            pass
+
+    print("z0 shape:", tuple(z0.shape))
+    print("z0:", z0.detach().cpu().numpy())
+
+    print("\n================ SIMULATION SHAPES ================")
+    print("z_paths:", tuple(z_paths.shape))
+    print("r_paths:", tuple(r_paths.shape))
+
+    z_last = z_paths[:, -1, :].detach().cpu()
+    r_last = r_paths[:, -1].detach().cpu()
+
+    print("\n================ TERMINAL SUMMARY ================")
+    for j in range(z_last.shape[1]):
+        print(
+            f"z[{j}]  mean={z_last[:, j].mean():.6f}  "
+            f"std={z_last[:, j].std():.6f}  "
+            f"min={z_last[:, j].min():.6f}  "
+            f"max={z_last[:, j].max():.6f}"
+        )
+
+    print(
+        f"r(T)   mean={r_last.mean():.6f}  "
+        f"std={r_last.std():.6f}  "
+        f"min={r_last.min():.6f}  "
+        f"max={r_last.max():.6f}"
+    )
+
+
+@torch.no_grad()
 def inspect_increment_statistics(z_paths: torch.Tensor):
     dz = z_paths[:, 1:, :] - z_paths[:, :-1, :]
     dz_flat = dz.reshape(-1, dz.shape[-1])
@@ -260,10 +305,39 @@ def inspect_increment_statistics(z_paths: torch.Tensor):
     print("\n================ INCREMENT STATISTICS ================")
     for j in range(dz.shape[-1]):
         print(
-            f"dim {j+1}: "
+            f"dim {j + 1}: "
             f"mean(dz)={mean_inc[j].item():.6f}   "
             f"std(dz)={std_inc[j].item():.6f}   "
             f"max|dz|={absmax_inc[j].item():.6f}"
+        )
+
+
+@torch.no_grad()
+def inspect_latent_vol_scales(model: FullModel, z_paths: torch.Tensor, sample_size: int = 5000):
+    z_flat = z_paths.reshape(-1, z_paths.shape[-1])
+
+    if z_flat.shape[0] > sample_size:
+        idx = torch.randperm(z_flat.shape[0], device=z_flat.device)[:sample_size]
+        z_sel = z_flat[idx]
+    else:
+        z_sel = z_flat
+
+    L = get_L(model, z_sel)
+    fro = torch.linalg.matrix_norm(L, dim=(1, 2))
+    row_norms = torch.linalg.vector_norm(L, dim=2)
+
+    print("\n================ LATENT VOL SCALE CHECK ================")
+    print(f"Sample size used: {z_sel.shape[0]}")
+    print(f"mean ||L||_F = {fro.mean().item():.6f}")
+    print(f"std  ||L||_F = {fro.std().item():.6f}")
+    print(f"max  ||L||_F = {fro.max().item():.6f}")
+
+    for j in range(row_norms.shape[1]):
+        print(
+            f"row {j + 1}: "
+            f"mean={row_norms[:, j].mean().item():.6f}  "
+            f"std={row_norms[:, j].std().item():.6f}  "
+            f"max={row_norms[:, j].max().item():.6f}"
         )
 
 
@@ -273,18 +347,43 @@ def compare_training_vs_simulated_latent_ranges(Z_train: torch.Tensor, z_paths: 
 
     train_min = Z_train.min(dim=0).values
     train_max = Z_train.max(dim=0).values
+    train_mean = Z_train.mean(dim=0)
+    train_std = Z_train.std(dim=0)
+
     sim_min = z_sim.min(dim=0).values
     sim_max = z_sim.max(dim=0).values
+    sim_mean = z_sim.mean(dim=0)
+    sim_std = z_sim.std(dim=0)
 
     print("\n================ TRAINING VS SIMULATED LATENT RANGE ================")
     for j in range(Z_train.shape[1]):
         print(
             f"dim {j + 1}: "
             f"train[min,max]=({train_min[j].item():.6f}, {train_max[j].item():.6f})   "
-            f"sim[min,max]=({sim_min[j].item():.6f}, {sim_max[j].item():.6f})"
+            f"train[mean,std]=({train_mean[j].item():.6f}, {train_std[j].item():.6f})   "
+            f"sim[min,max]=({sim_min[j].item():.6f}, {sim_max[j].item():.6f})   "
+            f"sim[mean,std]=({sim_mean[j].item():.6f}, {sim_std[j].item():.6f})"
         )
 
 
+@torch.no_grad()
+def fraction_outside_training_box(Z_train: torch.Tensor, z_paths: torch.Tensor):
+    z_sim = z_paths.reshape(-1, z_paths.shape[-1])
+    train_min = Z_train.min(dim=0).values
+    train_max = Z_train.max(dim=0).values
+
+    outside_per_dim = ((z_sim < train_min.unsqueeze(0)) | (z_sim > train_max.unsqueeze(0))).float().mean(dim=0)
+    outside_any = ((z_sim < train_min.unsqueeze(0)) | (z_sim > train_max.unsqueeze(0))).any(dim=1).float().mean()
+
+    print("\n================ LATENT OOD CHECK ================")
+    for j in range(z_sim.shape[1]):
+        print(f"Fraction outside training box in dim {j + 1}: {outside_per_dim[j].item():.6f}")
+    print(f"Fraction outside training box in any dimension: {outside_any.item():.6f}")
+
+
+# ==========================================================
+# SECTION 4: PLOTS FOR LATENT PROCESS
+# ==========================================================
 def plot_latent_paths(z_paths: torch.Tensor, out_path: str, n_plot_paths: int = 30):
     z_cpu = z_paths.detach().cpu().numpy()
     n_paths, n_steps1, d = z_cpu.shape
@@ -359,43 +458,94 @@ def plot_latent_range_vs_training(Z_train: torch.Tensor, z_paths: torch.Tensor, 
     plt.close(fig)
 
 
-def print_summary(z0: torch.Tensor, meta_row, z_paths: torch.Tensor, r_paths: torch.Tensor):
-    print("\n================ INITIAL STATE ================")
-    if meta_row is not None:
-        try:
-            print(meta_row)
-        except Exception:
-            pass
+def plot_cross_sectional_std(z_paths: torch.Tensor, out_path: str):
+    z_std = z_paths.std(dim=0).detach().cpu().numpy()
+    n_steps1, d = z_std.shape
 
-    print("z0 shape:", tuple(z0.shape))
-    print("z0:", z0.detach().cpu().numpy())
+    fig, axes = plt.subplots(d, 1, figsize=(8, 2.8 * d), dpi=160, sharex=True)
+    if d == 1:
+        axes = [axes]
 
-    print("\n================ SIMULATION SHAPES ================")
-    print("z_paths:", tuple(z_paths.shape))
-    print("r_paths:", tuple(r_paths.shape))
+    tgrid = np.arange(n_steps1)
 
-    z_last = z_paths[:, -1, :].detach().cpu()
-    r_last = r_paths[:, -1].detach().cpu()
+    for j in range(d):
+        axes[j].plot(tgrid, z_std[:, j], linewidth=1.5)
+        axes[j].set_ylabel(f"std($z_{{{j + 1}}}$)")
+        axes[j].grid(True, alpha=0.25)
 
-    print("\n================ TERMINAL SUMMARY ================")
-    for j in range(z_last.shape[1]):
-        print(
-            f"z[{j}]  mean={z_last[:, j].mean():.6f}  "
-            f"std={z_last[:, j].std():.6f}  "
-            f"min={z_last[:, j].min():.6f}  "
-            f"max={z_last[:, j].max():.6f}"
-        )
+    axes[-1].set_xlabel("Simulation step")
+    fig.suptitle("Cross-sectional dispersion of latent factors", y=0.995)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
 
-    print(
-        f"r(T)   mean={r_last.mean():.6f}  "
-        f"std={r_last.std():.6f}  "
-        f"min={r_last.min():.6f}  "
-        f"max={r_last.max():.6f}"
-    )
+
+def plot_latent_vol_histograms(model: FullModel, z_paths: torch.Tensor, out_path: str, sample_size: int = 5000):
+    z_flat = z_paths.reshape(-1, z_paths.shape[-1])
+
+    if z_flat.shape[0] > sample_size:
+        idx = torch.randperm(z_flat.shape[0], device=z_flat.device)[:sample_size]
+        z_sel = z_flat[idx]
+    else:
+        z_sel = z_flat
+
+    with torch.no_grad():
+        L = get_L(model, z_sel)
+
+    row_norms = torch.linalg.vector_norm(L, dim=2).detach().cpu().numpy()
+    d = row_norms.shape[1]
+
+    fig, axes = plt.subplots(d, 1, figsize=(8, 2.8 * d), dpi=160)
+    if d == 1:
+        axes = [axes]
+
+    for j in range(d):
+        axes[j].hist(row_norms[:, j], bins=50, alpha=0.85)
+        axes[j].set_xlabel(f"row-norm of latent vol loading {j + 1}")
+        axes[j].set_ylabel("Count")
+        axes[j].grid(True, alpha=0.25)
+
+    fig.suptitle("Latent volatility loading histograms", y=0.995)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_latent_vol_over_time(model: FullModel, z_paths: torch.Tensor, out_path: str):
+    with torch.no_grad():
+        n_paths, n_steps1, d = z_paths.shape
+        mean_row_norms = np.zeros((n_steps1, d))
+        mean_fro = np.zeros(n_steps1)
+
+        for t in range(n_steps1):
+            z_t = z_paths[:, t, :]
+            L_t = get_L(model, z_t)
+            row_norms_t = torch.linalg.vector_norm(L_t, dim=2)
+            fro_t = torch.linalg.matrix_norm(L_t, dim=(1, 2))
+
+            mean_row_norms[t] = row_norms_t.mean(dim=0).detach().cpu().numpy()
+            mean_fro[t] = fro_t.mean().item()
+
+    fig, axes = plt.subplots(d + 1, 1, figsize=(8, 2.6 * (d + 1)), dpi=160, sharex=True)
+
+    for j in range(d):
+        axes[j].plot(np.arange(n_steps1), mean_row_norms[:, j], linewidth=1.5)
+        axes[j].set_ylabel(f"mean row {j + 1}")
+        axes[j].grid(True, alpha=0.25)
+
+    axes[-1].plot(np.arange(n_steps1), mean_fro, linewidth=1.5)
+    axes[-1].set_ylabel("mean ||L||_F")
+    axes[-1].set_xlabel("Simulation step")
+    axes[-1].grid(True, alpha=0.25)
+
+    fig.suptitle("Average latent volatility scale over time", y=0.995)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
 
 
 # ==========================================================
-# SECTION 5B: Decode discount curves directly in this script
+# SECTION 5: DECODER / CURVE DIAGNOSTICS
 # ==========================================================
 @torch.no_grad()
 def decode_from_latent_script(model: FullModel, z: torch.Tensor):
@@ -461,24 +611,31 @@ def decode_from_latent_script(model: FullModel, z: torch.Tensor):
         "R_tau": R_tau[:, 1:],
         "SR_tau": SR_tau[:, 1:],
         "tau_grid": tau[1:],
-        "max_abs_R": R_tau[:, 1:].abs().max(dim=1).values,
-        "max_abs_SR_1to30": SR_tau[:, 1:].abs().max(dim=1).values,
+        "max_abs_R": R_tau[:, 1:].abs().amax(dim=1),
+        "max_abs_SR_1to30": SR_tau[:, 1:].abs().amax(dim=1),
     }
 
     expo = A_vals - B_vals * G_vals
     P_full = torch.exp(expo)
     P_mkt = P_full[:, 1:]
 
+    out = {
+        "P_mkt": P_mkt,
+        "A_vals": A_vals,
+        "B_vals": B_vals,
+        "G_vals": G_vals,
+        "mu": mu,
+        "sigma": sigma,
+        "r_tilde": r_tilde,
+        "arb": arb,
+        "tau_full": tau,
+    }
+
     if squeeze_back:
-        P_mkt = P_mkt.squeeze(0)
-        A_vals = A_vals.squeeze(0)
-        B_vals = B_vals.squeeze(0)
-        G_vals = G_vals.squeeze(0)
-        mu = mu.squeeze(0)
-        sigma = sigma.squeeze(0)
-        if isinstance(r_tilde, torch.Tensor):
-            r_tilde = r_tilde.squeeze(0)
-        arb = {
+        for k, v in list(out.items()):
+            if isinstance(v, torch.Tensor) and k != "tau_full":
+                out[k] = v.squeeze(0)
+        out["arb"] = {
             "R_tau": arb["R_tau"].squeeze(0),
             "SR_tau": arb["SR_tau"].squeeze(0),
             "tau_grid": arb["tau_grid"],
@@ -486,7 +643,7 @@ def decode_from_latent_script(model: FullModel, z: torch.Tensor):
             "max_abs_SR_1to30": arb["max_abs_SR_1to30"].squeeze(0),
         }
 
-    return P_mkt, A_vals, B_vals, G_vals, mu, sigma, r_tilde, arb
+    return out
 
 
 @torch.no_grad()
@@ -504,14 +661,16 @@ def discount_to_spot_yields(P_tau: torch.Tensor) -> torch.Tensor:
 @torch.no_grad()
 def decode_curve_at_time_index(model: FullModel, z_paths: torch.Tensor, time_index: int):
     z_t = z_paths[:, time_index, :]
-    P_tau, _, _, _, _, _, _, arb = decode_from_latent_script(model, z_t)
-    y_tau = discount_to_spot_yields(P_tau)
-    return P_tau, y_tau, arb
+    out = decode_from_latent_script(model, z_t)
+    y_tau = discount_to_spot_yields(out["P_mkt"])
+    return out, y_tau
 
 
 @torch.no_grad()
 def inspect_curve_finiteness_and_monotonicity(model: FullModel, z_paths: torch.Tensor, time_index: int):
-    P_tau, y_tau, arb = decode_curve_at_time_index(model, z_paths, time_index)
+    out, y_tau = decode_curve_at_time_index(model, z_paths, time_index)
+    P_tau = out["P_mkt"]
+    arb = out["arb"]
 
     frac_finite_P = torch.isfinite(P_tau).float().mean().item()
     frac_finite_y = torch.isfinite(y_tau).float().mean().item()
@@ -526,11 +685,95 @@ def inspect_curve_finiteness_and_monotonicity(model: FullModel, z_paths: torch.T
     print("Finite yield fraction by maturity:")
     print(finite_y_by_maturity.detach().cpu().numpy())
 
-    print("Arbitrage diagnostic summary:")
-    print(f"max |R_tau| mean  = {arb['max_abs_R'].mean().item():.6f}")
-    print(f"max |R_tau| max   = {arb['max_abs_R'].max().item():.6f}")
-    print(f"max |SR_tau| mean = {arb['max_abs_SR_1to30'].mean().item():.6f}")
-    print(f"max |SR_tau| max  = {arb['max_abs_SR_1to30'].max().item():.6f}")
+    finite_R = torch.isfinite(arb["max_abs_R"])
+    finite_SR = torch.isfinite(arb["max_abs_SR_1to30"])
+
+    if finite_R.any():
+        print(f"max |R_tau| mean  = {arb['max_abs_R'][finite_R].mean().item():.6f}")
+        print(f"max |R_tau| max   = {arb['max_abs_R'][finite_R].max().item():.6f}")
+    else:
+        print("max |R_tau| mean  = nan")
+        print("max |R_tau| max   = nan")
+
+    if finite_SR.any():
+        print(f"max |SR_tau| mean = {arb['max_abs_SR_1to30'][finite_SR].mean().item():.6f}")
+        print(f"max |SR_tau| max  = {arb['max_abs_SR_1to30'][finite_SR].max().item():.6f}")
+    else:
+        print("max |SR_tau| mean = nan")
+        print("max |SR_tau| max  = nan")
+
+
+@torch.no_grad()
+def inspect_flatness_diagnostics(model: FullModel, z_paths: torch.Tensor, time_index: int):
+    out, y_tau = decode_curve_at_time_index(model, z_paths, time_index)
+
+    P_tau = out["P_mkt"]
+    A_vals = out["A_vals"][:, 1:]
+    B_vals = out["B_vals"][:, 1:]
+    G_vals = out["G_vals"][:, 1:]
+    r_tilde = out["r_tilde"]
+    tau = out["tau_full"][1:]
+
+    finite_rows = torch.isfinite(P_tau).all(dim=1) & torch.isfinite(y_tau).all(dim=1)
+    print("\n================ FLATNESS DIAGNOSTICS ================")
+    print(f"time_index = {time_index}")
+    print(f"fully finite decoded rows: {finite_rows.float().mean().item():.6f}")
+
+    if finite_rows.sum() == 0:
+        print("No fully finite rows available for flatness diagnostics.")
+        return
+
+    P_tau = P_tau[finite_rows]
+    y_tau = y_tau[finite_rows]
+    A_vals = A_vals[finite_rows]
+    B_vals = B_vals[finite_rows]
+    G_vals = G_vals[finite_rows]
+    if r_tilde.ndim == 2:
+        r_tilde = r_tilde[finite_rows]
+    else:
+        r_tilde = r_tilde[finite_rows].unsqueeze(1)
+
+    # flatness measures
+    y_range = y_tau.max(dim=1).values - y_tau.min(dim=1).values
+    y_std = y_tau.std(dim=1)
+    G_range = G_vals.max(dim=1).values - G_vals.min(dim=1).values
+    B_abs_mean = B_vals.abs().mean(dim=1)
+    B_abs_max = B_vals.abs().max(dim=1).values
+    BG_range = (B_vals * G_vals).max(dim=1).values - (B_vals * G_vals).min(dim=1).values
+    A_range = A_vals.max(dim=1).values - A_vals.min(dim=1).values
+
+    print(f"yield range mean = {y_range.mean().item():.6f}")
+    print(f"yield range std  = {y_range.std().item():.6f}")
+    print(f"yield std mean   = {y_std.mean().item():.6f}")
+
+    print(f"G(tau) range mean        = {G_range.mean().item():.6f}")
+    print(f"|B(tau)| mean over paths = {B_abs_mean.mean().item():.6f}")
+    print(f"|B(tau)| max  over paths = {B_abs_max.mean().item():.6f}")
+    print(f"range of B(tau)G(tau)    = {BG_range.mean().item():.6f}")
+    print(f"range of A(tau)          = {A_range.mean().item():.6f}")
+    print(f"mean r_tilde             = {r_tilde.mean().item():.6f}")
+
+    corr_BG_y = np.corrcoef(BG_range.detach().cpu().numpy(), y_range.detach().cpu().numpy())[0, 1]
+    corr_G_y = np.corrcoef(G_range.detach().cpu().numpy(), y_range.detach().cpu().numpy())[0, 1]
+    corr_B_y = np.corrcoef(B_abs_mean.detach().cpu().numpy(), y_range.detach().cpu().numpy())[0, 1]
+
+    print(f"corr( range(BG), yield range ) = {corr_BG_y:.6f}")
+    print(f"corr( range(G),  yield range ) = {corr_G_y:.6f}")
+    print(f"corr( mean|B|,   yield range ) = {corr_B_y:.6f}")
+
+    # maturitywise cross-sectional variability
+    print("\nCross-sectional std across paths by maturity:")
+    y_cs_std = y_tau.std(dim=0)
+    print(y_cs_std.detach().cpu().numpy())
+
+    # average along maturity
+    print("\nAverage across paths:")
+    print("mean yield by maturity:")
+    print(y_tau.mean(dim=0).detach().cpu().numpy())
+    print("mean G by maturity:")
+    print(G_vals.mean(dim=0).detach().cpu().numpy())
+    print("mean B by maturity:")
+    print(B_vals.mean(dim=0).detach().cpu().numpy())
 
 
 def plot_mean_yield_curves_over_time(
@@ -547,11 +790,13 @@ def plot_mean_yield_curves_over_time(
         if idx >= z_paths.shape[1]:
             raise ValueError(f"Requested year {yr} exceeds simulated horizon")
 
-        _, y_tau, _ = decode_curve_at_time_index(model, z_paths, idx)
-        y_mean = y_tau.mean(dim=0).detach().cpu().numpy()
+        _, y_tau = decode_curve_at_time_index(model, z_paths, idx)
+        finite_rows = torch.isfinite(y_tau).all(dim=1)
 
-        maturities = np.arange(1, len(y_mean) + 1)
-        ax.plot(maturities, y_mean, linewidth=1.5, label=f"t={yr:g}Y")
+        if finite_rows.any():
+            y_mean = y_tau[finite_rows].mean(dim=0).detach().cpu().numpy()
+            maturities = np.arange(1, len(y_mean) + 1)
+            ax.plot(maturities, y_mean, linewidth=1.5, label=f"t={yr:g}Y")
 
     ax.set_xlabel("Maturity (years)")
     ax.set_ylabel("Spot yield")
@@ -575,8 +820,13 @@ def plot_sample_yield_curves_at_time(
     if idx >= z_paths.shape[1]:
         raise ValueError(f"Requested year {year_to_plot} exceeds simulated horizon")
 
-    _, y_tau, _ = decode_curve_at_time_index(model, z_paths, idx)
-    y_cpu = y_tau.detach().cpu().numpy()
+    _, y_tau = decode_curve_at_time_index(model, z_paths, idx)
+    finite_rows = torch.isfinite(y_tau).all(dim=1)
+    y_cpu = y_tau[finite_rows].detach().cpu().numpy()
+
+    if y_cpu.shape[0] == 0:
+        print(f"No fully finite curves available at t={year_to_plot:g}Y; skipping sample-yield plot.")
+        return
 
     n_show = min(n_sample_paths, y_cpu.shape[0])
     maturities = np.arange(1, y_cpu.shape[1] + 1)
@@ -594,8 +844,146 @@ def plot_sample_yield_curves_at_time(
     plt.close(fig)
 
 
+def plot_decoder_components_at_time(
+    model: FullModel,
+    z_paths: torch.Tensor,
+    dt: float,
+    year_to_plot: float,
+    out_path: str
+):
+    idx = int(round(year_to_plot / dt))
+    out, y_tau = decode_curve_at_time_index(model, z_paths, idx)
+
+    P_tau = out["P_mkt"]
+    A_vals = out["A_vals"][:, 1:]
+    B_vals = out["B_vals"][:, 1:]
+    G_vals = out["G_vals"][:, 1:]
+    tau = out["tau_full"][1:].detach().cpu().numpy()
+
+    finite_rows = (
+        torch.isfinite(P_tau).all(dim=1)
+        & torch.isfinite(A_vals).all(dim=1)
+        & torch.isfinite(B_vals).all(dim=1)
+        & torch.isfinite(G_vals).all(dim=1)
+        & torch.isfinite(y_tau).all(dim=1)
+    )
+
+    if finite_rows.sum() == 0:
+        print(f"No fully finite rows available at t={year_to_plot:g}Y; skipping decoder-component plot.")
+        return
+
+    A_mean = A_vals[finite_rows].mean(dim=0).detach().cpu().numpy()
+    B_mean = B_vals[finite_rows].mean(dim=0).detach().cpu().numpy()
+    G_mean = G_vals[finite_rows].mean(dim=0).detach().cpu().numpy()
+    BG_mean = (B_vals[finite_rows] * G_vals[finite_rows]).mean(dim=0).detach().cpu().numpy()
+    y_mean = y_tau[finite_rows].mean(dim=0).detach().cpu().numpy()
+
+    fig, axes = plt.subplots(5, 1, figsize=(8, 13), dpi=160, sharex=True)
+
+    axes[0].plot(tau, A_mean, linewidth=1.5)
+    axes[0].set_ylabel("mean A(tau)")
+    axes[0].grid(True, alpha=0.25)
+
+    axes[1].plot(tau, B_mean, linewidth=1.5)
+    axes[1].set_ylabel("mean B(tau)")
+    axes[1].grid(True, alpha=0.25)
+
+    axes[2].plot(tau, G_mean, linewidth=1.5)
+    axes[2].set_ylabel("mean G(z,tau)")
+    axes[2].grid(True, alpha=0.25)
+
+    axes[3].plot(tau, BG_mean, linewidth=1.5)
+    axes[3].set_ylabel("mean B*G")
+    axes[3].grid(True, alpha=0.25)
+
+    axes[4].plot(tau, y_mean, linewidth=1.5)
+    axes[4].set_ylabel("mean yield")
+    axes[4].set_xlabel("Maturity")
+    axes[4].grid(True, alpha=0.25)
+
+    fig.suptitle(f"Decoder component diagnostics at t={year_to_plot:g}Y", y=0.995)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_yield_range_over_time(
+    model: FullModel,
+    z_paths: torch.Tensor,
+    dt: float,
+    out_path: str
+):
+    years = []
+    mean_ranges = []
+    median_ranges = []
+    finite_fracs = []
+
+    for t in range(z_paths.shape[1]):
+        year = t * dt
+        out, y_tau = decode_curve_at_time_index(model, z_paths, t)
+        finite_rows = torch.isfinite(y_tau).all(dim=1)
+
+        years.append(year)
+        finite_fracs.append(finite_rows.float().mean().item())
+
+        if finite_rows.any():
+            y_use = y_tau[finite_rows]
+            yrange = y_use.max(dim=1).values - y_use.min(dim=1).values
+            mean_ranges.append(yrange.mean().item())
+            median_ranges.append(yrange.median().item())
+        else:
+            mean_ranges.append(np.nan)
+            median_ranges.append(np.nan)
+
+    fig, axes = plt.subplots(2, 1, figsize=(8, 7), dpi=160, sharex=True)
+
+    axes[0].plot(years, mean_ranges, linewidth=1.5, label="mean yield range")
+    axes[0].plot(years, median_ranges, linewidth=1.5, label="median yield range")
+    axes[0].set_ylabel("Across-maturity yield range")
+    axes[0].grid(True, alpha=0.25)
+    axes[0].legend()
+
+    axes[1].plot(years, finite_fracs, linewidth=1.5)
+    axes[1].set_ylabel("Fraction fully finite")
+    axes[1].set_xlabel("Simulation year")
+    axes[1].grid(True, alpha=0.25)
+
+    fig.suptitle("Flatness and finiteness over time", y=0.995)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
+
+
 # ==========================================================
-# SECTION 6: Run everything
+# SECTION 6: REAL-DATA BASELINE
+# ==========================================================
+@torch.no_grad()
+def inspect_reconstruction_baseline(model: FullModel, X_tensor: torch.Tensor, tenors):
+    print("\n================ TRAINING / DATA BASELINE ================")
+
+    n = min(256, X_tensor.shape[0])
+    Xb = X_tensor[:n].to(device)
+
+    z = model.encoder(Xb)
+    out = decode_from_latent_script(model, z)
+    y_hat = discount_to_spot_yields(out["P_mkt"])
+
+    finite_rows = torch.isfinite(y_hat).all(dim=1)
+    print(f"finite decoded rows on training sample = {finite_rows.float().mean().item():.6f}")
+
+    if finite_rows.any():
+        y_use = y_hat[finite_rows]
+        y_range = y_use.max(dim=1).values - y_use.min(dim=1).values
+        print(f"mean yield range on training sample = {y_range.mean().item():.6f}")
+        print(f"median yield range on training sample = {y_range.median().item():.6f}")
+        print("mean decoded yield by maturity:")
+        print(y_use.mean(dim=0).detach().cpu().numpy())
+    else:
+        print("No fully finite rows on the training sample baseline.")
+
+
+# ==========================================================
+# SECTION 7: MAIN RUN
 # ==========================================================
 set_seed(SEED)
 
@@ -603,8 +991,8 @@ print("\nLoading model...")
 model = load_trained_model(CHECKPOINT_PATH, latent_dim=LATENT_DIM, device=device)
 inspect_K_matrix(model)
 
-print("Loading initial curve...")
-S0, meta_row, X_tensor, meta = load_initial_curve(USE, IDX_CHOICE, device=device)
+print("\nLoading initial curve...")
+S0, meta_row, X_tensor, meta, tenors = load_initial_curve(USE, IDX_CHOICE, device=device)
 
 with torch.no_grad():
     z0 = encode_initial_state(model, S0)
@@ -614,6 +1002,7 @@ with torch.no_grad():
     Z_train = encode_training_set(model, X_tensor, device=device)
 
 inspect_initial_drift_and_vol(model, z0)
+inspect_reconstruction_baseline(model, X_tensor, tenors)
 
 print("\nSimulating latent paths...")
 with torch.no_grad():
@@ -630,11 +1019,15 @@ with torch.no_grad():
 
 print_summary(z0, meta_row, z_paths, r_paths)
 inspect_increment_statistics(z_paths)
+inspect_latent_vol_scales(model, z_paths)
 compare_training_vs_simulated_latent_ranges(Z_train, z_paths)
+fraction_outside_training_box(Z_train, z_paths)
 
-check_idx = int(round(CHECK_FINITE_YEAR / DT))
-if check_idx < z_paths.shape[1]:
-    inspect_curve_finiteness_and_monotonicity(model, z_paths, check_idx)
+for yr in CHECK_YEARS:
+    idx = int(round(yr / DT))
+    if idx < z_paths.shape[1]:
+        inspect_curve_finiteness_and_monotonicity(model, z_paths, idx)
+        inspect_flatness_diagnostics(model, z_paths, idx)
 
 mode_tag = f"drift{int(USE_DRIFT)}_diff{int(USE_DIFFUSION)}"
 
@@ -652,14 +1045,33 @@ increment_hist_path = os.path.join(
 plot_increment_histograms(z_paths, increment_hist_path)
 print("Saved increment histogram plot to:", increment_hist_path)
 
+vol_hist_path = os.path.join(
+    OUT_DIR,
+    f"latent_vol_histograms_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_{mode_tag}.png"
+)
+plot_latent_vol_histograms(model, z_paths, vol_hist_path)
+print("Saved latent-vol histogram plot to:", vol_hist_path)
+
+vol_time_path = os.path.join(
+    OUT_DIR,
+    f"latent_vol_over_time_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_{mode_tag}.png"
+)
+plot_latent_vol_over_time(model, z_paths, vol_time_path)
+print("Saved latent-vol-over-time plot to:", vol_time_path)
+
+dispersion_path = os.path.join(
+    OUT_DIR,
+    f"latent_cross_sectional_std_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_{mode_tag}.png"
+)
+plot_cross_sectional_std(z_paths, dispersion_path)
+print("Saved latent cross-sectional std plot to:", dispersion_path)
+
 range_plot_path = os.path.join(
     OUT_DIR,
     f"latent_range_vs_training_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_{mode_tag}.png"
 )
 plot_latent_range_vs_training(Z_train, z_paths, range_plot_path)
 print("Saved latent-range comparison plot to:", range_plot_path)
-
-print("\nDecoding simulated curves...")
 
 mean_curve_plot_path = os.path.join(
     OUT_DIR,
@@ -687,3 +1099,31 @@ plot_sample_yield_curves_at_time(
     out_path=sample_curve_plot_path
 )
 print("Saved sample yield-curve plot to:", sample_curve_plot_path)
+
+for yr in DECOMP_YEARS:
+    comp_path = os.path.join(
+        OUT_DIR,
+        f"decoder_components_t{str(yr).replace('.', 'p')}Y_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_{mode_tag}.png"
+    )
+    plot_decoder_components_at_time(
+        model=model,
+        z_paths=z_paths,
+        dt=DT,
+        year_to_plot=yr,
+        out_path=comp_path
+    )
+    print("Saved decoder-component plot to:", comp_path)
+
+yield_range_time_path = os.path.join(
+    OUT_DIR,
+    f"yield_range_over_time_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_{mode_tag}.png"
+)
+plot_yield_range_over_time(
+    model=model,
+    z_paths=z_paths,
+    dt=DT,
+    out_path=yield_range_time_path
+)
+print("Saved yield-range-over-time plot to:", yield_range_time_path)
+
+print("\nDone.")
