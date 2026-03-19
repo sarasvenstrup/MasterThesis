@@ -38,8 +38,8 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # ==========================================================
 # Settings
 # ==========================================================
-LATENT_DIM = 4
-EPOCHS = 5000
+LATENT_DIM = 1
+EPOCHS = 100
 
 # IMPORTANT CHANGE:
 # - We evaluate avg RMSE (bps) every epoch (for plotting)

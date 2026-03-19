@@ -48,7 +48,8 @@ class FullModel(nn.Module):
         # Networks
         self.encoder = Encoder(input_dim, latent_dim)
         self.G = DecoderG(latent_dim, g_hidden, g_bias)
-        self.K = KMu(latent_dim, bias=True)
+        #self.K = KMu(latent_dim, bias=True)
+        self.K = KMu(latent_dim=latent_dim, eps=1e-3, learn_z_star=True)
         self.H = HSigma(latent_dim, h_hidden, hr_bias)
         self.R = RShort(latent_dim, r_hidden, hr_bias)
 
