@@ -4,6 +4,7 @@
 import os
 import sys
 import time
+import json
 import numpy as np
 import pandas as pd
 import torch
@@ -35,11 +36,11 @@ print("Using device:", device)
 
 # ── config ─────────────────────────────────────────────────────────────────────
 USE        = "bbg"
-LATENT_DIM = 2
+LATENT_DIM = 3
 EPOCHS     = 2500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
-N_SEEDS    = 3        # train N times with different seeds, report average
+N_SEEDS    = 10        # train N times with different seeds, report average
 max_lr     = 3e-3
 final_div_factor = 3000.0
 LOG_EVERY  = 100
@@ -117,6 +118,7 @@ def rmse_bps_on_subset(model, X_sub, meta_sub):
 
 def train_model(X_tr, seed=0):
     torch.manual_seed(seed)
+    np.random.seed(seed)
     model  = FullModel(latent_dim=LATENT_DIM).to(device)
     model.train()
     loader = DataLoader(TensorDataset(X_tr), batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
@@ -157,14 +159,39 @@ is_rmse_all,  oos_rmse_all  = [], []   # one pd.Series per seed
 is_avg_all,   oos_avg_all   = [], []   # one float per seed
 best_model, best_oos = None, np.inf
 
-for seed in range(N_SEEDS):
+SEEDS = list(range(N_SEEDS))  # explicit — change these integers to reproduce exact runs
+
+# ── run manifest (written before loop, updated after each seed) ────────────────
+manifest = {
+    "seeds": SEEDS,
+    "latent_dim": LATENT_DIM,
+    "epochs": EPOCHS,
+    "batch_size": BATCH_SIZE,
+    "max_lr": max_lr,
+    "final_div_factor": final_div_factor,
+    "train_start": TRAIN_START,
+    "train_end": TRAIN_END,
+    "test_start": TEST_START,
+    "test_end": TEST_END,
+    "torch_version": torch.__version__,
+    "numpy_version": np.__version__,
+    "run_started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    "seed_results": {},
+}
+manifest_path = os.path.join(FIGURES_DIR, "run_manifest.json")
+with open(manifest_path, "w") as f:
+    json.dump(manifest, f, indent=2)
+print(f"Manifest initialised: {manifest_path}")
+
+for seed in SEEDS:
     print(f"\n{'='*60}")
-    print(f"Training seed {seed+1}/{N_SEEDS}")
+    print(f"Training seed {seed+1}/{N_SEEDS}  (seed={seed})")
     print(f"{'='*60}")
 
     t0 = time.perf_counter()
     model, mse_hist, lr_hist = train_model(X_train, seed=seed)
-    print(f"  Training time: {(time.perf_counter()-t0)/60:.1f} min")
+    train_minutes = (time.perf_counter() - t0) / 60
+    print(f"  Training time: {train_minutes:.1f} min")
 
     # save checkpoint per seed
     ckpt = os.path.join(FIGURES_DIR, f"checkpoint_seed{seed}.pt")
@@ -182,10 +209,25 @@ for seed in range(N_SEEDS):
     print(f"  In-sample avg RMSE:  {is_avg:.2f} bps")
     print(f"  OOS avg RMSE:        {oos_avg:.2f} bps")
 
+    # update manifest after every seed (crash-safe)
+    manifest["seed_results"][str(seed)] = {
+        "is_avg_bps":       round(is_avg,  4),
+        "oos_avg_bps":      round(oos_avg, 4),
+        "is_per_ccy_bps":   {k: round(v, 4) for k, v in is_rmse.items()},
+        "oos_per_ccy_bps":  {k: round(v, 4) for k, v in oos_rmse.items()},
+        "checkpoint":       f"checkpoint_seed{seed}.pt",
+        "train_minutes":    round(train_minutes, 2),
+    }
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
     # keep best model for plots
     if oos_avg < best_oos:
         best_oos   = oos_avg
         best_model = model
+        manifest["best_seed"] = seed
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
 
     # convergence plot per seed
     fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
@@ -196,6 +238,12 @@ for seed in range(N_SEEDS):
     fig.tight_layout()
     fig.savefig(os.path.join(FIGURES_DIR, f"convergence_seed{seed}.png"), dpi=200)
     plt.close(fig)
+
+# ── finalise manifest ──────────────────────────────────────────────────────────
+manifest["run_finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+with open(manifest_path, "w") as f:
+    json.dump(manifest, f, indent=2)
+print(f"\nManifest finalised: {manifest_path}")
 
 # ── 1) RMSE table (mean ± std across seeds) ────────────────────────────────────
 print(f"\n{'='*60}")

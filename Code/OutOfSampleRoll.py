@@ -2,6 +2,7 @@
 import os
 import sys
 import time
+import json
 import numpy as np
 import pandas as pd
 import torch
@@ -33,20 +34,20 @@ print("Using device:", device)
 
 # ============================= Config ===============================
 USE = "bbg"
-LATENT_DIM = 3
+LATENT_DIM = 2
 
 # Recommended rolling window setup (baseline OOS)
 TRAIN_YEARS = 3
-TEST_MONTHS = 1          # <-- recommended (was 3)
-STEP_MONTHS = 1
+TEST_MONTHS = 3          # <-- recommended (was 3)
+STEP_MONTHS = 6
 MIN_TRAIN_OBS = 200
 
 # Training setup per window
-EPOCHS = 100
+EPOCHS = 2500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 TARGET_MSE = -1          # set >0 if you want early stop
-LOG_EVERY = 10          # training printouts inside each window
+LOG_EVERY = 100          # training printouts inside each window
 
 max_lr = 3e-3
 final_div_factor = 3000.0
@@ -115,8 +116,11 @@ def make_loader(X_sub: torch.Tensor, batch_size: int):
     ds = TensorDataset(X_sub)
     return DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
 
+WINDOW_SEED = 0  # fixed seed for every rolling window — change to reproduce
+
 def train_one_window(X_train: torch.Tensor):
-    torch.manual_seed(0)
+    torch.manual_seed(WINDOW_SEED)
+    np.random.seed(WINDOW_SEED)
 
     model = FullModel(latent_dim=LATENT_DIM).to(device)
     model.train()
@@ -210,6 +214,28 @@ cols = (
 pd.DataFrame(columns=cols).to_csv(oos_csv_path, index=False)
 print("OOS CSV:", oos_csv_path)
 
+# ============================= Run manifest ===============================
+manifest = {
+    "window_seed": WINDOW_SEED,
+    "latent_dim": LATENT_DIM,
+    "epochs": EPOCHS,
+    "batch_size": BATCH_SIZE,
+    "max_lr": max_lr,
+    "final_div_factor": final_div_factor,
+    "train_years": TRAIN_YEARS,
+    "test_months": TEST_MONTHS,
+    "step_months": STEP_MONTHS,
+    "n_windows": len(roll_starts),
+    "torch_version": torch.__version__,
+    "numpy_version": np.__version__,
+    "run_started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    "window_results": {},
+}
+manifest_path = os.path.join(FIGURES_DIR, "run_manifest.json")
+with open(manifest_path, "w") as f:
+    json.dump(manifest, f, indent=2)
+print(f"Manifest initialised: {manifest_path}")
+
 # ============================= Rolling loop ===============================
 avg_rmse_curve = []  # list of (test_start_date, avg_rmse_bps)
 
@@ -272,6 +298,17 @@ for k, test_start in enumerate(roll_starts):
 
     pd.DataFrame([row], columns=cols).to_csv(oos_csv_path, mode="a", header=False, index=False)
 
+    # update manifest after every window (crash-safe)
+    manifest["window_results"][test_start.date().isoformat()] = {
+        "avg_rmse_bps":     round(avg_rmse_bps, 4),
+        "per_ccy_bps":      {ccy: round(float(rmse_per_ccy.get(ccy, np.nan)), 4) for ccy in ccy_order},
+        "train_minutes":    round(time_train / 60, 2),
+        "n_train":          n_train,
+        "n_test":           n_test,
+    }
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
     print(f"  OOS avg_rmse_bps={avg_rmse_bps:.3f} | time_train={time_train/60:.1f}min time_test={time_test:.1f}s")
 
     if SAVE_PER_ROLL_PLOTS:
@@ -295,6 +332,10 @@ for k, test_start in enumerate(roll_starts):
         fig.savefig(os.path.join(FIGURES_DIR, f"train_rmse_roll{k+1:02d}_{test_start.date()}.png"), dpi=300)
         plt.close(fig)
 
+manifest["run_finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+with open(manifest_path, "w") as f:
+    json.dump(manifest, f, indent=2)
+print(f"Manifest finalised: {manifest_path}")
 print("\nRolling OOS done.")
 
 # ============================= Plot overall OOS avg RMSE curve ===============================

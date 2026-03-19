@@ -68,7 +68,7 @@ IDX_CHOICE = -1   # last row
 # simulation controls
 N_PATHS = 200
 DT = 1.0 / 12.0      # monthly step
-N_YEARS = 10
+N_YEARS = 1 # Originally 10
 N_STEPS = int(round(N_YEARS / DT))
 
 # how many paths to show in the plots
@@ -457,6 +457,18 @@ set_seed(SEED)
 print("\nLoading model...")
 model = load_trained_model(CHECKPOINT_PATH, latent_dim=LATENT_DIM, device=device)
 
+# Drift stability diagnostic
+W = model.K.lin.weight.detach().cpu()
+eigenvalues = torch.linalg.eigvals(W)
+print("\n================ DRIFT STABILITY ================")
+print("K weight matrix:\n", W.numpy())
+print("Eigenvalues:", eigenvalues)
+print("Real parts:", eigenvalues.real)
+if (eigenvalues.real > 0).any():
+    print("WARNING: K has positive eigenvalues — simulation will be unstable!")
+else:
+    print("OK: all eigenvalues have negative real parts (mean-reverting)")
+
 print("Loading initial curve...")
 S0, meta_row, X_tensor, meta = load_initial_curve(USE, IDX_CHOICE, device=device)
 
@@ -485,7 +497,7 @@ print("\nSaved plot to:", plot_path)
 
 print("\nDecoding simulated curves...")
 
-years_to_plot = [0, 1, 3, 5, 10]
+years_to_plot = [0, 0.25, 0.5, 0.75, 1]
 mean_curve_plot_path = os.path.join(
     OUT_DIR,
     f"mean_simulated_yield_curves_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png"
@@ -507,7 +519,7 @@ plot_sample_yield_curves_at_time(
     model=model,
     z_paths=z_paths,
     dt=DT,
-    year_to_plot=5,
+    year_to_plot=1,
     n_sample_paths=N_PLOT_YIELD_PATHS,
     out_path=sample_curve_plot_path
 )
