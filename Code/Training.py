@@ -38,7 +38,7 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # ==========================================================
 # Settings
 # ==========================================================
-LATENT_DIM = 1
+LATENT_DIM = 3
 EPOCHS = 100
 
 # IMPORTANT CHANGE:

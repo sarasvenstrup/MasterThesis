@@ -9,13 +9,14 @@ import torch.nn as nn
 
 class KMu(nn.Module):
     """
-    Stable linear drift:
-        mu(z) = -A (z - z_star)
+    Stable affine linear drift:
+        mu(z) = -A z + N
 
     where
         A = B B^T + eps I
 
-    so A is positive definite and the drift is mean-reverting by construction.
+    so the matrix multiplying z is stable by construction,
+    while N is left completely free.
 
     Parameters
     ----------
@@ -23,19 +24,15 @@ class KMu(nn.Module):
         Dimension of latent state z.
     eps : float
         Small positive constant to ensure strict stability.
-    learn_z_star : bool
-        If True, learn the long-run mean z_star.
-        If False, z_star is fixed at zero unless set externally.
-    init_z_star : torch.Tensor or None
-        Optional initial value for z_star, shape (latent_dim,).
+    bias : bool
+        If True, include a free affine term N.
     """
 
     def __init__(
         self,
         latent_dim: int,
         eps: float = 1e-3,
-        learn_z_star: bool = True,
-        init_z_star: torch.Tensor | None = None,
+        bias: bool = True,
     ):
         super().__init__()
         self.latent_dim = latent_dim
@@ -44,19 +41,11 @@ class KMu(nn.Module):
         # Free parameter used to build stable matrix A = B B^T + eps I
         self.B = nn.Parameter(torch.zeros(latent_dim, latent_dim))
 
-        if init_z_star is None:
-            init_z_star = torch.zeros(latent_dim, dtype=torch.float32)
+        # Free affine term N
+        if bias:
+            self.N = nn.Parameter(torch.zeros(latent_dim))
         else:
-            init_z_star = init_z_star.detach().clone().float()
-            if init_z_star.numel() != latent_dim:
-                raise ValueError(
-                    f"init_z_star must have {latent_dim} entries, got {init_z_star.numel()}"
-                )
-
-        if learn_z_star:
-            self.z_star = nn.Parameter(init_z_star)
-        else:
-            self.register_buffer("z_star", init_z_star)
+            self.register_parameter("N", None)
 
     def stable_matrix(self, device=None, dtype=None):
         if device is None:
@@ -74,8 +63,12 @@ class KMu(nn.Module):
 
         A = self.stable_matrix(device=z.device, dtype=z.dtype)
 
-        # mu(z) = -A (z - z_star)
-        mu = -(z - self.z_star) @ A.T
+        # mu(z) = -A z + N
+        mu = -z @ A.T
+
+        if self.N is not None:
+            mu = mu + self.N
+
         return mu
 
 class old_KMu(nn.Module):
