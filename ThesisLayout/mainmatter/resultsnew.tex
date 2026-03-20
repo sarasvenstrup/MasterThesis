@@ -186,7 +186,7 @@ EKF DNS 4f   & 9.35  & 7.75  & 9.25  & 9.49  & 3.26  & 8.14  & 7.13  & 4.96  & 7
 % Q4c
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
     \caption{Out-of-sample RMSE (bps) per currency for autoencoder
     dimensions $\ell=2,3,4$ and EKF DNS 3-factor benchmark.}
     \label{fig:Q4c}
@@ -208,11 +208,8 @@ EKF DNS 4f   & 9.35  & 7.75  & 9.25  & 9.49  & 3.26  & 8.14  & 7.13  & 4.96  & 7
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_factor_correlation_heatmap.png}
-    \caption{Pearson correlations between latent factors $z_k$ and yield curve components
-    (Level, Slope, Curvature) for $\ell \in \{2,3,4\}$, pooled across all in-sample
-    observations. Cell values range from $-1$ to $+1$; the diverging colour scale runs
-    from negative (dark) through white (zero) to positive (dark).}
-    \label{fig:q5b_heatmap}
+    \caption{Pearson correlation between each latent factor $z_k$ and the level, slope, and curvature of the swap curve, for $\ell \in \{2, 3, 4\}$. Blue indicates positive correlation, red indicates negative correlation. Correlations are computed on the in-sample training observations.}
+    \label{fig:q5b_factor_correlation_heatmap}
 \end{figure}
 
 
