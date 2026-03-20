@@ -43,9 +43,12 @@ torch.set_num_interop_threads(2)
 device = torch.device("cpu")   # inference only — CPU is fine
 
 # ── output directories ─────────────────────────────────────────────────────────
-FIGURES_OUT = os.path.join(REPO_ROOT, "Figures", "thesis_results")
-TABLES_OUT  = os.path.join(REPO_ROOT, "Figures", "thesis_results")
+THESIS_RESULTS = os.path.join(REPO_ROOT, "Figures", "thesis_results")
+FIGURES_OUT    = os.path.join(THESIS_RESULTS, "AutoencoderPerformance")
+TABLES_OUT     = os.path.join(THESIS_RESULTS, "AutoencoderPerformance")
+PARAMS_DIR     = os.path.join(THESIS_RESULTS, "parameters")
 os.makedirs(FIGURES_OUT, exist_ok=True)
+os.makedirs(PARAMS_DIR,  exist_ok=True)
 
 # ── constants ──────────────────────────────────────────────────────────────────
 CCY_ORDER   = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
@@ -98,6 +101,22 @@ CKPT_DIR      = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{LATENT_DIM}",
                               f"ep{SPLIT_EPOCHS}")
 MANIFEST_PATH = os.path.join(CKPT_DIR, "run_manifest.json")
 
+def _load_state_dict_compat(model, ckpt_path):
+    """Load state dict, remapping old KMu keys (K.lin.*) to new (K.V / K.N)."""
+    state = torch.load(ckpt_path, map_location=device)
+    if any(k.startswith("K.lin") for k in state):
+        warnings.warn(f"Remapping old KMu keys (K.lin → K.V/N) in {ckpt_path}")
+        new_state = {}
+        for k, v in state.items():
+            if k == "K.lin.weight":
+                new_state["K.V"] = v        # same shape (d, d)
+            elif k == "K.lin.bias":
+                new_state["K.N"] = v        # same shape (d,)
+            else:
+                new_state[k] = v
+        state = new_state
+    model.load_state_dict(state, strict=True)
+
 def load_ep5000_model(dim):
     """Load ep5000 training checkpoint from Figures/dim{N}/ep5000/.
     Falls back to OOSSplit best-seed checkpoint if ep5000 checkpoint not yet available."""
@@ -106,7 +125,7 @@ def load_ep5000_model(dim):
                              f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
     if os.path.exists(ckpt_path):
         m = FullModel(latent_dim=dim).to(device)
-        m.load_state_dict(torch.load(ckpt_path, map_location=device))
+        _load_state_dict_compat(m, ckpt_path)
         m.eval()
         print(f"  Loaded ep5000 checkpoint dim={dim}: {ckpt_path}")
         return m, "ep5000"
@@ -125,7 +144,7 @@ def load_ep5000_model(dim):
         warnings.warn(f"Fallback checkpoint not found: {ckpt_path}")
         return None, None
     m = FullModel(latent_dim=dim).to(device)
-    m.load_state_dict(torch.load(ckpt_path, map_location=device))
+    _load_state_dict_compat(m, ckpt_path)
     m.eval()
     print(f"  Loaded OOSSplit fallback dim={dim} seed={seed}: {ckpt_path}")
     return m, f"OOSSplit_seed{seed}"
@@ -161,6 +180,12 @@ mask_test  = finite_mask(X_test,  S_hat_test)
 
 def save_fig(fig, name):
     path = os.path.join(FIGURES_OUT, name + ".png")
+    fig.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {path}")
+
+def save_params_fig(fig, name):
+    path = os.path.join(PARAMS_DIR, name + ".png")
     fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved: {path}")
@@ -983,8 +1008,126 @@ print(worst[["as_of_date", "ccy", "rmse_bps"]].to_string())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# P — Parameter plots over time (one figure per latent dimension)
+#     Source: ep5000 checkpoint (fallback: OOSSplit best seed)
+#     Data:   X_train (2004-2020)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Parameter plots ──")
+
+# CCY colours (cycle through custom_palette)
+_ccy_colors = {ccy: custom_palette[i % len(custom_palette)]
+               for i, ccy in enumerate(CCY_ORDER)}
+
+def extract_parameters(model, X_data, meta_df, mask):
+    """
+    Run encoder on X_data[mask] and extract μ, σ, ρ, r̃ per observation.
+    Returns a DataFrame with columns: as_of_date, ccy, mu_1..d,
+    sigma_1..d, rho_12.., r_tilde.
+    """
+    model.eval()
+    with torch.no_grad():
+        X_m   = X_data[mask]
+        z     = model.encoder(X_m)                    # (N, d)
+        mu    = model.K(z)                            # (N, d)
+        sigmas, rhos = model.H(z)                     # (N,d), (N,n_corr)
+        r_til = model.R(z).squeeze(-1)                # (N,)
+
+    d      = model.latent_dim
+    n_corr = d * (d - 1) // 2
+
+    rec = meta_df.loc[mask.numpy()].copy().reset_index(drop=True)
+    rec["as_of_date"] = pd.to_datetime(rec["as_of_date"])
+
+    for k in range(d):
+        rec[f"mu_{k+1}"]    = mu[:, k].cpu().numpy()
+        rec[f"sigma_{k+1}"] = sigmas[:, k].cpu().numpy()
+
+    idx = 0
+    for i in range(d):
+        for j in range(i + 1, d):
+            rec[f"rho_{i+1}{j+1}"] = rhos[:, idx].cpu().numpy()
+            idx += 1
+
+    rec["r_tilde"] = r_til.cpu().numpy()
+    return rec
+
+
+def _param_label(name):
+    """Convert column name to LaTeX-style label."""
+    if name.startswith("mu_"):
+        k = name.split("_")[1]
+        return r"$\mu_{" + k + r"}$"
+    if name.startswith("sigma_"):
+        k = name.split("_")[1]
+        return r"$\sigma_{" + k + r"}$"
+    if name.startswith("rho_"):
+        ij = name.split("_")[1]
+        return r"$\rho_{" + ",".join(ij) + r"}$"
+    if name == "r_tilde":
+        return r"$\tilde{r}$"
+    return name
+
+
+ALL_DIMS_PARAM = [1, 2, 3, 4]
+
+for _dim in ALL_DIMS_PARAM:
+    print(f"\n── Parameters: ℓ={_dim} ──")
+    _m, _src = load_ep5000_model(_dim)
+    if _m is None:
+        print(f"  No model for ℓ={_dim}, skipping.")
+        continue
+
+    # create dim subfolder inside parameters/
+    _dim_dir = os.path.join(PARAMS_DIR, f"dim{_dim}")
+    os.makedirs(_dim_dir, exist_ok=True)
+
+    if _dim in dim_S_hat:
+        _mask = finite_mask(X_train, dim_S_hat[_dim])
+    else:
+        with torch.no_grad():
+            _S_tmp, _, _, _, _, _, _, _, _, _ = _m(X_train)
+        _mask = finite_mask(X_train, _S_tmp)
+
+    df_p = extract_parameters(_m, X_train, meta_train, _mask)
+
+    # Build list of parameter columns in display order
+    d = _dim
+    mu_cols    = [f"mu_{k+1}"    for k in range(d)]
+    sig_cols   = [f"sigma_{k+1}" for k in range(d)]
+    rho_cols   = [f"rho_{i+1}{j+1}"
+                  for i in range(d) for j in range(i + 1, d)]
+    param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
+
+    for col in param_cols:
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+
+        for ccy in CCY_ORDER:
+            sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
+            if sub.empty:
+                continue
+            ax.plot(sub["as_of_date"], sub[col],
+                    color=_ccy_colors[ccy], linewidth=0.8,
+                    alpha=0.75)
+
+        ax.set_title(_param_label(col), fontsize=11)
+        ax.tick_params(axis="x", rotation=30, labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        fig.tight_layout()
+
+        # save to parameters/dim{N}/{col}.png
+        out_path = os.path.join(_dim_dir, col + ".png")
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  Saved: {out_path}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # DONE
 # ─────────────────────────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
-print(f"All outputs saved to: {FIGURES_OUT}")
+print(f"Q outputs saved to:  {FIGURES_OUT}")
+print(f"Param plots saved to: {PARAMS_DIR}")
 print(f"{'='*60}")
