@@ -4,6 +4,13 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 
 
 
+% In sample evaluation (Q1 + Q6 + Q7)
+
+% Out of sample and robustness (Q2 + Q3 + Q4)
+
+% Latent factor interpretation (Q5)
+
+
 
 % ─────────────────────────────────────────────────────────────
 \section{Question 1}
@@ -123,27 +130,38 @@ IS: 2004--2020, OOS: 2021--2022.}
 \section{Question 3}
 % ─────────────────────────────────────────────────────────────
 
-% Q3a
+% ── Q3a ──────────────────────────────────────────────────────────────────────
 \begin{table}[H]
 \centering
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q3a_OOS_seeds_table_dim3.csv}\datqthreea
+% Pre-extract the Seed 4 diverged average from the CSV
+\pgfplotstablegetelem{4}{Average}\of\datqthreea
+\let\qthreeaSeedFourAvg\pgfplotsretval
+\resizebox{\textwidth}{!}{%
+{%
+\newcommand{\qval}[2]{\pgfplotstablegetelem{#1}{#2}\of\datqthreea\pgfplotsretval}%
 \begin{tabular}{lrrrrrrrrrrr}
 \toprule
  & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
 \midrule
-Seed 0 & 11.79 & 10.83 & 14.46 & 24.11 & 8.37 & 16.68 & 12.92 & 12.70 & 13.72 & 13.95 \\
-Seed 1 & 11.51 & 12.36 & 12.57 & 22.97 & 7.74 & 10.64 & 10.23 & 13.08 & 12.54 & 12.63 \\
-Seed 2 & 9.55  & 8.99  & 10.20 & 18.31 & 7.43 & 11.18 & 8.61  & 10.06 & 9.46  & 10.42 \\
-Seed 3 & 8.34  & 9.15  & 9.77  & 15.59 & 9.26 & 9.19  & 6.52  & 7.33  & 10.94 & \textbf{9.57}  \\
-Seed 4 & \multicolumn{10}{c}{\textit{diverged (1663 bps) --- excluded}} \\
-Seed 5 & 9.11  & 9.58  & 17.55 & 23.15 & 4.95 & 13.80 & 12.44 & 22.67 & 13.61 & 14.10 \\
-Seed 6 & 14.20 & 9.33  & 23.60 & 28.78 & 4.86 & 19.26 & 17.98 & 26.12 & 14.59 & 17.64 \\
+Seed 0 & \qval{0}{AUD} & \qval{0}{CAD} & \qval{0}{DKK} & \qval{0}{EUR} & \qval{0}{JPY} & \qval{0}{NOK} & \qval{0}{SEK} & \qval{0}{GBP} & \qval{0}{USD} & \qval{0}{Average} \\
+Seed 1 & \qval{1}{AUD} & \qval{1}{CAD} & \qval{1}{DKK} & \qval{1}{EUR} & \qval{1}{JPY} & \qval{1}{NOK} & \qval{1}{SEK} & \qval{1}{GBP} & \qval{1}{USD} & \qval{1}{Average} \\
+Seed 2 & \qval{2}{AUD} & \qval{2}{CAD} & \qval{2}{DKK} & \qval{2}{EUR} & \qval{2}{JPY} & \qval{2}{NOK} & \qval{2}{SEK} & \qval{2}{GBP} & \qval{2}{USD} & \qval{2}{Average} \\
+Seed 3 & \qval{3}{AUD} & \qval{3}{CAD} & \qval{3}{DKK} & \qval{3}{EUR} & \qval{3}{JPY} & \qval{3}{NOK} & \qval{3}{SEK} & \qval{3}{GBP} & \qval{3}{USD} & \qval{3}{Average} \\
+Seed 4 & \multicolumn{10}{c}{\textit{diverged (\qthreeaSeedFourAvg\ bps) --- excluded}} \\
+Seed 5 & \qval{5}{AUD} & \qval{5}{CAD} & \qval{5}{DKK} & \qval{5}{EUR} & \qval{5}{JPY} & \qval{5}{NOK} & \qval{5}{SEK} & \qval{5}{GBP} & \qval{5}{USD} & \qval{5}{Average} \\
+Seed 6 & \qval{6}{AUD} & \qval{6}{CAD} & \qval{6}{DKK} & \qval{6}{EUR} & \qval{6}{JPY} & \qval{6}{NOK} & \qval{6}{SEK} & \qval{6}{GBP} & \qval{6}{USD} & \qval{6}{Average} \\
 Seed 7 & \multicolumn{10}{c}{\textit{diverged (NaN) --- excluded}} \\
-Seed 8 & 9.23  & 10.64 & 11.48 & 22.68 & 8.68 & 11.79 & 9.82  & 9.32  & 12.37 & 11.78 \\
-Seed 9 & 11.30 & 9.00  & 12.06 & 21.37 & 8.30 & 11.84 & 10.07 & 10.91 & 10.59 & 11.72 \\
+Seed 8 & \qval{8}{AUD} & \qval{8}{CAD} & \qval{8}{DKK} & \qval{8}{EUR} & \qval{8}{JPY} & \qval{8}{NOK} & \qval{8}{SEK} & \qval{8}{GBP} & \qval{8}{USD} & \qval{8}{Average} \\
+Seed 9 & \qval{9}{AUD} & \qval{9}{CAD} & \qval{9}{DKK} & \qval{9}{EUR} & \qval{9}{JPY} & \qval{9}{NOK} & \qval{9}{SEK} & \qval{9}{GBP} & \qval{9}{USD} & \qval{9}{Average} \\
 \midrule
-\textbf{Mean (valid)} & & & & & & & & & & \textbf{12.72} \\
+\textbf{Mean (valid)} & & & & & & & & & & \textbf{\qval{10}{Average}} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}%
+}%
+}
 \caption{Out-of-sample RMSE (bps) per random seed for $\ell=3$.
 Seeds 4 and 7 diverged and are excluded from the mean.}
 \label{tab:Q3a}
@@ -151,10 +169,11 @@ Seeds 4 and 7 diverged and are excluded from the mean.}
 
 
 
+
 % Q3b
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
     \caption{Rolling out-of-sample RMSE over time for $\ell=3$,
     showing variation across rolling windows.}
     \label{fig:Q3b}
