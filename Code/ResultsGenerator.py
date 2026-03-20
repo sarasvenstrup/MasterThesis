@@ -574,7 +574,7 @@ if os.path.exists(roll_path_d3):
         if df_roll["test_start"].min() <= d <= df_roll["test_start"].max():
             ax.axvline(d, color="0.5", linewidth=1.0, linestyle="--")
             ax.text(d, ax.get_ylim()[1] if ax.get_ylim()[1] > 1 else 1,
-                    label, fontsize=21, ha="center", va="bottom", color="0.4",
+                    label, fontsize=10, ha="center", va="bottom", color="0.4",
                     rotation=0)
 
     ax.set_ylabel("OOS RMSE (bps)")
@@ -753,7 +753,7 @@ for dim_i, ax in enumerate(axes):
 # add event text on top panel only
 for ev_label, ev_date in EVENTS.items():
     axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
-                 ev_label, fontsize=19.5, ha="center", va="bottom", color="0.4")
+                 ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
 fig.tight_layout()
 save_fig(fig, "Q5a_latent_factors_over_time")
 
@@ -948,7 +948,7 @@ for ev_label, ev_date in EVENTS.items():
         axi.axvline(pd.Timestamp(ev_date), color="0.55",
                     linewidth=1.0, linestyle="--")
     axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
-                 ev_label, fontsize=21, ha="center", va="bottom", color="0.4")
+                 ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
 
 fig.autofmt_xdate()
 fig.tight_layout()
