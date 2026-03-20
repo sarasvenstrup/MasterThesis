@@ -150,6 +150,7 @@ Seeds 4 and 7 diverged and are excluded from the mean.}
 \end{table}
 
 
+
 % Q3b
 \begin{figure}[H]
     \centering
@@ -164,23 +165,43 @@ Seeds 4 and 7 diverged and are excluded from the mean.}
 % ─────────────────────────────────────────────────────────────
 
 % Q4a
+
+% ── Q4a ──────────────────────────────────────────────────────────────────────
 \begin{table}[H]
 \centering
-\caption{Out-of-sample RMSE (bps) per currency for the autoencoder
-($\ell=3$) and EKF DNS benchmarks (2021--2022 test period).}
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q4a_AE_vs_Kalman_OOS.csv}\datqfoura
+\resizebox{\textwidth}{!}{%
+\pgfplotstabletypeset[
+  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
+  columns/index/.style={column name={Model}, string type, column type=l},
+  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/Average/.style={column name={\textbf{Avg}}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every row no 2/.style={before row=\midrule},
+  every row no 4/.style={before row=\midrule},
+  every row no 6/.style={before row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datqfoura}}
+}
+\caption{Out-of-sample RMSE (bps) per currency for the autoencoder and EKF DNS benchmarks,
+grouped by number of latent factors $\ell$ (2021--2022 test period).}
 \label{tab:Q4a}
-\begin{tabular}{lrrrrrrrrrrr}
-\toprule
-Model & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
-\midrule
-AE $\ell=3$  & 10.95 & 10.73 & 12.41 & 21.80 & 7.85  & 12.83 & 10.59 & 11.95 & 11.91 & \textbf{12.33} \\
-EKF DNS 1f   & 59.00 & 49.35 & 33.75 & 36.54 & 28.43 & 33.73 & 37.91 & 32.68 & 51.48 & \textbf{40.32} \\
-EKF DNS 2f   & 18.31 & 13.17 & 15.84 & 15.58 & 7.02  & 15.02 & 13.70 & 10.00 & 12.21 & \textbf{13.43} \\
-EKF DNS 3f   & 16.00 & 10.12 & 12.40 & 11.20 & 4.88  & 9.99  & 9.70  & 6.56  & 9.50  & \textbf{10.04} \\
-EKF DNS 4f   & 9.35  & 7.75  & 9.25  & 9.49  & 3.26  & 8.14  & 7.13  & 4.96  & 7.11  & \textbf{7.38}  \\
-\bottomrule
-\end{tabular}
 \end{table}
+
+
+
+
+
+
 
 
 % Q4c
