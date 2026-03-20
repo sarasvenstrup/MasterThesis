@@ -10,26 +10,13 @@ The encoder maps observed swap rates into a low-dimensional latent state represe
 
 The remainder of the chapter describes the individual components of the framework in detail, beginning with the linear encoder.
 
-%\section{Linear Encoding}
-
-%We consider observed par swap rates at time $t$ on the discrete maturity grid \(\{m_1,m_2,...,m_M\}\) with $0<m_1<m_2<...<m_M$, assembled into the input vector
-%\[
-%\mathbf{S}_t=(S_{m_1}(t),\dots,S_{m_M}(t))^\top \in %\mathbb{R}^M.
-%\]
-%Following \citet{MatinWanPoulsen2025}, who consider a latent factor representation of dimension $l=2$, we formulate the model using a general latent dimension $l$ to allow for later extension. 
-%The encoder performs a linear transformation of the observed swap rates,
-%\[
-%z_t = A_1 \mathbf{S}_t,
-%\]
-%where $A_1 \in \mathbb{R}^{l \times M}$ and $z_t=(z_1(t),...,z_l(t))^\top \in \mathbb{R}^l$.
-
 \section{Linear Encoder}
 
 We consider observed par swap rates at time $t$ on the discrete maturity grid
 \[
-\{m_1,m_2,\dots,m_M\}, \qquad 0<m_1<m_2<\dots<m_M,
+\{\tau_1,\tau_2,\dots,\tau_M\}, \qquad 0<\tau_1<\tau_2<\dots<\tau_M,
 \]
-where $S_t^{(i)}:=S(t,m_i)$ denotes the par swap rate for tenor $m_i$. These are collected in the input vector
+where $S_t^{(i)}:=S(t,\tau_i)$ denotes the par swap rate for tenor $\tau_i$. These are collected in the input vector
 \[
 \mathbf{S}_t=(S_1(t),\dots,S_M(t))^\top \in \mathbb{R}^M.
 \]
@@ -37,13 +24,18 @@ The encoder maps the observed swap curve into a low-dimensional latent state thr
 \[
 z_t = A_1 \mathbf{S}_t,
 \]
-where $A_1 \in \mathbb{R}^{l \times M}$ and
+where $A_1 \in \mathbb{R}^{\ell \times M}$ and
 \[
-z_t=(z_1(t),\dots,z_l(t))^\top \in \mathbb{R}^l.
+z_t=(z_1(t),\dots,z_\ell(t))^\top \in \mathbb{R}^\ell.
 \]
-Thus, the encoder compresses the observed swap curve into an $l$-dimensional latent representation that serves as the input to the decoder.
+Thus, the encoder compresses the observed swap curve into an $\ell$-dimensional latent representation that serves as the input to the decoder.
+
+
+
 
 \section{Decoder}
+
+With the latent state $z_t$ in hand, the decoder is constructed to map it directly to zero-coupon bond prices $P(z_t,\tau)$. As shown in \textcolor{red}{(Section X)}, the absence of arbitrage implies that bond prices depend on calendar time only through the latent state, so that $P(t,T)=P(z_t,\tau)$ with $\tau=T-t$. 
 
 \subsection{Swap Rate Reconstruction from Bond Prices}
 
@@ -65,12 +57,12 @@ where the sum runs over all maturities on the specified grid less than or equal 
 %--------------------------------------------------------
 \subsection{The Decoder Network}
 %--------------------------------------------------------
-Having specified the input and output of the model, we now describe the internal structure of the decoder in detail. Figure~\ref{fig:rolf_architecture} illustrates the overall mapping from latent factors to bond prices, however the decoder consists of additional components not explicitly shown in this high-level representation. As illustrated in the more detailed Figure~\ref{fig:rolf_architecture_details}, latent factors branch into four neural networks. Three of these, $\mathcal{K}(z_t),\mathcal{H}(z_t)$ and $\mathcal{R}(z_t)$, are used for parameter modeling and are discussed in section \textcolor{red}{(REFERENCE)}. Here we focus on $\mathcal{G}(z_t,\tau)$, which together with the affine-inspired representation described in the following section produces ZCB prices.
+Having specified the input and output of the model, we now describe the internal structure of the decoder in detail. Figure~\ref{fig:rolf_architecture} illustrates the overall mapping from latent factors to bond prices, however the decoder consists of additional components not explicitly shown in this high-level representation. As illustrated in the more detailed Figure~\ref{fig:rolf_architecture_details}, latent factors branch into four neural networks. Three of these, $\mathcal{K},\mathcal{H}$ and $\mathcal{R}$, are used for parameter modeling and are later discussed in section \textcolor{red}{(REFERENCE)}. Here we focus on $\mathcal{G}$, which together with the affine-inspired representation described in the following section produces ZCB prices.
 
-The network $\mathcal{G}$ takes as input the augmented vector $(z_t^\top,\tau)^\top\in\mathbb{R}^{l+1}$ and consists of one hidden layer of dimension 10, with hidden units $h_1,...,h_{10}$ as illustrated in Figure \ref{fig:rolf_architecture_details}. The hidden layer dimension was determined empirically in \cite{MatinWanPoulsen2025}. The network computed
+The network $\mathcal{G}$ takes as input the augmented vector $(z_t^\top,\tau)^\top\in\mathbb{R}^{\ell+1}$ and consists of one hidden layer of dimension 10, with hidden units $h_1,...,h_{10}$ as illustrated in Figure \ref{fig:rolf_architecture_details}, where the hidden layer dimension was determined empirically in \cite{MatinWanPoulsen2025}. The network computed
 $$\mathcal{G}(z_t,\tau)=\psi\bigg(W_2\underbrace{\psi\left(W_1
 (z_t^\top,\tau)^\top+b_1\right)}_{=h}+b_2\bigg)$$
-where $W_1\in\mathbb{R}^{10\times(l+1)},b_1\in\mathbb{R}^{10},W_2\in\mathbb{R}^{1\times 10}$ and $b_2\in\mathbb{R}$ are learnable parameters, and $\psi$ denotes the centered soft-step activation function
+where $W_1\in\mathbb{R}^{10\times(\ell+1)},b_1\in\mathbb{R}^{10},W_2\in\mathbb{R}^{1\times 10}$ and $b_2\in\mathbb{R}$ are learnable parameters, and $\psi$ denotes the centered soft-step activation function
 \begin{equation}
     \psi(x)=\frac{1}{1+e^{-x}}-\frac{1}{2}.
     \label{eq:activation}
@@ -89,10 +81,10 @@ P(z_t,\tau)
 \exp\!\Big(A_{z_t}(\tau)-B_{z_t}(\tau)\,\mathcal{G}(z_t,\tau)\Big),
 \label{affineinspiredzcbprices}
 \end{equation}
-where $A_{z_t}(\tau),B_{z_t}(\tau)\in\mathbb{R}$ are scalar functions of maturity $\tau$ that depend on $z_t$ through the model parameters. The term \textit{affine-inspired} reflects the structural analogy to classical affine term structure models, in which bond prices are exponential-affine in the state vector \textcolor{red}{( See section X)}. Here, the learned factor $\mathcal{G}(z_t,\tau)$ captures nonlinear dynamics while retaining the  exponential-affine form.
+where $A_{z_t}(\tau),B_{z_t}(\tau)\in\mathbb{R}$ are scalar functions of maturity $\tau$ that depend on $z_t$ through the model parameters. The term \textit{affine-inspired} reflects the structural analogy to classical affine term structure models, in which bond prices are exponential-affine in the state vector (see Section \ref{sec:Affine TSM Theory}). Here, the learned factor $\mathcal{G}(z_t,\tau)$ captures nonlinear dynamics while retaining the  exponential-affine form.
 
 
-For each latent state $z_t$, the functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ are obtained by solving a coupled ODE system derived from the no-arbitrage condition, in which $\mathcal{G}(z_t,\tau)$ enters as a maturity dependent \textcolor{red}{factor loading}. These are state-specific solutions, meanint that a new ODE system must be solved for every newly encoded latent state, thereby enforcing no-arbitrage consistency for each newly encoded latent state.
+For each latent state $z_t$, the functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ are obtained by solving a coupled ODE system derived from the no-arbitrage condition. These are state-specific solutions, meaning that a new ODE system must be solved for every newly encoded latent state, thereby enforcing no-arbitrage consistency for each newly encoded latent state.
 
 The derivation of this ODE system, which ensures that the resulting zero-coupon bond prices satisfy the risk-neutral no-arbitrage condition, is the subject of the following section.
 
@@ -110,7 +102,7 @@ We begin by specifying the short rate. Recall from \eqref{shortrate} that the sh
 \end{equation}
 Taking the limit as $\tau \to 0$ and recalling that 
 $r(t)=\lim_{\tau\to0}f(t,\tau)$
-shows that the short rate is determined entirely by the current latent state $z_t$. We therefore define the short-rate function $\tilde r:\mathbb{R}^l\to\mathbb{R}$ such that
+shows that the short rate is determined entirely by the current latent state $z_t$. We therefore define the short-rate function $\tilde r:\mathbb{R}^\ell\to\mathbb{R}$ such that
 \[
 r(t)=\tilde r(z_t).
 \]
@@ -137,7 +129,7 @@ We therefore model the latent state as a Markov process under the risk-neutral m
     r(t)=\tilde{r}(z_t)
     \label{shortratedynamic}
 \end{equation}
-where $\mu(z_t)\in\mathbb{R}^l$ is the drift vector, $\sigma(z_t)\in\mathbb{R}^{l\times l}$ is the volatility matrix, and $W_t^\mathbb{Q}$ is an $l$-dimensional standard Brownian motion under the risk-neutral measure $\mathbb{Q}$.
+where $\mu(z_t)\in\mathbb{R}^\ell$ is the drift vector, $\sigma(z_t)\in\mathbb{R}^{\ell\times \ell}$ is the volatility matrix, and $W_t^\mathbb{Q}$ is an $\ell$-dimensional standard Brownian motion under the risk-neutral measure $\mathbb{Q}$.
 
 
  
@@ -280,88 +272,99 @@ where $\odot$ denotes elementwise multiplication. This system is solved numerica
 
 \input{ThesisLayout/figures/Fig_RolfsMethodVisual2}
 
-
-\subsection{Neural Parametrization of the Dynamics}
-
-The coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system depend on the drift $\mu(z_t)$, the volatility $\sigma(z_t)$, and the short rate $\tilde{r}(z_t)$. Following \citet{MatinWanPoulsen2025}, and as illustrated in Figure \ref{fig:rolf_architecture_details}, each of these are parametrized by a dedicated neural network learned jointly with $\mathcal{G}$.
+\textcolor{red}{Find uaf hvor denne figur skal placeres!}
 
 
-% Mangler at rette herfra og ned i dette afsnit Neural Parametrization of the dynamics.
+\subsection{Neural Modelling of the Dynamics}
 
+The coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system depend on the drift $\mu(z_t)$, the volatility $\sigma(z_t)$, and the short rate $\tilde{r}(z_t)$. Following \citet{MatinWanPoulsen2025}, and as illustrated in Figure \ref{fig:rolf_architecture_details}, each of these is modeled by a dedicated neural network learned jointly with $\mathcal{G}$. The drift network $\mathcal{K}$ includes a bias term, while $\mathcal{H}$ and $\mathcal{R}$ have no bias terms, and all three networks use the centered soft-step activation function $\psi$ from \eqref{eq:activation}.
 
 
 \paragraph{Drift network}
 
-The drift of the latent factors is modeled as
+The drift of the latent factors is modeled by a a neural network $\mathcal{K}:\mathbb{R}^\ell\rightarrow\mathbb{R}^\ell$, which performs the affine transformation
 \[
-\mu(z_t)=\mathcal{K}(z_t),
-\qquad
-\mathcal{K}:\mathbb{R}^l \to \mathbb{R}^l.
+\mathcal{K} :
+\begin{pmatrix}
+z_1(t) \\
+\vdots \\
+z_\ell(t)
+\end{pmatrix}
+\;\mapsto\;
+\begin{pmatrix}
+\mu_1(z_t) \\
+\vdots \\
+\mu_\ell(z_t)
+\end{pmatrix}
+=
+\mathbf{M}
+\begin{pmatrix}
+z_1(t) \\
+\vdots \\
+z_\ell(t)
+\end{pmatrix}
++
+\mathbf{N}
 \]
-In the present specification, $\mathcal{K}$ is taken to be an affine transformation,
-\[
-\mu(z_t)=\mathbf{M}z_t+\mathbf{N},
-\]
-where $\mathbf{M}\in\mathbb{R}^{l\times l}$ and $\mathbf{N}\in\mathbb{R}^l$.
+where $\mathbf{M}\in\mathbb{R}^{\ell\times \ell}$ and $\mathbf{N}\in\mathbb{R}^\ell$. This affine structure allows the drift to capture mean-reverting dynamics in the latent factors.
+
 
 \paragraph{Volatility network}
-
-The volatility matrix is obtained from a neural mapping
+The volatility matrix is modeled by a neural network 
+$\mathcal{H}:\mathbb{R}^{\ell}\rightarrow\mathbb{R}^{\ell+\ell(\ell-1)/2}$, with one hidden layer of dimension 4, which performs the mapping
 \[
-\mathcal{H}:\mathbb{R}^l \to \mathbb{R}^{l\times l}.
-\]
-The network outputs logarithms of the diagonal volatility coefficients and inverse hyperbolic tangents of correlation parameters. This parametrization ensures strictly positive volatilities and correlations lying in $(-1,1)$. The covariance matrix is then constructed as
-\[
-\Sigma(z_t)=\sigma(z_t)\sigma(z_t)^\top.
+\mathcal{H} :
+\begin{pmatrix}
+z_1(t) \\
+\vdots \\
+z_\ell(t)
+\end{pmatrix}
+\;\mapsto\;
+\begin{pmatrix}
+\log(\sigma_1) \\
+\vdots \\
+\log(\sigma_\ell) \\
+\operatorname{atanh}(\rho_{12}) \\
+\vdots \\
+\operatorname{atanh}(\rho_{(\ell-1)\ell})
+\end{pmatrix}.
 \]
 
-% ---- FRA TRÆNING MEN SYNES DET SKAL VÆRE HER 
+\textcolor{red}{MANGLER FORKLARING AF ENDLIG $\sigma$!}
+%The network outputs logarithms of the volatility coefficients and inverse hyperbolic tangents of the correlation parameters. This parameterization ensures strictly positive volatilities and correlations in $(-1,1)$. 
+%The full volatility matrix $\sigma(z_t)\in\mathbb{R}^{\ell\times\ell}$ ia then assembled through a lower-triangular Cholesky factorization, ensuring that the implied covariance matrix \[\sigma(z_t)=L(z_t)L(z_t)^\top,\]
+%is positive semidefinite for every state $z_t$, where $L(z_t)$ denotes a lower–triangular matrix whose entries depend on $\sigma_i(z_t)$ and $\rho_{ij}(z_t)$.  The detailed construction of the Cholesky factor $L(z_t)$ is provided in Appendix~\ref{sec:cholesky_volatility} for $\ell=2,3,4$.
 
-To ensure a valid covariance structure,
-we parametrize volatilities and correlations
-using transformations that enforce structural constraints.
 
-Raw volatility outputs are exponentiated to ensure positivity,
-\[
-\sigma_i(z_t) = \exp(\hat\sigma_i(z_t)),
-\]
-while raw correlation parameters are mapped through the
-hyperbolic tangent,
-\[
-\rho_{ij}(z_t) = \tanh(\hat\rho_{ij}(z_t)),
-\]
-ensuring $\rho_{ij} \in (-1,1)$.
 
-In the two-factor specification, the volatility matrix is constructed
-directly from these components.
-In the three-factor specification, we construct the volatility matrix
-via a lower-triangular Cholesky factor, ensuring that the resulting
-covariance matrix $\Sigma(z_t)$ remains positive semidefinite
-for all $z_t$.
+
 
 \paragraph{Short-rate network}
 
-The short rate is modeled as a scalar function of the latent state,
+The short rate is modeled as a neural network $\mathcal{R}:\mathbb{R}^\ell \to \mathbb{R}$ with dimensions $(\ell,4,1)$ that performs the mapping
 \[
-\tilde r(z_t)=\mathcal{R}(z_t),
-\qquad
-\mathcal{R}:\mathbb{R}^l \to \mathbb{R}.
+\mathcal{R} :
+\begin{pmatrix}
+z_1(t) \\
+\vdots \\
+z_\ell(t)
+\end{pmatrix}
+\;\mapsto\;
+\tilde{r}
 \]
 
-In all networks, the activation function in the hidden layer is the centered soft-step function
-\[
-\psi(x)=\frac{1}{1+e^{-x}}-\frac{1}{2}.
-\]
 
-\textcolor{red}{AND THE ONLY NN THAT HAS BIAS IS THE DECODER G.}
+
+
+
+
 
 \subsection{Full Decoding Pipeline}
 
 
 To summarize, the decoder operates by firsy mapping the latent state $z_t$, through the four neural networks $\mathcal{G},\mathcal{K},\mathcal{H}$ and $\mathcal{R}$. The outpus determine the coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system, which is solved numerically for each realized $z_t$ to yield $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$. Zero-coupon bond prices are then obtained via \eqref{affineinspiredzcbprices} and converted into model-implied swap rates using \eqref{estimatedswaprates}, with arbitrage-freeness holding by construction throughout.
 
-%Maybe delete this part:
-With the model architecture fully specified, the remaining chapters address the data, numerical implementation, estimation strategy and empirical results.
+
 
 
 

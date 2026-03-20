@@ -222,14 +222,13 @@ Visual inspection confirms the quantitative findings.
 The autoencoder captures the overall level and slope of the swap curves well, but the higher-factor specifications are materially better at reproducing curvature and long-end deviations. 
 The benchmark remains slightly tighter on several representative out-of-sample curves, especially in cases with unusual shape or strong local curvature.
 
-
 %========================================================
 \section{Arbitrage diagnostics}
 %========================================================
 
 Reconstruction accuracy alone is not sufficient for evaluating the model, since the main contribution of the proposed framework is that the decoder is designed to be arbitrage-free by construction. 
-To verify this numerically, we evaluate the implied bond Sharpe ratios. 
-Under exact no-arbitrage, these should be zero up to numerical approximation error.
+To verify this numerically, we evaluate the model-implied approximate bond Sharpe ratios across maturities. 
+Under exact no-arbitrage, these quantities should be zero up to numerical approximation error.
 
 This diagnostic is closely related to the checks used by Andreasen, who evaluates whether the decoded curves are dynamically close to arbitrage-free through bond Sharpe ratios. 
 In that framework, the curves are only approximately arbitrage-free, whereas in the present model the no-arbitrage condition is imposed directly through the ODE-based decoder. 
@@ -238,7 +237,7 @@ This difference is central to the interpretation of the empirical results.
 \begin{figure}[H]
     \centering
     % \includegraphics[width=0.8\textwidth]{Figures/...}
-    \caption{Implied Sharpe ratios across maturities for a representative date and all currencies. Values remain close to zero across the maturity spectrum, supporting the numerical arbitrage-free property of the decoder.}
+    \caption{Approximate model-implied bond Sharpe ratios across maturities for a representative date and all currencies. Values remain close to zero across the maturity spectrum, supporting the numerical arbitrage-free property of the decoder.}
     \label{fig:sharperatioplot}
 \end{figure}
 
@@ -246,10 +245,7 @@ The Sharpe-ratio calculations confirm that the reconstructed bond curves are num
 Any remaining deviations from zero are attributable to numerical discretization and solver tolerance rather than to an economically meaningful arbitrage signal. 
 This finding is important because it shows that the gain in theoretical consistency is achieved without rendering the reconstruction error unacceptably large.
 
-A useful extension would be to summarize the Sharpe-ratio diagnostics over time and across currencies, for example by reporting mean absolute Sharpe ratios by tenor. 
-Such a table would complement Figure~\ref{fig:sharperatioplot} by documenting whether the near-zero result is stable across the full sample rather than only on a representative date.
-
-
+To assess whether this result is stable across the sample rather than specific to a single date, it is also useful to summarize the Sharpe-ratio diagnostics over time and across currencies, for example by reporting mean absolute Sharpe ratios by tenor.
 
 %========================================================
 \section{Latent factors and parameter dynamics}
@@ -290,14 +286,14 @@ The results therefore indicate that the hard no-arbitrage restriction is not exc
 
 
 
-\subsection{Old notes}
+%\subsection{Old notes}
 
 
-Table~\ref{tab:train_rmse} shows that the two-factor model outperforms the three-factor specification in terms of average RMSE. Overall error levels are modest, indicating that a low-dimensional latent representation captures most of the cross-sectional variation in swap curves.
-Interestingly, introducing a third latent factor does not systematically improveme reconstruction accuracy. The marginal benefit of the extra dimension appears limited, suggesting that the first two latent factors already capture the primary level and slope movements of the yield curve. 
+%Table~\ref{tab:train_rmse} shows that the two-factor model outperforms the three-factor specification in terms of average RMSE. Overall error levels are modest, indicating that a low-dimensional latent representation captures most of the cross-sectional variation in swap curves.
+%Interestingly, introducing a third latent factor does not systematically improveme reconstruction accuracy. The marginal benefit of the extra dimension appears limited, suggesting that the first two latent factors already capture the primary level and slope movements of the yield curve. 
 
 
-\textcolor{red}{Conclusion: We have learned that when we extend the model, it is important to let the model run for more epochs relative to when it was only two dimensions to see good results. This is due to the more weights and parameters that the model must take into account.}
+%\textcolor{red}{Conclusion: We have learned that when we extend the model, it is important to let the model run for more epochs relative to when it was only two dimensions to see good results. This is due to the more weights and parameters that the model must take into account.}
 
 
 %This finding is consistent with the well-known empirical %evidence that yield curve dynamics are largely driven by a %small number of factors.
@@ -306,24 +302,24 @@ Interestingly, introducing a third latent factor does not systematically improve
 %Across currencies, reconstruction errors are relatively stable and typically lie in the low-to-mid teens. Some dispersion remains, with certain currencies exhibiting slightly higher errors, which may reflect differences in curvature dynamics or prolonged periods of atypical interest rate regimes. Nevertheless, the variation is modest and does not materially affect the overall conclusions.
 
 
-Importantly, the decoder enforces no-arbitrage as a hard constraint through the ODE system for zero coupon bond prices. While this reduces flexibility relative to unconstrained autoencoders, the empirical results indicate that the associated loss in cross-sectional fit is modest. The model therefore achieves competitive reconstruction accuracy while ensuring internally consistent bond price dynamics by construction.
+%Importantly, the decoder enforces no-arbitrage as a hard constraint through the ODE system for zero coupon bond prices. While this reduces flexibility relative to unconstrained autoencoders, the empirical results indicate that the associated loss in cross-sectional fit is modest. The model therefore achieves competitive reconstruction accuracy while ensuring internally consistent bond price dynamics by construction.
 
 
-\textcolor{red}{INSERT GRAPH OF SHARPE RATIOS - BOTH IN SAMPLE AND OOS}
+%\textcolor{red}{INSERT GRAPH OF SHARPE RATIOS - BOTH IN SAMPLE AND OOS}
 
-However, reconstruction accuracy alone is not sufficient to evalute the model. We must also verify that it is arbitrage-free, which we do by calculating the Sharpe ratio (\textcolor{red}{create a section in the theory regarding this}) as defined in \textcolor{insert reference to theory section}. The result for a representative date is visualized in Figure~\ref{fig:sharperatioplot}.
-
-
-\textcolor{red}{So maybe we can create a table with the average sharpe ratio for each tenor for each currency across time, and then visuazzlie just one date like we already have.}
-
-After verifying these things we look at the reconstructed swaprates vs. the actual:
+%However, reconstruction accuracy alone is not sufficient to evalute the model. We must also verify that it is arbitrage-free, which we do by calculating the Sharpe ratio (\textcolor{red}{create a section in the theory regarding this}) as defined in \textcolor{insert reference to theory section}. The result for a representative date is visualized in Figure~\ref{fig:sharperatioplot}.
 
 
+%\textcolor{red}{So maybe we can create a table with the average sharpe ratio for each tenor for each currency across time, and then visuazzlie just one date like we already have.}
 
+%After verifying these things we look at the reconstructed swaprates vs. the actual:
 
 
 
-\textcolor{red}{Insert LATENT FACTORS OVER TIME}
+
+
+
+%\textcolor{red}{Insert LATENT FACTORS OVER TIME}
 
 
 

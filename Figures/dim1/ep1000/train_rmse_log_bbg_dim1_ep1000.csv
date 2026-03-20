@@ -1,3 +1,0 @@
-epoch,time_total_sec,time_interval_sec,train_mse,train_rmse,avg_rmse_bps,n_good,n_bad,rmse_bps_AUD,rmse_bps_CAD,rmse_bps_DKK,rmse_bps_EUR,rmse_bps_JPY,rmse_bps_NOK,rmse_bps_SEK,rmse_bps_GBP,rmse_bps_USD
-0,0.7870564999902854,0.7870564999902854,0.0004744241760375026,0.021781280403996055,,0,1470,,,,,,,,,
-1,1.1667324169975473,0.3796759170072619,0.0,0.0,,0,1470,,,,,,,,,
