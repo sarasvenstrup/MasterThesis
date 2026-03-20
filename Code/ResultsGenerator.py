@@ -62,10 +62,10 @@ ALL_DIMS_PARAM   = [1, 2, 3, 4]
 
 # Key market event dates for annotation
 EVENTS = {
-    "GFC\n(Sep 2008)":     "2008-09-15",
-    "ECB QE\n(Jan 2015)":  "2015-01-22",
-    "COVID\n(Mar 2020)":   "2020-03-01",
-    "Rate hikes\n(2022)":  "2022-03-01",
+    "GFC\n(15 Sep 2008)":      "2008-09-15",
+    "ECB QE\n(22 Jan 2015)":   "2015-01-22",
+    "COVID\n(1 Mar 2020)":     "2020-03-01",
+    "Rate hikes\n(1 Mar 2022)": "2022-03-01",
 }
 
 # ── apply paper theme ──────────────────────────────────────────────────────────
@@ -502,10 +502,7 @@ if len(roll_avgs) >= 2:
         ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.15,
                 label, ha="center", va="bottom", fontsize=10, fontweight="bold")
 
-    ax.set_xlabel(r"Latent Dimension $\ell$")
     ax.set_ylabel("Average Rolling OOS RMSE (bps)")
-    ax.set_title(r"Model Selection: OOS RMSE vs Latent Dimension $\ell$"
-                 "\n(Rolling window: 3Y train, 3M test, 6M step)")
     ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
     fig.tight_layout()
     save_fig(fig, "Q2b_rolling_oos_vs_dim")
@@ -580,11 +577,7 @@ if os.path.exists(roll_path_d3):
                     label, fontsize=7, ha="center", va="bottom", color="0.4",
                     rotation=0)
 
-    ax.set_xlabel("Test window start date")
     ax.set_ylabel("OOS RMSE (bps)")
-    ax.set_title(r"Rolling OOS RMSE over Time — $\ell=" + str(LATENT_DIM) + r"$"
-                 "\n(3Y train / 3M test / 6M step)")
-    ax.legend(ncol=5, fontsize=7, frameon=False, loc="upper left")
     fig.autofmt_xdate()
     fig.tight_layout()
     save_fig(fig, "Q3b_rolling_rmse_over_time")
@@ -641,36 +634,26 @@ if oos_ae3 is not None and oos_k3 is not None:
 
     fig, ax = plt.subplots(figsize=(11, 5))
 
-    bars_ae = ax.bar(x - width,
+    bars_ae = ax.bar(x - width / 2,
                      [oos_ae3.get(c, np.nan) for c in labels],
-                     width, label=r"Autoencoder ($\ell$=3)",
+                     width, label=r"AE ($\ell$=3)",
                      color=custom_palette[2], edgecolor="none")
 
-    bars_k3 = ax.bar(x,
+    bars_k3 = ax.bar(x + width / 2,
                      [oos_k3.get(c, np.nan) for c in labels],
-                     width, label="EKF DNS 3f (same factors)",
+                     width, label=r"EKF DNS ($\ell$=3)",
                      color=custom_palette[0], edgecolor="none")
-
-    if oos_k4 is not None:
-        bars_k4 = ax.bar(x + width,
-                         [oos_k4.get(c, np.nan) for c in labels],
-                         width, label="EKF DNS 4f (best Kalman)",
-                         color=custom_palette[3], edgecolor="none", alpha=0.8)
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("OOS RMSE (bps)")
-    ax.set_xlabel("Currency")
-    ax.set_title(r"OOS RMSE per Currency: Autoencoder ($\ell$=3) vs Kalman Filter Benchmarks")
     ax.legend(frameon=False, fontsize=9)
 
     # Add horizontal average lines
-    if oos_ae3 is not None:
-        avg_ae = oos_ae3.drop("Average", errors="ignore").mean()
-        ax.axhline(avg_ae, color=custom_palette[2], linewidth=1.0, linestyle="--", alpha=0.7)
-    if oos_k3 is not None:
-        avg_k3 = oos_k3.drop("Average", errors="ignore").mean()
-        ax.axhline(avg_k3, color=custom_palette[0], linewidth=1.0, linestyle="--", alpha=0.7)
+    avg_ae = oos_ae3.drop("Average", errors="ignore").mean()
+    ax.axhline(avg_ae, color=custom_palette[2], linewidth=1.0, linestyle="--", alpha=0.7)
+    avg_k3 = oos_k3.drop("Average", errors="ignore").mean()
+    ax.axhline(avg_k3, color=custom_palette[0], linewidth=1.0, linestyle="--", alpha=0.7)
 
     fig.tight_layout()
     save_fig(fig, "Q4b_per_currency_bar_chart")
@@ -712,21 +695,22 @@ if oos_ae2 is not None and oos_ae3c is not None and oos_ae4 is not None and oos_
 
     bars_k3 = ax.bar(x + 1.5 * width,
                      [oos_k3c.get(c, np.nan) for c in labels],
-                     width, label="EKF DNS 3f",
+                     width, label=r"EKF DNS ($\ell$=3)",
                      color=custom_palette[0], edgecolor="none")
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("OOS RMSE (bps)")
-    ax.set_xlabel("Currency")
-    ax.set_title(r"OOS RMSE per Currency: Autoencoder ($\ell$=2,3,4) vs EKF DNS 3f")
     ax.legend(frameon=False, fontsize=9)
 
-    # average lines per model
-    for oos, col in [(oos_ae2, custom_palette[1]), (oos_ae3c, custom_palette[2]),
-                     (oos_ae4, custom_palette[3]), (oos_k3c, custom_palette[0])]:
+    # average lines — distinct styles matching DIM_STYLES
+    _avg_styles = [(oos_ae2, custom_palette[1], "-"),
+                   (oos_ae3c, custom_palette[2], "--"),
+                   (oos_ae4, custom_palette[3], ":"),
+                   (oos_k3c, custom_palette[0], "-.")]
+    for oos, col, ls in _avg_styles:
         avg = oos.drop("Average", errors="ignore").mean()
-        ax.axhline(avg, color=col, linewidth=1.0, linestyle="--", alpha=0.7)
+        ax.axhline(avg, color=col, linewidth=1.2, linestyle=ls, alpha=0.85)
 
     fig.tight_layout()
     save_fig(fig, "Q4c_per_currency_bar_chart_all_dims")
@@ -764,17 +748,12 @@ for dim_i, ax in enumerate(axes):
     # event markers
     for ev_label, ev_date in EVENTS.items():
         ax.axvline(pd.Timestamp(ev_date), color="0.6", linewidth=0.8, linestyle=":")
-    if dim_i == 0:
-        ax.legend(ncol=5, fontsize=7, frameon=False)
+    pass  # legend removed — currency colours described in caption
 
 # add event text on top panel only
 for ev_label, ev_date in EVENTS.items():
     axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
                  ev_label, fontsize=6.5, ha="center", va="bottom", color="0.4")
-
-axes[-1].set_xlabel("Date")
-fig.suptitle(r"Latent Factors over Time — $\ell=" + str(LATENT_DIM) + r"$ (in-sample, 2004–2020)",
-             fontsize=12, fontweight="bold")
 fig.tight_layout()
 save_fig(fig, "Q5a_latent_factors_over_time")
 
@@ -850,9 +829,8 @@ fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
 ax = axes[0]
 ax.bar([str(t) for t in TENOR_COLS], rmse_by_tenor,
        color=custom_palette[2], edgecolor="none")
-ax.set_xlabel("Tenor (years)")
 ax.set_ylabel("RMSE (bps)")
-ax.set_title(r"In-Sample RMSE by Tenor ($\ell=3$, all currencies pooled)")
+ax.set_title("In-Sample RMSE by Tenor")
 for i, v in enumerate(rmse_by_tenor):
     ax.text(i, v + 0.05, f"{v:.1f}", ha="center", va="bottom", fontsize=8)
 
@@ -864,12 +842,10 @@ for ccy in CCY_ORDER:
         continue
     rmse_ccy = np.sqrt(np.mean((X_eval[idx] - S_eval[idx])**2, axis=0)) * 10000
     ax.plot(TENOR_COLS, rmse_ccy, marker="o", linewidth=1.4,
-            markersize=4, label=ccy, color=currency_color_map[ccy])
+            markersize=4, color=currency_color_map[ccy])
 
-ax.set_xlabel("Tenor (years)")
 ax.set_ylabel("RMSE (bps)")
-ax.set_title(r"In-Sample RMSE by Tenor — Per Currency ($\ell=3$)")
-ax.legend(ncol=3, fontsize=7, frameon=False)
+ax.set_title("In-Sample RMSE by Tenor Per Currency")
 ax.set_xticks(TENOR_COLS)
 
 fig.tight_layout()
@@ -881,37 +857,50 @@ save_fig(fig, "Q6a_rmse_by_tenor")
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q6d: RMSE by tenor — all dims (bar chart) ──")
 
-# Compute per-tenor RMSE for each dim
+# Compute per-tenor OOS RMSE for each dim
+_oos_mask = ~mask_train
 rmse_by_dim = {}
 for _dim in DIMS_PLOT:
-    _S_hat = dim_S_hat[_dim]
-    _mask  = finite_mask(X_train, _S_hat)
-    _X     = X_train[_mask].numpy()
-    _S     = _S_hat[_mask].numpy()
-    rmse_by_dim[_dim] = np.sqrt(np.mean((_X - _S)**2, axis=0)) * 10000  # bps
+    _S_hat  = dim_S_hat[_dim]
+    _X_oos  = X_train[_oos_mask].numpy()
+    _S_oos  = _S_hat[_oos_mask].numpy()
+    _finite = np.isfinite(_X_oos).all(1) & np.isfinite(_S_oos).all(1)
+    rmse_by_dim[_dim] = np.sqrt(
+        np.mean((_X_oos[_finite] - _S_oos[_finite])**2, axis=0)) * 10000  # bps
+
+# Load EKF DNS 3f average OOS RMSE for reference line
+_oos_k3_q6d = load_kalman_rmse(3)
 
 n_tenors = len(TENOR_COLS)
 n_dims   = len(DIMS_PLOT)
 width    = 0.22
 x        = np.arange(n_tenors)
 
+_dim_styles_q6d = {2: "-", 3: "--", 4: ":"}
+
 fig, ax = plt.subplots(figsize=(11, 4.5))
 
 for i, _dim in enumerate(DIMS_PLOT):
     offset = (i - (n_dims - 1) / 2) * width
     ax.bar(x + offset, rmse_by_dim[_dim], width,
-           label=DIM_LABELS[_dim], color=DIM_COLORS[_dim], edgecolor="none")
+           label=r"AE ($\ell$=" + str(_dim) + ")",
+           color=DIM_COLORS[_dim], edgecolor="none")
 
-# average line per dim (mean across tenors)
+# average lines per AE dim — distinct styles
 for _dim in DIMS_PLOT:
     avg = float(np.mean(rmse_by_dim[_dim]))
-    ax.axhline(avg, color=DIM_COLORS[_dim], linewidth=1.2, linestyle="--", alpha=0.8)
+    ax.axhline(avg, color=DIM_COLORS[_dim], linewidth=1.2,
+               linestyle=_dim_styles_q6d.get(_dim, "--"), alpha=0.85)
+
+# EKF DNS 3f overall average as horizontal reference
+if _oos_k3_q6d is not None:
+    _avg_k3 = float(_oos_k3_q6d.drop("Average", errors="ignore").mean())
+    ax.axhline(_avg_k3, color=custom_palette[0], linewidth=1.4, linestyle="-.",
+               label=r"EKF DNS ($\ell$=3) avg", zorder=5)
 
 ax.set_xticks(x)
 ax.set_xticklabels([str(t) for t in TENOR_COLS])
-ax.set_xlabel("Tenor (years)")
-ax.set_ylabel("IS RMSE (bps)")
-ax.set_title(r"In-Sample RMSE by Tenor — Latent Dimensions $\ell$=2, 3, 4")
+ax.set_ylabel("OOS RMSE (bps)")
 ax.legend(frameon=False, fontsize=10)
 fig.tight_layout()
 save_fig(fig, "Q6d_rmse_by_tenor_all_dims")
@@ -940,7 +929,6 @@ ax = axes[0]
 ax.plot(monthly_dates, monthly_avg.values, linewidth=1.2, color="black",
         linestyle="--", label="All-ccy avg")
 ax.set_ylabel("Avg RMSE (bps)")
-ax.set_title(r"In-Sample RMSE over Time — Monthly Average ($\ell=3$)")
 
 # bottom: per-currency
 ax = axes[1]
@@ -950,11 +938,9 @@ for ccy in CCY_ORDER:
         continue
     m_ccy = meta_eval_z.loc[idx_c].groupby("ym")["rmse_bps"].mean()
     ax.plot(m_ccy.index.to_timestamp(), m_ccy.values,
-            linewidth=1.1, alpha=0.75, label=ccy, color=currency_color_map[ccy])
+            linewidth=1.1, alpha=0.75, color=currency_color_map[ccy])
 
 ax.set_ylabel("RMSE (bps)")
-ax.set_xlabel("Date")
-ax.legend(ncol=5, fontsize=7, frameon=False)
 
 # event shading on both panels
 for ev_label, ev_date in EVENTS.items():
@@ -1033,16 +1019,17 @@ for _dim in ALL_DIMS_PARAM:
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.plot(TAU_GRID, sr_mean,
             color=DIM_COLORS[_dim], linewidth=1.6,
-            label=r"Mean IS SR")
+            label="Mean")
     ax.fill_between(TAU_GRID,
                     sr_mean - sr_std,
                     sr_mean + sr_std,
                     color=DIM_COLORS[_dim], alpha=0.2,
                     label=r"$\pm$1 std")
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
-    ax.set_xlabel("Tenor (years)")
     ax.set_ylabel("Approx. Sharpe ratio")
-    ax.set_title(r"IS Approx. Sharpe Ratio — $\ell$=" + str(_dim))
+    ax.text(0.03, 0.95, r"AE ($\ell$=" + str(_dim) + ")",
+            transform=ax.transAxes, fontsize=10, fontweight="bold",
+            va="top", ha="left")
     ax.legend(frameon=False, fontsize=10)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
