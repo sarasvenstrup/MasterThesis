@@ -9,6 +9,7 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \section{Question 1}
 % ─────────────────────────────────────────────────────────────
 
+% Q1a
 \begin{table}[H]
 \centering
 
@@ -27,32 +28,53 @@ $\ell=4$ & 3.85  & 4.61  & 4.34  & 4.64  & 5.15  & 4.32  & 4.04  & 3.50  & 4.52 
 \label{tab:Q1a}
 \end{table}
 
-\begin{figure}[H]
+%Q1b
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1b_fitted_vs_actual.png}
-    \caption{Fitted vs.\ actual swap curves for three representative dates
-    (low-rate, high-rate, inverted) using the autoencoder with $\ell=3$.}
-    \label{fig:Q1b}
+    \includegraphics[width=\textwidth]{figures/AutoencoderPerformance/Q1b_fitted_vs_actual.pdf}
+    \caption{In-sample fitted versus actual swap curves for $\ell=3$ latent factors across three
+    representative dates (columns): a normal market environment (2016-08-31), the Covid-19 stress
+    episode (2020-03-31), and a low-rate regime (2019-06-30). Rows correspond to
+    {\color[HTML]{000000}EUR} and {\color[HTML]{8C6D31}USD}. The solid line with circles
+    ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}~$\circ$}) denotes the observed swap rate;
+    the dashed line with squares
+    ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}) denotes the autoencoder reconstruction, 
+    coloured by currency ({\color[HTML]{9C9EDE}EUR}, {\color[HTML]{8C6D31}USD}).
+    The x-axis shows tenor in years. The exact observation date used for each panel is printed
+    in the lower-right corner.}
+    \label{fig:q1b_fitted_vs_actual}
 \end{figure}
 
-\begin{figure}[H]
+%Q1c
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1c_residual_histogram.png}
-    \caption{Distribution of in-sample residuals (fitted $-$ actual, in bps)
-    across all currencies and dates, $\ell=3$.}
-    \label{fig:Q1c}
+    \includegraphics[width=0.75\textwidth]{figures/AutoencoderPerformance/Q1c_residual_histogram.pdf}
+    \caption{Distribution of in-sample residuals (actual minus fitted) in basis points for
+    $\ell=3$ latent factors, pooled across all currencies and observation dates.
+    The vertical dashed red line marks the sample mean; the grey dotted lines mark the
+    5th and 95th percentiles. Summary statistics (sample size, standard deviation, and
+    excess kurtosis) are reported in the upper-right corner.}
+    \label{fig:q1c_residual_histogram}
 \end{figure}
 
-\begin{figure}[H]
+%Q1d
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.png}
-    \caption{Fitted vs.\ actual swap curves for the same representative dates
-    across latent dimensions $\ell=2,3,4$.}
-    \label{fig:Q1d}
+    \includegraphics[width=\textwidth]{figures/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.pdf}
+    \caption{In-sample fitted versus actual swap curves for latent dimensions
+    $\ell \in \{2, 3, 4\}$ across three representative dates (columns): a normal market
+    environment (2016-08-31), the Covid-19 stress episode (2020-03-31), and a low-rate
+    regime (2019-06-30). Rows correspond to EUR and USD.
+    The solid line with circles ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}~$\circ$})
+    denotes the observed swap rate.
+    Reconstructions are shown for
+    $\ell=2$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}, solid),
+    $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{1.2em}{1pt} \rule[0.5ex]{0.3em}{1pt}}, dashed), and
+    $\ell=4$ ({\color[HTML]{9C9EDE}$\cdots$}, dotted).
+    The x-axis shows tenor in years. The exact observation date is printed in
+    the lower-right corner of each panel.}
+    \label{fig:q1d_fitted_vs_actual_all_dims}
 \end{figure}
-
-
-
 
 
 
@@ -63,10 +85,7 @@ $\ell=4$ & 3.85  & 4.61  & 4.34  & 4.64  & 5.15  & 4.32  & 4.04  & 3.50  & 4.52 
 
 \begin{table}[H]
 \centering
-\caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
-IS: 2004--2020, OOS: 2021--2022.}
-\label{tab:Q2a}
-\begin{tabular}{llrrrrrrrrrrr}
+\begin{tabular}{llrrrrrrrrrrc}
 \toprule
 Split & Model & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
 \midrule
@@ -80,6 +99,9 @@ IS  & $\ell=4$ & 5.85  & 5.03  & 6.23  & 7.92  & 8.05  & 5.08  & 5.61  & 4.80  &
 OOS & $\ell=4$ & 9.12  & 9.03  & 10.20 & 17.11 & 6.59  & 8.20  & 7.78  & 7.73  & 9.17  & \textbf{9.43}  \\
 \bottomrule
 \end{tabular}
+\caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
+IS: 2004--2020, OOS: 2021--2022.}
+\label{tab:Q2a}
 \end{table}
 
 \begin{figure}[H]
