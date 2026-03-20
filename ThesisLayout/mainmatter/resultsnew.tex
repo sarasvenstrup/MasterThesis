@@ -126,9 +126,6 @@ IS: 2004--2020, OOS: 2021--2022.}
 % Q3a
 \begin{table}[H]
 \centering
-\caption{Out-of-sample RMSE (bps) per random seed for $\ell=3$.
-Seeds 4 and 7 diverged and are excluded from the mean.}
-\label{tab:Q3a}
 \begin{tabular}{lrrrrrrrrrrr}
 \toprule
  & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
@@ -147,13 +144,16 @@ Seed 9 & 11.30 & 9.00  & 12.06 & 21.37 & 8.30 & 11.84 & 10.07 & 10.91 & 10.59 & 
 \textbf{Mean (valid)} & & & & & & & & & & \textbf{12.72} \\
 \bottomrule
 \end{tabular}
+\caption{Out-of-sample RMSE (bps) per random seed for $\ell=3$.
+Seeds 4 and 7 diverged and are excluded from the mean.}
+\label{tab:Q3a}
 \end{table}
 
 
 % Q3b
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
+    \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
     \caption{Rolling out-of-sample RMSE over time for $\ell=3$,
     showing variation across rolling windows.}
     \label{fig:Q3b}
@@ -183,20 +183,10 @@ EKF DNS 4f   & 9.35  & 7.75  & 9.25  & 9.49  & 3.26  & 8.14  & 7.13  & 4.96  & 7
 \end{table}
 
 
-% Q4b (maybe remove this)
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4b_per_currency_bar_chart.png}
-    \caption{Out-of-sample RMSE (bps) per currency for the autoencoder
-    ($\ell=3$) vs.\ the best EKF DNS benchmark.}
-    \label{fig:Q4b}
-\end{figure}
-
-
 % Q4c
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
+    \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
     \caption{Out-of-sample RMSE (bps) per currency for autoencoder
     dimensions $\ell=2,3,4$ and EKF DNS 3-factor benchmark.}
     \label{fig:Q4c}
@@ -214,53 +204,18 @@ EKF DNS 4f   & 9.35  & 7.75  & 9.25  & 9.49  & 3.26  & 8.14  & 7.13  & 4.96  & 7
     \label{fig:Q5a}
 \end{figure}
 
-\begin{table}[H]
-\centering
-\caption{Pearson correlations between latent factors and yield curve
-factors for $\ell=2$.}
-\label{tab:Q5b_dim2}
-\begin{tabular}{lrrr}
-\toprule
- & Level & Slope & Curvature \\
-\midrule
-$z_1$ &  0.604   & $-$0.891 &  0.335   \\
-$z_2$ & $-$0.984 &  0.024   & $-$0.603 \\
-\bottomrule
-\end{tabular}
-\end{table}
 
-\begin{table}[H]
-\centering
-\caption{Pearson correlations between latent factors and yield curve
-factors for $\ell=3$.}
-\label{tab:Q5b_dim3}
-\begin{tabular}{lrrr}
-\toprule
- & Level & Slope & Curvature \\
-\midrule
-$z_1$ & $-$0.869 &  0.647   & $-$0.586 \\
-$z_2$ & $-$0.997 &  0.280   & $-$0.576 \\
-$z_3$ &  0.996   & $-$0.124 &  0.602   \\
-\bottomrule
-\end{tabular}
-\end{table}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_factor_correlation_heatmap.png}
+    \caption{Pearson correlations between latent factors $z_k$ and yield curve components
+    (Level, Slope, Curvature) for $\ell \in \{2,3,4\}$, pooled across all in-sample
+    observations. Cell values range from $-1$ to $+1$; the diverging colour scale runs
+    from negative (dark) through white (zero) to positive (dark).}
+    \label{fig:q5b_heatmap}
+\end{figure}
 
-\begin{table}[H]
-\centering
-\caption{Pearson correlations between latent factors and yield curve
-factors for $\ell=4$.}
-\label{tab:Q5b_dim4}
-\begin{tabular}{lrrr}
-\toprule
- & Level & Slope & Curvature \\
-\midrule
-$z_1$ & $-$0.879 & $-$0.045 & $-$0.306 \\
-$z_2$ & $-$0.983 & $-$0.365 & $-$0.392 \\
-$z_3$ &  0.992   &  0.601   &  0.519   \\
-$z_4$ &  0.709   & $-$0.231 &  0.444   \\
-\bottomrule
-\end{tabular}
-\end{table}
+
 
 % ─────────────────────────────────────────────────────────────
 \section{Question 6}
