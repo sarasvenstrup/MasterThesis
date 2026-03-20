@@ -58,6 +58,7 @@ LATENT_DIM       = 3
 SPLIT_EPOCHS     = 2500
 TRAIN_LOG_EPOCHS = 5000
 KALMAN_DIMS      = [1, 2, 3, 4]
+ALL_DIMS_PARAM   = [1, 2, 3, 4]
 
 # Key market event dates for annotation
 EVENTS = {
@@ -1008,6 +1009,62 @@ print(worst[["as_of_date", "ccy", "rmse_bps"]].to_string())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Q7 — IS Sharpe ratio by tenor, one plot per latent dimension
+#      Source: ep5000 checkpoint (fallback: OOSSplit best seed)
+#      Data:   X_train (2004-2020)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q7: IS Sharpe ratio by tenor (all dims) ──")
+
+TAU_GRID = np.arange(1, 31)   # tenors 1..30
+
+@torch.no_grad()
+def extract_sharpe(model, X, batch=256):
+    """Run forward pass on X and return SR_tau (N, 30)."""
+    sr_list = []
+    for i in range(0, X.shape[0], batch):
+        xb = X[i:i+batch].to(device)
+        _, _, _, _, _, _, _, _, _, arb = model(xb)
+        sr_list.append(arb["SR_tau"].cpu())
+    return torch.cat(sr_list)   # (N, 30)
+
+for _dim in ALL_DIMS_PARAM:
+    print(f"  ℓ={_dim} ...", end=" ")
+    _m, _src = load_ep5000_model(_dim)
+    if _m is None:
+        print("skipped (no model)")
+        continue
+
+    SR_all  = extract_sharpe(_m, X_train)          # (N, 30)
+
+    # apply finite mask on X_train rows
+    x_finite = torch.isfinite(X_train).all(1)
+    SR_all   = SR_all[x_finite]                    # (N_valid, 30)
+
+    sr_mean = SR_all.mean(dim=0).numpy()           # (30,)
+    sr_std  = SR_all.std(dim=0).numpy()            # (30,)
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(TAU_GRID, sr_mean,
+            color=DIM_COLORS[_dim], linewidth=1.6,
+            label=r"Mean IS SR")
+    ax.fill_between(TAU_GRID,
+                    sr_mean - sr_std,
+                    sr_mean + sr_std,
+                    color=DIM_COLORS[_dim], alpha=0.2,
+                    label=r"$\pm$1 std")
+    ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
+    ax.set_xlabel("Tenor (years)")
+    ax.set_ylabel("Approx. Sharpe ratio")
+    ax.set_title(r"IS Approx. Sharpe Ratio — $\ell$=" + str(_dim))
+    ax.legend(frameon=False, fontsize=10)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    save_fig(fig, f"Q7_sharpe_ratio_IS_dim{_dim}")
+    print("done")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # P — Parameter plots over time (one figure per latent dimension)
 #     Source: ep5000 checkpoint (fallback: OOSSplit best seed)
 #     Data:   X_train (2004-2020)
@@ -1067,8 +1124,6 @@ def _param_label(name):
         return r"$\tilde{r}$"
     return name
 
-
-ALL_DIMS_PARAM = [1, 2, 3, 4]
 
 for _dim in ALL_DIMS_PARAM:
     print(f"\n── Parameters: ℓ={_dim} ──")
