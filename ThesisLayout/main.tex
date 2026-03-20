@@ -227,6 +227,16 @@
 
 \raggedbottom
 
+
+% Settings for loading csv files directly into tables
+\pgfplotsset{compat=1.18}
+\pgfplotstableset{
+    col sep=comma,
+    every head row/.style={before row=\toprule, after row=\midrule},
+    every last row/.style={after row=\bottomrule},
+}
+
+
 % *********************************************************
 % BIBLIOGRAPHY
 % *********************************************************
