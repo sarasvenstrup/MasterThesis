@@ -1,2 +1,314 @@
 \chapter{Results}
 
+This chapter presents the empirical results for the arbitrage-free autoencoder model fitted to swap rate curves across nine currencies. The analysis is structured around four themes. We begin by examining in-sample reconstruction accuracy as a function of the number of latent factors $\ell \in \{1, 2, 3, 4\}$, using models trained for 5\,000 epochs, and assess convergence through training loss curves. We then evaluate out-of-sample performance in both a fixed-window and a rolling scheme, benchmarking against the Extended Kalman Filter Dynamic Nelson--Siegel (EKF-DNS) model. Next, we present arbitrage diagnostics based on the Sharpe-ratio criterion implied by the risk-neutral drift, and examine how the no-arbitrage constraint is satisfied across maturities. Finally, we interpret the extracted latent factors through their correlation with classical yield curve drivers---level, slope, and curvature---and inspect the time series of the risk-neutral parameters $\mu$, $\sigma$, $\varrho$, and $\tilde{r}$ to assess economic plausibility.
+
+
+
+
+% ─────────────────────────────────────────────────────────────
+\section{Question 1}
+% ─────────────────────────────────────────────────────────────
+
+\begin{table}[H]
+\centering
+
+\begin{tabular}{lrrrrrrrrrrc}
+\toprule
+ & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
+\midrule
+$\ell=1$ & 30.05 & 37.79 & 27.33 & 32.93 & 13.01 & 37.77 & 34.91 & 33.19 & 47.41 & \textbf{32.71} \\
+$\ell=2$ & 10.76 & 9.04  & 9.11  & 12.49 & 9.97  & 9.33  & 9.48  & 9.87  & 11.11 & \textbf{10.13} \\
+$\ell=3$ & 5.03  & 5.43  & 5.67  & 9.45  & 7.71  & 5.85  & 5.05  & 5.36  & 5.22  & \textbf{6.08}  \\
+$\ell=4$ & 3.85  & 4.61  & 4.34  & 4.64  & 5.15  & 4.32  & 4.04  & 3.50  & 4.52  & \textbf{4.33}  \\
+\bottomrule
+\end{tabular}
+
+\caption{In-sample RMSE (bps) per currency and latent dimension, trained for 5000 epochs.}
+\label{tab:Q1a}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1b_fitted_vs_actual.png}
+    \caption{Fitted vs.\ actual swap curves for three representative dates
+    (low-rate, high-rate, inverted) using the autoencoder with $\ell=3$.}
+    \label{fig:Q1b}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1c_residual_histogram.png}
+    \caption{Distribution of in-sample residuals (fitted $-$ actual, in bps)
+    across all currencies and dates, $\ell=3$.}
+    \label{fig:Q1c}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.png}
+    \caption{Fitted vs.\ actual swap curves for the same representative dates
+    across latent dimensions $\ell=2,3,4$.}
+    \label{fig:Q1d}
+\end{figure}
+
+
+
+
+
+
+
+% ─────────────────────────────────────────────────────────────
+\section{Question 2}
+% ─────────────────────────────────────────────────────────────
+
+\begin{table}[H]
+\centering
+\caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
+IS: 2004--2020, OOS: 2021--2022.}
+\label{tab:Q2a}
+\begin{tabular}{llrrrrrrrrrrr}
+\toprule
+Split & Model & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
+\midrule
+IS  & $\ell=2$ & 10.81 & 9.54  & 9.72  & 12.11 & 12.49 & 8.83  & 10.14 & 10.83 & 10.54 & \textbf{10.56} \\
+OOS & $\ell=2$ & 19.40 & 15.79 & 19.13 & 25.93 & 9.27  & 23.68 & 19.67 & 16.01 & 18.63 & \textbf{18.61} \\
+\midrule
+IS  & $\ell=3$ & 7.10  & 5.88  & 7.49  & 9.40  & 9.77  & 5.93  & 7.24  & 7.01  & 7.45  & \textbf{7.47}  \\
+OOS & $\ell=3$ & 10.95 & 10.73 & 12.41 & 21.80 & 7.85  & 12.83 & 10.59 & 11.95 & 11.91 & \textbf{12.33} \\
+\midrule
+IS  & $\ell=4$ & 5.85  & 5.03  & 6.23  & 7.92  & 8.05  & 5.08  & 5.61  & 4.80  & 5.91  & \textbf{6.05}  \\
+OOS & $\ell=4$ & 9.12  & 9.03  & 10.20 & 17.11 & 6.59  & 8.20  & 7.78  & 7.73  & 9.17  & \textbf{9.43}  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
+    \caption{Rolling out-of-sample RMSE (bps) by latent dimension $\ell$,
+    averaged across 34 rolling windows (3-year train, 3-month test).}
+    \label{fig:Q2b}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────
+\section{Question 3}
+% ─────────────────────────────────────────────────────────────
+
+\begin{table}[H]
+\centering
+\caption{Out-of-sample RMSE (bps) per random seed for $\ell=3$.
+Seeds 4 and 7 diverged and are excluded from the mean.}
+\label{tab:Q3a}
+\begin{tabular}{lrrrrrrrrrrr}
+\toprule
+ & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
+\midrule
+Seed 0 & 11.79 & 10.83 & 14.46 & 24.11 & 8.37 & 16.68 & 12.92 & 12.70 & 13.72 & 13.95 \\
+Seed 1 & 11.51 & 12.36 & 12.57 & 22.97 & 7.74 & 10.64 & 10.23 & 13.08 & 12.54 & 12.63 \\
+Seed 2 & 9.55  & 8.99  & 10.20 & 18.31 & 7.43 & 11.18 & 8.61  & 10.06 & 9.46  & 10.42 \\
+Seed 3 & 8.34  & 9.15  & 9.77  & 15.59 & 9.26 & 9.19  & 6.52  & 7.33  & 10.94 & \textbf{9.57}  \\
+Seed 4 & \multicolumn{10}{c}{\textit{diverged (1663 bps) --- excluded}} \\
+Seed 5 & 9.11  & 9.58  & 17.55 & 23.15 & 4.95 & 13.80 & 12.44 & 22.67 & 13.61 & 14.10 \\
+Seed 6 & 14.20 & 9.33  & 23.60 & 28.78 & 4.86 & 19.26 & 17.98 & 26.12 & 14.59 & 17.64 \\
+Seed 7 & \multicolumn{10}{c}{\textit{diverged (NaN) --- excluded}} \\
+Seed 8 & 9.23  & 10.64 & 11.48 & 22.68 & 8.68 & 11.79 & 9.82  & 9.32  & 12.37 & 11.78 \\
+Seed 9 & 11.30 & 9.00  & 12.06 & 21.37 & 8.30 & 11.84 & 10.07 & 10.91 & 10.59 & 11.72 \\
+\midrule
+\textbf{Mean (valid)} & & & & & & & & & & \textbf{12.72} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
+    \caption{Rolling out-of-sample RMSE over time for $\ell=3$,
+    showing variation across rolling windows.}
+    \label{fig:Q3b}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────
+\section{Question 4}
+% ─────────────────────────────────────────────────────────────
+
+\begin{table}[H]
+\centering
+\caption{Out-of-sample RMSE (bps) per currency for the autoencoder
+($\ell=3$) and EKF DNS benchmarks (2021--2022 test period).}
+\label{tab:Q4a}
+\begin{tabular}{lrrrrrrrrrrr}
+\toprule
+Model & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
+\midrule
+AE $\ell=3$  & 10.95 & 10.73 & 12.41 & 21.80 & 7.85  & 12.83 & 10.59 & 11.95 & 11.91 & \textbf{12.33} \\
+EKF DNS 1f   & 59.00 & 49.35 & 33.75 & 36.54 & 28.43 & 33.73 & 37.91 & 32.68 & 51.48 & \textbf{40.32} \\
+EKF DNS 2f   & 18.31 & 13.17 & 15.84 & 15.58 & 7.02  & 15.02 & 13.70 & 10.00 & 12.21 & \textbf{13.43} \\
+EKF DNS 3f   & 16.00 & 10.12 & 12.40 & 11.20 & 4.88  & 9.99  & 9.70  & 6.56  & 9.50  & \textbf{10.04} \\
+EKF DNS 4f   & 9.35  & 7.75  & 9.25  & 9.49  & 3.26  & 8.14  & 7.13  & 4.96  & 7.11  & \textbf{7.38}  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4b_per_currency_bar_chart.png}
+    \caption{Out-of-sample RMSE (bps) per currency for the autoencoder
+    ($\ell=3$) vs.\ the best EKF DNS benchmark.}
+    \label{fig:Q4b}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
+    \caption{Out-of-sample RMSE (bps) per currency for autoencoder
+    dimensions $\ell=2,3,4$ and EKF DNS 3-factor benchmark.}
+    \label{fig:Q4c}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────
+\section{Question 5}
+% ─────────────────────────────────────────────────────────────
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5a_latent_factors_over_time.png}
+    \caption{Latent factors $z_1, z_2, z_3$ over the training period
+    (2004--2020) for $\ell=3$, with key market events annotated.}
+    \label{fig:Q5a}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Pearson correlations between latent factors and yield curve
+factors for $\ell=2$.}
+\label{tab:Q5b_dim2}
+\begin{tabular}{lrrr}
+\toprule
+ & Level & Slope & Curvature \\
+\midrule
+$z_1$ &  0.604   & $-$0.891 &  0.335   \\
+$z_2$ & $-$0.984 &  0.024   & $-$0.603 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Pearson correlations between latent factors and yield curve
+factors for $\ell=3$.}
+\label{tab:Q5b_dim3}
+\begin{tabular}{lrrr}
+\toprule
+ & Level & Slope & Curvature \\
+\midrule
+$z_1$ & $-$0.869 &  0.647   & $-$0.586 \\
+$z_2$ & $-$0.997 &  0.280   & $-$0.576 \\
+$z_3$ &  0.996   & $-$0.124 &  0.602   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Pearson correlations between latent factors and yield curve
+factors for $\ell=4$.}
+\label{tab:Q5b_dim4}
+\begin{tabular}{lrrr}
+\toprule
+ & Level & Slope & Curvature \\
+\midrule
+$z_1$ & $-$0.879 & $-$0.045 & $-$0.306 \\
+$z_2$ & $-$0.983 & $-$0.365 & $-$0.392 \\
+$z_3$ &  0.992   &  0.601   &  0.519   \\
+$z_4$ &  0.709   & $-$0.231 &  0.444   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────
+\section{Question 6}
+% ─────────────────────────────────────────────────────────────
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6a_rmse_by_tenor.png}
+    \caption{In-sample RMSE (bps) by tenor for $\ell=3$,
+    averaged across currencies and dates in the training set.}
+    \label{fig:Q6a}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
+    \caption{In-sample RMSE (bps) over time for $\ell=3$,
+    averaged across currencies per date.}
+    \label{fig:Q6b}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Top 10 worst in-sample fits ranked by RMSE (bps), $\ell=3$.
+Per-tenor residuals shown in bps (fitted $-$ actual).}
+\label{tab:Q6c}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{rlrrrrrrrrrr}
+\toprule
+Rank & Date & CCY & RMSE & 1Y & 2Y & 3Y & 5Y & 10Y & 15Y & 20Y & 30Y \\
+\midrule
+1  & 2016-11-30 & SEK & 5216.4 & $-$1809.2 & $-$9957.8 & $-$9974.4 & $-$3572.0 & $-$1279.6 & $-$839.5 & $-$655.1 & $-$484.0 \\
+2  & 2016-02-29 & SEK & 5204.7 & $-$1796.7 & $-$9956.9 & $-$9975.5 & $-$3444.9 & $-$1267.0 & $-$836.6 & $-$652.9 & $-$483.6 \\
+3  & 2016-10-31 & SEK & 5194.1 & $-$1299.9 & $-$9948.4 & $-$9964.7 & $-$3594.6 & $-$1279.3 & $-$830.4 & $-$640.7 & $-$465.7 \\
+4  & 2015-11-30 & SEK & 5172.1 & $-$1978.0 & $-$9972.3 & $-$9992.5 & $-$2828.0 & $-$1192.0 & $-$822.0 & $-$663.6 & $-$507.7 \\
+5  & 2016-03-31 & SEK & 5170.4 & $-$1744.3 & $-$9965.7 & $-$9983.5 & $-$3005.4 & $-$1214.2 & $-$821.0 & $-$649.7 & $-$487.8 \\
+6  & 2016-12-30 & SEK & 5168.4 & $-$1716.6 & $-$9965.9 & $-$9985.0 & $-$2989.8 & $-$1211.0 & $-$818.1 & $-$647.8 & $-$485.4 \\
+7  & 2017-01-31 & SEK & 5165.7 & $-$1912.2 & $-$9973.2 & $-$9995.3 & $-$2773.4 & $-$1188.3 & $-$818.3 & $-$655.5 & $-$498.8 \\
+8  & 2016-04-29 & SEK & 5161.0 & $-$1776.7 & $-$9971.0 & $-$9990.6 & $-$2815.5 & $-$1195.4 & $-$816.0 & $-$652.0 & $-$497.8 \\
+9  & 2016-05-31 & SEK & 5160.8 & $-$1653.2 & $-$9966.7 & $-$9985.4 & $-$2920.0 & $-$1205.6 & $-$814.0 & $-$645.0 & $-$486.9 \\
+10 & 2017-02-28 & SEK & 5160.6 & $-$1612.9 & $-$9967.9 & $-$9986.0 & $-$2934.6 & $-$1204.5 & $-$814.7 & $-$645.3 & $-$483.7 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6d_rmse_by_tenor_all_dims.png}
+    \caption{In-sample RMSE (bps) by tenor for latent dimensions
+    $\ell=2,3,4$, averaged across currencies and dates.}
+    \label{fig:Q6d}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────
+\section{Question 7}
+% ─────────────────────────────────────────────────────────────
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim2.png}
+        \caption{$\ell=2$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim3.png}
+        \caption{$\ell=3$}
+    \end{subfigure}
+
+    \vspace{0.25cm}
+
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim4.png}
+        \caption{$\ell=4$}
+    \end{subfigure}
+
+    \caption{In-sample approximate Sharpe ratio across tenors (1--30Y)
+    for $\ell=2,3,4$. Shaded band shows $\pm$1 standard deviation
+    across training observations. Dashed line marks zero (no-arbitrage reference).}
+    \label{fig:Q7_sharpe}
+\end{figure}
+
+
+
+
