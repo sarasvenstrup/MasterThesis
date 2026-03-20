@@ -320,24 +320,18 @@ for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
 
         actual = X_train[global_idx].numpy() * scale
         fitted = S_hat_train[global_idx].numpy() * scale
+        fitted_color = custom_palette[CCY_ORDER.index(ccy) % len(custom_palette)]
 
-        ax.plot(tenors, actual, "o-",  color=custom_palette[0], linewidth=2.0,
-                markersize=5, label="Actual")
-        ax.plot(tenors, fitted, "s--", color=custom_palette[1], linewidth=2.0,
-                markersize=5, label="Fitted")
+        ax.plot(tenors, actual, "o-",  color="black", linewidth=2.0, markersize=5)
+        ax.plot(tenors, fitted, "s--", color=fitted_color, linewidth=2.0, markersize=5)
 
-        if row_i == 0:
-            ax.set_title(label, fontsize=10, fontweight="bold")
         if col_i == 0:
-            ax.set_ylabel(f"{ccy}\n{'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec)'}",
+            ax.set_ylabel(f"{ccy}, {'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec.)'}",
                           fontsize=9)
-        ax.set_xlabel("Tenor (years)")
-        ax.legend(fontsize=8, frameon=False)
+        ax.tick_params(axis="x", labelsize=8)
         ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
                 transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
 
-fig.suptitle(r"Fitted vs Actual Swap Curves — Representative Dates ($\ell=3$)",
-             fontsize=13, fontweight="bold")
 fig.tight_layout()
 save_fig(fig, "Q1b_fitted_vs_actual")
 
@@ -373,14 +367,14 @@ DIMS_PLOT   = sorted(dim_models.keys())
 DIM_LABELS  = {d: r"$\ell$=" + str(d) for d in DIMS_PLOT}
 DIM_STYLES  = {2: "-",  3: "--", 4: ":"}
 
-fig, axes = plt.subplots(len(REPRESENTATIVE_DATES), len(SHOW_CCYS),
-                         figsize=(5 * len(SHOW_CCYS), 3.8 * len(REPRESENTATIVE_DATES)),
+fig, axes = plt.subplots(len(SHOW_CCYS), len(REPRESENTATIVE_DATES),
+                         figsize=(5 * len(REPRESENTATIVE_DATES), 3.8 * len(SHOW_CCYS)),
                          sharey=False)
 
-for row_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
+for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
     target_date = pd.Timestamp(date_str)
 
-    for col_i, ccy in enumerate(SHOW_CCYS):
+    for row_i, ccy in enumerate(SHOW_CCYS):
         ax = axes[row_i][col_i]
 
         mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
@@ -395,26 +389,20 @@ for row_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
 
         actual = X_train[global_idx].numpy() * scale
         ax.plot(tenors, actual, "o-", color="black", linewidth=2.0,
-                markersize=5, label="Actual", zorder=5)
+                markersize=5, zorder=5)
 
         for _dim in DIMS_PLOT:
             _S = dim_S_hat[_dim][global_idx].numpy() * scale
             ax.plot(tenors, _S, DIM_STYLES[_dim],
-                    color=DIM_COLORS[_dim], linewidth=1.8,
-                    markersize=4, label=DIM_LABELS[_dim])
+                    color=DIM_COLORS[_dim], linewidth=1.8, markersize=4)
 
-        if row_i == 0:
-            ax.set_title(f"{ccy}", fontsize=12, fontweight="bold")
         if col_i == 0:
-            ax.set_ylabel(f"{'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec)'}\n{label}",
+            ax.set_ylabel(f"{ccy}, {'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec.)'}",
                           fontsize=9)
-        ax.set_xlabel("Tenor (years)")
-        ax.legend(fontsize=8, frameon=False)
+        ax.tick_params(axis="x", labelsize=8)
         ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
                 transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
 
-fig.suptitle(r"Fitted vs Actual Swap Curves — All Latent Dimensions ($\ell$=2,3,4)",
-             fontsize=13, fontweight="bold")
 fig.tight_layout()
 save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
 
@@ -437,9 +425,8 @@ ax.axvline(np.percentile(resid_flat, 5),  color="0.4", linewidth=1.0,
            linestyle=":", label=f"5th/95th pct = {np.percentile(resid_flat,5):.1f} / "
                                 f"{np.percentile(resid_flat,95):.1f} bps")
 ax.axvline(np.percentile(resid_flat, 95), color="0.4", linewidth=1.0, linestyle=":")
-ax.set_xlabel("Residual (actual − fitted), bps")
+ax.set_xlabel("Residual (bps)")
 ax.set_ylabel("Count")
-ax.set_title(r"Distribution of In-Sample Residuals ($\ell=3$, all dates & currencies)")
 ax.legend(fontsize=9, frameon=False)
 ax.text(0.97, 0.95,
         f"N={len(resid_flat):,}\nStd={np.std(resid_flat):.2f} bps\n"
