@@ -1,4 +1,4 @@
-,as_of_date,ccy,rmse_bps,resid_1Y_bps,resid_2Y_bps,resid_3Y_bps,resid_5Y_bps,resid_10Y_bps,resid_15Y_bps,resid_20Y_bps,resid_30Y_bps
+index,as_of_date,ccy,rmse_bps,resid_1Y_bps,resid_2Y_bps,resid_3Y_bps,resid_5Y_bps,resid_10Y_bps,resid_15Y_bps,resid_20Y_bps,resid_30Y_bps
 1,2016-11-30,SEK,5216.37,-1809.24,-9957.84,-9974.35,-3571.94,-1279.55,-839.52,-655.08,-483.96
 2,2016-02-29,SEK,5204.7,-1796.72,-9956.94,-9975.45,-3444.93,-1267.01,-836.61,-652.93,-483.64
 3,2016-10-31,SEK,5194.11,-1299.85,-9948.44,-9964.65,-3594.63,-1279.25,-830.38,-640.7,-465.68
