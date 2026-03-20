@@ -542,7 +542,7 @@ if os.path.exists(MANIFEST_PATH):
     save_table(table_q3a, "Q3a_OOS_seeds_table_dim3")
     print(table_q3a.to_string())
 else:
-    print("  SKIPPED — run_manifest.json not found.")
+    print("  SKIPPED  — run_manifest.json not found.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
