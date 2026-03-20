@@ -818,14 +818,14 @@ for _dim in DIMS_PLOT:
 if _corr_matrices:
     from matplotlib.colors import LinearSegmentedColormap
 
-    # Diverging palette: custom_palette[0] (neg) → white → custom_palette[4] (pos)
+    # Red (−1) → white (0) → blue (+1), using custom_palette colours
     _cmap_q5b = LinearSegmentedColormap.from_list(
         "q5b_div",
-        [custom_palette[0], "white", custom_palette[4]],
+        [custom_palette[4], "white", custom_palette[0]],
         N=256
     )
 
-    _hm_dims   = sorted(_corr_matrices.keys())
+    _hm_dims    = sorted(_corr_matrices.keys())
     _col_labels = ["Level", "Slope", "Curvature"]
     _n_cols     = len(_hm_dims)
     _max_rows   = max(len(_corr_matrices[d]) for d in _hm_dims)
@@ -835,30 +835,37 @@ if _corr_matrices:
     if _n_cols == 1:
         axes = [axes]
 
+    fig.subplots_adjust(right=0.85)   # leave room for colorbar
+
     for ax, _dim in zip(axes, _hm_dims):
-        _mat = _corr_matrices[_dim].values.astype(float)   # (n_factors, 3)
-        _row_labels = [f"$z_{k+1}$" for k in range(len(_mat))]
+        _mat        = _corr_matrices[_dim].values.astype(float)
+        _nrows      = len(_mat)
+        _row_labels = [f"$z_{k+1}$" for k in range(_nrows)]
 
-        im = ax.imshow(_mat, cmap=_cmap_q5b, vmin=-1, vmax=1, aspect="auto")
-
-        ax.set_xticks(range(3))
+        # pcolormesh: no antialiasing gaps between cells
+        _X = np.arange(4)           # column edges 0..3
+        _Y = np.arange(_nrows + 1)  # row edges 0..nrows
+        im = ax.pcolormesh(_X, _Y, _mat, cmap=_cmap_q5b,
+                           vmin=-1, vmax=1, edgecolors="face")
+        ax.invert_yaxis()
+        ax.set_xticks([0.5, 1.5, 2.5])
         ax.set_xticklabels(_col_labels, fontsize=10)
-        ax.set_yticks(range(len(_row_labels)))
+        ax.set_yticks([i + 0.5 for i in range(_nrows)])
         ax.set_yticklabels(_row_labels, fontsize=10)
+        ax.tick_params(length=0)
         ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11, fontweight="bold")
 
         # annotate each cell
-        for r in range(len(_mat)):
+        for r in range(_nrows):
             for c in range(3):
                 val = _mat[r, c]
                 txt_color = "white" if abs(val) > 0.6 else "black"
-                ax.text(c, r, f"{val:.3f}", ha="center", va="center",
-                        fontsize=9, color=txt_color)
+                ax.text(c + 0.5, r + 0.5, f"{val:.3f}",
+                        ha="center", va="center", fontsize=9, color=txt_color)
 
-    # shared colorbar on the right
-    fig.colorbar(im, ax=axes, orientation="vertical",
-                 fraction=0.02, pad=0.04, label="Pearson r")
-    fig.tight_layout()
+    # colorbar in its own manually placed axes — no overlap
+    cbar_ax = fig.add_axes([0.87, 0.15, 0.025, 0.7])
+    fig.colorbar(im, cax=cbar_ax, label="Pearson $r$")
     save_fig(fig, "Q5b_factor_correlation_heatmap")
 
 
