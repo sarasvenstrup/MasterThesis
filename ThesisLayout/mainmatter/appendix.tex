@@ -556,53 +556,52 @@ The use of the Runge--Kutta 3/8 method ensures stable and accurate numerical sol
 
 \begin{figure}[H]
     \centering
-    
-    \begin{subfigure}{\textwidth}
+
+    % Row 1
+    \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/mu1_over_time_bbg.png}
+        \includegraphics[width=\textwidth]{Figures/thesis_results/parameters/dim2/mu_1.png}
         \caption{$\mu_1$ over time}
     \end{subfigure}
-    
-    \vspace{0.25cm}
-    
-    \begin{subfigure}{\textwidth}
+    \hfill
+    \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/mu2_over_time_bbg.png}
+        \includegraphics[width=\textwidth]{Figures/thesis_results/parameters/dim2/mu_2.png}
         \caption{$\mu_2$ over time}
     \end{subfigure}
-    
+
     \vspace{0.25cm}
-    
-    \begin{subfigure}{\textwidth}
+
+    % Row 2
+    \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/r_tilde_over_time_bbg.png}
-        \caption{$\tilde r_t$ over time}
-    \end{subfigure}
-    
-    \vspace{0.25cm}
-    
-    \begin{subfigure}{\textwidth}
-        \centering
-        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/sigma1_over_time_bbg.png}
+        \includegraphics[width=\textwidth]{Figures/thesis_results/parameters/dim2/sigma_1.png}
         \caption{$\sigma_1$ over time}
     \end{subfigure}
-    
-    \vspace{0.25cm}
-    
-    \begin{subfigure}{\textwidth}
+    \hfill
+    \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/sigma2_over_time_bbg.png}
+        \includegraphics[width=\textwidth]{Figures/thesis_results/parameters/dim2/sigma_2.png}
         \caption{$\sigma_2$ over time}
     \end{subfigure}
-    
+
     \vspace{0.25cm}
-    
-    \begin{subfigure}{\textwidth}
+
+    % Row 3
+    \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=0.6\textwidth]{Code/Figures/bbg/rho12_over_time_bbg.png}
+        \includegraphics[width=\textwidth]{Figures/thesis_results/parameters/dim2/rho_12.png}
         \caption{$\rho_{12}$ over time}
     \end{subfigure}
-    
-    \caption{Estimated drift, short rate and volatility parameters over time.}
-    \label{fig:model_parameters_over_time}
+    \hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figures/thesis_results/parameters/dim2/r_tilde.png}
+        \caption{$\tilde{r}$ over time}
+    \end{subfigure}
+
+    \caption{Estimated risk-neutral parameters over the training period (2004--2020)
+    for the autoencoder with $\ell=2$ latent dimensions. Each line represents one
+    of the nine currencies.}
+    \label{fig:model_parameters_dim2}
 \end{figure}
