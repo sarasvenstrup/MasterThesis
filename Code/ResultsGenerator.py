@@ -325,6 +325,8 @@ for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
         ax.plot(tenors, actual, "o-",  color="black", linewidth=2.0, markersize=5)
         ax.plot(tenors, fitted, "s--", color=fitted_color, linewidth=2.0, markersize=5)
 
+        if row_i == 0:
+            ax.set_title(label, fontsize=10, fontweight="bold")
         if col_i == 0:
             ax.set_ylabel(f"{ccy}, {'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec.)'}",
                           fontsize=9)
@@ -367,44 +369,42 @@ DIMS_PLOT   = sorted(dim_models.keys())
 DIM_LABELS  = {d: r"$\ell$=" + str(d) for d in DIMS_PLOT}
 DIM_STYLES  = {2: "-",  3: "--", 4: ":"}
 
-fig, axes = plt.subplots(len(SHOW_CCYS), len(REPRESENTATIVE_DATES),
-                         figsize=(5 * len(REPRESENTATIVE_DATES), 3.8 * len(SHOW_CCYS)),
-                         sharey=False)
+# Load dim=1 model for histograms (dims 2,3,4 already in dim_S_hat)
+_all_dim_S_hat = dict(dim_S_hat)
+_m1, _src1 = load_ep5000_model(1)
+if _m1 is not None:
+    _S1, _, _, _, _ = run_inference(_m1, X_train)
+    _all_dim_S_hat[1] = _S1
 
-for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
-    target_date = pd.Timestamp(date_str)
+fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+axes_flat = axes.flatten()
 
-    for row_i, ccy in enumerate(SHOW_CCYS):
-        ax = axes[row_i][col_i]
+for ax_i, _dim in enumerate([1, 2, 3, 4]):
+    ax = axes_flat[ax_i]
+    if _dim not in _all_dim_S_hat:
+        ax.set_visible(False)
+        continue
 
-        mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
-        if mask_ccy.sum() == 0:
-            ax.set_visible(False)
-            continue
+    resid = (X_train[mask_train] - _all_dim_S_hat[_dim][mask_train]).numpy() * 10000
+    resid_flat = resid.flatten()
+    resid_flat = resid_flat[np.isfinite(resid_flat)]
 
-        dates_ccy  = pd.to_datetime(meta_train.loc[mask_ccy, "as_of_date"])
-        idx_local  = (dates_ccy - target_date).abs().argmin()
-        actual_date = dates_ccy.iloc[idx_local]
-        global_idx  = np.where(mask_ccy)[0][idx_local]
-
-        actual = X_train[global_idx].numpy() * scale
-        ax.plot(tenors, actual, "o-", color="black", linewidth=2.0,
-                markersize=5, zorder=5)
-
-        for _dim in DIMS_PLOT:
-            _S = dim_S_hat[_dim][global_idx].numpy() * scale
-            ax.plot(tenors, _S, DIM_STYLES[_dim],
-                    color=DIM_COLORS[_dim], linewidth=1.8, markersize=4)
-
-        if col_i == 0:
-            ax.set_ylabel(f"{ccy}, {'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec.)'}",
-                          fontsize=9)
-        ax.tick_params(axis="x", labelsize=8)
-        ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
-                transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
+    ax.hist(resid_flat, bins=120, color=DIM_COLORS[_dim], edgecolor="none", alpha=0.85)
+    ax.axvline(0, color="black", linewidth=1.2, linestyle="--")
+    ax.axvline(np.mean(resid_flat), color="#d7191c", linewidth=1.5, linestyle="--")
+    ax.axvline(np.percentile(resid_flat,  5), color="0.4", linewidth=1.0, linestyle=":")
+    ax.axvline(np.percentile(resid_flat, 95), color="0.4", linewidth=1.0, linestyle=":")
+    ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11, fontweight="bold")
+    ax.set_xlabel("Residual (bps)")
+    ax.set_ylabel("Count")
+    ax.text(0.97, 0.95,
+            f"N={len(resid_flat):,}\nStd={np.std(resid_flat):.2f} bps\n"
+            f"Kurt={float(pd.Series(resid_flat).kurt()):.2f}",
+            transform=ax.transAxes, fontsize=8, ha="right", va="top",
+            bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"))
 
 fig.tight_layout()
-save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
+save_fig(fig, "Q1d_residual_histograms_all_dims")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
