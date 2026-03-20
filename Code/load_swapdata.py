@@ -34,7 +34,7 @@ def set_paper_theme():
 
     # Customize tab20b palette
     full_palette = sns.color_palette("tab20b", 20)
-    selected_indices = [0, 1, 2, 3, 12, 13, 14, 15]
+    selected_indices = [0, 1, 2, 3, 12, 13, 14, 15, 8]
     palette = [full_palette[i] for i in selected_indices]
 
 
