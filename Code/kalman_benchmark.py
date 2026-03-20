@@ -488,6 +488,18 @@ if __name__ == "__main__":
         save_rmse_summary(is_rows, oos_rows,
                           os.path.join(out_dir, "rmse_summary.csv"))
 
+        # save IS latent factors to CSV for correlation analysis
+        _lf_rows = []
+        for ccy, res in fit_store.items():
+            for date, xs in zip(res["dates_tr"], res["Xs_tr"]):
+                row = {"as_of_date": date, "ccy": ccy}
+                for k in range(n_factors):
+                    row[f"z{k+1}"] = xs[k]
+                _lf_rows.append(row)
+        pd.DataFrame(_lf_rows).to_csv(
+            os.path.join(out_dir, "latent_factors_train.csv"), index=False
+        )
+
         plot_fitted_vs_actual(fit_store, tenors, split="train",
                               out_path=os.path.join(out_dir, "is_fitted_vs_actual.png"),
                               n_factors=n_factors)

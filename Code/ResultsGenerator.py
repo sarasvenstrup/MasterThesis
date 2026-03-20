@@ -782,7 +782,7 @@ scale_div   = 100.0 if SCALE_IS_PERCENT else 1.0
 
 for _dim in DIMS_PLOT:
     _Z    = dim_Z_hat[_dim]
-    _mask = finite_mask(X_train, dim_S_hat[_dim])
+    _mask = finite_mask(X_train, dim_S_hat[_dim]) & mask_train  # IS only
     _Z_np = _Z[_mask].numpy()
 
     meta_z = meta_train.loc[_mask.numpy()].copy().reset_index(drop=True)
@@ -871,6 +871,100 @@ if _corr_matrices:
     cbar_ax = fig.add_axes([0.87, 0.15, 0.025, 0.7])
     fig.colorbar(im, cax=cbar_ax, label="Pearson $r$")
     save_fig(fig, "Q5b_factor_correlation_heatmap")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q5c — Tables: Correlation of EKF DNS latent factors with level / slope / curvature
+#        Mirrors Q5b but for the Kalman benchmark models (ℓ=2, 3, 4)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q5c: EKF DNS factor correlation tables (all dims) ──")
+
+_corr_matrices_dns = {}
+
+for _dim in [2, 3, 4]:
+    _lf_path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
+                            f"ekf_dns_{_dim}f", "latent_factors_train.csv")
+    if not os.path.exists(_lf_path):
+        print(f"  SKIPPED ℓ={_dim} — {_lf_path} not found. Re-run kalman_benchmark.py first.")
+        continue
+
+    df_lf = pd.read_csv(_lf_path, parse_dates=["as_of_date"])
+    df_lf["ccy"] = df_lf["ccy"].str.upper()
+
+    # merge swap rates to compute curve proxies
+    df_sw = df_wide_all.copy()
+    df_sw["as_of_date"] = pd.to_datetime(df_sw["as_of_date"])
+    df_sw["ccy"] = df_sw["ccy"].str.upper()
+    merged_k = df_lf.merge(df_sw[["as_of_date", "ccy"] + TENOR_COLS],
+                           on=["as_of_date", "ccy"], how="left")
+    _scale = 100.0 if SCALE_IS_PERCENT else 1.0
+    for t in TENOR_COLS:
+        merged_k[t] = merged_k[t].astype(float) / _scale
+
+    merged_k["level"]     = merged_k[TENOR_COLS].mean(axis=1)
+    merged_k["slope"]     = merged_k[30] - merged_k[1]
+    merged_k["curvature"] = 2 * merged_k[5] - merged_k[1] - merged_k[30]
+
+    z_cols_k = [f"z{k+1}" for k in range(_dim)]
+    corr_rows_k = {}
+    for zc in z_cols_k:
+        row = {}
+        for fc in ["level", "slope", "curvature"]:
+            valid = merged_k[[zc, fc]].dropna()
+            row[fc] = round(float(valid[zc].corr(valid[fc])), 3)
+        corr_rows_k[zc] = row
+
+    table_q5c = pd.DataFrame(corr_rows_k).T
+    table_q5c.index = [f"$z_{k+1}$" for k in range(_dim)]
+    table_q5c.columns = ["Level\n(avg all tenors)", "Slope\n(30Y − 1Y)",
+                         "Curvature\n(2×5Y − 1Y − 30Y)"]
+    _corr_matrices_dns[_dim] = table_q5c.copy()
+    save_table(table_q5c, f"Q5c_DNS_factor_correlations_dim{_dim}")
+    print(f"\n  EKF DNS ℓ={_dim}:")
+    print(table_q5c.to_string())
+
+# ── Q5c heatmap: EKF DNS all dims side by side ───────────────────────────────
+if _corr_matrices_dns:
+    from matplotlib.colors import LinearSegmentedColormap
+    _cmap_q5c = LinearSegmentedColormap.from_list(
+        "q5c_div",
+        [custom_palette[4], "white", custom_palette[0]],
+        N=256
+    )
+    _hm_dims_c = sorted(_corr_matrices_dns.keys())
+    fig, axes = plt.subplots(1, len(_hm_dims_c),
+                             figsize=(4.5 * len(_hm_dims_c) + 1.5, 4.5))
+    if len(_hm_dims_c) == 1:
+        axes = [axes]
+    fig.subplots_adjust(right=0.85)
+
+    im = None
+    for ax, _dim in zip(axes, _hm_dims_c):
+        _mat = _corr_matrices_dns[_dim].values.astype(float)
+        _nrows = _mat.shape[0]
+        _X = np.arange(4)
+        _Y = np.arange(_nrows + 1)
+        im = ax.pcolormesh(_X, _Y, _mat, cmap=_cmap_q5c,
+                           vmin=-1, vmax=1, edgecolors="face")
+        ax.invert_yaxis()
+        ax.set_title(rf"$\ell={_dim}$", fontsize=11, fontweight="bold")
+        ax.set_xticks([0.5, 1.5, 2.5])
+        ax.set_xticklabels(["Level", "Slope", "Curvature"], fontsize=9)
+        ax.set_yticks([i + 0.5 for i in range(_nrows)])
+        ax.set_yticklabels([rf"$z_{k+1}$" for k in range(_nrows)], fontsize=9)
+        ax.tick_params(length=0)
+        for r in range(_nrows):
+            for c in range(3):
+                val = _mat[r, c]
+                txt_col = "white" if abs(val) > 0.6 else "black"
+                ax.text(c + 0.5, r + 0.5, f"{val:.3f}",
+                        ha="center", va="center", fontsize=8,
+                        color=txt_col, fontweight="bold")
+
+    if im is not None:
+        cbar_ax = fig.add_axes([0.87, 0.15, 0.025, 0.7])
+        fig.colorbar(im, cax=cbar_ax, label="Pearson $r$")
+    save_fig(fig, "Q5c_DNS_factor_correlation_heatmap")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
