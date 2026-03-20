@@ -440,7 +440,7 @@ save_fig(fig, "Q1c_residual_histogram")
 # ─────────────────────────────────────────────────────────────────────────────
 # Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q2a: IS vs OOS RMSE table (all dims) ──")
+print("\n── Q2a: IS vs  OOS RMSE table (all dims) ──")
 
 rows_q2 = {}
 for dim in [1, 2, 3, 4]:
