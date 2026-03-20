@@ -533,10 +533,13 @@ if os.path.exists(MANIFEST_PATH):
     table_q3a = table_q3a[[c for c in CCY_ORDER + ["Average"] if c in table_q3a.columns]]
     table_q3a = table_q3a.round(2)
 
-    # valid mean: exclude diverged seeds (avg > 100 bps)
-    _valid_mask = table_q3a["Average"].lt(100)
+    # valid mean: exclude diverged seeds (avg > 100 bps or NaN)
+    _avg_num = pd.to_numeric(table_q3a["Average"], errors="coerce")
+    _valid_mask = _avg_num.notna() & (_avg_num < 100)
+    print(f"  Valid seeds: {list(table_q3a.index[_valid_mask])}")
     _mean_valid = pd.Series(np.nan, index=table_q3a.columns)
-    _mean_valid["Average"] = round(table_q3a.loc[_valid_mask, "Average"].mean(), 2)
+    _mean_valid["Average"] = round(_avg_num[_valid_mask].mean(), 2)
+    print(f"  Mean (valid) Average: {_mean_valid['Average']}")
     table_q3a.loc["Mean (valid)"] = _mean_valid
 
     save_table(table_q3a, "Q3a_OOS_seeds_table_dim3")
