@@ -1,0 +1,36 @@
+
+%--------------------------------------------------------
+\subsection{Finite-Dimensional Factor Representations}
+%--------------------------------------------------------
+
+A general term structure model describes an entire curve of bond prices across maturities. In practice, however, it is often assumed that the term structure is driven by a finite-dimensional state vector
+\[
+z_t \in \mathbb{R}^{\ell}.
+\]
+
+Under this assumption, zero-coupon bond prices admit the representation
+\begin{equation}
+P(t,T)=P(z_t,\tau), \qquad \tau=T-t.
+\label{eq:state_representation}
+\end{equation}
+Hence, the full term structure at time \(t\) is determined by the current value of the state vector \(z_t\).
+
+The short rate may then be written as a function of the state variable,
+\begin{equation}
+r(t)=\tilde r(z_t),
+\label{eq:short_rate_state}
+\end{equation}
+so that the instantaneous risk-free rate is also determined by the current state.
+
+Since bond prices are characterized by arbitrage-free pricing, the relevant state dynamics for valuation are the dynamics under the risk-neutral measure. We therefore assume that the state process evolves according to
+\begin{equation}
+dz_t=\mu(z_t)\,dt+\sigma(z_t)\,dW_t^{\mathbb Q},
+\label{eq:state_dynamics}
+\end{equation}
+where \(\mu(\cdot)\) and \(\sigma(\cdot)\) denote the drift and diffusion functions under \(\mathbb Q\).
+
+This representation provides a tractable way of modeling the term structure through a small number of underlying factors rather than as an unrestricted infinite-dimensional object. It also forms the basis for many classical term structure models, including affine term structure models.
+
+
+
+

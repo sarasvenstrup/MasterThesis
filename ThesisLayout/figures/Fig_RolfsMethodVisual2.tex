@@ -26,7 +26,7 @@
 
 \node[neuron, fill=red!70] (z1) at (0, 4.2) {$z_1$};
 \node                      (zvd) at (0, 3.0) {$\vdots$};
-\node[neuron, fill=red!70] (zl) at (0, 1.8) {$z_l$};
+\node[neuron, fill=red!70] (zl) at (0, 1.8) {$z_\ell$};
 
 % =====================================
 % X positions
@@ -118,11 +118,7 @@
 
 \end{tikzpicture}
 
-\caption{Branching of the latent factors $z=(z_1,\ldots,z_l)$ into four neural networks.
-Each hidden layer is illustrated by its first and last neuron with vertical dots in between:
-$\mathcal{G}$ has $h_1,\ldots,h_{10}$, while $\mathcal{H}$ and $\mathcal{R}$
-have $h_1,\ldots,h_4$. The output $\mathcal{K}(z)$ is connected directly to the latent
-factors without a hidden layer. Only $\mathcal{G}(z,\tau)$ additionally depends on the maturity $\tau$.}
+\caption{Branching architecture of the latent factors $z=(z_1,\ldots,z_\ell)$ into four neural networks producing $\mathcal{G}$, $\mathcal{K}$, $\mathcal{H}$, and $\mathcal{R}$. The networks $\mathcal{G}$, $\mathcal{H}$, and $\mathcal{R}$ contain hidden layers, while $\mathcal{K}(z)$ connects directly to the latent factors without a hidden layer. The function $\mathcal{G}(z,\tau)$ additionally depends on the maturity $\tau$.}
 \label{fig:rolf_architecture_details}
 
 \end{figure}
