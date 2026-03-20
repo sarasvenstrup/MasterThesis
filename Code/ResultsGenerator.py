@@ -574,7 +574,7 @@ if os.path.exists(roll_path_d3):
         if df_roll["test_start"].min() <= d <= df_roll["test_start"].max():
             ax.axvline(d, color="0.5", linewidth=1.0, linestyle="--")
             ax.text(d, ax.get_ylim()[1] if ax.get_ylim()[1] > 1 else 1,
-                    label, fontsize=7, ha="center", va="bottom", color="0.4",
+                    label, fontsize=21, ha="center", va="bottom", color="0.4",
                     rotation=0)
 
     ax.set_ylabel("OOS RMSE (bps)")
@@ -707,7 +707,7 @@ if oos_ae2 is not None and oos_ae3c is not None and oos_ae4 is not None and oos_
     _avg_styles = [(oos_ae2, custom_palette[1], "-"),
                    (oos_ae3c, custom_palette[2], "--"),
                    (oos_ae4, custom_palette[3], ":"),
-                   (oos_k3c, custom_palette[0], "-.")]
+                   (oos_k3c, custom_palette[0], "-")]
     for oos, col, ls in _avg_styles:
         avg = oos.drop("Average", errors="ignore").mean()
         ax.axhline(avg, color=col, linewidth=1.2, linestyle=ls, alpha=0.85)
@@ -753,7 +753,7 @@ for dim_i, ax in enumerate(axes):
 # add event text on top panel only
 for ev_label, ev_date in EVENTS.items():
     axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
-                 ev_label, fontsize=6.5, ha="center", va="bottom", color="0.4")
+                 ev_label, fontsize=19.5, ha="center", va="bottom", color="0.4")
 fig.tight_layout()
 save_fig(fig, "Q5a_latent_factors_over_time")
 
@@ -948,7 +948,7 @@ for ev_label, ev_date in EVENTS.items():
         axi.axvline(pd.Timestamp(ev_date), color="0.55",
                     linewidth=1.0, linestyle="--")
     axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
-                 ev_label, fontsize=7, ha="center", va="bottom", color="0.4")
+                 ev_label, fontsize=21, ha="center", va="bottom", color="0.4")
 
 fig.autofmt_xdate()
 fig.tight_layout()
@@ -1027,9 +1027,6 @@ for _dim in ALL_DIMS_PARAM:
                     label=r"$\pm$1 std")
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
     ax.set_ylabel("Approx. Sharpe ratio")
-    ax.text(0.03, 0.95, r"AE ($\ell$=" + str(_dim) + ")",
-            transform=ax.transAxes, fontsize=10, fontweight="bold",
-            va="top", ha="left")
     ax.legend(frameon=False, fontsize=10)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
