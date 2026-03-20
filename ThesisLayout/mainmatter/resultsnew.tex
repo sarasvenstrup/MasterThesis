@@ -17,7 +17,7 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
   columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
-  columns/index/.style={column name={$\ell$}, string type, column type=l},
+  columns/index/.style={column name={$\ell$}, string type, column type=c},
   columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
@@ -116,9 +116,6 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
   columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
   every head row/.style={before row=\toprule, after row=\midrule},
   every last row/.style={after row=\bottomrule},
-  row 2/.style={before row=\noalign{\smallskip}},
-  row 4/.style={before row=\noalign{\smallskip}},
-  row 6/.style={before row=\noalign{\smallskip}},
 ]{\datqtwoa}}
 }
 \caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
