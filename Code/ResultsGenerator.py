@@ -603,8 +603,8 @@ def load_kalman_rmse(dim):
     return df[oos_col]
 
 rows_q4 = {}
-# interleave AE and EKF DNS by dimension: (AE l=1, EKF 1f), (AE l=2, EKF 2f), ...
-for dim in KALMAN_DIMS:
+# interleave AE and EKF DNS by dimension: (AE l=2, EKF 2f), (AE l=3, EKF 3f), (AE l=4, EKF 4f)
+for dim in [2, 3, 4]:
     _, oos_ae_dim = load_split_rmse(dim)
     if oos_ae_dim is not None:
         rows_q4[rf"AE $\ell$={dim}"] = oos_ae_dim
