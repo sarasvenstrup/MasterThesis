@@ -610,7 +610,7 @@ for dim in [2, 3, 4]:
         rows_q4[rf"AE $\ell$={dim}"] = oos_ae_dim
     oos_k = load_kalman_rmse(dim)
     if oos_k is not None:
-        rows_q4[f"EKF DNS {dim}f"] = oos_k
+        rows_q4[rf"EKF DNS $\ell$={dim}"] = oos_k
 
 table_q4a = pd.DataFrame(rows_q4).T
 table_q4a = table_q4a[[c for c in CCY_ORDER + ["Average"] if c in table_q4a.columns]]
