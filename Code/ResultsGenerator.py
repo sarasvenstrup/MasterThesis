@@ -297,14 +297,14 @@ SHOW_CCYS = ["EUR", "USD"]   # show 2 currencies per date for clarity
 
 scale = 100.0 if SCALE_IS_PERCENT else 1.0
 
-fig, axes = plt.subplots(len(REPRESENTATIVE_DATES), len(SHOW_CCYS),
-                         figsize=(5 * len(SHOW_CCYS), 3.8 * len(REPRESENTATIVE_DATES)),
+fig, axes = plt.subplots(len(SHOW_CCYS), len(REPRESENTATIVE_DATES),
+                         figsize=(5 * len(REPRESENTATIVE_DATES), 3.8 * len(SHOW_CCYS)),
                          sharey=False)
 
-for row_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
+for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
     target_date = pd.Timestamp(date_str)
 
-    for col_i, ccy in enumerate(SHOW_CCYS):
+    for row_i, ccy in enumerate(SHOW_CCYS):
         ax = axes[row_i][col_i]
 
         # pick closest available date for this currency (train set)
@@ -327,9 +327,9 @@ for row_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
                 markersize=5, label="Fitted")
 
         if row_i == 0:
-            ax.set_title(f"{ccy}", fontsize=12, fontweight="bold")
+            ax.set_title(label, fontsize=10, fontweight="bold")
         if col_i == 0:
-            ax.set_ylabel(f"{'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec)'}\n{label}",
+            ax.set_ylabel(f"{ccy}\n{'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec)'}",
                           fontsize=9)
         ax.set_xlabel("Tenor (years)")
         ax.legend(fontsize=8, frameon=False)
