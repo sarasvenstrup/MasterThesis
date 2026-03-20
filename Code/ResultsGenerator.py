@@ -228,8 +228,8 @@ rows_is = {}
 for dim in [1, 2, 3, 4]:
     is_rmse = load_training_log_rmse(dim)
     if is_rmse is not None:
-        rows_is[f"d={dim}"] = is_rmse
-        print(f"  d={dim}: avg IS RMSE = {is_rmse['Average']:.2f} bps")
+        rows_is[f"$\\ell={dim}$"] = is_rmse
+        print(f"  ell={dim}: avg IS RMSE = {is_rmse['Average']:.2f} bps")
 
 table_q1a = pd.DataFrame(rows_is).T          # rows=dims, cols=currencies
 table_q1a = table_q1a[[c for c in CCY_ORDER + ["Average"] if c in table_q1a.columns]]
@@ -446,8 +446,8 @@ rows_q2 = {}
 for dim in [1, 2, 3, 4]:
     is_mean, oos_mean = load_split_rmse(dim)
     if is_mean is not None:
-        rows_q2[("IS",  f"ell={dim}")] = is_mean
-        rows_q2[("OOS", f"ell={dim}")] = oos_mean
+        rows_q2[("IS",  f"$\\ell={dim}$")] = is_mean
+        rows_q2[("OOS", f"$\\ell={dim}$")] = oos_mean
 
 table_q2a = pd.DataFrame(rows_q2).T
 table_q2a.index = pd.MultiIndex.from_tuples(table_q2a.index, names=["Split", "Model"])
