@@ -1,0 +1,36 @@
+%========================================================
+\section{Motivation for simulation-based derivative pricing}
+%========================================================
+
+The empirical results above show that the proposed encoder--decoder framework is able to reproduce observed swap curves with high accuracy while maintaining the no-arbitrage structure embedded in the decoder. 
+This is an important first step, since any economically meaningful term-structure model must be capable of representing the observed cross section of interest rates without generating obvious static inconsistencies. 
+However, accurate reconstruction of observed curves does not in itself imply that the model is useful for valuation purposes. 
+A model may fit today’s term structure very well and still fail to provide a sensible description of how the curve evolves over time. 
+For applications in fixed-income pricing, this distinction is fundamental.
+
+The value of a derivative written on interest rates depends not only on the current yield curve, but on the distribution of future curves under the pricing measure. 
+Instruments such as caplets, swaptions, and options on yields derive their value from future realizations of discount factors, forward rates, or swap rates at the exercise date and beyond. 
+Accordingly, a model intended as more than a purely descriptive compression device must define both a current cross-sectional representation of the term structure and a dynamically coherent law of motion for its future evolution. 
+This requirement is naturally expressed in a simulation framework: if the latent state process can be simulated forward and mapped into future arbitrage-free yield curves, then the model can be used to generate model-implied derivative prices through risk-neutral valuation.
+
+This perspective is particularly relevant in the present setting. 
+The proposed framework is built around a low-dimensional latent state variable, inferred from observed swap curves by the encoder, and an arbitrage-free decoder that transforms the latent state into discount factors and derived curve quantities. 
+The architecture therefore suggests an interpretation that goes beyond dimensionality reduction. 
+If the learned latent variables are viewed as state variables in a term-structure model, and if their dynamics under the pricing measure are sufficiently well specified by the trained networks, then the model may be interpreted as a full latent-factor pricing model rather than merely an autoencoder. 
+Under this interpretation, simulation from the latent dynamics provides a direct way of assessing whether the trained system contains enough information to support valuation of contingent claims.
+
+This step is also informative from a methodological point of view. 
+Much of the empirical literature on neural-network-based yield curve models emphasizes reconstruction accuracy, forecasting ability, or low-dimensional representation. 
+While such criteria are important, they do not fully address whether the learned representation is financially meaningful in the sense required for derivative pricing. 
+A model that reconstructs curves well may still have implausible state dynamics, inconsistent discounting implications, or insufficient variation in the quantities that matter for option values. 
+By contrast, a model that admits coherent simulation and produces reasonable derivative prices demonstrates that its latent representation captures not only the geometry of observed curves, but also economically relevant aspects of their evolution.
+
+At the same time, simulation-based pricing serves as a stringent diagnostic of the dynamic content of the model. 
+Because the decoder is designed to satisfy the no-arbitrage restrictions linking bond prices and the short rate, the remaining question is whether the learned latent dynamics interact with this decoder in a way that yields plausible distributions of future term structures. 
+If this is the case, then derivative pricing becomes possible through standard risk-neutral expectations. 
+If not, the experiment is still informative, since it reveals that strong reconstruction performance alone is not sufficient for pricing applications. 
+In this sense, derivative pricing is not introduced merely as an additional application, but as a way of evaluating how far the trained model can legitimately be interpreted as a term-structure model under the pricing measure.
+
+For these reasons, it is natural to complement the reconstruction and arbitrage diagnostics with an investigation of simulation-based valuation. 
+The objective is not necessarily to claim that the model is calibrated to market option prices in the same way as a dedicated derivatives model, but rather to examine whether the learned latent-state dynamics and arbitrage-free decoder together define a coherent framework for pricing yield-dependent claims. 
+This provides a sharper assessment of the financial relevance of the proposed architecture and clarifies whether it should be viewed solely as a reconstruction tool or as a genuine pricing model.

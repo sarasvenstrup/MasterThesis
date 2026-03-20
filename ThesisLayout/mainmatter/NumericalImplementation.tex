@@ -33,7 +33,7 @@ Conditional on $z_t$, the decoder evaluates $\mathcal{G}(z_t,\tau)$ together wit
 \]
 is positive semidefinite by construction.
 
-Using automatic differentiation, the derivatives of $\mathcal{G}(z_t,\tau)$ required for the coefficient functions $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ are computed on the \textcolor{red}{full annual grid (husk lige at snakke om dette, og skal der så med 0 i figuren?)}
+Using automatic differentiation, the derivatives of $\mathcal{G}(z_t,\tau)$ required for the coefficient functions $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ are computed on
 \[
 \tau \in \{0,1,\dots,30\}.
 \]
@@ -68,6 +68,74 @@ P(z_t,\tau)
 Because all steps are implemented using differentiable tensor operations, the entire pricing map remains differentiable with respect to the model parameters.
 
 %--------------------------------------------------------
+\section{Numerical Arbitrage Diagnostics}
+%--------------------------------------------------------
+
+Although the decoder is constructed so that the no-arbitrage restriction is satisfied by design, it is still useful to verify this property numerically after solving the ODE system. To this end, we compute a maturity-by-maturity residual of the bond-pricing equation together with an associated approximate Sharpe-ratio diagnostic.
+
+For each observation date $t$ and each maturity $\tau$ on the grid, the model produces the quantities
+\[
+G(z_t,\tau), \qquad A_{z_t}(\tau), \qquad B_{z_t}(\tau),
+\]
+as well as the risk-neutral objects
+\[
+\mu(z_t), \qquad \sigma(z_t), \qquad \tilde r(z_t).
+\]
+Using automatic differentiation, we also compute the maturity derivative $\partial_\tau G(z_t,\tau)$, the gradient $\nabla_z G(z_t,\tau)$, and the trace term
+\[
+\mathrm{Tr}\!\left(\sigma(z_t)^\top H_z G(z_t,\tau)\sigma(z_t)\right),
+\]
+where $H_z G$ denotes the Hessian of $G$ with respect to the latent state.
+
+The numerical ODE solver delivers the functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ on the maturity grid. Their derivatives with respect to maturity are obtained directly from the ODE system,
+\begin{align}
+\partial_\tau B_{z_t}(\tau) &= \alpha_{z_t}(\tau) B_{z_t}(\tau) + \beta_{z_t}(\tau), \\
+\partial_\tau A_{z_t}(\tau) &= \gamma_{z_t}(\tau) B_{z_t}(\tau)^2.
+\end{align}
+
+Combining these objects, we define the bond-pricing residual
+\begin{equation}
+R_t(\tau)
+=
+-\tilde r(z_t)
+-\partial_\tau A_{z_t}(\tau)
++G(z_t,\tau)\partial_\tau B_{z_t}(\tau)
++B_{z_t}(\tau)\Xi_t(\tau)
++B_{z_t}(\tau)^2\gamma_{z_t}(\tau),
+\label{eq:arb_residual}
+\end{equation}
+where
+\begin{equation}
+\Xi_t(\tau)
+=
+\partial_\tau G(z_t,\tau)
+-
+\nabla_z G(z_t,\tau)^\top \mu(z_t)
+-
+\frac12
+\mathrm{Tr}\!\left(
+\sigma(z_t)^\top H_z G(z_t,\tau)\sigma(z_t)
+\right).
+\label{eq:Xi_term}
+\end{equation}
+
+If the decoded bond prices satisfy the no-arbitrage pricing relation exactly, then $R_t(\tau)=0$ for all maturities. In practice, small nonzero values may arise because of numerical approximation, finite solver tolerance, and automatic-differentiation error.
+
+To obtain a scale-normalized diagnostic comparable across maturities, we follow the Sharpe-ratio logic discussed in the theory chapter and define the approximate Sharpe ratio
+\begin{equation}
+\mathrm{SR}_t(\tau)
+=
+\frac{R_t(\tau)}{\tau \bar{\sigma}},
+\label{eq:sr_numerical}
+\end{equation}
+where $\bar{\sigma}>0$ is a fixed volatility scaling constant. In the implementation, we set
+\[
+\bar{\sigma}=0.006.
+\]
+
+The quantities $R_t(\tau)$ and $\mathrm{SR}_t(\tau)$ are computed on the full maturity grid $\tau=1,\dots,30$ for each observation. They are not included in the training loss, but are retained as post-estimation diagnostics of the numerical consistency of the decoded bond curve. In the empirical analysis, we summarize these diagnostics across dates, maturities, and currencies, and also report representative maturity profiles.
+
+%--------------------------------------------------------
 \section{Estimation Objective}
 %--------------------------------------------------------
 
@@ -100,13 +168,16 @@ The optimization problem in \eqref{eq:training_loss} is solved using stochastic 
 \textcolor{red}{A key feature of the implementation is that differentiation extends through the numerical ODE solver.}
 
 Since the Runge--Kutta recursion is implemented using elementary tensor operations, automatic differentiation propagates gradients through
-\begin{itemize}
+
+\begin{half}
+\begin{enumerate}[label=\textbf{Step \arabic* \,\textcolor{UCPHred}{|}}, itemsep=0pt, topsep=0pt, parsep=0pt, partopsep=0pt]
     \item the encoder mapping $A_1 \mathbf{S}_t$,
     \item the parameterizations of $\mathcal{G}(z_t,\tau)$, $\mu(z_t)$, $\sigma(z_t)$, and $\tilde r(z_t)$,
     \item the construction of the coefficient functions $\alpha_{z_t}(\tau)$, $\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$,
     \item the numerical solution of the ODE system for $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$,
     \item and the final transformation from bond prices to swap rates.
-\end{itemize}
+\end{enumerate}
+\end{half}
 
 Each parameter update therefore reflects the effect of the corresponding model component on the entire reconstructed term structure.
 
@@ -120,11 +191,11 @@ The fitted parameters $\hat{\Omega}$ define a term strucutre model that simultan
 
 
 %--------------------------------------------------------
-\section{Interpretation}
+%\section{Interpretation}
 %--------------------------------------------------------
 
-\textcolor{red}{Ville mene at dette afsnit er unødvendigt, da alle tingene er blevet nævnt tidligere, og endda flere gange tidligere}
+%\textcolor{red}{Ville mene at dette afsnit er unødvendigt, da alle tingene er blevet nævnt tidligere, og endda flere gange tidligere}
 
-The numerical implementation is a direct computational counterpart of the theoretical model. The encoder extracts a low-dimensional representation of the observed swap curve, while the decoder maps this latent state into an arbitrage-free zero-coupon bond curve by solving the no-arbitrage ODE system derived earlier. Estimation therefore amounts to learning the parameters of a structured neural architecture in which financial consistency is enforced by construction rather than imposed through ex post corrections.
+%The numerical implementation is a direct computational counterpart of the theoretical model. The encoder extracts a low-dimensional representation of the observed swap curve, while the decoder maps this latent state into an arbitrage-free zero-coupon bond curve by solving the no-arbitrage ODE system derived earlier. Estimation therefore amounts to learning the parameters of a structured neural architecture in which financial consistency is enforced by construction rather than imposed through ex post corrections.
 
-This distinction is important. In alternative neural yield curve models, no-arbitrage restrictions may be introduced through penalty terms added to the loss function. In the present framework, the pricing structure itself ensures that the generated discount curves satisfy the no-arbitrage condition whenever the ODE system is solved. The estimation problem is therefore restricted to fitting the data within a model class that is already economically admissible.
+%This distinction is important. In alternative neural yield curve models, no-arbitrage restrictions may be introduced through penalty terms added to the loss function. In the present framework, the pricing structure itself ensures that the generated discount curves satisfy the no-arbitrage condition whenever the ODE system is solved. The estimation problem is therefore restricted to fitting the data within a model class that is already economically admissible.

@@ -8,71 +8,44 @@ This chapter establishes the theoretical foundation underlying the methods and r
 \label{sec:term_structure_theory}
 %========================================================
 
-This section introduces the financial framework underlying the representation and modeling of swap curves. The discussion begins with arbitrage-free bond pricing, then introduces forward rates and swap rates, and finally considers finite-dimensional factor representations of the term structure that motivate the model architecture developed later in the thesis.
+This section introduces the financial framework underlying the representation and modeling of swap curves. It begins with the basics of term structure theory, including the fundamental relation between zero-coupon bond prices, forward rates, and the short rate, then presents the arbitrage-free pricing relation for bonds and the mapping from discount curves to swap rates. The section concludes with finite-dimensional factor representations and affine term structure models, which motivate the modeling framework developed later in the thesis.
+
+%---------------------------------------
+\subsection{Setup and Parametrization}
+%---------------------------------------
 
 We work on a filtered probability space
 \[
 (\Omega,\mathcal{F},\{\mathcal{F}_t\}_{t\ge 0},\mathbb{P}),
 \]
-supporting a $d$-dimensional Brownian motion. Under the absence of arbitrage, there exists an equivalent martingale measure $\mathbb{Q}$ under which discounted traded asset prices are martingales. In this sense, an arbitrage-free term structure model is one in which bond prices are generated consistently under a risk-neutral pricing measure. All stochastic processes are assumed to satisfy the regularity conditions required for the application of It\^o's lemma.
+supporting a $d$-dimensional Brownian motion. Under standard no-arbitrage assumptions, there exists an equivalent martingale measure $\mathbb{Q}$ under which discounted traded asset prices are martingales. In this sense, an arbitrage-free term structure model is one in which zero-coupon bond prices are generated consistently under a risk-neutral pricing measure. All stochastic processes are assumed to satisfy the regularity conditions required for the application of It\^o's lemma.
 
-Let $P(t,T)$ denote the time-$t$ price of a default-free zero-coupon bond maturing at time $T$. Throughout, it is convenient to work with time to maturity
+Let $P(t,T)$ denote the time-$t$ price of a default-free zero-coupon bond paying one unit at maturity $T$. The term structure at time $t$ refers to the collection of such bond prices across maturities $T \ge t$. Throughout, it is convenient to work with time to maturity
 \[
 \tau = T-t,
 \]
-and to write bond prices interchangeably as $P(t,T)$ and $P(t,t+\tau)$.
+so that bond prices may be written interchangeably as $P(t,T)$ and $P(t,t+\tau)$. This time-to-maturity representation is known as the Musiela parametrization and is adopted throughout the thesis, since the objects of interest are swap curves indexed by maturity.
 
 %--------------------------------------------------------
-\subsection{Arbitrage-Free Pricing}
+\subsection{Zero-coupon bonds, forward rates, and the short rate}
 %--------------------------------------------------------
 
-Let the money-market account be defined by
-\begin{equation}
-B(t)
-=
-\exp\!\left(
-\int_0^t r(u)\,du
-\right),
-\label{eq:bank_account}
-\end{equation}
-where $r(t)$ denotes the instantaneous short rate.
+At any given time $t$, the term structure may be represented through the prices of default-free zero-coupon bonds across maturities. In particular, the collection
+\[
+\{P(t,T): T \ge t\}
+\]
+fully characterizes the discount curve at time $t$.
 
-Under the risk-neutral measure $\mathbb{Q}$, the discounted price process of any traded asset is a martingale. In particular, the arbitrage-free price of a zero-coupon bond satisfies
-\begin{equation}
-P(t,T)
-=
-\mathbb{E}_t^{\mathbb{Q}}
-\left[
-\frac{B(t)}{B(T)}
-\right]
-=
-\mathbb{E}_t^{\mathbb{Q}}
-\left[
-\exp\!\left(
--\int_t^T r(u)\,du
-\right)
-\right].
-\label{eq:riskneutral_bond}
-\end{equation}
-
-Equation \eqref{eq:riskneutral_bond} is the basic pricing relation in term structure theory: once the short-rate dynamics under $\mathbb{Q}$ are specified, bond prices --- and thereby the entire discount curve --- are determined. This link between the short rate, the discount curve, and risk-neutral valuation is the basis of the arbitrage-free modeling framework used later in the thesis.
-
-%--------------------------------------------------------
-\subsection{Forward Rates, Short Rate, and Musiela Parametrization}
-%--------------------------------------------------------
-
-A term structure may be represented in several equivalent ways, including through discount factors, zero-coupon yields, and instantaneous forward rates. For the present purposes, the forward-rate representation is particularly convenient because it provides a local description of the discount curve across maturities.
-
-The instantaneous forward rate is defined by
+An equivalent representation is obtained through the instantaneous forward rate curve. Under the Musiela parametrization, the instantaneous forward rate is defined by
 \begin{equation}
 f(t,\tau)
 =
 -
 \frac{\partial}{\partial \tau}
-\log P(t,t+\tau),
+\log P(t,t+\tau).
 \label{eq:forward_rate}
 \end{equation}
-and the short rate is obtained as the limiting forward rate at zero maturity,
+The short rate is obtained as the limiting forward rate at zero maturity,
 \begin{equation}
 r(t)
 =
@@ -98,15 +71,55 @@ y(t,\tau)
 -\frac{1}{\tau}\log P(t,t+\tau), \qquad \tau>0.
 \label{eq:zero_yield}
 \end{equation}
-Thus, the term structure may equivalently be represented through discount factors, zero yields, or instantaneous forward rates.
+Thus, the term structure may equivalently be expressed through zero-coupon bond prices, zero-coupon yields, or instantaneous forward rates.
 
-Instead of describing the term structure using calendar maturity $T$, it is often convenient to use time to maturity $\tau = T-t$. Under this Musiela parametrization, the term structure is represented as a function of current time $t$ and remaining maturity $\tau$. This representation is adopted throughout the thesis since the objects of interest are swap curves indexed by maturity.
+In modern interest rate markets, discounting and the construction of forward rates are often based on different curves. In this thesis, however, a single-curve assumption is imposed throughout, so that both discounting and the construction of forward rates are based on the same curve. This assumption is adopted to keep the framework tractable and consistent with the data representation used later in the thesis.
+
+%--------------------------------------------------------
+\subsection{Arbitrage-Free Pricing}
+%--------------------------------------------------------
+
+Let the money-market account be defined by
+\begin{equation}
+B(t)
+=
+\exp\!\left(
+\int_0^t r(u)\,du
+\right),
+\label{eq:bank_account}
+\end{equation}
+where $r(t)$ denotes the instantaneous short rate.
+
+Under the risk-neutral measure $\mathbb{Q}$, the discounted price process of any traded asset is a martingale. In particular, the arbitrage-free price of a default-free zero-coupon bond satisfies
+\begin{equation}
+P(t,T)
+=
+\mathbb{E}_t^{\mathbb{Q}}
+\left[
+\frac{B(t)}{B(T)}
+\right]
+=
+\mathbb{E}_t^{\mathbb{Q}}
+\left[
+\exp\!\left(
+-\int_t^T r(u)\,du
+\right)
+\right].
+\label{eq:riskneutral_bond}
+\end{equation}
+
+%Equation \eqref{eq:riskneutral_bond} is the fundamental arbitrage-free pricing relation for the term structure. 
+
+Once the short-rate dynamics under $\mathbb{Q}$ are specified, bond prices, and thereby the entire discount curve, are determined.
+
+%Equation \eqref{eq:riskneutral_bond} is the basic pricing relation in term structure theory: once the short-rate dynamics under $\mathbb{Q}$ are specified, bond prices - and thereby the entire discount curve - are determined. This link between the short rate, the discount curve, and risk-neutral valuation is the basis of the arbitrage-free modeling framework used later in the thesis.
+
 
 %--------------------------------------------------------
 \subsection{Swap Rates}
 %--------------------------------------------------------
 
-In practice, the term structure is often observed through swap rates quoted at discrete maturities. To connect these market observations to the underlying discount curve, we next relate par swap rates to zero-coupon bond prices.
+In practice, the market curve considered in this thesis is observed through par swap rates quoted at discrete maturities. To connect these market observations to the underlying discount curve, we therefore relate par swap rates to zero-coupon bond prices.
 
 Consider a fixed-for-floating interest rate swap initiated at time $t$ and maturing at $T=t+\tau$. Let
 \[
@@ -133,7 +146,7 @@ Under the single-curve assumption adopted throughout this thesis, the forward ra
 \frac{P(t,T_{i-1})}{P(t,T_i)}.
 \]
 
-For a spot-starting swap, the value of the floating leg is
+For a standard spot-starting swap, the value of the floating leg follows from the usual telescoping replication argument and is given by
 \begin{equation}
 V_{\mathrm{float}}(t)
 =
@@ -154,115 +167,47 @@ S(t,\tau)
 \label{eq:swap_rate}
 \end{equation}
 
-Hence, par swap rates are nonlinear functions of the underlying discount curve. Once an arbitrage-free discount curve is specified, the corresponding swap curve is determined through \eqref{eq:swap_rate}.
-
-%--------------------------------------------------------
-\subsection{Observed Swap Curve}
-%--------------------------------------------------------
-
-In practice, the term structure is observed through a discrete set of market-quoted instruments. In many fixed-income markets, par swap rates across maturities provide a liquid representation of the yield curve.
-
-Let
-\[
-\mathcal{T}=\{\tau_1,\dots,\tau_m\}
-\]
-denote the set of quoted maturities. The observed swap curve at time $t$ is then given by the vector
-\[
-S_t
-=
-\bigl(
-S(t,\tau_1),\dots,S(t,\tau_m)
-\bigr)^\top \in \mathbb{R}^m.
-\]
-
-Since swap rates are determined by the discount curve through \eqref{eq:swap_rate}, modeling the swap curve amounts to modeling the underlying discount curve together with the transformation linking the two. However, because market quotes are observed only at finitely many maturities, the discrete swap curve does not by itself determine a unique continuous discount or forward-rate curve. Constructing a continuous arbitrage-consistent term structure therefore requires additional structure, either through interpolation or through a parametric or factor-based model.
-
-%--------------------------------------------------------
-\subsection{Single-Curve Assumption}
-%--------------------------------------------------------
-
-In modern interest rate markets, discounting and forward projection are often based on different curves. Nevertheless, to keep the modeling framework tractable and consistent with the data representation used in this thesis, a single-curve setup is assumed. Under this simplification, discount factors and swap rates are treated as being generated from a single underlying term structure. This abstraction is also consistent with the mapping used later from zero-coupon bond prices to model-implied swap rates.
-
-%--------------------------------------------------------
-\subsection{Empirical Factor Structure of Yield Curves}
-%--------------------------------------------------------
-
-Although the term structure is formally infinite-dimensional, empirical studies show that the cross-sectional variation of yield curves can often be approximated well by a small number of factors. These factors are commonly interpreted as level, slope, and curvature, although the exact number of factors retained depends on the modeling objective.
-
-This empirical observation motivates the use of low-dimensional factor models in term structure analysis. Classical specifications such as the Nelson--Siegel model capture this structure explicitly, while affine term structure models generate yield curves from a finite-dimensional vector of state variables. More generally, it motivates representing the term structure through a low-dimensional latent state variable, so that the infinite-dimensional curve is summarized by a finite set of factors evolving over time.
-
-%--------------------------------------------------------
-\subsection{Finite-Dimensional Markov Representation}
-%--------------------------------------------------------
-
-Motivated by this empirical factor structure, we now consider a term structure model driven by a finite-dimensional state vector.
-
-A general term structure model describes an entire curve of bond prices across maturities. In practice, it is often assumed that the term structure is driven by a finite-dimensional state vector
-\[
-z_t \in \mathbb{R}^{\ell}.
-\]
-
-Under this assumption, bond prices admit the representation
-\begin{equation}
-P(t,T)=P(z_t,\tau), \qquad \tau=T-t.
-\label{eq:state_representation}
-\end{equation}
-
-The short rate can then be written as a function of the state variable,
-\begin{equation}
-r(t)=\tilde r(z_t).
-\label{eq:short_rate_state}
-\end{equation}
-so that the current short rate is fully determined by the current state.
-
-Since bond prices are determined by risk-neutral valuation, the relevant state dynamics for pricing are the dynamics under the risk-neutral measure. We therefore assume that the state process follows a diffusion of the form
-\begin{equation}
-dz_t = \mu(z_t)dt + \sigma(z_t)dW_t^{\mathbb{Q}}.
-\label{eq:state_dynamics}
-\end{equation}
-
-Applying It\^o's lemma to the bond price function and imposing the martingale condition yields the bond pricing equation
-\begin{equation}
--
-\frac{\partial P}{\partial \tau}
--
-\tilde r(z)P
-+
-\nabla_z P(z,\tau)^\top \mu(z)
-+
-\frac{1}{2}
-\mathrm{Tr}\!\left(
-\sigma(z)\sigma(z)^\top H_z P(z,\tau)
-\right)=0.
-\label{eq:bond_pde}
-\end{equation}
-
-The pricing problem is solved subject to the boundary condition
-\[
-P(z,0)=1,
-\]
-reflecting that a zero-coupon bond pays one unit at maturity. Hence an arbitrage-free term structure model may be characterized by a state process under $\mathbb{Q}$ together with a bond price function satisfying \eqref{eq:bond_pde} and the terminal condition above.
-
-This representation is particularly useful in what follows. Later in the thesis, the relevant state vector is not directly observed in the market, but is instead inferred as a low-dimensional latent representation of the observed swap curve.
+Hence, par swap rates are deterministic nonlinear functions of the underlying discount curve. Once an arbitrage-free discount curve is specified, the corresponding swap curve is determined through \eqref{eq:swap_rate}.
 
 
-
-
-%--------------------------------------------------------
+%------------------------------------------
 \subsection{Affine Term Structure Models}
-%--------------------------------------------------------
+\label{sec:Affine TSM Theory}
+%------------------------------------------
 
-A particularly important benchmark in term structure theory is the class of affine term structure models. In these models, bond prices take an exponential-affine form
+Affine term structure models provide a tractable way of representing the term structure in an arbitrage-free setting. Their central idea is that bond prices are driven by a finite-dimensional factor process rather than by an unrestricted infinite-dimensional curve.
+
+Let $X_t \in \mathbb{R}^m$ denote an $m$-dimensional factor process under the risk-neutral measure $\mathbb{Q}$. In an affine term structure model, the short rate is assumed to be affine in the factors,
 \begin{equation}
-P(z,\tau)
+r(t) = \delta_0 + \delta_1^\top X_t,
+\label{eq:atsm_short_rate}
+\end{equation}
+where $\delta_0 \in \mathbb{R}$ and $\delta_1 \in \mathbb{R}^m$.
+
+The defining property of an affine term structure model is that zero-coupon bond prices take an exponential-affine form in the state variables:
+\begin{equation}
+P(t,T)
 =
-\exp\!\bigl(A(\tau)+B(\tau)^\top z\bigr).
+\exp \bigl(
+A(T-t) + B(T-t)^\top X_t
+\bigr),
 \label{eq:affine_form}
 \end{equation}
+where $A(\tau) \in \mathbb{R}$ and $B(\tau) \in \mathbb{R}^m$ are deterministic functions of time to maturity $\tau=T-t$.
 
-Substituting \eqref{eq:affine_form} into the bond pricing equation reduces the pricing problem from a partial differential equation to a system of ordinary differential equations for the coefficient functions $A(\tau)$ and $B(\tau)$. The infinite-dimensional bond pricing problem is thereby reduced to a finite-dimensional system evolving along maturity.
+Equivalently, in Musiela parametrization,
+\begin{equation}
+P(t,t+\tau)
+=
+\exp \bigl(
+A(\tau) + B(\tau)^\top X_t
+\bigr).
+\label{eq:affine_form_musiela}
+\end{equation}
 
-Affine models provide the classical benchmark for arbitrage-free factor modeling of the term structure. Their importance here is primarily conceptual: they illustrate how a low-dimensional state representation can be combined with a structured arbitrage-free bond-pricing relation. This logic motivates the affine-inspired decoder construction developed later in the thesis. In the proposed framework, the encoder extracts a low-dimensional latent state vector from the observed swap curve, while the decoder reconstructs an arbitrage-consistent term structure from that latent representation.
+This representation implies that the term structure is generated by the factor vector $X_t$. Affine models are therefore attractive both theoretically and empirically, since they combine a structured state representation with arbitrage-free bond pricing.
+
+Under suitable affine specifications of the factor dynamics under $\mathbb{Q}$, the exponential-affine bond-pricing form leads to a system of ordinary differential equations for the coefficient functions $A(\tau)$ and $B(\tau)$. 
 
 
 %========================================================
@@ -315,7 +260,7 @@ The complete set of parameters is
 
 Activation functions introduce nonlinearity into the network and enable the approximation of complex functional relationships. Common choices include the logistic function, the hyperbolic tangent, and the rectified linear unit (ReLU).
 
-Under mild regularity conditions, feedforward neural networks with sufficiently many hidden units can approximate any continuous function on compact domains. This result is known as the \emph{universal approximation theorem} and was formally established by \citet{Hornik1989}. The theorem provides the theoretical justification for using neural networks as flexible nonlinear function approximators.
+Under mild regularity conditions, feedforward neural networks with sufficiently many hidden layers can approximate any continuous function on compact domains. This result is known as the \emph{universal approximation theorem} and was formally established by \citet{Hornik1989}. The theorem provides the theoretical justification for using neural networks as flexible nonlinear function approximators.
 
 Encoder--decoder architectures represent a specific class of neural network models designed to learn compact representations of high-dimensional data.
 
@@ -337,41 +282,49 @@ z = E(x),
 \tilde{x} = D(z).
 \end{equation}
 
+\textcolor{red}{DEFINE E and D and insert figure}
+
 Encoder--decoder architectures are widely used in representation learning and dimensionality reduction tasks \citep{Goodfellow2016}.
 
 The latent vector $z$ typically has significantly lower dimension than the input vector, i.e. $k < d$. When the input and output domains coincide, the architecture is commonly referred to as an \emph{autoencoder}.
 
 %--------------------------------------------------------
-\subsection{Loss Functions}
+\subsection{Loss Function}
 %--------------------------------------------------------
 
-Once the neural network architecture has been specified, the model parameters must be estimated from data. Training a neural network requires specifying a loss function that measures the discrepancy between the predicted output of the model and the observed data. The loss function therefore defines the objective that the training procedure seeks to minimize and constitutes a central component of statistical learning models \citep{Bishop2006}.
+Once the neural network architecture has been specified, the model parameters must be estimated from data. Training a neural network requires specifying a loss function that measures the discrepancy between the model output and the observed data. The loss function therefore defines the objective that the training procedure seeks to minimize and constitutes a central component of statistical learning models \citep{Bishop2006}.
 
 Let the dataset consist of observations
 \[
-\mathcal{D} = \{(x_t,y_t)\}_{t=1}^{N},
+\mathcal{D}=\{x_t\}_{t=1}^N,
+\qquad x_t \in \mathbb{R}^d.
 \]
-where $x_t \in \mathbb{R}^d$ denotes the input vector and $y_t$ the corresponding target output. For a neural network with parameters $\Omega$, the predicted output is denoted by $\hat{y}_t = f(x_t;\Omega)$.
+For model parameters \(\Omega\), let the network output be denoted by
+\[
+\hat{x}_t = f(x_t;\Omega).
+\]
 
-A loss function $\ell(y,\hat{y})$ measures the discrepancy between the predicted and observed outputs. The overall objective function is typically defined as the average loss across all observations,
+A loss function \(\ell(x_t,\hat{x}_t)\) measures the discrepancy between the observation and the corresponding model output. The associated objective function is given by the average loss over the sample,
 \begin{equation}
 \mathcal{L}(\Omega)
 =
-\frac{1}{N}
-\sum_{t=1}^{N}
-\ell\big(y_t, f(x_t;\Omega)\big).
+\frac{1}{N}\sum_{t=1}^N \ell\big(x_t,f(x_t;\Omega)\big).
 \end{equation}
 
-The objective function corresponds to the empirical risk, which approximates the expected prediction error using the observed dataset.
-
-A common choice for regression problems is the squared error loss function
+This objective is the empirical risk and serves as the criterion minimized during training. In reconstruction-based settings such as autoencoders, the target is the input itself, so the loss evaluates how closely the network reproduces the observed data. A standard choice is the squared-error loss,
 \begin{equation}
-\ell(y_t,\hat{y}_t)
+\ell(x_t,\hat{x}_t)
 =
-(y_t-\hat{y}_t)^2.
+\|x_t-\hat{x}_t\|_2^2,
+\end{equation}
+which yields the objective
+\begin{equation}
+\mathcal{L}(\Omega)
+=
+\frac{1}{N}\sum_{t=1}^N \|x_t-f(x_t;\Omega)\|_2^2.
 \end{equation}
 
-Minimizing this loss corresponds to fitting the model such that the predicted outputs are as close as possible to the observed values in the least-squares sense.
+Minimizing this loss corresponds to fitting the model such that the network output is as close as possible to the observed data in the least-squares sense.
 
 % -----------------------------------------------------
 \subsection{Backpropagation and Automatic Differentiation}
@@ -379,22 +332,14 @@ Minimizing this loss corresponds to fitting the model such that the predicted ou
 
 Minimizing the loss function requires computing gradients of the objective with respect to the network parameters. Training therefore involves iteratively updating the parameters in the direction of the steepest descent, i.e. opposite to the gradient of the loss with respect to all network parameters.
 
-Let the loss function be denoted by
-\begin{equation}
-\mathcal{L}(\Omega).
-\end{equation}
-The gradient required for optimization is
-\begin{equation}
-\nabla_{\Omega}\mathcal{L}(\Omega).
-\end{equation}
-
-Efficient computation of this gradient is achieved through the \emph{backpropagation algorithm}, which applies the chain rule of calculus to propagate derivatives backward through the layers of the network.
+Let the loss function be denoted by $\mathcal{L}(\Omega)$, and the gradient required for optimization be denoted as $\nabla_{\Omega}\mathcal{L}(\Omega)$. Efficient computation of this gradient is achieved through the \emph{backpropagation algorithm}, which applies the chain rule of calculus to propagate derivatives backward through the layers of the network.
 
 The algorithm was introduced by \citet{Rumelhart1986} and remains the fundamental procedure used to train multilayer neural networks.
 
 Backpropagation enables efficient gradient computation even for networks with a large number of parameters.
 
 Modern machine learning frameworks implement this procedure using \emph{automatic differentiation}. During the forward pass, the computational graph of the model is constructed. During the backward pass, derivatives are evaluated by traversing this graph in reverse order.
+
 
 % --------------------------------------------------------
 \subsection{Mini-Batch Stochastic Gradient Descent}
@@ -410,22 +355,23 @@ At each iteration, a subset
 \begin{equation}
 \mathcal{B} \subset \mathcal{D}, \qquad |\mathcal{B}| = B
 \end{equation}
-is sampled randomly from the dataset, where $B$ denotes the batch size. The loss function is then approximated by
+is sampled randomly from the dataset, where \(B\) denotes the batch size. The loss function is then approximated by
 \begin{equation}
 \mathcal{L}_{\mathcal{B}}(\Omega)
 =
 \frac{1}{B}
-\sum_{(x_t,y_t)\in \mathcal{B}}
-\ell\big(y_t, f(x_t;\Omega)\big).
+\sum_{x_t \in \mathcal{B}}
+\ell\big(x_t, f(x_t;\Omega)\big).
 \end{equation}
 
 The resulting gradient
 \begin{equation}
-\nabla_{\Omega} \mathcal{L}_{\mathcal{B}}(\Omega)
+\nabla_{\Omega}\mathcal{L}_{\mathcal{B}}(\Omega)
 \end{equation}
-serves as a stochastic approximation of the full gradient. Mini-batch stochastic gradient descent reduces computational cost and introduces stochasticity into the optimization process, which can improve convergence properties in highly nonconvex optimization problems.
+serves as a stochastic approximation to the full gradient. Mini-batch stochastic gradient descent reduces computational cost and introduces stochasticity into the optimization process, which can improve convergence properties in highly non-convex optimization problems.
 
-An \emph{epoch} corresponds to one complete pass through the entire dataset.
+Each parameter update is based on one mini-batch. Repeating this procedure over successive mini-batches yields a sequence of updates to the parameter vector. An \emph{epoch} refers to one complete pass through the full training dataset, so that each observation has been used once for gradient evaluation, up to the ordering induced by random shuffling.
+
 
 % -------------------------------------------------------
 \subsection{Optimization and Learning Rate Scheduling}
@@ -472,14 +418,6 @@ Out-of-sample evaluation is essential in statistical learning to assess the gene
 
 Evaluation of machine learning models requires a careful separation between training and testing data. In financial applications, chronological splitting of the dataset is typically employed in order to avoid look-ahead bias.
 
-Let the dataset consist of observations
-\[
-\{x_t(\tau)\}_{t=1}^{N},
-\]
-where $t$ denotes the observation index and $\tau$ represents the components of the input vector.
-
-The model is estimated using historical observations and subsequently evaluated on future data that was not used during training.
-
 Model accuracy is commonly measured using the root mean squared error (RMSE),
 \begin{equation}
 \text{RMSE}
@@ -487,13 +425,12 @@ Model accuracy is commonly measured using the root mean squared error (RMSE),
 \sqrt{
 \frac{1}{N}
 \sum_{t=1}^{N}
-\sum_{\tau}
 \left(
-x_t(\tau) - \tilde{x}_t(\tau)
+x_t - \tilde{x}_t
 \right)^2
 },
 \end{equation}
-where $\tilde{x}_t(\tau)$ denotes the model prediction.
+where $\tilde{x}_t$ denotes the model prediction.
 
 In addition to a fixed train--test split, rolling window evaluation is often applied. For a window length $W$, the model is repeatedly estimated using the observations
 \[
