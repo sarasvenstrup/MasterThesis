@@ -551,7 +551,7 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 # Q3b — Plot: Rolling OOS RMSE over time (d=3, per-currency + average)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q3b: Rolling RMSE over time (d=3) ──")
+print("\n── Q3b: Rolling RMSE over time (d=3) ── ")
 
 roll_path_d3 = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{LATENT_DIM}",
                              ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
