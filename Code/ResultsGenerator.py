@@ -764,6 +764,8 @@ save_fig(fig, "Q5a_latent_factors_over_time")
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q5b: Factor correlation tables (all dims) ──")
 
+_corr_matrices = {}  # dim → DataFrame, collected for heatmap below
+
 # Rebuild wide swap data aligned to training observations
 df_is = df_wide_all.copy()
 df_is["as_of_date"] = pd.to_datetime(df_is["as_of_date"])
@@ -807,9 +809,57 @@ for _dim in DIMS_PLOT:
     table_q5b = pd.DataFrame(corr_rows).T
     table_q5b.index = [f"$z_{k+1}$" for k in range(_dim)]
     table_q5b.columns = col_names
+    _corr_matrices[_dim] = table_q5b.copy()
     save_table(table_q5b, f"Q5b_factor_correlations_dim{_dim}")
     print(f"\n  ℓ={_dim}:")
     print(table_q5b.to_string())
+
+# ── Q5b heatmap: all dims side by side ───────────────────────────────────────
+if _corr_matrices:
+    from matplotlib.colors import LinearSegmentedColormap
+
+    # Diverging palette: custom_palette[0] (neg) → white → custom_palette[4] (pos)
+    _cmap_q5b = LinearSegmentedColormap.from_list(
+        "q5b_div",
+        [custom_palette[0], "white", custom_palette[4]],
+        N=256
+    )
+
+    _hm_dims   = sorted(_corr_matrices.keys())
+    _col_labels = ["Level", "Slope", "Curvature"]
+    _n_cols     = len(_hm_dims)
+    _max_rows   = max(len(_corr_matrices[d]) for d in _hm_dims)
+
+    fig, axes = plt.subplots(1, _n_cols,
+                             figsize=(3.5 * _n_cols, 1.0 + 0.7 * _max_rows))
+    if _n_cols == 1:
+        axes = [axes]
+
+    for ax, _dim in zip(axes, _hm_dims):
+        _mat = _corr_matrices[_dim].values.astype(float)   # (n_factors, 3)
+        _row_labels = [f"$z_{k+1}$" for k in range(len(_mat))]
+
+        im = ax.imshow(_mat, cmap=_cmap_q5b, vmin=-1, vmax=1, aspect="auto")
+
+        ax.set_xticks(range(3))
+        ax.set_xticklabels(_col_labels, fontsize=10)
+        ax.set_yticks(range(len(_row_labels)))
+        ax.set_yticklabels(_row_labels, fontsize=10)
+        ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11, fontweight="bold")
+
+        # annotate each cell
+        for r in range(len(_mat)):
+            for c in range(3):
+                val = _mat[r, c]
+                txt_color = "white" if abs(val) > 0.6 else "black"
+                ax.text(c, r, f"{val:.3f}", ha="center", va="center",
+                        fontsize=9, color=txt_color)
+
+    # shared colorbar on the right
+    fig.colorbar(im, ax=axes, orientation="vertical",
+                 fraction=0.02, pad=0.04, label="Pearson r")
+    fig.tight_layout()
+    save_fig(fig, "Q5b_factor_correlation_heatmap")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
