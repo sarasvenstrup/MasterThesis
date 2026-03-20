@@ -775,48 +775,66 @@ df_is = df_wide_all.copy()
 df_is["as_of_date"] = pd.to_datetime(df_is["as_of_date"])
 df_is["ccy"] = df_is["ccy"].str.upper()
 
-factor_cols = ["level", "slope", "curvature"]
-col_names   = ["Level\n(avg all tenors)", "Slope\n(30Y − 1Y)",
-               "Curvature\n(2×5Y − 1Y − 30Y)"]
-scale_div   = 100.0 if SCALE_IS_PERCENT else 1.0
+scale_div = 100.0 if SCALE_IS_PERCENT else 1.0
+
+# ── Global PCA on IS swap rates (all currencies stacked) ─────────────────────
+# Used as model-neutral reference basis for both Q5b and Q5c
+from sklearn.decomposition import PCA as _SKLearnPCA
+_X_is_all  = X_train[mask_train].numpy()                     # (N_is, 8)
+_finite_is = np.isfinite(_X_is_all).all(axis=1)
+_X_is_pca  = _X_is_all[_finite_is] / scale_div               # scale-consistent
+_global_pca = _SKLearnPCA(n_components=4)
+_global_pca.fit(_X_is_pca)
+_pc_vecs = _global_pca.components_                            # (4, 8) — rows are eigenvectors
+print(f"  Global PCA explained variance ratios: "
+      f"{np.round(_global_pca.explained_variance_ratio_ * 100, 2)}")
 
 for _dim in DIMS_PLOT:
     _Z    = dim_Z_hat[_dim]
     _mask = finite_mask(X_train, dim_S_hat[_dim]) & mask_train  # IS only
     _Z_np = _Z[_mask].numpy()
+    _X_np = X_train[_mask].numpy() / scale_div                  # (N, 8) scaled
 
     meta_z = meta_train.loc[_mask.numpy()].copy().reset_index(drop=True)
     meta_z["as_of_date"] = pd.to_datetime(meta_z["as_of_date"])
     for k in range(_dim):
         meta_z[f"z{k+1}"] = _Z_np[:, k]
 
-    merged = meta_z.merge(
-        df_is[["as_of_date", "ccy"] + TENOR_COLS],
-        on=["as_of_date", "ccy"], how="left"
-    )
-    for t in TENOR_COLS:
-        merged[t] = merged[t].astype(float) / scale_div
+    # PC scores: project IS swap rates onto global PCA eigenvectors
+    for j in range(_dim):
+        meta_z[f"PC{j+1}"] = _X_np @ _pc_vecs[j]
 
-    merged["level"]     = merged[TENOR_COLS].mean(axis=1)
-    merged["slope"]     = merged[30] - merged[1]
-    merged["curvature"] = 2 * merged[5] - merged[1] - merged[30]
+    z_cols  = [f"z{k+1}"  for k in range(_dim)]
+    pc_cols = [f"PC{j+1}" for j in range(_dim)]
 
-    z_cols = [f"z{k+1}" for k in range(_dim)]
     corr_rows = {}
     for zc in z_cols:
         row = {}
-        for fc in factor_cols:
-            valid = merged[[zc, fc]].dropna()
-            row[fc] = round(float(valid[zc].corr(valid[fc])), 3)
+        for pc in pc_cols:
+            valid = meta_z[[zc, pc]].dropna()
+            row[pc] = round(float(valid[zc].corr(valid[pc])), 3)
         corr_rows[zc] = row
 
     table_q5b = pd.DataFrame(corr_rows).T
-    table_q5b.index = [f"$z_{k+1}$" for k in range(_dim)]
-    table_q5b.columns = col_names
+    table_q5b.index   = [f"$z_{k+1}$" for k in range(_dim)]
+    table_q5b.columns = pc_cols
     _corr_matrices[_dim] = table_q5b.copy()
     save_table(table_q5b, f"Q5b_factor_correlations_dim{_dim}")
-    print(f"\n  ℓ={_dim}:")
+    print(f"\n  ℓ={_dim} (AE factor–PC correlations):")
     print(table_q5b.to_string())
+
+    # ── Weight projection: cosine similarity of encoder rows with PC eigenvectors
+    _W     = dim_models[_dim].encoder.lin.weight.detach().numpy()  # (d, 8)
+    _W_hat = _W / np.linalg.norm(_W, axis=1, keepdims=True)        # unit-norm rows
+    _proj  = (_W_hat @ _pc_vecs[:_dim].T).round(3)                 # (d, d)
+    table_wp = pd.DataFrame(
+        _proj,
+        index   = [f"$z_{k+1}$" for k in range(_dim)],
+        columns = [f"PC{j+1}" for j in range(_dim)],
+    )
+    save_table(table_wp, f"Q5b_weight_projection_dim{_dim}")
+    print(f"\n  ℓ={_dim} weight projection (cosine similarity of W rows with PC eigenvectors):")
+    print(table_wp.to_string())
 
 # ── Q5b heatmap: all dims side by side ───────────────────────────────────────
 if _corr_matrices:
@@ -829,10 +847,9 @@ if _corr_matrices:
         N=256
     )
 
-    _hm_dims    = sorted(_corr_matrices.keys())
-    _col_labels = ["Level", "Slope", "Curvature"]
-    _n_cols     = len(_hm_dims)
-    _max_rows   = max(len(_corr_matrices[d]) for d in _hm_dims)
+    _hm_dims  = sorted(_corr_matrices.keys())
+    _n_cols   = len(_hm_dims)
+    _max_rows = max(len(_corr_matrices[d]) for d in _hm_dims)
 
     fig, axes = plt.subplots(1, _n_cols,
                              figsize=(3.5 * _n_cols, 1.0 + 0.7 * _max_rows))
@@ -842,17 +859,18 @@ if _corr_matrices:
     fig.subplots_adjust(right=0.85)   # leave room for colorbar
 
     for ax, _dim in zip(axes, _hm_dims):
-        _mat        = _corr_matrices[_dim].values.astype(float)
-        _nrows      = len(_mat)
-        _row_labels = [f"$z_{k+1}$" for k in range(_nrows)]
+        _mat           = _corr_matrices[_dim].values.astype(float)
+        _nrows, _ncols = _mat.shape
+        _row_labels    = [f"$z_{k+1}$" for k in range(_nrows)]
+        _col_labels    = [f"PC{j+1}"   for j in range(_ncols)]
 
         # pcolormesh: no antialiasing gaps between cells
-        _X = np.arange(4)           # column edges 0..3
-        _Y = np.arange(_nrows + 1)  # row edges 0..nrows
+        _X = np.arange(_ncols + 1)
+        _Y = np.arange(_nrows + 1)
         im = ax.pcolormesh(_X, _Y, _mat, cmap=_cmap_q5b,
                            vmin=-1, vmax=1, edgecolors="face")
         ax.invert_yaxis()
-        ax.set_xticks([0.5, 1.5, 2.5])
+        ax.set_xticks([c + 0.5 for c in range(_ncols)])
         ax.set_xticklabels(_col_labels, fontsize=10)
         ax.set_yticks([i + 0.5 for i in range(_nrows)])
         ax.set_yticklabels(_row_labels, fontsize=10)
@@ -861,7 +879,7 @@ if _corr_matrices:
 
         # annotate each cell
         for r in range(_nrows):
-            for c in range(3):
+            for c in range(_ncols):
                 val = _mat[r, c]
                 txt_color = "white" if abs(val) > 0.6 else "black"
                 ax.text(c + 0.5, r + 0.5, f"{val:.3f}",
@@ -891,33 +909,33 @@ for _dim in [2, 3, 4]:
     df_lf = pd.read_csv(_lf_path, parse_dates=["as_of_date"])
     df_lf["ccy"] = df_lf["ccy"].str.upper()
 
-    # merge swap rates to compute curve proxies
+    # merge swap rates to compute PC scores (same global PCA as Q5b)
     df_sw = df_wide_all.copy()
     df_sw["as_of_date"] = pd.to_datetime(df_sw["as_of_date"])
     df_sw["ccy"] = df_sw["ccy"].str.upper()
     merged_k = df_lf.merge(df_sw[["as_of_date", "ccy"] + TENOR_COLS],
                            on=["as_of_date", "ccy"], how="left")
     _scale = 100.0 if SCALE_IS_PERCENT else 1.0
-    for t in TENOR_COLS:
-        merged_k[t] = merged_k[t].astype(float) / _scale
+    _X_k = merged_k[TENOR_COLS].astype(float).values / _scale   # (N, 8)
 
-    merged_k["level"]     = merged_k[TENOR_COLS].mean(axis=1)
-    merged_k["slope"]     = merged_k[30] - merged_k[1]
-    merged_k["curvature"] = 2 * merged_k[5] - merged_k[1] - merged_k[30]
+    # PC scores: project onto global PCA eigenvectors
+    for j in range(_dim):
+        merged_k[f"PC{j+1}"] = _X_k @ _pc_vecs[j]
 
-    z_cols_k = [f"z{k+1}" for k in range(_dim)]
+    z_cols_k  = [f"z{k+1}"  for k in range(_dim)]
+    pc_cols_k = [f"PC{j+1}" for j in range(_dim)]
+
     corr_rows_k = {}
     for zc in z_cols_k:
         row = {}
-        for fc in ["level", "slope", "curvature"]:
-            valid = merged_k[[zc, fc]].dropna()
-            row[fc] = round(float(valid[zc].corr(valid[fc])), 3)
+        for pc in pc_cols_k:
+            valid = merged_k[[zc, pc]].dropna()
+            row[pc] = round(float(valid[zc].corr(valid[pc])), 3)
         corr_rows_k[zc] = row
 
     table_q5c = pd.DataFrame(corr_rows_k).T
-    table_q5c.index = [f"$z_{k+1}$" for k in range(_dim)]
-    table_q5c.columns = ["Level\n(avg all tenors)", "Slope\n(30Y − 1Y)",
-                         "Curvature\n(2×5Y − 1Y − 30Y)"]
+    table_q5c.index   = [f"$z_{k+1}$" for k in range(_dim)]
+    table_q5c.columns = pc_cols_k
     _corr_matrices_dns[_dim] = table_q5c.copy()
     save_table(table_q5c, f"Q5c_DNS_factor_correlations_dim{_dim}")
     print(f"\n  EKF DNS ℓ={_dim}:")
@@ -932,29 +950,31 @@ if _corr_matrices_dns:
         N=256
     )
     _hm_dims_c = sorted(_corr_matrices_dns.keys())
+    _max_rows_c = max(len(_corr_matrices_dns[d]) for d in _hm_dims_c)
     fig, axes = plt.subplots(1, len(_hm_dims_c),
-                             figsize=(4.5 * len(_hm_dims_c) + 1.5, 4.5))
+                             figsize=(3.5 * len(_hm_dims_c), 1.0 + 0.7 * _max_rows_c))
     if len(_hm_dims_c) == 1:
         axes = [axes]
     fig.subplots_adjust(right=0.85)
 
     im = None
     for ax, _dim in zip(axes, _hm_dims_c):
-        _mat = _corr_matrices_dns[_dim].values.astype(float)
-        _nrows = _mat.shape[0]
-        _X = np.arange(4)
+        _mat           = _corr_matrices_dns[_dim].values.astype(float)
+        _nrows, _ncols = _mat.shape
+        _col_labels_c  = [f"PC{j+1}" for j in range(_ncols)]
+        _X = np.arange(_ncols + 1)
         _Y = np.arange(_nrows + 1)
         im = ax.pcolormesh(_X, _Y, _mat, cmap=_cmap_q5c,
                            vmin=-1, vmax=1, edgecolors="face")
         ax.invert_yaxis()
         ax.set_title(rf"$\ell={_dim}$", fontsize=11, fontweight="bold")
-        ax.set_xticks([0.5, 1.5, 2.5])
-        ax.set_xticklabels(["Level", "Slope", "Curvature"], fontsize=9)
+        ax.set_xticks([c + 0.5 for c in range(_ncols)])
+        ax.set_xticklabels(_col_labels_c, fontsize=9)
         ax.set_yticks([i + 0.5 for i in range(_nrows)])
         ax.set_yticklabels([rf"$z_{k+1}$" for k in range(_nrows)], fontsize=9)
         ax.tick_params(length=0)
         for r in range(_nrows):
-            for c in range(3):
+            for c in range(_ncols):
                 val = _mat[r, c]
                 txt_col = "white" if abs(val) > 0.6 else "black"
                 ax.text(c + 0.5, r + 0.5, f"{val:.3f}",
