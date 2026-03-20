@@ -531,11 +531,14 @@ if os.path.exists(MANIFEST_PATH):
 
     table_q3a = pd.DataFrame(oos_rows).T
     table_q3a = table_q3a[[c for c in CCY_ORDER + ["Average"] if c in table_q3a.columns]]
-
-    # append mean and std rows
-    table_q3a.loc["Mean"] = table_q3a.mean()
-    table_q3a.loc["Std"]  = table_q3a.std()
     table_q3a = table_q3a.round(2)
+
+    # valid mean: exclude diverged seeds (avg > 100 bps)
+    _valid_mask = table_q3a["Average"].lt(100)
+    _mean_valid = pd.Series(np.nan, index=table_q3a.columns)
+    _mean_valid["Average"] = round(table_q3a.loc[_valid_mask, "Average"].mean(), 2)
+    table_q3a.loc["Mean (valid)"] = _mean_valid
+
     save_table(table_q3a, "Q3a_OOS_seeds_table_dim3")
     print(table_q3a.to_string())
 else:
@@ -600,13 +603,11 @@ def load_kalman_rmse(dim):
     return df[oos_col]
 
 rows_q4 = {}
-# autoencoder d=3
-_, oos_ae = load_split_rmse(LATENT_DIM)
-if oos_ae is not None:
-    rows_q4[r"AE $\ell$=3"] = oos_ae
-
-# Kalman filters
+# interleave AE and EKF DNS by dimension: (AE l=1, EKF 1f), (AE l=2, EKF 2f), ...
 for dim in KALMAN_DIMS:
+    _, oos_ae_dim = load_split_rmse(dim)
+    if oos_ae_dim is not None:
+        rows_q4[rf"AE $\ell$={dim}"] = oos_ae_dim
     oos_k = load_kalman_rmse(dim)
     if oos_k is not None:
         rows_q4[f"EKF DNS {dim}f"] = oos_k
