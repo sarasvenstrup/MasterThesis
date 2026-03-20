@@ -193,7 +193,7 @@ def save_params_fig(fig, name):
 
 def save_table(df, name):
     path = os.path.join(TABLES_OUT, name + ".csv")
-    df.to_csv(path)
+    df.reset_index().to_csv(path, index=False)
     print(f"  Saved: {path}")
 
 
