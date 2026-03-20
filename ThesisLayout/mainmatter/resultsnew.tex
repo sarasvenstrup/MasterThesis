@@ -36,35 +36,18 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \label{tab:q1a_is_rmse}
 \end{table}
 
-%Q1b (removed for now)
-%\begin{figure}[htbp]
-%    \centering
-%    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1b_fitted_vs_actual.png}
-%    \caption{In-sample fitted versus actual swap curves for $\ell=3$ latent factors across three
-%    representative dates (columns): a normal market environment (2016-08-31), the Covid-19 stress
-%    episode (2020-03-31), and a low-rate regime (2019-06-30). Rows correspond to
-%    {\color[HTML]{000000}EUR} and {\color[HTML]{8C6D31}USD}. The solid line with circles
-%    ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}~$\circ$}) denotes the observed swap rate;
-%    the dashed line with squares
-%    ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}) denotes the autoencoder reconstruction, 
-%    coloured by currency ({\color[HTML]{9C9EDE}EUR}, {\color[HTML]{8C6D31}USD}).
-%    The x-axis shows tenor in years. The exact observation date used for each panel is printed
-%    in the lower-right corner.}
-%    \label{fig:q1b_fitted_vs_actual}
-%\end{figure}
-
 %Q1c
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1c_residual_histogram_all_dims.png}
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
     \caption{Distribution of in-sample residuals (actual minus fitted) in basis points for
-    $\ell=3$ latent factors, pooled across all currencies and observation dates.
-    The vertical dashed red line marks the sample mean; the grey dotted lines mark the
-    5th and 95th percentiles. Summary statistics (sample size, standard deviation, and
-    excess kurtosis) are reported in the upper-right corner.}
-    \label{fig:q1c_residual_histogram}
+    $\ell \in \{1,2,3,4\}$ latent factors, pooled across all currencies and observation dates.
+    Each panel corresponds to one latent dimension, coloured accordingly.
+    The vertical dashed black line marks zero; the dashed red line marks the sample mean;
+    the grey dotted lines mark the 5th and 95th percentiles. Sample size, standard deviation,
+    and excess kurtosis are reported in the upper-right corner of each panel.}
+    \label{fig:q1d_residual_histograms}
 \end{figure}
-
 
 %Q1d
 \begin{figure}[htbp]
@@ -134,10 +117,13 @@ IS: 2004--2020, OOS: 2021--2022.}
     \label{fig:Q2b}
 \end{figure}
 
+
+
 % ─────────────────────────────────────────────────────────────
 \section{Question 3}
 % ─────────────────────────────────────────────────────────────
 
+% Q3a
 \begin{table}[H]
 \centering
 \caption{Out-of-sample RMSE (bps) per random seed for $\ell=3$.
@@ -163,6 +149,8 @@ Seed 9 & 11.30 & 9.00  & 12.06 & 21.37 & 8.30 & 11.84 & 10.07 & 10.91 & 10.59 & 
 \end{tabular}
 \end{table}
 
+
+% Q3b
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
@@ -175,6 +163,7 @@ Seed 9 & 11.30 & 9.00  & 12.06 & 21.37 & 8.30 & 11.84 & 10.07 & 10.91 & 10.59 & 
 \section{Question 4}
 % ─────────────────────────────────────────────────────────────
 
+% Q4a
 \begin{table}[H]
 \centering
 \caption{Out-of-sample RMSE (bps) per currency for the autoencoder
@@ -193,6 +182,8 @@ EKF DNS 4f   & 9.35  & 7.75  & 9.25  & 9.49  & 3.26  & 8.14  & 7.13  & 4.96  & 7
 \end{tabular}
 \end{table}
 
+
+% Q4b (maybe remove this)
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4b_per_currency_bar_chart.png}
@@ -201,6 +192,8 @@ EKF DNS 4f   & 9.35  & 7.75  & 9.25  & 9.49  & 3.26  & 8.14  & 7.13  & 4.96  & 7
     \label{fig:Q4b}
 \end{figure}
 
+
+% Q4c
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
@@ -273,6 +266,8 @@ $z_4$ &  0.709   & $-$0.231 &  0.444   \\
 \section{Question 6}
 % ─────────────────────────────────────────────────────────────
 
+
+%Q6a
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6a_rmse_by_tenor.png}
@@ -281,6 +276,8 @@ $z_4$ &  0.709   & $-$0.231 &  0.444   \\
     \label{fig:Q6a}
 \end{figure}
 
+
+%Q6b
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
@@ -313,6 +310,8 @@ Rank & Date & CCY & RMSE & 1Y & 2Y & 3Y & 5Y & 10Y & 15Y & 20Y & 30Y \\
 \end{tabular}}
 \end{table}
 
+
+% Q6d
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6d_rmse_by_tenor_all_dims.png}
