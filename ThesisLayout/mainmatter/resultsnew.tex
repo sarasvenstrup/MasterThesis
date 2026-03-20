@@ -9,19 +9,33 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \section{Question 1}
 % ─────────────────────────────────────────────────────────────
 
-% Q1a
-\begin{table}[htbp]
+% ── Q1a ──────────────────────────────────────────────────────────────────────
+\begin{table}[h!]
 \centering
-\caption{In-sample RMSE (bps) per currency and latent dimension $\ell$, evaluated on the
-full training set after 5\,000 epochs.}
-\label{tab:q1a_is_rmse}
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q1a_IS_rmse_all_dims.csv}\datqonea
 \resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
-    string type,
-    columns/[index 0]/.style={column name={$\ell$}},
-]{Figures/thesis_results/AutoencoderPerformance/Q1a_IS_rmse_all_dims.csv}%
+  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
+  columns/index/.style={column name={$\ell$}, string type, column type=l},
+  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datqonea}}
 }
+\caption{In-sample RMSE (bps) per currency and latent dimension, evaluated on the full training set after 5\,000 epochs.}
+\label{tab:q1a_is_rmse}
 \end{table}
+
 
 
 
@@ -80,27 +94,40 @@ full training set after 5\,000 epochs.}
 \section{Question 2}
 % ─────────────────────────────────────────────────────────────
 
-\begin{table}[H]
+% ── Q2a ──────────────────────────────────────────────────────────────────────
+\begin{table}[h!]
 \centering
-\begin{tabular}{llrrrrrrrrrrc}
-\toprule
-Split & Model & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
-\midrule
-IS  & $\ell=2$ & 10.81 & 9.54  & 9.72  & 12.11 & 12.49 & 8.83  & 10.14 & 10.83 & 10.54 & \textbf{10.56} \\
-OOS & $\ell=2$ & 19.40 & 15.79 & 19.13 & 25.93 & 9.27  & 23.68 & 19.67 & 16.01 & 18.63 & \textbf{18.61} \\
-\midrule
-IS  & $\ell=3$ & 7.10  & 5.88  & 7.49  & 9.40  & 9.77  & 5.93  & 7.24  & 7.01  & 7.45  & \textbf{7.47}  \\
-OOS & $\ell=3$ & 10.95 & 10.73 & 12.41 & 21.80 & 7.85  & 12.83 & 10.59 & 11.95 & 11.91 & \textbf{12.33} \\
-\midrule
-IS  & $\ell=4$ & 5.85  & 5.03  & 6.23  & 7.92  & 8.05  & 5.08  & 5.61  & 4.80  & 5.91  & \textbf{6.05}  \\
-OOS & $\ell=4$ & 9.12  & 9.03  & 10.20 & 17.11 & 6.59  & 8.20  & 7.78  & 7.73  & 9.17  & \textbf{9.43}  \\
-\bottomrule
-\end{tabular}
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q2a_IS_vs_OOS_all_dims.csv}\datqtwoa
+\resizebox{\textwidth}{!}{%
+\pgfplotstabletypeset[
+  columns={Split, Model, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
+  columns/Split/.style={string type, column type=l},
+  columns/Model/.style={string type, column type=l},
+  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+  row 2/.style={before row=\noalign{\smallskip}},
+  row 4/.style={before row=\noalign{\smallskip}},
+  row 6/.style={before row=\noalign{\smallskip}},
+]{\datqtwoa}}
+}
 \caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
 IS: 2004--2020, OOS: 2021--2022.}
-\label{tab:Q2a}
+\label{tab:q2a_is_oos_rmse}
 \end{table}
 
+
+% Q2b
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
