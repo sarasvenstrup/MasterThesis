@@ -4,19 +4,12 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 
 
 
-% In sample evaluation (Q1 + Q6 + Q7)
-
-% Out of sample and robustness (Q2 + Q3 + Q4)
-
-% Latent factor interpretation (Q5)
-
-
 
 % ─────────────────────────────────────────────────────────────
-\section{Question 1}
+\section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-% ── Q1a ──────────────────────────────────────────────────────────────────────
+% ── Q1a ──────────────────────────────────────────────────────
 \begin{table}[h!]
 \centering
 {\small
@@ -43,7 +36,7 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \label{tab:q1a_is_rmse}
 \end{table}
 
-%Q1c
+% ── Q1c ──────────────────────────────────────────────────────
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
@@ -56,7 +49,7 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
     \label{fig:q1d_residual_histograms}
 \end{figure}
 
-%Q1d
+% ── Q1d ──────────────────────────────────────────────────────
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.png}
@@ -70,22 +63,90 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
     $\ell=2$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}, solid),
     $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{1.2em}{1pt} \rule[0.5ex]{0.3em}{1pt}}, dashed), and
     $\ell=4$ ({\color[HTML]{9C9EDE}$\cdots$}, dotted).
-    The x-axis shows tenor in years. The exact observation date is printed in
-    the lower-right corner of each panel.}
+    The x-axis shows tenor in years.}
     \label{fig:q1d_fitted_vs_actual_all_dims}
+\end{figure}
+
+% ── Q6a ──────────────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6a_rmse_by_tenor.png}
+    \caption{In-sample RMSE (bps) by tenor for $\ell=3$,
+    averaged across currencies and dates in the training set.}
+    \label{fig:Q6a}
+\end{figure}
+
+% ── Q6b ──────────────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
+    \caption{In-sample RMSE (bps) over time for $\ell=3$,
+    averaged across currencies per date.}
+    \label{fig:Q6b}
+\end{figure}
+
+% ── Q6c ──────────────────────────────────────────────────────
+\begin{table}[H]
+\centering
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q6c_top10_worst_pairs.csv}\datqsixc
+\resizebox{\textwidth}{!}{%
+\pgfplotstabletypeset[
+  columns={index, as_of_date, ccy, rmse_bps, resid_1Y_bps, resid_2Y_bps, resid_3Y_bps, resid_5Y_bps, resid_10Y_bps, resid_15Y_bps, resid_20Y_bps, resid_30Y_bps},
+  columns/index/.style={column name={Rank}, column type=r, int detect},
+  columns/as_of_date/.style={column name={Date}, string type, column type=l},
+  columns/ccy/.style={column name={CCY}, string type, column type=r},
+  columns/rmse_bps/.style={column name={RMSE}, column type=r, fixed, precision=1, fixed zerofill},
+  columns/resid_1Y_bps/.style={column name={1Y}, column type=r, fixed, precision=1},
+  columns/resid_2Y_bps/.style={column name={2Y}, column type=r, fixed, precision=1},
+  columns/resid_3Y_bps/.style={column name={3Y}, column type=r, fixed, precision=1},
+  columns/resid_5Y_bps/.style={column name={5Y}, column type=r, fixed, precision=1},
+  columns/resid_10Y_bps/.style={column name={10Y}, column type=r, fixed, precision=1},
+  columns/resid_15Y_bps/.style={column name={15Y}, column type=r, fixed, precision=1},
+  columns/resid_20Y_bps/.style={column name={20Y}, column type=r, fixed, precision=1},
+  columns/resid_30Y_bps/.style={column name={30Y}, column type=r, fixed, precision=1},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datqsixc}}
+}
+\caption{Top 10 worst in-sample fits ranked by RMSE (bps), $\ell=3$.
+Per-tenor residuals shown in bps (fitted $-$ actual).}
+\label{tab:Q6c}
+\end{table}
+
+% ── Q7 ───────────────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim2.png}
+        \caption{AE $(\ell=2)$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim3.png}
+        \caption{AE $(\ell=3)$}
+    \end{subfigure}
+    \vspace{0.25cm}
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim4.png}
+        \caption{AE $(\ell=4)$}
+    \end{subfigure}
+    \caption{In-sample approximate Sharpe ratio across tenors (1--30Y)
+    for $\ell=2,3,4$. Shaded band shows $\pm$1 standard deviation
+    across training observations. Dashed line marks zero (no-arbitrage reference).}
+    \label{fig:Q7_sharpe}
 \end{figure}
 
 
 
-
-
-
-
 % ─────────────────────────────────────────────────────────────
-\section{Question 2}
+\section{Out-of-Sample Performance and Robustness}
 % ─────────────────────────────────────────────────────────────
 
-% ── Q2a ──────────────────────────────────────────────────────────────────────
+% ── Q2a ──────────────────────────────────────────────────────
 \begin{table}[h!]
 \centering
 {\small
@@ -114,8 +175,7 @@ IS: 2004--2020, OOS: 2021--2022.}
 \label{tab:q2a_is_oos_rmse}
 \end{table}
 
-
-% Q2b
+% ── Q2b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
@@ -124,18 +184,11 @@ IS: 2004--2020, OOS: 2021--2022.}
     \label{fig:Q2b}
 \end{figure}
 
-
-
-% ─────────────────────────────────────────────────────────────
-\section{Question 3}
-% ─────────────────────────────────────────────────────────────
-
-% ── Q3a ──────────────────────────────────────────────────────────────────────
+% ── Q3a ──────────────────────────────────────────────────────
 \begin{table}[H]
 \centering
 {\small
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q3a_OOS_seeds_table_dim3.csv}\datqthreea
-% Pre-extract the Seed 4 diverged average from the CSV
 \pgfplotstablegetelem{4}{Average}\of\datqthreea
 \let\qthreeaSeedFourAvg\pgfplotsretval
 \resizebox{\textwidth}{!}{%
@@ -167,10 +220,7 @@ Seeds 4 and 7 diverged and are excluded from the mean.}
 \label{tab:Q3a}
 \end{table}
 
-
-
-
-% Q3b
+% ── Q3b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
@@ -179,13 +229,7 @@ Seeds 4 and 7 diverged and are excluded from the mean.}
     \label{fig:Q3b}
 \end{figure}
 
-% ─────────────────────────────────────────────────────────────
-\section{Question 4}
-% ─────────────────────────────────────────────────────────────
-
-% Q4a
-
-% ── Q4a ──────────────────────────────────────────────────────────────────────
+% ── Q4a ──────────────────────────────────────────────────────
 \begin{table}[H]
 \centering
 {\small
@@ -207,7 +251,6 @@ Seeds 4 and 7 diverged and are excluded from the mean.}
   every head row/.style={before row=\toprule, after row=\midrule},
   every row no 2/.style={before row=\midrule},
   every row no 4/.style={before row=\midrule},
-  every row no 6/.style={before row=\midrule},
   every last row/.style={after row=\bottomrule},
 ]{\datqfoura}}
 }
@@ -216,14 +259,7 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 \label{tab:Q4a}
 \end{table}
 
-
-
-
-
-
-
-
-% Q4c
+% ── Q4c ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
@@ -233,9 +269,29 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 \end{figure}
 
 % ─────────────────────────────────────────────────────────────
-\section{Question 5}
+\section{Latent Factor Interpretation (and parametric dynamics}
 % ─────────────────────────────────────────────────────────────
 
+% This sections aim is to connect the data-driven model to economic intuition. First we look at the latent factors and then we well present an analysis on each factor to see if the correlate with the traditional slope factors level, slope and curvature.
+
+We proceed with the AE model of $\ell=3$ factors to assess if there is any valid economic interpretation present.
+
+
+The encoded latent factors summarize the cross-sectional shape of the swap curve, while the networks for the short rate, drift, and diffusion translate these latent states into a full arbitrage-free term-structure representation. From figure \ref{fig:Q5a} its clearly present that evovlement of the latent dynamics change alot in the regions of major market events as GFC, ECB QE and COVID. \textcolor{red}{so what does this observation mean?}
+
+
+In the yield curve world of term strucuters, it is empirically shown that the three factors in an EKF DNS mogel represent to the level, slope and curvature of a yield curve, so we therefore want to explore whether the latent factors from the AE model correspond to the classical interpretation. Further if this in fact changes with the number of dimenison. In order to do so we follow we compute the Pearson correlation between each latent factor $z_k$ and three empirical yield curve proxies - level (average swap rate across all tenors), slop (30Y-1Y), and curvature $(2\times 5Y-1Y-30Y)$ following the definitions in \textcolor{red}{reference to Diebold and Li (2006)}. Comparing across $\ell=2,3,4$ reveals how the latent factor interpretation changes as model complexity increases.
+
+We observe that for the model of 2 factors, the ...
+
+
+
+Conclusion:
+Beyond reconstruction accuracy, the model delivers economically interpretable state variables and risk-neutral parameters. 
+
+
+
+% ── Q5a ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5a_latent_factors_over_time.png}
@@ -245,105 +301,29 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 \end{figure}
 
 
+
+% ── Q5b ──────────────────────────────────────────────────────
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_factor_correlation_heatmap.png}
-    \caption{Pearson correlation between each latent factor $z_k$ and the level, slope, and curvature of the swap curve, for $\ell \in \{2, 3, 4\}$. Blue indicates positive correlation, red indicates negative correlation. Correlations are computed on the in-sample training observations.}
+    \caption{Pearson correlation between each latent factor $z_k$ and the level, slope,
+    and curvature of the swap curve, for $\ell \in \{2, 3, 4\}$.
+    Blue indicates positive correlation, red indicates negative correlation.
+    Correlations are computed on the in-sample training observations with 2500 epochs.}
     \label{fig:q5b_factor_correlation_heatmap}
 \end{figure}
 
 
-
-% ─────────────────────────────────────────────────────────────
-\section{Question 6}
-% ─────────────────────────────────────────────────────────────
-
-
-%Q6a
-\begin{figure}[H]
+% ── Q5c ──────────────────────────────────────────────────────
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6a_rmse_by_tenor.png}
-    \caption{In-sample RMSE (bps) by tenor for $\ell=3$,
-    averaged across currencies and dates in the training set.}
-    \label{fig:Q6a}
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5c_DNS_factor_correlation_heatmap.png}
+    \caption{Pearson correlation between each EKF DNS latent factor $z_k$ and the level,
+    slope, and curvature of the swap curve, for $\ell \in \{2, 3, 4\}$.
+    Blue indicates positive correlation, red indicates negative correlation.
+    Level is defined as the cross-sectional average swap rate; slope as the
+    30Y$-$1Y spread; curvature as $2\times\text{5Y} - \text{1Y} - \text{30Y}$.
+    Correlations are computed on in-sample training observations (2004--2020).}
+    \label{fig:q5c_dns_factor_correlation_heatmap}
 \end{figure}
-
-
-%Q6b
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
-    \caption{In-sample RMSE (bps) over time for $\ell=3$,
-    averaged across currencies per date.}
-    \label{fig:Q6b}
-\end{figure}
-
-\begin{table}[H]
-\centering
-\caption{Top 10 worst in-sample fits ranked by RMSE (bps), $\ell=3$.
-Per-tenor residuals shown in bps (fitted $-$ actual).}
-\label{tab:Q6c}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{rlrrrrrrrrrr}
-\toprule
-Rank & Date & CCY & RMSE & 1Y & 2Y & 3Y & 5Y & 10Y & 15Y & 20Y & 30Y \\
-\midrule
-1  & 2016-11-30 & SEK & 5216.4 & $-$1809.2 & $-$9957.8 & $-$9974.4 & $-$3572.0 & $-$1279.6 & $-$839.5 & $-$655.1 & $-$484.0 \\
-2  & 2016-02-29 & SEK & 5204.7 & $-$1796.7 & $-$9956.9 & $-$9975.5 & $-$3444.9 & $-$1267.0 & $-$836.6 & $-$652.9 & $-$483.6 \\
-3  & 2016-10-31 & SEK & 5194.1 & $-$1299.9 & $-$9948.4 & $-$9964.7 & $-$3594.6 & $-$1279.3 & $-$830.4 & $-$640.7 & $-$465.7 \\
-4  & 2015-11-30 & SEK & 5172.1 & $-$1978.0 & $-$9972.3 & $-$9992.5 & $-$2828.0 & $-$1192.0 & $-$822.0 & $-$663.6 & $-$507.7 \\
-5  & 2016-03-31 & SEK & 5170.4 & $-$1744.3 & $-$9965.7 & $-$9983.5 & $-$3005.4 & $-$1214.2 & $-$821.0 & $-$649.7 & $-$487.8 \\
-6  & 2016-12-30 & SEK & 5168.4 & $-$1716.6 & $-$9965.9 & $-$9985.0 & $-$2989.8 & $-$1211.0 & $-$818.1 & $-$647.8 & $-$485.4 \\
-7  & 2017-01-31 & SEK & 5165.7 & $-$1912.2 & $-$9973.2 & $-$9995.3 & $-$2773.4 & $-$1188.3 & $-$818.3 & $-$655.5 & $-$498.8 \\
-8  & 2016-04-29 & SEK & 5161.0 & $-$1776.7 & $-$9971.0 & $-$9990.6 & $-$2815.5 & $-$1195.4 & $-$816.0 & $-$652.0 & $-$497.8 \\
-9  & 2016-05-31 & SEK & 5160.8 & $-$1653.2 & $-$9966.7 & $-$9985.4 & $-$2920.0 & $-$1205.6 & $-$814.0 & $-$645.0 & $-$486.9 \\
-10 & 2017-02-28 & SEK & 5160.6 & $-$1612.9 & $-$9967.9 & $-$9986.0 & $-$2934.6 & $-$1204.5 & $-$814.7 & $-$645.3 & $-$483.7 \\
-\bottomrule
-\end{tabular}}
-\end{table}
-
-
-% Q6d
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6d_rmse_by_tenor_all_dims.png}
-    \caption{In-sample RMSE (bps) by tenor for latent dimensions
-    $\ell=2,3,4$, averaged across currencies and dates.}
-    \label{fig:Q6d}
-\end{figure}
-
-% ─────────────────────────────────────────────────────────────
-\section{Question 7}
-% ─────────────────────────────────────────────────────────────
-
-\begin{figure}[H]
-    \centering
-    \begin{subfigure}{0.48\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim2.png}
-        \caption{AE $(\ell=2)$}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}{0.48\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim3.png}
-        \caption{AE $(\ell=3)$}
-    \end{subfigure}
-
-    \vspace{0.25cm}
-
-    \begin{subfigure}{0.48\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim4.png}
-        \caption{AE $(\ell=4)$}
-    \end{subfigure}
-
-    \caption{In-sample approximate Sharpe ratio across tenors (1--30Y)
-    for $\ell=2,3,4$. Shaded band shows $\pm$1 standard deviation
-    across training observations. Dashed line marks zero (no-arbitrage reference).}
-    \label{fig:Q7_sharpe}
-\end{figure}
-
-
-
 
