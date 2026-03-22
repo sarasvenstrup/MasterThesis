@@ -858,27 +858,37 @@ _wp_combined = pd.DataFrame(_wp_rows, columns=["model", "factor"] + _pc_all_cols
 _wp_combined.to_csv(os.path.join(TABLES_OUT, "Q5b_weight_projection_combined.csv"), index=False)
 print("  Saved: Q5b_weight_projection_combined.csv")
 
-# ── Bar plot: average weight projection per PC, all dims grouped (Rolf Fig 4 style)
+# ── Bar plot: ρ_j (Rolf) + average weight projection per PC, all dims grouped ──
 if _wp_data:
     _bar_dims  = sorted(_wp_data.keys())
     _n_models  = len(_bar_dims)
+    _rho       = _global_pca.explained_variance_ratio_ * 100   # (8,) — Rolf's ρ_j
     _pc_labels = [f"PC{j+1}" for j in range(8)]
     _x         = np.arange(8)
-    _width     = 0.7 / _n_models
-    _colors    = [custom_palette[i % len(custom_palette)] for i in range(_n_models)]
 
-    fig, ax = plt.subplots(figsize=(8, 3.5))
+    # 1 bar for ρ_j + 1 per model = _n_models + 1 bars per PC
+    _n_bars = _n_models + 1
+    _width  = 0.7 / _n_bars
+    _colors = [custom_palette[i % len(custom_palette)] for i in range(_n_models)]
 
+    fig, ax = plt.subplots(figsize=(9, 3.5))
+
+    # ρ_j reference bar (gray, first in each group)
+    _offset_rho = -(_width * _n_models / 2)
+    ax.bar(_x + _offset_rho, _rho, width=_width,
+           color="gray", alpha=0.6, label=r"$\rho_j$ (data)", zorder=2)
+
+    # encoder weight projection bars
     for i, _dim in enumerate(_bar_dims):
-        _mat     = _wp_data[_dim]                        # (d, 8) percentages
-        _avg     = _mat.mean(axis=0)                     # (8,) average across factors
-        _offset  = (_width * i) - (_width * (_n_models - 1) / 2)
+        _mat    = _wp_data[_dim]
+        _avg    = _mat.mean(axis=0)
+        _offset = _width * (i + 0.5) - (_width * _n_models / 2) + _width / 2
         ax.bar(_x + _offset, _avg, width=_width,
-               color=_colors[i], label=r"$\ell=" + str(_dim) + r"$", alpha=0.9)
+               color=_colors[i], label=r"$\ell=" + str(_dim) + r"$", alpha=0.9, zorder=2)
 
     ax.set_xticks(_x)
     ax.set_xticklabels(_pc_labels, fontsize=10)
-    ax.set_ylabel("Average weight (\\%)", fontsize=10)
+    ax.set_ylabel("Relative weight (\\%)", fontsize=10)
     ax.set_ylim(0, 100)
     ax.tick_params(axis="x", length=0)
     ax.legend(fontsize=10, loc="upper right")
