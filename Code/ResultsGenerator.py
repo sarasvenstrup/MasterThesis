@@ -858,32 +858,18 @@ _wp_combined = pd.DataFrame(_wp_rows, columns=["model", "factor"] + _pc_all_cols
 _wp_combined.to_csv(os.path.join(TABLES_OUT, "Q5b_weight_projection_combined.csv"), index=False)
 print("  Saved: Q5b_weight_projection_combined.csv")
 
-# ── Bar plot: ρ_j scree plot — full IS + 2010-onwards comparison ─────────────
-_rho_full  = _global_pca.explained_variance_ratio_   # (8,) full IS (2004–2020)
-
-# 2010-onwards subset
-_dates_is  = pd.to_datetime(meta_train.loc[mask_train.numpy(), "as_of_date"].values)
-_mask_2010 = (_dates_is >= "2010-01-01")
-_X_2010    = _X_is_all[_finite_is][_mask_2010[_finite_is]]  / scale_div
-_pca_2010  = _SKLearnPCA(n_components=8)
-_pca_2010.fit(_X_2010)
-_rho_2010  = _pca_2010.explained_variance_ratio_     # (8,)
-
+# ── Bar plot: ρ_j scree plot (Rolf Figure 4 style) ───────────────────────────
+_rho       = _global_pca.explained_variance_ratio_   # (8,) — Rolf's ρ_j
 _pc_labels = [f"PC{j+1}" for j in range(8)]
 _x         = np.arange(8)
-_w         = 0.35
 
-fig, ax = plt.subplots(figsize=(8, 3.5))
-ax.bar(_x - _w/2, _rho_full, width=_w, color="gray",
-       alpha=0.8, label="Full IS (2004–2020)", zorder=2)
-ax.bar(_x + _w/2, _rho_2010, width=_w, color=custom_palette[0],
-       alpha=0.8, label="2010–2020", zorder=2)
+fig, ax = plt.subplots(figsize=(7, 3.5))
+ax.bar(_x, _rho, width=0.6, color="gray", alpha=0.8, zorder=2)
 ax.set_xticks(_x)
 ax.set_xticklabels(_pc_labels, fontsize=10)
 ax.set_ylabel(r"Relative weight of eigenvalue $\rho_j$", fontsize=10)
 ax.set_ylim(0, 1)
 ax.tick_params(axis="x", length=0)
-ax.legend(fontsize=10)
 fig.tight_layout()
 save_fig(fig, "Q5b_weight_projection_barplot")
 
