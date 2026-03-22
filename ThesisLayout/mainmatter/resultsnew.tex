@@ -308,32 +308,49 @@ Beyond reconstruction accuracy, the model delivers economically interpretable st
 \newpage
 
 
-% ── Q5b: Weight projection of encoder onto PCA directions ────────────────────
+% ── Q5b: Weight projection table (Rolf Poulsen method) ──────────────────────
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_combined.csv}\wpCombined
 
 \begin{table}[ht]
 \centering
-\caption{Cosine similarity between each encoder weight vector $\mathbf{w}_k$
-  and the principal component directions of the in-sample swap rate curve,
-  for latent dimensions $\ell \in \{2,3,4\}$. A value close to $\pm 1$ on
-  the diagonal indicates that the factor aligns with the corresponding PC.}
-\label{tab:weight_projection}
 \pgfplotstabletypeset[
   col sep=comma,
-  columns={model,factor,PC1,PC2,PC3,PC4},
+  columns={model,factor,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8},
   columns/model/.style={string type, column name={Model}},
   columns/factor/.style={string type, column name={Factor}},
-  columns/PC1/.style={fixed, precision=3, zerofill, empty cells with={}, column name={PC1}},
-  columns/PC2/.style={fixed, precision=3, zerofill, empty cells with={}, column name={PC2}},
-  columns/PC3/.style={fixed, precision=3, zerofill, empty cells with={}, column name={PC3}},
-  columns/PC4/.style={fixed, precision=3, zerofill, empty cells with={}, column name={PC4}},
+  columns/PC1/.style={string type, column name={PC1}},
+  columns/PC2/.style={string type, column name={PC2}},
+  columns/PC3/.style={string type, column name={PC3}},
+  columns/PC4/.style={string type, column name={PC4}},
+  columns/PC5/.style={string type, column name={PC5}},
+  columns/PC6/.style={string type, column name={PC6}},
+  columns/PC7/.style={string type, column name={PC7}},
+  columns/PC8/.style={string type, column name={PC8}},
   every head row/.style={before row=\toprule, after row=\midrule},
   every last row/.style={after row=\bottomrule},
   row 2/.style={before row=\midrule},
   row 5/.style={before row=\midrule},
 ]{\wpCombined}
+\caption{Squared cosine similarity (in \%) between each encoder weight vector
+  $\mathbf{w}_k$ and the eight principal component directions of the in-sample
+  swap rate curve. Each row sums to 100\%. Following \citet{Poulsen2024},
+  $w_{kj} = (\mathbf{w}_k \cdot \mathbf{v}_j)^2 / \|\mathbf{w}_k\|^2 \times 100$.}
+\label{tab:weight_projection}
 \end{table}
 
+
+
+% ── Q5b: Weight projection bar plot ─────────────────────────────────────────
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
+  \caption{Squared cosine similarity (in \%) between each encoder weight vector
+    and the eight principal component directions of the swap rate curve, for
+    latent dimensions $\ell \in \{2,3,4\}$. Each bar shows what fraction of
+    a factor's weight lies in the direction of a given PC. Bars within each
+    panel sum to 100\%.}
+  \label{fig:weight_projection_bar}
+\end{figure}
 
 
 
