@@ -858,38 +858,30 @@ _wp_combined = pd.DataFrame(_wp_rows, columns=["model", "factor"] + _pc_all_cols
 _wp_combined.to_csv(os.path.join(TABLES_OUT, "Q5b_weight_projection_combined.csv"), index=False)
 print("  Saved: Q5b_weight_projection_combined.csv")
 
-# ── Bar plot: weight projection (%) per PC for each latent dimension ──────────
+# ── Bar plot: average weight projection per PC, all dims grouped (Rolf Fig 4 style)
 if _wp_data:
-    _bar_dims = sorted(_wp_data.keys())
-    fig, axes = plt.subplots(1, len(_bar_dims), figsize=(4.5 * len(_bar_dims), 3.5),
-                             sharey=True)
-    if len(_bar_dims) == 1:
-        axes = [axes]
-
+    _bar_dims  = sorted(_wp_data.keys())
+    _n_models  = len(_bar_dims)
     _pc_labels = [f"PC{j+1}" for j in range(8)]
     _x         = np.arange(8)
+    _width     = 0.7 / _n_models
+    _colors    = [custom_palette[i % len(custom_palette)] for i in range(_n_models)]
 
-    for ax, _dim in zip(axes, _bar_dims):
-        _mat    = _wp_data[_dim]          # (d, 8) percentages
-        _n_fac  = _mat.shape[0]
-        _width  = 0.7 / _n_fac
-        _colors = [custom_palette[k % len(custom_palette)] for k in range(_n_fac)]
+    fig, ax = plt.subplots(figsize=(8, 3.5))
 
-        for k in range(_n_fac):
-            _offset = (_width * k) - (_width * (_n_fac - 1) / 2)
-            ax.bar(_x + _offset, _mat[k], width=_width,
-                   color=_colors[k], label=f"$z_{k+1}$", alpha=0.9)
+    for i, _dim in enumerate(_bar_dims):
+        _mat     = _wp_data[_dim]                        # (d, 8) percentages
+        _avg     = _mat.mean(axis=0)                     # (8,) average across factors
+        _offset  = (_width * i) - (_width * (_n_models - 1) / 2)
+        ax.bar(_x + _offset, _avg, width=_width,
+               color=_colors[i], label=r"$\ell=" + str(_dim) + r"$", alpha=0.9)
 
-        ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11, fontweight="bold")
-        ax.set_xticks(_x)
-        ax.set_xticklabels(_pc_labels, fontsize=9)
-        ax.set_ylim(0, 105)
-        ax.set_ylabel("Weight (\\%)" if ax == axes[0] else "")
-        ax.axhline(0, color="black", linewidth=0.6)
-        ax.legend(fontsize=9, loc="upper right")
-        ax.tick_params(axis="x", length=0)
-
-    fig.suptitle("Encoder weight projection onto PCA directions", fontsize=12)
+    ax.set_xticks(_x)
+    ax.set_xticklabels(_pc_labels, fontsize=10)
+    ax.set_ylabel("Average weight (\\%)", fontsize=10)
+    ax.set_ylim(0, 100)
+    ax.tick_params(axis="x", length=0)
+    ax.legend(fontsize=10, loc="upper right")
     fig.tight_layout()
     save_fig(fig, "Q5b_weight_projection_barplot")
 
