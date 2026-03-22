@@ -344,12 +344,15 @@ Beyond reconstruction accuracy, the model delivers economically interpretable st
 \begin{figure}[ht]
   \centering
   \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
-  \caption{Average squared cosine similarity (in \%) between the encoder weight
-    vectors and each principal component direction of the in-sample swap rate
-    curve, for latent dimensions $\ell \in \{2,3,4\}$. Each bar shows
-    $\frac{1}{\ell}\sum_{k=1}^{\ell} w_{kj}$, where $w_{kj}$ is the fraction of
-    factor $k$'s weight pointing in the direction of PC$j$. Following the
-    approach of \citet{Poulsen2024}.}
+  \caption{Relative weights per principal component direction. Grey bars show
+  $\rho_j = \lambda_j / \mathrm{tr}(\boldsymbol{\Sigma}) \times 100$, the fraction
+  of total swap curve variance explained by PC$j$ (following \citet{Poulsen2024},
+  Figure~4). Coloured bars show $\bar{w}_j = \frac{1}{\ell}\sum_{k=1}^{\ell} w_{kj}$,
+  the average squared cosine similarity between the encoder weight vectors and
+  PC$j$, for $\ell \in \{2,3,4\}$. A coloured bar matching the grey bar indicates
+  the encoder has learned to point its weights at the directions where the data
+  actually varies.}
+
   \label{fig:weight_projection_bar}
 \end{figure}
 
@@ -392,6 +395,37 @@ Beyond reconstruction accuracy, the model delivers economically interpretable st
 
 
 
+
+Table 8.6 + Figure 8.10
+
+Do the encoder weight vectors point in PCA directions?
+
+Does adding factors capture more variance directions?
+
+
+Figure 8.11
+
+Does the AE recover PCa-like factors from data alone?
+
+Are the latent factors identifiable?
+
+
+Figure 8.11 vs. 8.12
+
+Does the AE learn the same structure as Nelson-Siegel?
+
+Which model has cleaner factor seperation?
+
+
+The central thesis point:
+
+
+The autoencoder learns economically interpretable latent factors - analogous to level, slope, and curvature, purely from data without the parametric restriction of Nelson-Siegel. The DNS model imposes this structure by construction; the AE discovers it. 
+
+
+
+
+NOTES:
 
 PCA-based proxies.
 Principal Component Analysis applied to swap rate data finds the directions of maximum variance in the data itself, with now model assumptions. 
