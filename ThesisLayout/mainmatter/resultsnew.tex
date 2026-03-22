@@ -340,17 +340,19 @@ Beyond reconstruction accuracy, the model delivers economically interpretable st
 
 
 
-% ── Q5b: Weight projection bar plot ─────────────────────────────────────────
+% ── Q5b: Average weight projection bar plot (Rolf Poulsen Figure 4 style) ────
 \begin{figure}[ht]
   \centering
   \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
-  \caption{Squared cosine similarity (in \%) between each encoder weight vector
-    and the eight principal component directions of the swap rate curve, for
-    latent dimensions $\ell \in \{2,3,4\}$. Each bar shows what fraction of
-    a factor's weight lies in the direction of a given PC. Bars within each
-    panel sum to 100\%.}
+  \caption{Average squared cosine similarity (in \%) between the encoder weight
+    vectors and each principal component direction of the in-sample swap rate
+    curve, for latent dimensions $\ell \in \{2,3,4\}$. Each bar shows
+    $\frac{1}{\ell}\sum_{k=1}^{\ell} w_{kj}$, where $w_{kj}$ is the fraction of
+    factor $k$'s weight pointing in the direction of PC$j$. Following the
+    approach of \citet{Poulsen2024}.}
   \label{fig:weight_projection_bar}
 \end{figure}
+
 
 
 
