@@ -836,6 +836,26 @@ for _dim in DIMS_PLOT:
     print(f"\n  ℓ={_dim} weight projection (cosine similarity of W rows with PC eigenvectors):")
     print(table_wp.to_string())
 
+# ── Combined weight projection CSV (all dims stacked, PC1–PC4 columns) ───────
+_wp_rows = []
+for _dim in DIMS_PLOT:
+    _wp_path = os.path.join(TABLES_OUT, f"Q5b_weight_projection_dim{_dim}.csv")
+    if not os.path.exists(_wp_path):
+        continue
+    _wp = pd.read_csv(_wp_path, index_col=0)
+    for k in range(_dim):
+        row = {
+            "model":  f"$\\ell={_dim}$" if k == 0 else "",
+            "factor": f"$z_{k+1}$",
+            "PC1": "", "PC2": "", "PC3": "", "PC4": "",
+        }
+        for j in range(_dim):
+            row[f"PC{j+1}"] = _wp.iloc[k, j]
+        _wp_rows.append(row)
+_wp_combined = pd.DataFrame(_wp_rows, columns=["model", "factor", "PC1", "PC2", "PC3", "PC4"])
+_wp_combined.to_csv(os.path.join(TABLES_OUT, "Q5b_weight_projection_combined.csv"), index=False)
+print("  Saved: Q5b_weight_projection_combined.csv")
+
 # ── Q5b heatmap: all dims side by side ───────────────────────────────────────
 if _corr_matrices:
     from matplotlib.colors import LinearSegmentedColormap
