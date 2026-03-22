@@ -301,15 +301,108 @@ Beyond reconstruction accuracy, the model delivers economically interpretable st
 \end{figure}
 
 
+% ── Q5b: Weight projection of encoder onto PCA directions ────────────────────
+% Files: Q5b_weight_projection_dim2.csv, _dim3.csv, _dim4.csv
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_dim2.csv}\wpTwo
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_dim3.csv}\wpThree
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_dim4.csv}\wpFour
+
+\begin{table}[ht]
+\centering
+\caption{Cosine similarity between each encoder weight vector and the first $\ell$
+  principal components of the in-sample swap rate curve, for latent dimensions
+  $\ell \in \{2,3,4\}$. A value close to $\pm 1$ on the diagonal indicates that
+  the corresponding factor aligns with the $j$-th principal component.}
+\label{tab:weight_projection}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llll@{}}
+\toprule
+& \multicolumn{1}{c}{$\ell = 2$}
+& \multicolumn{1}{c}{$\ell = 3$}
+& \multicolumn{1}{c}{$\ell = 4$} \\
+\midrule
+& \pgfplotstabletypeset[
+    col sep=comma,
+    columns={index,PC1,PC2},
+    columns/index/.style={string type, column name={}},
+    columns/PC1/.style={fixed, precision=3, column name={PC1}},
+    columns/PC2/.style={fixed, precision=3, column name={PC2}},
+    every head row/.style={before row=\toprule, after row=\midrule},
+    every last row/.style={after row=\bottomrule},
+  ]{\wpTwo}
+& \pgfplotstabletypeset[
+    col sep=comma,
+    columns={index,PC1,PC2,PC3},
+    columns/index/.style={string type, column name={}},
+    columns/PC1/.style={fixed, precision=3, column name={PC1}},
+    columns/PC2/.style={fixed, precision=3, column name={PC2}},
+    columns/PC3/.style={fixed, precision=3, column name={PC3}},
+    every head row/.style={before row=\toprule, after row=\midrule},
+    every last row/.style={after row=\bottomrule},
+  ]{\wpThree}
+& \pgfplotstabletypeset[
+    col sep=comma,
+    columns={index,PC1,PC2,PC3,PC4},
+    columns/index/.style={string type, column name={}},
+    columns/PC1/.style={fixed, precision=3, column name={PC1}},
+    columns/PC2/.style={fixed, precision=3, column name={PC2}},
+    columns/PC3/.style={fixed, precision=3, column name={PC3}},
+    columns/PC4/.style={fixed, precision=3, column name={PC4}},
+    every head row/.style={before row=\toprule, after row=\midrule},
+    every last row/.style={after row=\bottomrule},
+  ]{\wpFour} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+
+% ── Q5b: AE latent factor correlation with PCA scores (IS observations) ──────
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_factor_correlation_heatmap.png}
+  \caption{Pearson correlation between each autoencoder latent factor $z_k$ and
+    the first $\ell$ principal component scores of the in-sample swap rate curve,
+    for latent dimensions $\ell \in \{2,3,4\}$. PC scores are computed using
+    a global PCA fitted across all currencies and in-sample dates. A near-identity
+    pattern indicates that the encoder recovers the same directions as PCA.}
+  \label{fig:q5b_heatmap}
+\end{figure}
+
+
+% ── Q5c: EKF DNS factor correlation with PCA scores ──────────────────────────
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5c_DNS_factor_correlation_heatmap.png}
+  \caption{Pearson correlation between each EKF DNS latent factor $z_k$ and
+    the first $\ell$ principal component scores of the in-sample swap rate curve,
+    for latent dimensions $\ell \in \{2,3,4\}$. The same global PCA basis as
+    Figure~\ref{fig:q5b_heatmap} is used, making the two heatmaps directly
+    comparable. By construction, DNS factors correspond to level, slope, and
+    curvature; this analysis shows the empirical alignment with data-driven
+    PCA directions.}
+  \label{fig:q5c_heatmap}
+\end{figure}
+
+
+
+\newpage
+
+
+
+
+
 
 % ── Q5b ──────────────────────────────────────────────────────
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_factor_correlation_heatmap.png}
-    \caption{Pearson correlation between each latent factor $z_k$ and the level, slope,
-    and curvature of the swap curve, for $\ell \in \{2, 3, 4\}$.
+    \caption{Pearson correlation between each autoencoder latent factor $z_k$ and the level,
+    slope, and curvature of the swap curve, for $\ell \in \{2, 3, 4\}$.
     Blue indicates positive correlation, red indicates negative correlation.
-    Correlations are computed on the in-sample training observations with 2500 epochs.}
+    Level is defined as the cross-sectional average swap rate; slope as the
+    30Y$-$1Y spread; curvature as $2\times\text{5Y} - \text{1Y} - \text{30Y}$.
+    Correlations are computed on in-sample training observations (2004--2020).}
     \label{fig:q5b_factor_correlation_heatmap}
 \end{figure}
 
@@ -327,3 +420,15 @@ Beyond reconstruction accuracy, the model delivers economically interpretable st
     \label{fig:q5c_dns_factor_correlation_heatmap}
 \end{figure}
 
+
+
+
+
+PCA-based proxies.
+Principal Component Analysis applied to swap rate data finds the directions of maximum variance in the data itself, with now model assumptions. 
+
+\begin{enumerate}
+    \item You stack all your IS swap rate observations into a matrix of shape (Observations $\times$ tenors)
+    \item PCA finds orthogonal directions (principal components) that explain the most variance
+    \item The first three PCs empirically turn out to represent level, slope and curvature in virutally every yield curve dataset.
+\end{enumerate}
