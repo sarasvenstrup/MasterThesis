@@ -783,9 +783,9 @@ from sklearn.decomposition import PCA as _SKLearnPCA
 _X_is_all  = X_train[mask_train].numpy()                     # (N_is, 8)
 _finite_is = np.isfinite(_X_is_all).all(axis=1)
 _X_is_pca  = _X_is_all[_finite_is] / scale_div               # scale-consistent
-_global_pca = _SKLearnPCA(n_components=4)
+_global_pca = _SKLearnPCA(n_components=8)
 _global_pca.fit(_X_is_pca)
-_pc_vecs = _global_pca.components_                            # (4, 8) — rows are eigenvectors
+_pc_vecs = _global_pca.components_                            # (8, 8) — rows are eigenvectors
 print(f"  Global PCA explained variance ratios: "
       f"{np.round(_global_pca.explained_variance_ratio_ * 100, 2)}")
 
@@ -823,38 +823,75 @@ for _dim in DIMS_PLOT:
     print(f"\n  ℓ={_dim} (AE factor–PC correlations):")
     print(table_q5b.to_string())
 
-    # ── Weight projection: cosine similarity of encoder rows with PC eigenvectors
+    # ── Weight projection: squared cosine similarity × 100 (Rolf Poulsen method)
+    # w_{ij} = (W_i · V_j)^2 / ||W_i||^2 × 100  →  sums to 100% across all 8 PCs
     _W     = dim_models[_dim].encoder.lin.weight.detach().numpy()  # (d, 8)
     _W_hat = _W / np.linalg.norm(_W, axis=1, keepdims=True)        # unit-norm rows
-    _proj  = (_W_hat @ _pc_vecs[:_dim].T).round(3)                 # (d, d)
+    _cos   = _W_hat @ _pc_vecs.T                                    # (d, 8) cosine similarities
+    _proj  = np.round(_cos ** 2 * 100, 2)                          # (d, 8) percentages
     table_wp = pd.DataFrame(
         _proj,
         index   = [f"$z_{k+1}$" for k in range(_dim)],
-        columns = [f"PC{j+1}" for j in range(_dim)],
+        columns = [f"PC{j+1}" for j in range(8)],
     )
     save_table(table_wp, f"Q5b_weight_projection_dim{_dim}")
-    print(f"\n  ℓ={_dim} weight projection (cosine similarity of W rows with PC eigenvectors):")
+    print(f"\n  ℓ={_dim} weight projection (squared cosine × 100, sums to 100%):")
     print(table_wp.to_string())
 
 # ── Combined weight projection CSV (all dims stacked, PC1–PC4 columns) ───────
+_pc_all_cols = [f"PC{j+1}" for j in range(8)]
+
 _wp_rows = []
+_wp_data  = {}   # dim → np array (d, 8), kept for bar plot
 for _dim in DIMS_PLOT:
     _wp_path = os.path.join(TABLES_OUT, f"Q5b_weight_projection_dim{_dim}.csv")
     if not os.path.exists(_wp_path):
         continue
-    _wp = pd.read_csv(_wp_path, index_col=0)
+    _wp = pd.read_csv(_wp_path, index_col=0)   # (d, 8)
+    _wp_data[_dim] = _wp.values.astype(float)
     for k in range(_dim):
-        row = {
-            "model":  f"$\\ell={_dim}$" if k == 0 else "",
-            "factor": f"$z_{k+1}$",
-            "PC1": "", "PC2": "", "PC3": "", "PC4": "",
-        }
-        for j in range(_dim):
-            row[f"PC{j+1}"] = _wp.iloc[k, j]
+        row = {"model": f"$\\ell={_dim}$" if k == 0 else "", "factor": f"$z_{k+1}$"}
+        for j in range(8):
+            row[f"PC{j+1}"] = f"{_wp.iloc[k, j]:.2f}"
         _wp_rows.append(row)
-_wp_combined = pd.DataFrame(_wp_rows, columns=["model", "factor", "PC1", "PC2", "PC3", "PC4"])
+_wp_combined = pd.DataFrame(_wp_rows, columns=["model", "factor"] + _pc_all_cols)
 _wp_combined.to_csv(os.path.join(TABLES_OUT, "Q5b_weight_projection_combined.csv"), index=False)
 print("  Saved: Q5b_weight_projection_combined.csv")
+
+# ── Bar plot: weight projection (%) per PC for each latent dimension ──────────
+if _wp_data:
+    _bar_dims = sorted(_wp_data.keys())
+    fig, axes = plt.subplots(1, len(_bar_dims), figsize=(4.5 * len(_bar_dims), 3.5),
+                             sharey=True)
+    if len(_bar_dims) == 1:
+        axes = [axes]
+
+    _pc_labels = [f"PC{j+1}" for j in range(8)]
+    _x         = np.arange(8)
+
+    for ax, _dim in zip(axes, _bar_dims):
+        _mat    = _wp_data[_dim]          # (d, 8) percentages
+        _n_fac  = _mat.shape[0]
+        _width  = 0.7 / _n_fac
+        _colors = [custom_palette[k % len(custom_palette)] for k in range(_n_fac)]
+
+        for k in range(_n_fac):
+            _offset = (_width * k) - (_width * (_n_fac - 1) / 2)
+            ax.bar(_x + _offset, _mat[k], width=_width,
+                   color=_colors[k], label=f"$z_{k+1}$", alpha=0.9)
+
+        ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11, fontweight="bold")
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_pc_labels, fontsize=9)
+        ax.set_ylim(0, 105)
+        ax.set_ylabel("Weight (\\%)" if ax == axes[0] else "")
+        ax.axhline(0, color="black", linewidth=0.6)
+        ax.legend(fontsize=9, loc="upper right")
+        ax.tick_params(axis="x", length=0)
+
+    fig.suptitle("Encoder weight projection onto PCA directions", fontsize=12)
+    fig.tight_layout()
+    save_fig(fig, "Q5b_weight_projection_barplot")
 
 # ── Q5b heatmap: all dims side by side ───────────────────────────────────────
 if _corr_matrices:
