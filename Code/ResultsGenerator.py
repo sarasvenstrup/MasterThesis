@@ -794,7 +794,7 @@ _tenor_labels = [str(t) for t in TENOR_COLS]
 _n_plot_pcs   = 4
 _pc_plot_labels = ["PC1", "PC2", "PC3", "PC4"]
 
-fig, ax = plt.subplots(figsize=(7, 3.5))
+fig, ax = plt.subplots(figsize=(10, 3.5))
 for j in range(_n_plot_pcs):
     _v = _pc_vecs[j]
     # sign-normalise: make largest-absolute-value entry positive
