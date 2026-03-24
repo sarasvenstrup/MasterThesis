@@ -282,6 +282,19 @@ The yield curve is observed at eight maturities, but its variation may be govern
 When performing PCA on our data, we see in \ref{weight_projection_bar} that the first two principle components explain the variance, and the rest are neglible motivating the choice of
 $\ell = 2$.
 
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
+  \caption{Relative weights of the eigenvalues $\rho_j = \lambda_j /
+    \mathrm{tr}(\boldsymbol{\Sigma})$ for the eight principal components of
+    the in-sample swap rate curve, sorted in decreasing order. The weights
+    are negligible from PC4 onwards, motivating the use of a low-dimensional
+    latent representation with $\ell \in \{2, 3, 4\}$ factors. Following
+    \citet{Poulsen2024}, Figure~4.}
+  \label{fig:weight_projection_bar}
+\end{figure}
+
+To understand what these components represent economically, Figure\~\ref\{fig :pca\_eigenvectors\} plots the eigenvector loadings across the eight maturities. PC1 has roughly equal positive loadings across all maturities, consistent with a level factor, while PC2 transitions from positive at short maturities to negative at long maturities, consistent with a slope factor.
 
 % ── Q5b: PCA eigenvectors across maturities ──────────────────
 \begin{figure}[ht]
@@ -300,17 +313,7 @@ $\ell = 2$.
 \end{figure}
 
 
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
-  \caption{Relative weights of the eigenvalues $\rho_j = \lambda_j /
-    \mathrm{tr}(\boldsymbol{\Sigma})$ for the eight principal components of
-    the in-sample swap rate curve, sorted in decreasing order. The weights
-    are negligible from PC4 onwards, motivating the use of a low-dimensional
-    latent representation with $\ell \in \{2, 3, 4\}$ factors. Following
-    \citet{Poulsen2024}, Figure~4.}
-  \label{fig:weight_projection_bar}
-\end{figure}
+
 
 Let $\textbf{a}_k\in\mathbb{R}^M$ denote the $k$-th row of the encoder weight matrix $A_1$, representing the direction along which the $k$-th latent factor compresses the input. To assess how much this direction aligns with the $j$-th principal component $\mathbf{v}_j$ obtained from PCA, we follow \cite{MatinWanPoulsen2025} and decompose each $\textbf{a}_k$ in the PCA basis, defining the projection weight
 $$w_{kj}=(\textbf{a}_k\cdot \textbf{v}_j)^2$$
