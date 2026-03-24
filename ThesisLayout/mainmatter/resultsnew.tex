@@ -276,68 +276,35 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 % ─────────────────────────────────────────────────────────────
 
 % ── 1. Opening ───────────────────────────────────────────────
-We now assess whether the latent factors learned by the AE model carry
-any valid economic interpretation, and whether this interpretation changes
-with the number of latent dimensions $\ell \in \{2, 3, 4\}$.
-The encoded latent factors summarize the cross-sectional shape of the swap
-curve, while the networks for the short rate, drift, and diffusion translate
-these latent states into a full arbitrage-free term-structure representation.
-In the yield curve world of term structures, it is empirically shown that the
-three factors in an EKF DNS model represent the level, slope and curvature of
-a yield curve; we therefore want to explore whether the latent factors from
-the AE model correspond to the classical interpretation, and further whether
-this changes with the number of dimensions.
 
-% ── 2. Setup + math ──────────────────────────────────────────
-Let $\mathbf{S}_t \in \mathbb{R}^M$ denote the vector of observed par swap
-rates at time $t$, and let
-$\boldsymbol{\Sigma} = \frac{1}{N}\mathbf{S}^\top\mathbf{S} \in \mathbb{R}^{M\times M}$
-be the in-sample covariance matrix with eigendecomposition
-$\boldsymbol{\Sigma}\mathbf{v}_j = \lambda_j \mathbf{v}_j$,
-where $\lambda_1 \geq \cdots \geq \lambda_M \geq 0$ and
-$\{\mathbf{v}_j\}_{j=1}^M$ is an orthonormal basis of $\mathbb{R}^M$.
+The yield curve is observed at eight maturities, but its variation may be governed by far few underlying factors. Principal Component Analysis (PCA) identifies these by finding the directions of maximum variance, revealing how many dimensions are needed to summarize the data without meaningful loss. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
 
-\paragraph{Weight projection (Table~\ref{tab:weight_projection}).}
-Recall from Section~\ref{chap:encoderdecodermodel} that the encoder is the
-linear map $z_t = A_1 \mathbf{S}_t$, where $A_1 \in \mathbb{R}^{\ell \times M}$.
-Denoting the $k$-th row of $A_1$ by $\mathbf{a}_k \in \mathbb{R}^M$, factor
-$k$ is given by $z_k(t) = \mathbf{a}_k^\top \mathbf{S}_t$.
-Following \citet{Poulsen2024}, we decompose each weight vector in the PCA
-basis. Since $\{\mathbf{v}_j\}$ is complete,
-$\|\mathbf{a}_k\|^2 = \sum_{j=1}^{M}(\mathbf{a}_k^\top\mathbf{v}_j)^2$,
-so the fraction of $\mathbf{a}_k$'s energy pointing in direction $\mathbf{v}_j$
-is
+When performing PCA on our data, we see in \ref{weight_projection_bar} that the first two principle components explain the variance, and the rest are neglible motivating the choice of
+$\ell = 2$.
+
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
+  \caption{Relative weights of the eigenvalues $\rho_j = \lambda_j /
+    \mathrm{tr}(\boldsymbol{\Sigma})$ for the eight principal components of
+    the in-sample swap rate curve, sorted in decreasing order. The weights
+    are negligible from PC4 onwards, motivating the use of a low-dimensional
+    latent representation with $\ell \in \{2, 3, 4\}$ factors. Following
+    \citet{Poulsen2024}, Figure~4.}
+  \label{fig:weight_projection_bar}
+\end{figure}
+
+Let $\textbf{a}_k\in\mathbb{R}^M$ denote the $k$-th row of the encoder weight matrix $A_1$, representing the direction along which the $k$-th latent factor compresses the input. To assess how much this direction aligns with the $j$-th principal component $\mathbf{v}_j$ obtained from PCA, we follow \cite{MatinWanPoulsen2025} and decompose each $\textbf{a}_k$ in the PCA basis, defining the projection weight
+$$w_{kj}=(\textbf{a}_k\cdot \textbf{v}_j)^2$$
+which is the dot product between the encoder row and the principal component. And further we normalize in order to get this a percentage, to understand how much of the same direction is the encoder row pointing in the eigen vector.
 \begin{equation}
     w_{kj} = \frac{(\mathbf{a}_k^\top \mathbf{v}_j)^2}{\|\mathbf{a}_k\|^2}
     \times 100, \qquad \sum_{j=1}^{M} w_{kj} = 100.
     \label{eq:weight_proj}
 \end{equation}
 
-\paragraph{Scree plot (Figure~\ref{fig:weight_projection_bar}).}
-The relative eigenvalue weights $\rho_j = \lambda_j /
-\mathrm{tr}(\boldsymbol{\Sigma})$ confirm that the swap curve is
-effectively low-dimensional: the first three principal components account
-for approximately 95\% of total variance, motivating the choice of
-$\ell \in \{2,3,4\}$.
-
-
-\paragraph{Correlation heatmaps
-(Figures~\ref{fig:q5b_heatmap}--\ref{fig:q5c_heatmap}).}
-The Pearson correlation between factor $k$ and the $j$-th PC score
-$\mathrm{PC}_{j,t} = \mathbf{v}_j^\top \mathbf{S}_t$ over in-sample
-observations is computed for each model and currency.
-\textcolor{red}{[NOTE: The full derivation of $r_{kj}$ as
-$\sqrt{\lambda_j}(\mathbf{a}_k^\top\mathbf{v}_j) /
-\sqrt{\mathbf{a}_k^\top\boldsymbol{\Sigma}\mathbf{a}_k}$ is overly detailed
-for a results section — state in words that you compute Pearson correlations
-between factor scores and PC scores on IS observations, and drop the equation.]}
-Note that the sign of $z_k$ is arbitrary: any rotation $\mathbf{R}\in O(\ell)$
-applied to $z_t$ leaves the reconstruction loss unchanged.
-\textcolor{red}{[NOTE: You state here that $r_{kj}^2$ is the relevant quantity,
-not its sign — but the heatmaps display $r_{kj}$ with negative values. Either
-sign-normalise the factors before plotting (flip sign if dominant correlation
-is negative), or add an explicit sentence here telling the reader that a value
-of $-0.99$ is equally strong alignment as $+0.99$.]}
+The projection weights for the 3 different models across all $M=8$ PC, are presented in Table \ref{tab:weight_projection} where we see \textcolor{red}{Comment when we obtain our correct results}
 
 % ── 3. Weight projection: table + bar plot + results ─────────
 
@@ -371,30 +338,19 @@ of $-0.99$ is equally strong alignment as $+0.99$.]}
 \end{table}
 
 
+However the projection weights $w_{ij}$ are purely geometric, in the sense that they compare directions statically. They say nothing abut whether the latent factors actually move with the PCA score through time.
 
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
-  \caption{Relative weights of the eigenvalues $\rho_j = \lambda_j /
-    \mathrm{tr}(\boldsymbol{\Sigma})$ for the eight principal components of
-    the in-sample swap rate curve, sorted in decreasing order. The weights
-    are negligible from PC4 onwards, motivating the use of a low-dimensional
-    latent representation with $\ell \in \{2, 3, 4\}$ factors. Following
-    \citet{Poulsen2024}, Figure~4.}
-  \label{fig:weight_projection_bar}
-\end{figure}
+In order to retrieve this insight, we compute Pearson correlation between factor $z_k$ and the $j$-th PC score
+$\mathrm{PC}_{j,t} = \mathbf{v}_j^\top \mathbf{S}_t$ over in-sample observations for each currency and repeat for all models $\ell\in\{2,3,4\}$. suchh that the standard pearson correlation is computed across all $n$ IS observations:
 
+$$\rho_{kj}=\frac{\sum_{t=1}^n(z_k(t)-\bar{z}_k)(PC_{j,t}-\bar{PC}_j)}{\sqrt{\sum_{t=1}^n(z_k(t)-\bar{z}_k)^2\sum_{t=1}^n(PC_{j,t}-\bar{PC}_j)^2}}$$
 
+where $\bar{z}_k$ and $\bar{PC}_j$ is the ... for latent factor $z$ and principle component $j$ respectively.
 
-\textcolor{red}{[RESULTS MISSING: Interpret Table~\ref{tab:weight_projection}
-and Figure~\ref{fig:weight_projection_bar} here. Key questions to answer:
-(1) Do the encoder weight vectors point in PCA directions?
-(2) Does adding factors capture more variance directions?
-(3) CRITICAL: explain why all models strongly underweight PC1 despite
-$\rho_1 \approx 95\%$ — the likely reason is that mean-centring removes the
-dominant level component from the input, so the encoder captures shape
-variation (slope, curvature) while the decoder bias handles the level.
-Without this explanation the reader will think the model is failing.]}
+The results are as wee see here in \ref{fig:q5b_heatmap} where we see the correlations between them. \textcolor{red}{Note that the sign of $z_k$ is arbitrary: any rotation $\mathbf{R}\in O(\ell)$ applied to $z_t$ leaves the reconstruction loss unchanged.}
+
+\textcolour{red}{Comment: Here it is important to now that a model could correlate strongly with PCA scores simply because it has overfit the training data, not because it has found genuine structure, why it would be a good idea, to draw from the conclusions we end up making in the Out-of-sample test section.}
+
 
 % ── 4. Correlation heatmap: AE ───────────────────────────────
 \begin{figure}[ht]
@@ -407,33 +363,13 @@ Without this explanation the reader will think the model is failing.]}
   \label{fig:q5b_heatmap}
 \end{figure}
 
-\textcolor{red}{[RESULTS MISSING: Interpret Figure~\ref{fig:q5b_heatmap} here.
-Key questions to answer:
-(1) Does the AE recover PCA-like factors from data alone — is there a
-near-diagonal pattern?
-(2) Are the latent factors identifiable — does each factor load primarily
-on one PC?
-(3) Remind the reader that negative values (e.g. $-0.99$) indicate equally
-strong alignment as $+0.99$ due to sign arbitrariness.]}
 
-% ── 5. Correlation heatmap: DNS vs AE ────────────────────────
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5c_DNS_factor_correlation_heatmap.png}
-  \caption{Pearson correlation between each EKF DNS latent factor $z_k$ and
-    the first $\ell$ principal component scores of the in-sample swap rate
-    curve, for latent dimensions $\ell \in \{2,3,4\}$. The same global PCA
-    basis as Figure~\ref{fig:q5b_heatmap} is used, making the two heatmaps
-    directly comparable.}
-  \label{fig:q5c_heatmap}
-\end{figure}
 
-\textcolor{red}{[RESULTS MISSING: Compare Figure~\ref{fig:q5b_heatmap} and
-Figure~\ref{fig:q5c_heatmap} explicitly here. Key questions to answer:
-(1) Do the AE and DNS factors align with the same PCs, and by how much?
-(2) Which model has cleaner factor separation (smaller off-diagonal values)?
-(3) CRITICAL: The closing claim that ``the AE discovers what DNS imposes''
-must be demonstrated here from the actual numbers — do not just assert it.]}
+
+
+If it does not aling: Third, PCA finds linear directions of maximum variance. If the autoencoder is capturing genuinely nonlinear structure in the data, its factors might deliberately not align with PCA eigenvectors — and that would be a feature, not a problem. Using PCA as the benchmark implicitly assumes the relevant structure is linear, which favours the autoencoder's linear encoder by construction and is not a neutral comparison.
+
+Beyond that, you could also report the correlation on a holdout period specifically — fitting PCA on the training data and then computing scores on the test data, then correlating those with the latent factors from each model evaluated on the same test period. This breaks the circularity of comparing two things both estimated on the same data.
 
 % ── 6. Latent factor dynamics ─────────────────────────────────
 \begin{figure}[H]
@@ -447,23 +383,11 @@ must be demonstrated here from the actual numbers — do not just assert it.]}
 From Figure~\ref{fig:Q5a} it is clearly present that the evolvement of the
 latent dynamics change a lot in the regions of major market events such as
 GFC, ECB QE and COVID.
-\textcolor{red}{[RESULTS MISSING: This observation needs interpretation.
-Which specific factor spikes during GFC? Which factor responds to ECB QE?
-What does this imply economically — e.g. if $z_3$ (which aligns with PC1)
-rises sharply during COVID, this suggests the level factor captures the
-global rate collapse. Without this, the figure adds no information beyond
-``things change during crises'', which is obvious.]}
+
+
 
 % ── 7. Closing ───────────────────────────────────────────────
-Beyond reconstruction accuracy, the model delivers economically interpretable
-state variables and risk-neutral parameters. The autoencoder learns
-economically interpretable latent factors --- analogous to level, slope, and
-curvature --- purely from data, without the parametric restrictions of
-Nelson-Siegel. The DNS model imposes this structure by construction; the AE
-discovers it.
-\textcolor{red}{[NOTE: This closing asserts the central thesis point but does
-not demonstrate it. It should follow naturally from the numbers discussed above
-in points 4 and 5 — rewrite after filling in the results paragraphs so the
-conclusion is earned rather than stated.]}
+
+
 
 
