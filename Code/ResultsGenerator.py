@@ -789,6 +789,28 @@ _pc_vecs = _global_pca.components_                            # (8, 8) — rows 
 print(f"  Global PCA explained variance ratios: "
       f"{np.round(_global_pca.explained_variance_ratio_ * 100, 2)}")
 
+# ── Plot: first 3 eigenvectors across the 8 maturities ───────────────────────
+_tenor_labels = [str(t) for t in TENOR_COLS]
+_n_plot_pcs   = 3
+_pc_plot_labels = ["PC1 (level)", "PC2 (slope)", "PC3 (curvature)"]
+
+fig, ax = plt.subplots(figsize=(7, 3.5))
+for j in range(_n_plot_pcs):
+    _v = _pc_vecs[j]
+    # sign-normalise: make largest-absolute-value entry positive
+    if _v[np.argmax(np.abs(_v))] < 0:
+        _v = -_v
+    ax.plot(range(8), _v, marker="o", linewidth=2,
+            color=custom_palette[j], label=_pc_plot_labels[j])
+ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
+ax.set_xticks(range(8))
+ax.set_xticklabels(_tenor_labels, fontsize=10)
+ax.set_xlabel("Maturity", fontsize=10)
+ax.set_ylabel("Eigenvector loading", fontsize=10)
+ax.legend(fontsize=10)
+fig.tight_layout()
+save_fig(fig, "Q5b_pca_eigenvectors")
+
 for _dim in DIMS_PLOT:
     _Z    = dim_Z_hat[_dim]
     _mask = finite_mask(X_train, dim_S_hat[_dim]) & mask_train  # IS only
