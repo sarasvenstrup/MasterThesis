@@ -791,8 +791,8 @@ print(f"  Global PCA explained variance ratios: "
 
 # ── Plot: first 3 eigenvectors across the 8 maturities ───────────────────────
 _tenor_labels = [str(t) for t in TENOR_COLS]
-_n_plot_pcs   = 5
-_pc_plot_labels = ["PC1 (level)", "PC2 (slope)", "PC3 (curvature)", "PC4", "PC5"]
+_n_plot_pcs   = 4
+_pc_plot_labels = ["PC1", "PC2", "PC3", "PC4"]
 
 fig, ax = plt.subplots(figsize=(7, 3.5))
 for j in range(_n_plot_pcs):
