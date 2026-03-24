@@ -283,6 +283,23 @@ When performing PCA on our data, we see in \ref{weight_projection_bar} that the 
 $\ell = 2$.
 
 
+% ── Q5b: PCA eigenvectors across maturities ──────────────────
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_eigenvectors.png}
+  \caption{Loadings of the first three principal components of the
+    in-sample swap rate curve, computed from a global PCA fitted
+    across all nine currencies and in-sample dates (2004--2020).
+    Each line shows the eight entries of eigenvector $\mathbf{v}_j$,
+    one per tenor. PC1 has roughly equal positive loadings across
+    all maturities, consistent with a level factor. PC2 is negative
+    at the short end and positive at the long end, consistent with
+    a slope factor. PC3 has a hump shape, consistent with a
+    curvature factor.}
+  \label{fig:pca_eigenvectors}
+\end{figure}
+
+
 \begin{figure}[ht]
   \centering
   \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
@@ -365,21 +382,6 @@ The results are as wee see here in \ref{fig:q5b_heatmap} where we see the correl
 
 
 
-% ── Q5b: PCA eigenvectors across maturities ──────────────────
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_eigenvectors.png}
-  \caption{Loadings of the first three principal components of the
-    in-sample swap rate curve, computed from a global PCA fitted
-    across all nine currencies and in-sample dates (2004--2020).
-    Each line shows the eight entries of eigenvector $\mathbf{v}_j$,
-    one per tenor. PC1 has roughly equal positive loadings across
-    all maturities, consistent with a level factor. PC2 is negative
-    at the short end and positive at the long end, consistent with
-    a slope factor. PC3 has a hump shape, consistent with a
-    curvature factor.}
-  \label{fig:pca_eigenvectors}
-\end{figure}
 
 
 
