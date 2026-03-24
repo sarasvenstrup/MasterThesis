@@ -778,7 +778,7 @@ df_is["ccy"] = df_is["ccy"].str.upper()
 scale_div = 100.0 if SCALE_IS_PERCENT else 1.0
 
 # ── Global PCA on IS swap rates (all currencies stacked) ─────────────────────
-# Used as model-neutral reference basis for both Q5b and Q5c
+# Used as model-neutral reference basis for Q5b
 from sklearn.decomposition import PCA as _SKLearnPCA
 _X_is_all  = X_train[mask_train].numpy()                     # (N_is, 8)
 _finite_is = np.isfinite(_X_is_all).all(axis=1)
@@ -800,12 +800,12 @@ for _dim in DIMS_PLOT:
     for k in range(_dim):
         meta_z[f"z{k+1}"] = _Z_np[:, k]
 
-    # PC scores: project IS swap rates onto global PCA eigenvectors
-    for j in range(_dim):
+    # PC scores: project IS swap rates onto all 8 global PCA eigenvectors
+    for j in range(8):
         meta_z[f"PC{j+1}"] = _X_np @ _pc_vecs[j]
 
     z_cols  = [f"z{k+1}"  for k in range(_dim)]
-    pc_cols = [f"PC{j+1}" for j in range(_dim)]
+    pc_cols = [f"PC{j+1}" for j in range(8)]
 
     corr_rows = {}
     for zc in z_cols:
@@ -860,13 +860,14 @@ print("  Saved: Q5b_weight_projection_combined.csv")
 
 # ── Bar plot: ρ_j scree plot (Rolf Figure 4 style) ───────────────────────────
 _rho       = _global_pca.explained_variance_ratio_   # (8,) — Rolf's ρ_j
-_pc_labels = [f"PC{j+1}" for j in range(8)]
+_pc_labels = [str(j+1) for j in range(8)]
 _x         = np.arange(8)
 
 fig, ax = plt.subplots(figsize=(7, 3.5))
 ax.bar(_x, _rho, width=0.6, color="gray", alpha=0.8, zorder=2)
 ax.set_xticks(_x)
 ax.set_xticklabels(_pc_labels, fontsize=10)
+ax.set_xlabel("Principal component", fontsize=10)
 ax.set_ylabel(r"Relative weight of eigenvalue $\rho_j$", fontsize=10)
 ax.set_ylim(0, 1)
 ax.tick_params(axis="x", length=0)
@@ -884,16 +885,21 @@ if _corr_matrices:
         N=256
     )
 
-    _hm_dims  = sorted(_corr_matrices.keys())
-    _n_cols   = len(_hm_dims)
-    _max_rows = max(len(_corr_matrices[d]) for d in _hm_dims)
+    _hm_dims    = sorted(_corr_matrices.keys())
+    _n_panels   = len(_hm_dims)
+    _row_counts = [len(_corr_matrices[d]) for d in _hm_dims]   # [2, 3, 4]
+    _total_rows = sum(_row_counts)
 
-    fig, axes = plt.subplots(1, _n_cols,
-                             figsize=(3.5 * _n_cols, 1.0 + 0.7 * _max_rows))
-    if _n_cols == 1:
+    # height ratios proportional to number of factors per model
+    fig, axes = plt.subplots(
+        _n_panels, 1,
+        figsize=(9, 0.8 * _total_rows + 0.5 * _n_panels),
+        gridspec_kw={"height_ratios": _row_counts, "hspace": 0.4},
+    )
+    if _n_panels == 1:
         axes = [axes]
 
-    fig.subplots_adjust(right=0.85)   # leave room for colorbar
+    fig.subplots_adjust(right=0.88)   # leave room for colorbar
 
     for ax, _dim in zip(axes, _hm_dims):
         _mat           = _corr_matrices[_dim].values.astype(float)
@@ -901,20 +907,19 @@ if _corr_matrices:
         _row_labels    = [f"$z_{k+1}$" for k in range(_nrows)]
         _col_labels    = [f"PC{j+1}"   for j in range(_ncols)]
 
-        # pcolormesh: no antialiasing gaps between cells
         _X = np.arange(_ncols + 1)
         _Y = np.arange(_nrows + 1)
         im = ax.pcolormesh(_X, _Y, _mat, cmap=_cmap_q5b,
                            vmin=-1, vmax=1, edgecolors="face")
         ax.invert_yaxis()
         ax.set_xticks([c + 0.5 for c in range(_ncols)])
-        ax.set_xticklabels(_col_labels, fontsize=10)
+        ax.set_xticklabels(_col_labels, fontsize=9)
         ax.set_yticks([i + 0.5 for i in range(_nrows)])
         ax.set_yticklabels(_row_labels, fontsize=10)
         ax.tick_params(length=0)
-        ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11, fontweight="bold")
+        ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11,
+                     fontweight="bold", loc="left", pad=4)
 
-        # annotate each cell
         for r in range(_nrows):
             for c in range(_ncols):
                 val = _mat[r, c]
@@ -922,106 +927,13 @@ if _corr_matrices:
                 ax.text(c + 0.5, r + 0.5, f"{val:.3f}",
                         ha="center", va="center", fontsize=9, color=txt_color)
 
-    # colorbar in its own manually placed axes — no overlap
-    cbar_ax = fig.add_axes([0.87, 0.15, 0.025, 0.7])
+    # shared colorbar
+    cbar_ax = fig.add_axes([0.90, 0.15, 0.02, 0.7])
     fig.colorbar(im, cax=cbar_ax, label="Pearson $r$")
     save_fig(fig, "Q5b_factor_correlation_heatmap")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Q5c — Tables: Correlation of EKF DNS latent factors with level / slope / curvature
-#        Mirrors Q5b but for the Kalman benchmark models (ℓ=2, 3, 4)
-# ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q5c: EKF DNS factor correlation tables (all dims) ──")
-
-_corr_matrices_dns = {}
-
-for _dim in [2, 3, 4]:
-    _lf_path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
-                            f"ekf_dns_{_dim}f", "latent_factors_train.csv")
-    if not os.path.exists(_lf_path):
-        print(f"  SKIPPED ℓ={_dim} — {_lf_path} not found. Re-run kalman_benchmark.py first.")
-        continue
-
-    df_lf = pd.read_csv(_lf_path, parse_dates=["as_of_date"])
-    df_lf["ccy"] = df_lf["ccy"].str.upper()
-
-    # merge swap rates to compute PC scores (same global PCA as Q5b)
-    df_sw = df_wide_all.copy()
-    df_sw["as_of_date"] = pd.to_datetime(df_sw["as_of_date"])
-    df_sw["ccy"] = df_sw["ccy"].str.upper()
-    merged_k = df_lf.merge(df_sw[["as_of_date", "ccy"] + TENOR_COLS],
-                           on=["as_of_date", "ccy"], how="left")
-    _scale = 100.0 if SCALE_IS_PERCENT else 1.0
-    _X_k = merged_k[TENOR_COLS].astype(float).values / _scale   # (N, 8)
-
-    # PC scores: project onto global PCA eigenvectors
-    for j in range(_dim):
-        merged_k[f"PC{j+1}"] = _X_k @ _pc_vecs[j]
-
-    z_cols_k  = [f"z{k+1}"  for k in range(_dim)]
-    pc_cols_k = [f"PC{j+1}" for j in range(_dim)]
-
-    corr_rows_k = {}
-    for zc in z_cols_k:
-        row = {}
-        for pc in pc_cols_k:
-            valid = merged_k[[zc, pc]].dropna()
-            row[pc] = round(float(valid[zc].corr(valid[pc])), 3)
-        corr_rows_k[zc] = row
-
-    table_q5c = pd.DataFrame(corr_rows_k).T
-    table_q5c.index   = [f"$z_{k+1}$" for k in range(_dim)]
-    table_q5c.columns = pc_cols_k
-    _corr_matrices_dns[_dim] = table_q5c.copy()
-    save_table(table_q5c, f"Q5c_DNS_factor_correlations_dim{_dim}")
-    print(f"\n  EKF DNS ℓ={_dim}:")
-    print(table_q5c.to_string())
-
-# ── Q5c heatmap: EKF DNS all dims side by side ───────────────────────────────
-if _corr_matrices_dns:
-    from matplotlib.colors import LinearSegmentedColormap
-    _cmap_q5c = LinearSegmentedColormap.from_list(
-        "q5c_div",
-        [custom_palette[4], "white", custom_palette[0]],
-        N=256
-    )
-    _hm_dims_c = sorted(_corr_matrices_dns.keys())
-    _max_rows_c = max(len(_corr_matrices_dns[d]) for d in _hm_dims_c)
-    fig, axes = plt.subplots(1, len(_hm_dims_c),
-                             figsize=(3.5 * len(_hm_dims_c), 1.0 + 0.7 * _max_rows_c))
-    if len(_hm_dims_c) == 1:
-        axes = [axes]
-    fig.subplots_adjust(right=0.85)
-
-    im = None
-    for ax, _dim in zip(axes, _hm_dims_c):
-        _mat           = _corr_matrices_dns[_dim].values.astype(float)
-        _nrows, _ncols = _mat.shape
-        _col_labels_c  = [f"PC{j+1}" for j in range(_ncols)]
-        _X = np.arange(_ncols + 1)
-        _Y = np.arange(_nrows + 1)
-        im = ax.pcolormesh(_X, _Y, _mat, cmap=_cmap_q5c,
-                           vmin=-1, vmax=1, edgecolors="face")
-        ax.invert_yaxis()
-        ax.set_title(rf"$\ell={_dim}$", fontsize=11, fontweight="bold")
-        ax.set_xticks([c + 0.5 for c in range(_ncols)])
-        ax.set_xticklabels(_col_labels_c, fontsize=9)
-        ax.set_yticks([i + 0.5 for i in range(_nrows)])
-        ax.set_yticklabels([rf"$z_{k+1}$" for k in range(_nrows)], fontsize=9)
-        ax.tick_params(length=0)
-        for r in range(_nrows):
-            for c in range(_ncols):
-                val = _mat[r, c]
-                txt_col = "white" if abs(val) > 0.6 else "black"
-                ax.text(c + 0.5, r + 0.5, f"{val:.3f}",
-                        ha="center", va="center", fontsize=8,
-                        color=txt_col, fontweight="bold")
-
-    if im is not None:
-        cbar_ax = fig.add_axes([0.87, 0.15, 0.025, 0.7])
-        fig.colorbar(im, cax=cbar_ax, label="Pearson $r$")
-    save_fig(fig, "Q5c_DNS_factor_correlation_heatmap")
+# Q5c removed — EKF DNS factor correlation heatmap dropped from analysis
 
 
 # ─────────────────────────────────────────────────────────────────────────────
