@@ -277,9 +277,10 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 
 % ── 1. Opening ───────────────────────────────────────────────
 
-The yield curve is observed at eight maturities, but its variation may be governed by far fewer underlying factors. Principal Component Analysis (PCA) identifies these by finding the directions of maximum variance, revealing how many dimensions are needed to summarize the data without meaningful loss. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
 
-When performing PCA on our data, we see in \ref{weight_projection_bar} that the first two principle components explain the variance, and the rest are neglible motivating the choice of
+The yield curve is observed at eight maturities, but its variation may be governed by far fewer underlying factors. Principal Component Analysis (PCA) identifies these by finding the directions of maximum variance, revealing how many dimensions are needed to summarize the data whilst retaining as much information as possible. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
+
+When performing PCA on our data, Figure \ref{fig:weight_projection_bar} shows that the first two principle components explain the majority of the variance, with the remaining components being neglible, motivating the choice of the rest are neglible, motivating the choice of
 $\ell = 2$.
 
 \begin{figure}[ht]
@@ -287,14 +288,11 @@ $\ell = 2$.
   \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
   \caption{Relative weights of the eigenvalues $\rho_j = \lambda_j /
     \mathrm{tr}(\boldsymbol{\Sigma})$ for the eight principal components of
-    the in-sample swap rate curve, sorted in decreasing order. The weights
-    are negligible from PC4 onwards, motivating the use of a low-dimensional
-    latent representation with $\ell \in \{2, 3, 4\}$ factors. Following
-    \citet{Poulsen2024}, Figure~4.}
+    the in-sample swap rate curve, sorted in decreasing order.}
   \label{fig:weight_projection_bar}
 \end{figure}
 
-To understand what these components represent economically, Figure\~\ref\{fig :pca\_eigenvectors\} plots the eigenvector loadings across the eight maturities. PC1 has roughly equal positive loadings across all maturities, consistent with a level factor, while PC2 transitions from positive at short maturities to negative at long maturities, consistent with a slope factor.
+To understand what these components represent in terms of yield curve shape, Figure \ref{fig:pca_eigenvectors} plots the eigenvector loadings across the eight maturities. PC1 has roughly equal positive loadings across all maturities, consistent with a level factor, while PC2 transitions from positive at short maturities to negative at long maturities, consistent with a slope factor. PC3 exhibits a hump shape consistent with a curvature factor, though its eigenvalue is neglible, indicating that it accounts for very little variance in the data.
 
 % ── Q5b: PCA eigenvectors across maturities ──────────────────
 \begin{figure}[ht]
@@ -304,11 +302,7 @@ To understand what these components represent economically, Figure\~\ref\{fig :p
     in-sample swap rate curve, computed from a global PCA fitted
     across all nine currencies and in-sample dates (2004--2020).
     Each line shows the eight entries of eigenvector $\mathbf{v}_j$,
-    one per tenor. PC1 has roughly equal positive loadings across
-    all maturities, consistent with a level factor. PC2 is negative
-    at the short end and positive at the long end, consistent with
-    a slope factor. PC3 has a hump shape, consistent with a
-    curvature factor.}
+    one per tenor.}
   \label{fig:pca_eigenvectors}
 \end{figure}
 
@@ -369,7 +363,7 @@ where $\bar{z}_k$ and $\bar{PC}_j$ are the sample means for latent factor $z$ an
 
 The results are as wee see here in \ref{fig:q5b_heatmap} where we see the correlations between them. \textcolor{red}{Note that the sign of $z_k$ is arbitrary: any rotation $\mathbf{R}\in O(\ell)$ applied to $z_t$ leaves the reconstruction loss unchanged.}
 
-\textcolour{red}{Comment 1: Here it is important to now that a model could correlate strongly with PCA scores simply because it has overfit the training data, not because it has found genuine structure, why it would be a good idea, to draw from the conclusions we end up making in the Out-of-sample test section.}
+\textcolor{red}{Comment 1: Here it is important to now that a model could correlate strongly with PCA scores simply because it has overfit the training data, not because it has found genuine structure, why it would be a good idea, to draw from the conclusions we end up making in the Out-of-sample test section.}
 
 
 % ── 4. Correlation heatmap: AE ───────────────────────────────
@@ -403,7 +397,6 @@ The results are as wee see here in \ref{fig:q5b_heatmap} where we see the correl
 From Figure~\ref{fig:Q5a} it is clearly present that the evolvement of the
 latent dynamics change a lot in the regions of major market events such as
 GFC, ECB QE and COVID.
-
 
 
 
