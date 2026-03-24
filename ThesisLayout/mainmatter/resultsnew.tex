@@ -307,7 +307,7 @@ To understand what these components represent in terms of yield curve shape, Fig
 \end{figure}
 
 
-
+\textcolor{red}{bedre overgang}
 
 Let $\textbf{a}_k\in\mathbb{R}^M$ denote the $k$-th row of the encoder weight matrix $A_1$, representing the direction along which the $k$-th latent factor compresses the input. To assess how much this direction aligns with the $j$-th principal component $\mathbf{v}_j$ obtained from PCA, we follow \cite{MatinWanPoulsen2025} and decompose each $\textbf{a}_k$ in the PCA basis, defining the projection weight
 $$w_{kj}=(\textbf{a}_k\cdot \textbf{v}_j)^2$$
@@ -355,7 +355,7 @@ The projection weights for the 3 different models across all $M=8$ PC, are prese
 However the projection weights $w_{ij}$ are purely geometric, in the sense that they compare directions statically. They say nothing abut whether the latent factors actually move with the PCA score through time.
 
 In order to retrieve this insight, we compute Pearson correlation between factor $z_k$ and the $j$-th PC score
-$\mathrm{PC}_{j,t} = \mathbf{v}_j^\top \mathbf{S}_t$ over in-sample observations for each currency and repeat for all models $\ell\in\{2,3,4\}$. suchh that the standard pearson correlation is computed across all $n$ IS observations:
+$\mathrm{PC}_{j,t} = \mathbf{v}_j^\top \mathbf{S}_t$ over all in-sample observations and repeat for all models $\ell\in\{2,3,4\}$:
 
 $$\rho_{kj}=\frac{\sum_{t=1}^n(z_k(t)-\bar{z}_k)(PC_{j,t}-\bar{PC}_j)}{\sqrt{\sum_{t=1}^n(z_k(t)-\bar{z}_k)^2\sum_{t=1}^n(PC_{j,t}-\bar{PC}_j)^2}}$$
 
@@ -372,16 +372,9 @@ The results are as wee see here in \ref{fig:q5b_heatmap} where we see the correl
   \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_factor_correlation_heatmap.png}
   \caption{Pearson correlation between each autoencoder latent factor $z_k$
     and the first $\ell$ principal component scores of the in-sample swap rate
-    curve, for latent dimensions $\ell \in \{2,3,4\}$. PC scores are computed
-    using a global PCA fitted across all currencies and in-sample dates.}
+    curve, for latent dimensions $\ell \in \{2,3,4\}$.}
   \label{fig:q5b_heatmap}
 \end{figure}
-
-
-
-
-
-
 
 
 
@@ -396,7 +389,7 @@ The results are as wee see here in \ref{fig:q5b_heatmap} where we see the correl
 
 From Figure~\ref{fig:Q5a} it is clearly present that the evolvement of the
 latent dynamics change a lot in the regions of major market events such as
-GFC, ECB QE and COVID.
+GFC, ECB QE and COVID. \textcolor{red}{Comment when we have run the final results}
 
 
 
