@@ -277,7 +277,7 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 
 % ── 1. Opening ───────────────────────────────────────────────
 
-The yield curve is observed at eight maturities, but its variation may be governed by far few underlying factors. Principal Component Analysis (PCA) identifies these by finding the directions of maximum variance, revealing how many dimensions are needed to summarize the data without meaningful loss. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
+The yield curve is observed at eight maturities, but its variation may be governed by far fewer underlying factors. Principal Component Analysis (PCA) identifies these by finding the directions of maximum variance, revealing how many dimensions are needed to summarize the data without meaningful loss. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
 
 When performing PCA on our data, we see in \ref{weight_projection_bar} that the first two principle components explain the variance, and the rest are neglible motivating the choice of
 $\ell = 2$.
@@ -345,11 +345,11 @@ $\mathrm{PC}_{j,t} = \mathbf{v}_j^\top \mathbf{S}_t$ over in-sample observations
 
 $$\rho_{kj}=\frac{\sum_{t=1}^n(z_k(t)-\bar{z}_k)(PC_{j,t}-\bar{PC}_j)}{\sqrt{\sum_{t=1}^n(z_k(t)-\bar{z}_k)^2\sum_{t=1}^n(PC_{j,t}-\bar{PC}_j)^2}}$$
 
-where $\bar{z}_k$ and $\bar{PC}_j$ is the ... for latent factor $z$ and principle component $j$ respectively.
+where $\bar{z}_k$ and $\bar{PC}_j$ are the sample means for latent factor $z$ and principle component $j$ respectively.
 
 The results are as wee see here in \ref{fig:q5b_heatmap} where we see the correlations between them. \textcolor{red}{Note that the sign of $z_k$ is arbitrary: any rotation $\mathbf{R}\in O(\ell)$ applied to $z_t$ leaves the reconstruction loss unchanged.}
 
-\textcolour{red}{Comment: Here it is important to now that a model could correlate strongly with PCA scores simply because it has overfit the training data, not because it has found genuine structure, why it would be a good idea, to draw from the conclusions we end up making in the Out-of-sample test section.}
+\textcolour{red}{Comment 1: Here it is important to now that a model could correlate strongly with PCA scores simply because it has overfit the training data, not because it has found genuine structure, why it would be a good idea, to draw from the conclusions we end up making in the Out-of-sample test section.}
 
 
 % ── 4. Correlation heatmap: AE ───────────────────────────────
@@ -365,11 +365,26 @@ The results are as wee see here in \ref{fig:q5b_heatmap} where we see the correl
 
 
 
+% ── Q5b: PCA eigenvectors across maturities ──────────────────
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_eigenvectors.png}
+  \caption{Loadings of the first three principal components of the
+    in-sample swap rate curve, computed from a global PCA fitted
+    across all nine currencies and in-sample dates (2004--2020).
+    Each line shows the eight entries of eigenvector $\mathbf{v}_j$,
+    one per tenor. PC1 has roughly equal positive loadings across
+    all maturities, consistent with a level factor. PC2 is negative
+    at the short end and positive at the long end, consistent with
+    a slope factor. PC3 has a hump shape, consistent with a
+    curvature factor.}
+  \label{fig:pca_eigenvectors}
+\end{figure}
 
 
-If it does not aling: Third, PCA finds linear directions of maximum variance. If the autoencoder is capturing genuinely nonlinear structure in the data, its factors might deliberately not align with PCA eigenvectors — and that would be a feature, not a problem. Using PCA as the benchmark implicitly assumes the relevant structure is linear, which favours the autoencoder's linear encoder by construction and is not a neutral comparison.
 
-Beyond that, you could also report the correlation on a holdout period specifically — fitting PCA on the training data and then computing scores on the test data, then correlating those with the latent factors from each model evaluated on the same test period. This breaks the circularity of comparing two things both estimated on the same data.
+
+
 
 % ── 6. Latent factor dynamics ─────────────────────────────────
 \begin{figure}[H]
@@ -383,6 +398,12 @@ Beyond that, you could also report the correlation on a holdout period specifica
 From Figure~\ref{fig:Q5a} it is clearly present that the evolvement of the
 latent dynamics change a lot in the regions of major market events such as
 GFC, ECB QE and COVID.
+
+
+
+
+
+
 
 
 
