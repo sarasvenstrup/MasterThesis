@@ -807,7 +807,8 @@ ax.set_xticks(range(8))
 ax.set_xticklabels(_tenor_labels, fontsize=10)
 ax.set_xlabel("Maturity", fontsize=10)
 ax.set_ylabel("Eigenvector loading", fontsize=10)
-ax.legend(fontsize=10)
+ax.legend(fontsize=10, loc="center right",
+          frameon=True, facecolor="white", edgecolor="lightgray")
 fig.tight_layout()
 save_fig(fig, "Q5b_pca_eigenvectors")
 
