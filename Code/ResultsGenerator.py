@@ -914,7 +914,7 @@ ax.set_yticks(_x)
 ax.set_yticklabels(_pc_labels, fontsize=10)
 ax.invert_yaxis()
 ax.set_ylabel("Principal component", fontsize=10)
-ax.set_xlabel("Relative weight of eigenvalue", fontsize=10)
+ax.set_xlabel("PVE", fontsize=10)
 ax.set_xlim(0, 1.08)
 ax.tick_params(axis="y", length=0)
 for bar, val in zip(bars, _rho):
