@@ -242,7 +242,7 @@ print(table_q1a.to_string())
 # Q1e — Plot: Training loss curves for ℓ=2,3,4 in one figure
 #        Source: Figures/dim{N}/ep5000/train_rmse_log_bbg_dim{N}_ep5000.csv
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q1e: Training loss curves ──")
+print("\n── Q1e: Training loss curves  ──")
 
 fig, ax = plt.subplots(figsize=(8, 4))
 for dim in [2, 3, 4]:
@@ -259,7 +259,7 @@ for dim in [2, 3, 4]:
 
 ax.axvline(2500, color="black", linewidth=1.0, linestyle="--", label="Epoch 2500")
 ax.set_xlabel("Epoch", fontsize=10)
-ax.set_ylabel("Training RMSE (bps)", fontsize=10)
+ax.set_ylabel("Training RMSE  (bps)", fontsize=10)
 ax.legend(fontsize=10, frameon=False)
 fig.tight_layout()
 save_fig(fig, "Q1e_training_loss_curves")
