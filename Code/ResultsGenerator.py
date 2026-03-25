@@ -806,18 +806,20 @@ _pc_ts = (_meta_is
           .mean()
           .sort_index())
 
-fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(13, 3.5))
-
-# ── left: PC scores over time ─────────────────────────────────────────────────
+# ── PC scores over time ───────────────────────────────────────────────────────
+fig, ax_left = plt.subplots(figsize=(6.5, 3.5))
 for j in range(_n_plot_pcs):
     ax_left.plot(_pc_ts.index, _pc_ts[f"PC{j+1}"],
                  linewidth=1.2, color=custom_palette[j], label=_pc_plot_labels[j])
 ax_left.axhline(0, color="black", linewidth=0.8, linestyle="--")
 ax_left.set_xlabel("Date", fontsize=10)
 ax_left.set_ylabel("PC score", fontsize=10)
-ax_left.legend().set_visible(False)
+ax_left.legend(fontsize=10, frameon=False)
+fig.tight_layout()
+save_fig(fig, "Q5b_pca_scores")
 
-# ── right: eigenvector loadings across maturities ────────────────────────────
+# ── eigenvector loadings across maturities ────────────────────────────────────
+fig, ax_right = plt.subplots(figsize=(6.5, 3.5))
 for j in range(_n_plot_pcs):
     _v = _pc_vecs_plot[j]
     ax_right.plot(range(8), _v, marker="o", linewidth=2,
@@ -827,11 +829,9 @@ ax_right.set_xticks(range(8))
 ax_right.set_xticklabels(_tenor_labels, fontsize=10)
 ax_right.set_xlabel("Maturity", fontsize=10)
 ax_right.set_ylabel("Eigenvector loading", fontsize=10)
-ax_right.legend(fontsize=10, loc="center left", bbox_to_anchor=(1.02, 0.5),
-                frameon=False)
-
-fig.tight_layout(rect=[0, 0, 0.94, 1])
-save_fig(fig, "Q5b_pca_eigenvectors")
+ax_right.legend(fontsize=10, frameon=False)
+fig.tight_layout()
+save_fig(fig, "Q5b_pca_loadings")
 
 for _dim in DIMS_PLOT:
     _Z    = dim_Z_hat[_dim]
