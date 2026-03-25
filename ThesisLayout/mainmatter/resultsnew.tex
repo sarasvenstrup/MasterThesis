@@ -280,16 +280,46 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 The swap rate curve is observed at eight maturities, but its variation may be governed by far fewer underlying factors. Principal Component Analysis (PCA) identifies these by finding the orthogonal directions of maximum variance, yielding a low-dimensional representation that retains the greatest possible proportion of total variation. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
 
 
-PCA is applied to decompose the swap rate curve into $M=8$ principal components. Figure \ref{fig:weight_projection_bar} shows the proportion of variance explained by $PC_j$, $\text{PVE}_j=\lambda_j/\sum_{k=1}^M\lambda_k$, where the first two principal components account for over $99\%$ of the total variation in the swap curve data. The remaining components are negligible, motivating the use of a low-dimensional latent representation with $\ell = \{2,3,4\}$ factors.
+PCA is applied to decompose the swap rate curve into $M=8$ principal components. Figure \ref{fig:weight_projection_bar} shows the proportion of variance explained by $PC_j$, $\mathrm{PVE}_j=\lambda_j/\sum_{k=1}^M\lambda_k$, where the first two principal components account for over $99\%$ of the total variation in the swap curve data. The remaining components are negligible, motivating the use of a low-dimensional latent representation with $\ell = \{2,3,4\}$ factors.
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=0.9\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
-  \caption{Relative weights of the eigenvalues $\tilde{\lambda}_j = \lambda_j /
-    \mathrm{tr}(\boldsymbol{\Sigma})$ for the eight principal components of
-    the in-sample swap rate curve, sorted in decreasing order.}
-  \label{fig:weight_projection_bar}
+  % ── (a) PVE bar plot ──────────────────────────────────────────
+  \begin{subfigure}[t]{0.30\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
+    \caption{Proportion of variance explained
+      $\mathrm{PVE}_j = \lambda_j / \mathrm{tr}(\boldsymbol{\Sigma})$
+      for each principal component, sorted in decreasing order.}
+    \label{fig:pca_pve}
+  \end{subfigure}
+  \hfill
+  % ── (b) Eigenvector loadings ──────────────────────────────────
+  \begin{subfigure}[t]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_loadings.png}
+    \caption{Eigenvector loadings $\mathbf{v}_j$ across the eight
+      maturities for the first three principal components.}
+    \label{fig:pca_loadings}
+  \end{subfigure}
+  \hfill
+  % ── (c) PC scores over time ───────────────────────────────────
+  \begin{subfigure}[t]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_scores.png}
+    \caption{Principal component scores over time, averaged
+      across all nine currencies.}
+    \label{fig:pca_scores}
+  \end{subfigure}
+  \caption{Global PCA fitted on in-sample swap rates (2004--2020)
+    across all nine currencies. \subref{fig:pca_pve} shows the
+    proportion of variance explained per component;
+    \subref{fig:pca_loadings} shows the eigenvector loadings across
+    maturities; \subref{fig:pca_scores} shows the corresponding PC
+    scores over time.}
+  \label{fig:pca_overview}
 \end{figure}
+
 
 
 Figure~\ref{fig:pca_eigenvectors} shows the evolution of the principal
@@ -298,16 +328,6 @@ that the three dominant components capture the classical level, slope and
 curvature structure of the swap rate curve. Having established this structure, we now ask whether the encoder has independently learned to compress the data along the same directions.
 
 
-
-% ── Q5b: PCA eigenvectors across maturities ──────────────────
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_eigenvectors.png}
-  \caption{Left: principal component scores over time. Right: eigenvector loadings $\mathbf{v}_j$ across the eight
-  maturities. Both computed from a global PCA fitted on in-sample swap rates
-  (2004--2020).}
-  \label{fig:pca_eigenvectors}
-\end{figure}
 
 
 Let $\mathbf{a}_k\in\mathbb{R}^M$ denote the $k$-th row of the encoder weight matrix $A_1$, representing the direction along which factor $k$ compresses the input. Following \cite{MatinWanPoulsen2025}, we assess how much this direction aligns with each principal component $\mathbf{v}_j$ by decomposing $\textbf{a}_k$ in the PCA basis:
