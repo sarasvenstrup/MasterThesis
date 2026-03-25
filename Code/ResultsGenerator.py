@@ -245,7 +245,7 @@ print(table_q1a.to_string())
 print("\n── Q1e: Training loss curves  ──")
 
 fig, ax = plt.subplots(figsize=(8, 4))
-for dim in [2, 3, 4]:
+for dim in [1, 2, 3, 4]:
     _log_path = os.path.join(REPO_ROOT, "Figures", f"dim{dim}",
                              f"ep{TRAIN_LOG_EPOCHS}",
                              f"train_rmse_log_bbg_dim{dim}_ep{TRAIN_LOG_EPOCHS}.csv")
@@ -254,7 +254,7 @@ for dim in [2, 3, 4]:
         continue
     _log_df = pd.read_csv(_log_path)
     ax.plot(_log_df["epoch"], _log_df["avg_rmse_bps"],
-            linewidth=1.2, color=custom_palette[dim - 2],
+            linewidth=1.2, color=custom_palette[dim - 1],
             label=f"$\\ell={dim}$")
 
 ax.axvline(2500, color="black", linewidth=1.0, linestyle="--", label="Epoch 2500")
@@ -493,8 +493,6 @@ for col_i, (label, date_str) in enumerate(_rep_dates.items()):
         ax.tick_params(axis="y", labelsize=8)
         ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
                 transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
-        if row_i == 0 and col_i == _n_cols - 1:
-            ax.legend(fontsize=8, frameon=False, loc="upper right")
 
 fig.tight_layout()
 save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
