@@ -10,7 +10,7 @@ The model is implemented in \texttt{Python} using the \texttt{PyTorch} library, 
 \[
 \{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
 \]
-and consider latent dimensions $l\in\{1,2,3,4\}$.
+and consider latent dimensions $\ell\in\{1,2,3,4\}$.
 
 %--------------------------------------------------------
 \section{Forward Pass and Numerical Solution}
@@ -23,9 +23,9 @@ For each observation date $t$, the input consists of the observed par swap rate 
 The forward pass mirrors the theoretical architecture introduced in Section~\ref{chap
 :encoderdecodermodel}. First, the observed swap curve is encoded into a latent state
 \[
-z_t = A_1 \mathbf{S}_t, \qquad z_t\in\mathbb{R}^l,
+z_t = A_1 \mathbf{S}_t, \qquad z_t\in\mathbb{R}^\ell,
 \]
-where $A_1\in\mathb{R}^{l\times 8}$ is the learned encoder matrix.
+where $A_1\in\mathbb{R}^{\ell\times 8}$ is the learned encoder matrix.
 
 Conditional on $z_t$, the decoder evaluates $\mathcal{G}(z_t,\tau)$ together with the parameterizations of the drift $\mu(z_t)$, the volatility matrix $\sigma(z_t)$, and the short rate $\tilde r(z_t)$. The drift is modeled as an affine transformation of the latent state, while the volatility and short-rate functions are obtained from the neural networks $\mathcal{H}$ and $\mathcal{H}$ respectively. The volatility network outputs is constructed, ensuring that instantaneous covariance matrix 
 \[
@@ -170,7 +170,7 @@ The optimization problem in \eqref{eq:training_loss} is solved using stochastic 
 Since the Runge--Kutta recursion is implemented using elementary tensor operations, automatic differentiation propagates gradients through
 
 \begin{half}
-\begin{enumerate}[label=\textbf{Step \arabic* \,\textcolor{UCPHred}{|}}, itemsep=0pt, topsep=0pt, parsep=0pt, partopsep=0pt]
+\begin{enumerate}[label=\textbf{\arabic* \,\textcolor{UCPHred}{|}}, itemsep=0pt, topsep=0pt, parsep=0pt, partopsep=0pt]
     \item the encoder mapping $A_1 \mathbf{S}_t$,
     \item the parameterizations of $\mathcal{G}(z_t,\tau)$, $\mu(z_t)$, $\sigma(z_t)$, and $\tilde r(z_t)$,
     \item the construction of the coefficient functions $\alpha_{z_t}(\tau)$, $\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$,
@@ -181,7 +181,7 @@ Since the Runge--Kutta recursion is implemented using elementary tensor operatio
 
 Each parameter update therefore reflects the effect of the corresponding model component on the entire reconstructed term structure.
 
-Training is performed using mini-batch stochastic gradient descent together with the Adam optimizer and learning rate scheduling, as discussed in the machine learning section. \textcolor{red}{har vi ikke allerede nævnt dette tidligere, og hvorfor ikek bare skrevet netop dette og så kun en gang?}
+Training is performed using mini-batch stochastic gradient descent together with the Adam optimizer and learning rate scheduling, as discussed in the machine learning section. \textcolor{red}{har vi ikke allerede nævnt dette tidligere, og hvorfor ikek bare skrevet netop dette og så kun en gang? Istedet skal vi så ikke nævne hvilke værdier vi er endt med til dette learning rate scheduling?}
 
 
 
