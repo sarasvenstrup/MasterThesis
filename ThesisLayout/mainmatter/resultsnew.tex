@@ -282,8 +282,8 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 
 The yield curve is observed at eight maturities, but its variation may be governed by far fewer underlying factors. Principal Component Analysis (PCA) identifies these by finding the directions of maximum variance, revealing how many dimensions are needed to summarize the data whilst retaining as much information as possible. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
 
-When performing PCA on our data, Figure \ref{fig:weight_projection_bar} shows that the first two principle components explain the majority of the variance, with the remaining components being neglible, motivating the choice of the rest are neglible, motivating the choice of
-$\ell = 2$.
+
+Figure \ref{fig:weight_projection_bar} plots the eigenvector loadings across the eight maturities from performing PCA on our data, where it can be observed that the first two principal components account for over \textcolor{red}{$99\%$} of the total variation in the swap curve data. The remaining components being neglible, motivating the choice of the rest are neglible, motivating the choice of a model of dimension $\ell = 2$.
 
 \begin{figure}[ht]
   \centering
@@ -295,6 +295,9 @@ $\ell = 2$.
 \end{figure}
 
 To understand what these components represent in terms of yield curve shape, Figure \ref{fig:pca_eigenvectors} plots the eigenvector loadings across the eight maturities. PC1 has roughly equal positive loadings across all maturities, consistent with a level factor, while PC2 transitions from positive at short maturities to negative at long maturities, consistent with a slope factor. PC3 exhibits a hump shape consistent with a curvature factor, though its eigenvalue is neglible, indicating that it accounts for very little variance in the data.
+
+
+
 
 % ── Q5b: PCA eigenvectors across maturities ──────────────────
 \begin{figure}[ht]
