@@ -1084,19 +1084,20 @@ print("\n── Q6a: RMSE by tenor (full dataset, ep5000 training run) ──")
 X_eval = X_train[mask_train].numpy()
 S_eval = S_hat_train[mask_train].numpy()
 
-# per-tenor RMSE across all currencies and dates
-rmse_by_tenor = np.sqrt(np.mean((X_eval - S_eval)**2, axis=0)) * 10000  # bps
-
 fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
 
-# left: overall
+# left: per-tenor RMSE for all dims overlaid
 ax = axes[0]
-ax.bar([str(t) for t in TENOR_COLS], rmse_by_tenor,
-       color=custom_palette[2], edgecolor="none")
-ax.set_ylabel("RMSE (bps)")
-ax.set_title("In-Sample RMSE by Tenor")
-for i, v in enumerate(rmse_by_tenor):
-    ax.text(i, v + 0.05, f"{v:.1f}", ha="center", va="bottom", fontsize=8)
+for _dim in DIMS_PLOT:
+    _S_eval_dim = dim_S_hat[_dim][mask_train].numpy()
+    _finite     = np.isfinite(X_eval).all(1) & np.isfinite(_S_eval_dim).all(1)
+    _rmse_dim   = np.sqrt(np.mean((X_eval[_finite] - _S_eval_dim[_finite])**2, axis=0)) * 10000
+    ax.plot(TENOR_COLS, _rmse_dim, marker="o", linewidth=1.4, markersize=4,
+            color=DIM_COLORS[_dim], label=f"$\\ell={_dim}$")
+ax.set_ylabel("RMSE (bps)", fontsize=10)
+ax.set_xlabel("Maturity", fontsize=10)
+ax.set_xticks(TENOR_COLS)
+ax.legend(frameon=False, fontsize=10)
 
 # right: per-currency lines
 ax = axes[1]
