@@ -797,9 +797,6 @@ _pc_plot_labels = ["PC1", "PC2", "PC3", "PC4"]
 fig, ax = plt.subplots(figsize=(10, 3.5))
 for j in range(_n_plot_pcs):
     _v = _pc_vecs[j]
-    # sign-normalise: make largest-absolute-value entry positive
-    if _v[np.argmax(np.abs(_v))] < 0:
-        _v = -_v
     ax.plot(range(8), _v, marker="o", linewidth=2,
             color=custom_palette[j], label=_pc_plot_labels[j])
 ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
@@ -952,7 +949,7 @@ if _corr_matrices:
 
     # shared colorbar
     cbar_ax = fig.add_axes([0.90, 0.15, 0.02, 0.7])
-    fig.colorbar(im, cax=cbar_ax, label="Pearson $r$")
+    fig.colorbar(im, cax=cbar_ax, label="Pearson $\\rho$")
     save_fig(fig, "Q5b_factor_correlation_heatmap")
 
 
