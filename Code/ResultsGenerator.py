@@ -403,10 +403,10 @@ if _m1 is not None:
     _S1, _, _, _, _ = run_inference(_m1, X_train)
     _all_dim_S_hat[1] = _S1
 
-fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
 axes_flat = axes.flatten()
 
-for ax_i, _dim in enumerate([1, 2, 3, 4]):
+for ax_i, _dim in enumerate([2, 3, 4]):
     ax = axes_flat[ax_i]
     if _dim not in _all_dim_S_hat:
         ax.set_visible(False)
