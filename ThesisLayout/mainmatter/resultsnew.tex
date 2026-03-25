@@ -109,25 +109,44 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
     denotes the observed swap rate.
     Reconstructions are shown for
     $\ell=2$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}, solid),
-    $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{1.2em}{1pt} \rule[0.5ex]{0.3em}{1pt}}, dashed), and
+    $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{0.2em}{1pt} \rule[0.5ex]{0.2em}{1pt} \rule[0.5ex]{0.2em}{1pt}}, dashed), and
     $\ell=4$ ({\color[HTML]{9C9EDE}$\cdots$}, dotted).
     The x-axis shows tenor in years.}
 
     \label{fig:q1d_fitted_vs_actual_all_dims}
 \end{figure}
 
+To assess the quality of the fit beyond aggregate error metrics,
+Figure~\ref{fig:q1d_fitted_vs_actual_all_dims} shows the reconstructed
+versus observed swap curves for EUR, USD, and JPY across three
+representative dates: a normal market environment (August 2016), the
+Covid-19 stress episode (March 2020), and a low-rate regime (June
+2019).
+
+
+
 % ── Q1c ──────────────────────────────────────────────────────
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
-    \caption{Distribution of in-sample residuals (actual minus fitted) in basis points for
-    $\ell \in \{1,2,3,4\}$ latent factors, pooled across all currencies and observation dates.
-    Each panel corresponds to one latent dimension, coloured accordingly.
-    The vertical dashed black line marks zero; the dashed red line marks the sample mean;
-    the grey dotted lines mark the 5th and 95th percentiles. Sample size, standard deviation,
-    and excess kurtosis are reported in the upper-right corner of each panel.}
+    \caption{Distribution of in-sample residuals (actual minus fitted) in
+    basis points for $\ell \in \{2, 3, 4\}$ latent factors, pooled across
+    all currencies and observation dates. Each panel corresponds to one
+    latent dimension. The vertical dashed black line marks zero; the
+    dashed red line marks the sample mean; the grey dotted lines mark the
+    5th and 95th percentiles. Sample size, standard deviation, and excess
+    kurtosis are reported in the upper-right corner of each panel.}
     \label{fig:q1d_residual_histograms}
 \end{figure}
+
+
+Figure~\ref{fig:q1d_residual_histograms} shows the distribution of
+in-sample residuals pooled across all currencies and dates for
+$\ell \in \{2, 3, 4\}$. \textcolor{red}{[Fill in: describe the shape,
+e.g.\ ``The residuals are approximately symmetric around zero across
+all dimensions, with the distribution tightening from $\ell=2$ to
+$\ell=4$.'']}
+
 
 % ── Q6a ──────────────────────────────────────────────────────
 \begin{figure}[H]
@@ -135,15 +154,23 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6a_rmse_by_tenor.png}
     \caption{In-sample RMSE (bps) by tenor for $\ell \in \{2, 3, 4\}$
     (left) and per currency for $\ell=3$ (right), averaged across all
-    in-sample observations.}
+    in-sample observations. Currencies in the right panel:
+    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
+    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
+    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
+    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
+    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
     \label{fig:Q6a}
 \end{figure}
-
 
 Figure~\ref{fig:Q6a} further disaggregates the error across tenors for
 $\ell=3$. \textcolor{red}{[Fill in: describe the tenor pattern, e.g.\
 ``The model fits mid-range tenors most accurately, with higher errors
-at the short and long ends of the curve.'' — update once results are
+at the short end of the curve.'' — update once results are
 available.]}
 
 
@@ -156,34 +183,7 @@ available.]}
     \label{fig:Q6b}
 \end{figure}
 
-% ── Q6c ──────────────────────────────────────────────────────
-\begin{table}[H]
-\centering
-{\small
-\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q6c_top10_worst_pairs.csv}\datqsixc
-\resizebox{\textwidth}{!}{%
-\pgfplotstabletypeset[
-  columns={index, as_of_date, ccy, rmse_bps, resid_1Y_bps, resid_2Y_bps, resid_3Y_bps, resid_5Y_bps, resid_10Y_bps, resid_15Y_bps, resid_20Y_bps, resid_30Y_bps},
-  columns/index/.style={column name={Rank}, column type=r, int detect},
-  columns/as_of_date/.style={column name={Date}, string type, column type=l},
-  columns/ccy/.style={column name={CCY}, string type, column type=r},
-  columns/rmse_bps/.style={column name={RMSE}, column type=r, fixed, precision=1, fixed zerofill},
-  columns/resid_1Y_bps/.style={column name={1Y}, column type=r, fixed, precision=1},
-  columns/resid_2Y_bps/.style={column name={2Y}, column type=r, fixed, precision=1},
-  columns/resid_3Y_bps/.style={column name={3Y}, column type=r, fixed, precision=1},
-  columns/resid_5Y_bps/.style={column name={5Y}, column type=r, fixed, precision=1},
-  columns/resid_10Y_bps/.style={column name={10Y}, column type=r, fixed, precision=1},
-  columns/resid_15Y_bps/.style={column name={15Y}, column type=r, fixed, precision=1},
-  columns/resid_20Y_bps/.style={column name={20Y}, column type=r, fixed, precision=1},
-  columns/resid_30Y_bps/.style={column name={30Y}, column type=r, fixed, precision=1},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={after row=\bottomrule},
-]{\datqsixc}}
-}
-\caption{Top 10 worst in-sample fits ranked by RMSE (bps), $\ell=3$.
-Per-tenor residuals shown in bps (fitted $-$ actual).}
-\label{tab:Q6c}
-\end{table}
+
 
 % ── Q7 ───────────────────────────────────────────────────────
 \begin{figure}[H]
