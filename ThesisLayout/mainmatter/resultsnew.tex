@@ -15,6 +15,9 @@ Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of 
 % Note to selv
 %We first confirm that the models have converged, then assess fit quality across currencies and latent dimensions, before examining where and when the model struggles most. 
 
+
+\subsection{Loss Assessment}
+
 The model is trained on the in-sample period 2004--2020 over 5\,000
 epochs. Figure~\ref{fig:training_loss} shows the average training RMSE
 across all currencies for $\ell \in \{1,2,3,4\}$. All four models
@@ -93,8 +96,27 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
 
 
 
+% ── Q1c ──────────────────────────────────────────────────────
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
+    \caption{Distribution of in-sample residuals (actual minus fitted) in
+    basis points for $\ell \in \{2, 3, 4\}$ latent factors, pooled across
+    all currencies and observation dates. Each panel corresponds to one
+    latent dimension. The vertical dashed black line marks zero; the
+    dashed red line marks the sample mean; the grey dotted lines mark the
+    5th and 95th percentiles. Sample size, standard deviation, and excess
+    kurtosis are reported in the upper-right corner of each panel.}
+    \label{fig:q1d_residual_histograms}
+\end{figure}
 
 
+Figure~\ref{fig:q1d_residual_histograms} shows the distribution of
+in-sample residuals pooled across all currencies and dates for
+$\ell \in \{2, 3, 4\}$. \textcolor{red}{[Comment when results are updated]}
+
+
+\subsection{Fit diagnostics}
 
 
 % ── Q1d ──────────────────────────────────────────────────────
@@ -125,28 +147,6 @@ Covid-19 stress episode (March 2020), and a low-rate regime (June
 
 
 
-% ── Q1c ──────────────────────────────────────────────────────
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
-    \caption{Distribution of in-sample residuals (actual minus fitted) in
-    basis points for $\ell \in \{2, 3, 4\}$ latent factors, pooled across
-    all currencies and observation dates. Each panel corresponds to one
-    latent dimension. The vertical dashed black line marks zero; the
-    dashed red line marks the sample mean; the grey dotted lines mark the
-    5th and 95th percentiles. Sample size, standard deviation, and excess
-    kurtosis are reported in the upper-right corner of each panel.}
-    \label{fig:q1d_residual_histograms}
-\end{figure}
-
-
-Figure~\ref{fig:q1d_residual_histograms} shows the distribution of
-in-sample residuals pooled across all currencies and dates for
-$\ell \in \{2, 3, 4\}$. \textcolor{red}{[Fill in: describe the shape,
-e.g.\ ``The residuals are approximately symmetric around zero across
-all dimensions, with the distribution tightening from $\ell=2$ to
-$\ell=4$.'']}
-
 
 % ── Q6a ──────────────────────────────────────────────────────
 \begin{figure}[H]
@@ -174,6 +174,9 @@ at the short end of the curve.'' — update once results are
 available.]}
 
 
+
+
+
 % ── Q6b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
@@ -185,31 +188,28 @@ available.]}
 
 
 
+\subsection{No-Arbitrage Diagnostics}
+
+
 % ── Q7 ───────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
-    \begin{subfigure}{0.48\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim2.png}
-        \caption{AE $(\ell=2)$}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}{0.48\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim3.png}
-        \caption{AE $(\ell=3)$}
-    \end{subfigure}
-    \vspace{0.25cm}
-    \begin{subfigure}{0.48\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim4.png}
-        \caption{AE $(\ell=4)$}
-    \end{subfigure}
-    \caption{In-sample approximate Sharpe ratio across tenors (1--30Y)
-    for $\ell=2,3,4$. Shaded band shows $\pm$1 standard deviation
-    across training observations. Dashed line marks zero (no-arbitrage reference).}
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim3.png}
+    \caption{In-sample approximate Sharpe ratio across maturities (1--30Y)
+    for $\ell=3$, averaged per currency. The dashed line marks zero —
+    the expected value under no-arbitrage.
+    Currencies: AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
+    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
+    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
+    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
+    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
     \label{fig:Q7_sharpe}
 \end{figure}
+
 
 
 
