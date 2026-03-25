@@ -791,15 +791,16 @@ print(f"  Global PCA explained variance ratios: "
 
 # ── Plot: PC scores over time (left) + eigenvector loadings (right) ──────────
 _tenor_labels   = [str(t) for t in TENOR_COLS]
-_n_plot_pcs     = 4
+_n_plot_pcs     = 3
 _pc_plot_labels = [f"PC {j+1}" for j in range(_n_plot_pcs)]
 
 # compute PC scores for all IS observations, averaged across currencies per date
 _meta_is       = meta_train.loc[mask_train.numpy()].copy().reset_index(drop=True)
 _meta_is       = _meta_is[_finite_is].copy().reset_index(drop=True)
 _meta_is["as_of_date"] = pd.to_datetime(_meta_is["as_of_date"])
+_pc_vecs_plot  = _pc_vecs                            # global eigenvectors
 for j in range(_n_plot_pcs):
-    _meta_is[f"PC{j+1}"] = _X_is_pca @ _pc_vecs[j]
+    _meta_is[f"PC{j+1}"] = _X_is_pca @ _pc_vecs_plot[j]
 _pc_ts = (_meta_is
           .groupby("as_of_date")[[f"PC{j+1}" for j in range(_n_plot_pcs)]]
           .mean()
@@ -814,11 +815,11 @@ for j in range(_n_plot_pcs):
 ax_left.axhline(0, color="black", linewidth=0.8, linestyle="--")
 ax_left.set_xlabel("Date", fontsize=10)
 ax_left.set_ylabel("PC score", fontsize=10)
-ax_left.legend(fontsize=10, frameon=False)
+ax_left.legend().set_visible(False)
 
 # ── right: eigenvector loadings across maturities ────────────────────────────
 for j in range(_n_plot_pcs):
-    _v = _pc_vecs[j]
+    _v = _pc_vecs_plot[j]
     ax_right.plot(range(8), _v, marker="o", linewidth=2,
                   color=custom_palette[j], label=_pc_plot_labels[j])
 ax_right.axhline(0, color="black", linewidth=0.8, linestyle="--")
@@ -906,14 +907,19 @@ _rho       = _global_pca.explained_variance_ratio_   # (8,) — Rolf's ρ_j
 _pc_labels = [str(j+1) for j in range(8)]
 _x         = np.arange(8)
 
-fig, ax = plt.subplots(figsize=(7, 3.5))
-ax.bar(_x, _rho, width=0.6, color="gray", alpha=0.8, zorder=2)
-ax.set_xticks(_x)
-ax.set_xticklabels(_pc_labels, fontsize=10)
-ax.set_xlabel("Principal component", fontsize=10)
-ax.set_ylabel(r"Relative weight of eigenvalue $\rho_j$", fontsize=10)
-ax.set_ylim(0, 1)
-ax.tick_params(axis="x", length=0)
+fig, ax = plt.subplots(figsize=(6.5, 3.5))
+bars = ax.barh(_x, _rho, height=0.35, color="gray", alpha=0.8,
+               edgecolor="none", zorder=2)
+ax.set_yticks(_x)
+ax.set_yticklabels(_pc_labels, fontsize=10)
+ax.invert_yaxis()
+ax.set_ylabel("Principal component", fontsize=10)
+ax.set_xlabel("Relative weight of eigenvalue", fontsize=10)
+ax.set_xlim(0, 1.08)
+ax.tick_params(axis="y", length=0)
+for bar, val in zip(bars, _rho):
+    ax.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height() / 2,
+            f"{val:.3f}", va="center", ha="left", fontsize=9)
 fig.tight_layout()
 save_fig(fig, "Q5b_weight_projection_barplot")
 
