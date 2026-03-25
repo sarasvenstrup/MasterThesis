@@ -487,7 +487,7 @@ for col_i, (label, date_str) in enumerate(_rep_dates.items()):
             ax.set_ylabel(f"{ccy} ({'%' if SCALE_IS_PERCENT else 'dec.'})",
                           fontsize=9)
         if row_i == _n_rows - 1:
-            ax.set_xlabel("Tenor (years)", fontsize=9)
+            ax.set_xlabel("Maturity", fontsize=9)
         ax.set_xticks(tenors)
         ax.set_xticklabels([str(t) for t in tenors], fontsize=7)
         ax.tick_params(axis="y", labelsize=8)
@@ -1109,8 +1109,8 @@ for ccy in CCY_ORDER:
     ax.plot(TENOR_COLS, rmse_ccy, marker="o", linewidth=1.4,
             markersize=4, color=currency_color_map[ccy])
 
-ax.set_ylabel("RMSE (bps)")
-ax.set_title("In-Sample RMSE by Tenor Per Currency")
+ax.set_ylabel("RMSE (bps)", fontsize=10)
+ax.set_xlabel("Maturity", fontsize=10)
 ax.set_xticks(TENOR_COLS)
 
 fig.tight_layout()
@@ -1283,9 +1283,9 @@ if _m is not None:
         ax.plot(TAU_GRID, _sr_ccy,
                 color=currency_color_map[ccy], linewidth=1.4, label=ccy)
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
-    ax.set_xlabel("Maturity (years)", fontsize=10)
+    ax.set_xlabel("Maturity", fontsize=10)
     ax.set_ylabel("Approx. Sharpe ratio", fontsize=10)
-    ax.legend(frameon=False, fontsize=10, ncol=3)
+    ax.legend().set_visible(False)
     fig.tight_layout()
     save_fig(fig, "Q7_sharpe_ratio_IS_dim3")
     print("done")
