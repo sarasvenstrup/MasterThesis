@@ -9,19 +9,20 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
+Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of the autoencoder against two criteria: the reconstruction error, measured by the root mean squared error (RMSE) in basis points (bps), and the satisfaction of the no-arbitrage constraint, assessed through the \textcolor{red}{approximate Sharpe ratio (reference or write what we mean by this diagnostic)} of the reconstructed curves. We first confirm that the models have converged, then assess fit quality across currencies and latent dimneions, before examining where and when the model struggles most. Whereas \citet{MatinWanPoulsen2025} fix the number of latent factors at $\ell=2$, we extend the analysis to $\ell\in\{2,3,4\}$, allowing us to examine the trade-off between model complexity and reconstruction accuracy.
 
+
+
+% ── Q1e ──────────────────────────────────────────────────────
 \begin{figure}[ht]
-  \centering
-  \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_training_loss_curves.png}
-  \caption{Training RMSE (bps) over 5\,000 epochs for latent dimensions
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_training_loss_curves.png}
+    \caption{Average training RMSE (bps) over 5\,000 epochs for latent dimensions
     $\ell \in \{2, 3, 4\}$, averaged across all currencies and
     in-sample observations. The dashed vertical line marks epoch 2\,500,
     confirming that all models have converged well before this point.}
-  \label{fig:training_loss}
+    \label{fig:training_loss}
 \end{figure}
-
-
-
 
 % ── Q1a ──────────────────────────────────────────────────────
 \begin{table}[h!]
@@ -50,19 +51,6 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \label{tab:q1a_is_rmse}
 \end{table}
 
-% ── Q1c ──────────────────────────────────────────────────────
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
-    \caption{Distribution of in-sample residuals (actual minus fitted) in basis points for
-    $\ell \in \{1,2,3,4\}$ latent factors, pooled across all currencies and observation dates.
-    Each panel corresponds to one latent dimension, coloured accordingly.
-    The vertical dashed black line marks zero; the dashed red line marks the sample mean;
-    the grey dotted lines mark the 5th and 95th percentiles. Sample size, standard deviation,
-    and excess kurtosis are reported in the upper-right corner of each panel.}
-    \label{fig:q1d_residual_histograms}
-\end{figure}
-
 % ── Q1d ──────────────────────────────────────────────────────
 \begin{figure}[htbp]
     \centering
@@ -79,6 +67,19 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
     $\ell=4$ ({\color[HTML]{9C9EDE}$\cdots$}, dotted).
     The x-axis shows tenor in years.}
     \label{fig:q1d_fitted_vs_actual_all_dims}
+\end{figure}
+
+% ── Q1c ──────────────────────────────────────────────────────
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
+    \caption{Distribution of in-sample residuals (actual minus fitted) in basis points for
+    $\ell \in \{1,2,3,4\}$ latent factors, pooled across all currencies and observation dates.
+    Each panel corresponds to one latent dimension, coloured accordingly.
+    The vertical dashed black line marks zero; the dashed red line marks the sample mean;
+    the grey dotted lines mark the 5th and 95th percentiles. Sample size, standard deviation,
+    and excess kurtosis are reported in the upper-right corner of each panel.}
+    \label{fig:q1d_residual_histograms}
 \end{figure}
 
 % ── Q6a ──────────────────────────────────────────────────────
@@ -153,6 +154,17 @@ Per-tenor residuals shown in bps (fitted $-$ actual).}
     across training observations. Dashed line marks zero (no-arbitrage reference).}
     \label{fig:Q7_sharpe}
 \end{figure}
+
+
+
+
+
+
+
+
+
+
+
 
 
 
