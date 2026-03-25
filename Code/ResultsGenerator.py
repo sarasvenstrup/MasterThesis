@@ -789,24 +789,47 @@ _pc_vecs = _global_pca.components_                            # (8, 8) — rows 
 print(f"  Global PCA explained variance ratios: "
       f"{np.round(_global_pca.explained_variance_ratio_ * 100, 2)}")
 
-# ── Plot: first 3 eigenvectors across the 8 maturities ───────────────────────
-_tenor_labels = [str(t) for t in TENOR_COLS]
-_n_plot_pcs   = 4
-_pc_plot_labels = ["PC1", "PC2", "PC3", "PC4"]
+# ── Plot: PC scores over time (left) + eigenvector loadings (right) ──────────
+_tenor_labels   = [str(t) for t in TENOR_COLS]
+_n_plot_pcs     = 4
+_pc_plot_labels = [f"PC {j+1}" for j in range(_n_plot_pcs)]
 
-fig, ax = plt.subplots(figsize=(10, 3.5))
+# compute PC scores for all IS observations, averaged across currencies per date
+_meta_is       = meta_train.loc[mask_train.numpy()].copy().reset_index(drop=True)
+_meta_is       = _meta_is[_finite_is].copy().reset_index(drop=True)
+_meta_is["as_of_date"] = pd.to_datetime(_meta_is["as_of_date"])
+for j in range(_n_plot_pcs):
+    _meta_is[f"PC{j+1}"] = _X_is_pca @ _pc_vecs[j]
+_pc_ts = (_meta_is
+          .groupby("as_of_date")[[f"PC{j+1}" for j in range(_n_plot_pcs)]]
+          .mean()
+          .sort_index())
+
+fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(13, 3.5))
+
+# ── left: PC scores over time ─────────────────────────────────────────────────
+for j in range(_n_plot_pcs):
+    ax_left.plot(_pc_ts.index, _pc_ts[f"PC{j+1}"],
+                 linewidth=1.2, color=custom_palette[j], label=_pc_plot_labels[j])
+ax_left.axhline(0, color="black", linewidth=0.8, linestyle="--")
+ax_left.set_xlabel("Date", fontsize=10)
+ax_left.set_ylabel("PC score", fontsize=10)
+ax_left.legend(fontsize=10, frameon=False)
+
+# ── right: eigenvector loadings across maturities ────────────────────────────
 for j in range(_n_plot_pcs):
     _v = _pc_vecs[j]
-    ax.plot(range(8), _v, marker="o", linewidth=2,
-            color=custom_palette[j], label=_pc_plot_labels[j])
-ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
-ax.set_xticks(range(8))
-ax.set_xticklabels(_tenor_labels, fontsize=10)
-ax.set_xlabel("Maturity", fontsize=10)
-ax.set_ylabel("Eigenvector loading", fontsize=10)
-ax.legend(fontsize=10, loc="center left", bbox_to_anchor=(1.02, 0.5),
-          frameon=False)
-fig.tight_layout(rect=[0, 0, 0.82, 1])
+    ax_right.plot(range(8), _v, marker="o", linewidth=2,
+                  color=custom_palette[j], label=_pc_plot_labels[j])
+ax_right.axhline(0, color="black", linewidth=0.8, linestyle="--")
+ax_right.set_xticks(range(8))
+ax_right.set_xticklabels(_tenor_labels, fontsize=10)
+ax_right.set_xlabel("Maturity", fontsize=10)
+ax_right.set_ylabel("Eigenvector loading", fontsize=10)
+ax_right.legend(fontsize=10, loc="center left", bbox_to_anchor=(1.02, 0.5),
+                frameon=False)
+
+fig.tight_layout(rect=[0, 0, 0.94, 1])
 save_fig(fig, "Q5b_pca_eigenvectors")
 
 for _dim in DIMS_PLOT:
