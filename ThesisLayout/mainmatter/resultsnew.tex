@@ -9,6 +9,20 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_training_loss_curves.png}
+  \caption{Training RMSE (bps) over 5\,000 epochs for latent dimensions
+    $\ell \in \{2, 3, 4\}$, averaged across all currencies and
+    in-sample observations. The dashed vertical line marks epoch 2\,500,
+    confirming that all models have converged well before this point.}
+  \label{fig:training_loss}
+\end{figure}
+
+
+
+
 % ── Q1a ──────────────────────────────────────────────────────
 \begin{table}[h!]
 \centering
@@ -146,6 +160,12 @@ Per-tenor residuals shown in bps (fitted $-$ actual).}
 \section{Out-of-Sample Performance and Robustness}
 % ─────────────────────────────────────────────────────────────
 
+
+Since Figure~\ref{fig:training_loss} confirms convergence well before 
+2\,500 epochs, the IS/OOS comparison uses 2\,500 epochs across all 
+experiments without meaningful loss of accuracy to decrease computation time.
+
+
 % ── Q2a ──────────────────────────────────────────────────────
 \begin{table}[h!]
 \centering
@@ -280,22 +300,24 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 The swap rate curve is observed at eight maturities, but its variation may be governed by far fewer underlying factors. Principal Component Analysis (PCA) identifies these by finding the orthogonal directions of maximum variance, yielding a low-dimensional representation that retains the greatest possible proportion of total variation. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
 
 
-PCA is applied to decompose the swap rate curve into $M=8$ principal components. Figure \ref{fig:weight_projection_bar} shows the proportion of variance explained by $PC_j$, $\mathrm{PVE}_j=\lambda_j/\sum_{k=1}^M\lambda_k$, where the first two principal components account for over $99\%$ of the total variation in the swap curve data. The remaining components are negligible, motivating the use of a low-dimensional latent representation with $\ell = \{2,3,4\}$ factors.
+PCA is applied to decompose the swap rate curve into $M=8$ principal components. Figure \ref{fig:pca_pve} shows the proportion of variance explained by $PC_j$, $\mathrm{PVE}_j=\lambda_j/\sum_{k=1}^M\lambda_k$, where the first two principal components account for over $99\%$ of the total variation in the swap curve data. \textcolor{red}{The remaining components are negligible, motivating the use of a low-dimensional latent representation with $\ell = \{2,3,4\}$ factors.}
 
 \begin{figure}[ht]
   \centering
-  % ── (a) PVE bar plot ──────────────────────────────────────────
-  \begin{subfigure}[t]{0.30\textwidth}
+  % ── (a) PVE bar plot — full width on top ─────────────────────
+  \begin{subfigure}[t]{\textwidth}
     \centering
-    \includegraphics[width=\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
+    \includegraphics[width=0.55\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
     \caption{Proportion of variance explained
       $\mathrm{PVE}_j = \lambda_j / \mathrm{tr}(\boldsymbol{\Sigma})$
       for each principal component, sorted in decreasing order.}
     \label{fig:pca_pve}
   \end{subfigure}
-  \hfill
+
+  \vspace{0.5em}
+
   % ── (b) Eigenvector loadings ──────────────────────────────────
-  \begin{subfigure}[t]{0.32\textwidth}
+  \begin{subfigure}[t]{0.48\textwidth}
     \centering
     \includegraphics[width=\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_loadings.png}
     \caption{Eigenvector loadings $\mathbf{v}_j$ across the eight
@@ -304,25 +326,26 @@ PCA is applied to decompose the swap rate curve into $M=8$ principal components.
   \end{subfigure}
   \hfill
   % ── (c) PC scores over time ───────────────────────────────────
-  \begin{subfigure}[t]{0.32\textwidth}
+  \begin{subfigure}[t]{0.48\textwidth}
     \centering
     \includegraphics[width=\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_scores.png}
-    \caption{Principal component scores over time, averaged
-      across all nine currencies.}
+    \caption{PC scores $\mathbf{v}_j^\top \mathbf{S}_t$ over time,
+      averaged across currencies per date for visualisation. \textcolor{red}{Decide if its better to just visualize this for one currency instead of averaging The same with the left plot!}}
     \label{fig:pca_scores}
   \end{subfigure}
-  \caption{Global PCA fitted on in-sample swap rates (2004--2020)
-    across all nine currencies. \subref{fig:pca_pve} shows the
-    proportion of variance explained per component;
-    \subref{fig:pca_loadings} shows the eigenvector loadings across
-    maturities; \subref{fig:pca_scores} shows the corresponding PC
-    scores over time.}
+
+  \caption{Global PCA fitted on the pooled in-sample swap rate data
+  across all nine currencies (2004--2020). PC scores in
+  \subref{fig:pca_scores} are averaged across currencies per date
+  for visualization.}
   \label{fig:pca_overview}
 \end{figure}
 
 
 
-Figure~\ref{fig:pca_eigenvectors} shows the evolution of the principal
+
+
+Figure~\ref{fig:pca_loadings} shows the evolution of the principal
 component scores over time alongside their eigenvector loadings, revealing
 that the three dominant components capture the classical level, slope and
 curvature structure of the swap rate curve. Having established this structure, we now ask whether the encoder has independently learned to compress the data along the same directions.
