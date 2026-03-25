@@ -275,6 +275,8 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 \section{Latent Factor Interpretation}
 % ─────────────────────────────────────────────────────────────
 
+
+
 % ── 1. Opening ───────────────────────────────────────────────
 
 
@@ -307,8 +309,7 @@ To understand what these components represent in terms of yield curve shape, Fig
 \end{figure}
 
 
-\textcolor{red}{bedre overgang}
-
+\textcolor{red}{bedre overgang til dette efterfølgende afsnit, samt sørg for ikke at definere vægtene to gange}
 Let $\textbf{a}_k\in\mathbb{R}^M$ denote the $k$-th row of the encoder weight matrix $A_1$, representing the direction along which the $k$-th latent factor compresses the input. To assess how much this direction aligns with the $j$-th principal component $\mathbf{v}_j$ obtained from PCA, we follow \cite{MatinWanPoulsen2025} and decompose each $\textbf{a}_k$ in the PCA basis, defining the projection weight
 $$w_{kj}=(\textbf{a}_k\cdot \textbf{v}_j)^2$$
 which is the dot product between the encoder row and the principal component. And further we normalize in order to get this a percentage, to understand how much of the same direction is the encoder row pointing in the eigen vector.
