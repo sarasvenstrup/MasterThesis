@@ -1265,38 +1265,29 @@ def extract_sharpe(model, X, batch=256):
         sr_list.append(arb["SR_tau"].cpu())
     return torch.cat(sr_list)   # (N, 30)
 
-for _dim in ALL_DIMS_PARAM:
-    print(f"  ℓ={_dim} ...", end=" ")
-    _m, _src = load_ep5000_model(_dim)
-    if _m is None:
-        print("skipped (no model)")
-        continue
-
-    SR_all  = extract_sharpe(_m, X_train)          # (N, 30)
-
-    # apply finite mask on X_train rows
+_dim = 3
+print(f"  ℓ={_dim} ...", end=" ")
+_m, _src = load_ep5000_model(_dim)
+if _m is not None:
+    SR_all   = extract_sharpe(_m, X_train)          # (N, 30)
     x_finite = torch.isfinite(X_train).all(1)
-    SR_all   = SR_all[x_finite]                    # (N_valid, 30)
+    SR_all   = SR_all[x_finite].numpy()             # (N_valid, 30)
+    _meta_q7 = meta_train[x_finite.numpy()].reset_index(drop=True)
 
-    sr_mean = SR_all.mean(dim=0).numpy()           # (30,)
-    sr_std  = SR_all.std(dim=0).numpy()            # (30,)
-
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(TAU_GRID, sr_mean,
-            color=DIM_COLORS[_dim], linewidth=1.6,
-            label="Mean")
-    ax.fill_between(TAU_GRID,
-                    sr_mean - sr_std,
-                    sr_mean + sr_std,
-                    color=DIM_COLORS[_dim], alpha=0.2,
-                    label=r"$\pm$1 std")
+    fig, ax = plt.subplots(figsize=(9, 4))
+    for ccy in CCY_ORDER:
+        _idx = (_meta_q7["ccy"].values == ccy)
+        if _idx.sum() == 0:
+            continue
+        _sr_ccy = SR_all[_idx].mean(axis=0)         # (30,)
+        ax.plot(TAU_GRID, _sr_ccy,
+                color=currency_color_map[ccy], linewidth=1.4, label=ccy)
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
-    ax.set_ylabel("Approx. Sharpe ratio")
-    ax.legend(frameon=False, fontsize=10)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    ax.set_xlabel("Maturity (years)", fontsize=10)
+    ax.set_ylabel("Approx. Sharpe ratio", fontsize=10)
+    ax.legend(frameon=False, fontsize=10, ncol=3)
     fig.tight_layout()
-    save_fig(fig, f"Q7_sharpe_ratio_IS_dim{_dim}")
+    save_fig(fig, "Q7_sharpe_ratio_IS_dim3")
     print("done")
 
 
