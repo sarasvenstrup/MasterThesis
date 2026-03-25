@@ -259,7 +259,7 @@ for dim in [2, 3, 4]:
 
 ax.axvline(2500, color="black", linewidth=1.0, linestyle="--", label="Epoch 2500")
 ax.set_xlabel("Epoch", fontsize=10)
-ax.set_ylabel("Training RMSE  (bps)", fontsize=10)
+ax.set_ylabel("Average Training RMSE (bps)", fontsize=10)
 ax.legend(fontsize=10, frameon=False)
 fig.tight_layout()
 save_fig(fig, "Q1e_training_loss_curves")
@@ -432,6 +432,72 @@ for ax_i, _dim in enumerate([1, 2, 3, 4]):
 
 fig.tight_layout()
 save_fig(fig, "Q1d_residual_histograms_all_dims")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1d — Plot: Fitted vs actual, all latent dims (ℓ=2, 3, 4) overlaid
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1d: Fitted vs actual — all dims overlaid (EUR, USD, JPY) ──")
+
+_rep_dates = {
+    "Normal (2016-08-31)": "2016-08-31",
+    "Crisis (2020-03-31)":  "2020-03-31",
+    "Low-rate (2019-06-30)": "2019-06-30",
+}
+_show_ccys_alldim = ["EUR", "USD", "JPY"]
+_dim_colors = {2: custom_palette[0], 3: custom_palette[1], 4: custom_palette[2]}
+_dim_styles = {2: "-", 3: "--", 4: ":"}
+
+_scale = 100.0 if SCALE_IS_PERCENT else 1.0
+_n_rows = len(_show_ccys_alldim)
+_n_cols = len(_rep_dates)
+
+fig, axes = plt.subplots(_n_rows, _n_cols,
+                         figsize=(5 * _n_cols, 3.5 * _n_rows),
+                         sharey=False)
+
+for col_i, (label, date_str) in enumerate(_rep_dates.items()):
+    target_date = pd.Timestamp(date_str)
+    for row_i, ccy in enumerate(_show_ccys_alldim):
+        ax = axes[row_i][col_i]
+        mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
+        if mask_ccy.sum() == 0:
+            ax.set_visible(False)
+            continue
+        dates_ccy  = pd.to_datetime(meta_train.loc[mask_ccy, "as_of_date"])
+        idx_local  = (dates_ccy - target_date).abs().argmin()
+        actual_date = dates_ccy.iloc[idx_local]
+        global_idx = np.where(mask_ccy)[0][idx_local]
+
+        actual = X_train[global_idx].numpy() * _scale
+        ax.plot(tenors, actual, "o-", color="black", linewidth=2.0,
+                markersize=5, label="Actual", zorder=5)
+
+        for _dim in DIMS_PLOT:
+            fitted = dim_S_hat[_dim][global_idx].numpy() * _scale
+            ax.plot(tenors, fitted,
+                    linestyle=_dim_styles[_dim],
+                    color=_dim_colors[_dim],
+                    linewidth=1.8,
+                    label=DIM_LABELS[_dim])
+
+        if row_i == 0:
+            ax.set_title(label, fontsize=10, fontweight="bold")
+        if col_i == 0:
+            ax.set_ylabel(f"{ccy} ({'%' if SCALE_IS_PERCENT else 'dec.'})",
+                          fontsize=9)
+        if row_i == _n_rows - 1:
+            ax.set_xlabel("Tenor (years)", fontsize=9)
+        ax.set_xticks(tenors)
+        ax.set_xticklabels([str(t) for t in tenors], fontsize=7)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
+                transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
+        if row_i == 0 and col_i == _n_cols - 1:
+            ax.legend(fontsize=8, frameon=False, loc="upper right")
+
+fig.tight_layout()
+save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
