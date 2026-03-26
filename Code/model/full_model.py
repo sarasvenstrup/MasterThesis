@@ -123,12 +123,24 @@ class FullModel(nn.Module):
         S_in:
             (B,8) or (8,)
 
-        Returns (default, for backward compatibility with ResultsGenerator):
-            (S_hat, z, P_full, A_vals, B_vals, G_vals, mu, sigma, r_tilde, arb)
-            where all tensors are (B, ...) shaped
-        
-        If return_aux=True:
-            (S_hat, aux_dict) where aux_dict contains all computed quantities
+        Returns:
+            - If return_aux=False (default): S_hat only
+            - If return_aux=True: (S_hat, aux_dict)
+              where aux_dict contains all computed quantities:
+                'z': latent factors (B,d)
+                'P_mkt': market discount factors (B, tau_max)
+                'P_full': full discount factors (B, tau_max+1)
+                'A_vals': ODE solution A (B, tau_max+1)
+                'B_vals': ODE solution B (B, tau_max+1)
+                'G_vals': G function values (B, tau_max+1)
+                'mu': drift parameters (B,d)
+                'sigma': volatility matrix (B,d,d)
+                'r_tilde': short rate (B,)
+                'alpha': ODE coefficient (B, tau_max+1)
+                'beta': ODE coefficient (B, tau_max+1)
+                'gamma': ODE coefficient (B, tau_max+1)
+                'arb': arbitrage diagnostics dict (if do_arb_checks=True)
+                'tau_grid': maturity grid (tau_max+1,)
         """
         squeeze_back = False
         if S_in.dim() == 1:
