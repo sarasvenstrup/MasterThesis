@@ -1,13 +1,5 @@
-# %pip install torch
-# dbutils.library.restartPython()
-
-# DO NOT RUN THIS FILE
-
-import torch
 import torch.nn as nn
-
 from Code.utils.common import CenteredSoftStep  # Load the activation function
-
 
 class RShort(nn.Module):
     """
