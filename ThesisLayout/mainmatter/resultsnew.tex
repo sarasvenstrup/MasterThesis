@@ -180,7 +180,7 @@ available.]}
 % ── Q6b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
+    \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
     \caption{In-sample RMSE (bps) over time for $\ell=3$,
     averaged across currencies per date.}
     \label{fig:Q6b}
@@ -218,6 +218,32 @@ available.]}
 % ─────────────────────────────────────────────────────────────
 \section{Out-of-Sample Performance and Robustness}
 % ─────────────────────────────────────────────────────────────
+
+
+The strong in-sample fit established above is a necessary but not
+sufficient condition for a well-performing model, as a model that
+simply memorises the training data will appear to fit well in sample
+while failing to generalise. The rolling window evaluation tests
+whether the model captures genuine structure in the swap rate curve
+rather than patterns specific to the training period.
+
+
+
+In each rolling window, the model is trained on a five-year period
+and evaluated on the subsequent three months, stepping forward six
+months at a time, yielding approximately 26 windows in total.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/ExtraFigures/rolling_window_diagram.png}
+    \caption{Illustration of the rolling window evaluation setup. Each window
+    consists of a five-year training period (dark) followed by a three-month
+    test period (light), stepping forward six months at a time. Five
+    representative windows are shown out of approximately 26 in total.}
+    \label{fig:rolling_window_diagram}
+\end{figure}
+
+
 
 
 Since Figure~\ref{fig:training_loss} confirms convergence well before 
