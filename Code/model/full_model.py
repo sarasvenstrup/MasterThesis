@@ -41,7 +41,6 @@ class FullModel(nn.Module):
         super().__init__()
 
         # First reproduce the paper in 2D.
-        assert latent_dim == 2, "Use latent_dim=2 first."
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.tau_max = tau_max
@@ -138,7 +137,7 @@ class FullModel(nn.Module):
         tau = self._tau(device=device, dtype=dtype)   # (N,) with N=tau_max+1
 
         # 1) Encode observed swap curve -> latent factors
-        z = self.encoder(S_in)                        # (B,2)
+        z = self.encoder(S_in)                        # (B,d)
 
         # 2) Evaluate G(z, tau) on the whole annual grid
         G_vals = self.G(z, tau)                       # (B,N)
@@ -146,13 +145,13 @@ class FullModel(nn.Module):
             G_vals = G_vals.unsqueeze(0)
 
         # 3) Risk-neutral parameter networks
-        mu = self.K(z)                                # (B,2)
-        sigmas, rhos = self.H(z)                      # (B,2), (B,1)
+        mu = self.K(z)                                # (B,d)
+        sigmas, rhos = self.H(z)                      # (B,d), (B,1)
         r_tilde = self.R(z)                           # (B,1) or (B,)
         if r_tilde.ndim == 2 and r_tilde.shape[-1] == 1:
             r_tilde = r_tilde.squeeze(-1)             # (B,)
 
-        sigma = L_from_sigmas_rhos(sigmas, rhos)      # (B,2,2)
+        sigma = L_from_sigmas_rhos(sigmas, rhos)      # (B,d,d)
 
         # 4) Derivatives of G wrt tau and z
         def G_single(z_single: torch.Tensor) -> torch.Tensor:
