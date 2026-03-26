@@ -11,7 +11,7 @@
 #   - OOS_split_dim3/ep2500/checkpoint_seed*.pt             (Q1, Q5, Q6)
 #   - OOS_split_dim3/ep2500/run_manifest.json               (Q3 seeds table)
 #   - kalman_benchmark_oos/ekf_dns_{1,2,3,4}f/rmse_summary.csv (Q4)
-#   - OOS_roll_dim{1,2,3,4}/train3Y_test3M_step6M/ep2500/   (Q2, Q3, Q4)
+#   - OOS_roll_dim{1,2,3,4}/train5Y_test3M_step6M/ep2500/   (Q2, Q3, Q4)
 #     └─ rolling CSVs for dim1/dim2 may still be running — those sections
 #        are skipped gracefully with a warning if not yet available.
 
@@ -47,8 +47,10 @@ THESIS_RESULTS = os.path.join(REPO_ROOT, "Figures", "thesis_results")
 FIGURES_OUT    = os.path.join(THESIS_RESULTS, "AutoencoderPerformance")
 TABLES_OUT     = os.path.join(THESIS_RESULTS, "AutoencoderPerformance")
 PARAMS_DIR     = os.path.join(THESIS_RESULTS, "parameters")
+EXTRA_OUT      = os.path.join(THESIS_RESULTS, "ExtraFigures")
 os.makedirs(FIGURES_OUT, exist_ok=True)
 os.makedirs(PARAMS_DIR,  exist_ok=True)
+os.makedirs(EXTRA_OUT,   exist_ok=True)
 
 # ── constants ──────────────────────────────────────────────────────────────────
 CCY_ORDER   = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
@@ -187,6 +189,12 @@ def save_fig(fig, name):
 
 def save_params_fig(fig, name):
     path = os.path.join(PARAMS_DIR, name + ".png")
+    fig.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {path}")
+
+def save_extra_fig(fig, name):
+    path = os.path.join(EXTRA_OUT, name + ".png")
     fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved: {path}")
@@ -549,11 +557,80 @@ print(table_q2a.to_string())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Extra — Rolling window experiment diagram
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Extra: Rolling window diagram ──")
+
+_train_years  = 5
+_test_months  = 3
+_step_months  = 6
+_data_start   = pd.Timestamp("2004-01-01")
+_data_end     = pd.Timestamp("2022-12-31")
+_total_months = (_data_end.year - _data_start.year) * 12 + (_data_end.month - _data_start.month)
+
+# generate all window start dates
+_w_starts = []
+_d = _data_start + pd.DateOffset(years=_train_years)
+while _d + pd.DateOffset(months=_test_months) <= _data_end + pd.DateOffset(days=1):
+    _w_starts.append(_d)
+    _d = _d + pd.DateOffset(months=_step_months)
+
+# show only 5 evenly spaced windows for clarity
+_n_show   = 5
+_indices  = np.linspace(0, len(_w_starts) - 1, _n_show, dtype=int)
+_show     = [_w_starts[i] for i in _indices]
+
+def _to_x(ts):
+    return (ts.year - _data_start.year) + (ts.month - _data_start.month) / 12.0
+
+_col_train = custom_palette[0]
+_col_test  = custom_palette[1]
+_row_h     = 0.35
+_gap       = 0.15
+
+fig, ax = plt.subplots(figsize=(10, 3.2))
+
+# full sample reference bar
+ax.barh(len(_show) + _gap, _to_x(_data_end) - _to_x(_data_start),
+        left=_to_x(_data_start), height=_row_h,
+        color="lightgray", edgecolor="none", zorder=2)
+ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
+        len(_show) + _gap, "Full sample (2004–2022)",
+        va="center", ha="center", fontsize=8, color="dimgray")
+
+# rolling windows
+for i, test_start in enumerate(_show):
+    train_start = test_start - pd.DateOffset(years=_train_years)
+    train_end   = test_start - pd.DateOffset(days=1)
+    test_end    = test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
+    y = len(_show) - 1 - i
+
+    ax.barh(y, _to_x(test_start) - _to_x(train_start),
+            left=_to_x(train_start), height=_row_h,
+            color=_col_train, edgecolor="none", zorder=2, label="Training" if i == 0 else "")
+    ax.barh(y, _to_x(test_end) - _to_x(test_start),
+            left=_to_x(test_start), height=_row_h,
+            color=_col_test, edgecolor="none", zorder=2, label="Test" if i == 0 else "")
+    ax.text(_to_x(train_start) - 0.1, y,
+            f"Window {_indices[i]+1}", va="center", ha="right", fontsize=8)
+
+ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
+ax.set_ylim(-0.5, len(_show) + 0.8)
+ax.set_xlabel("Year", fontsize=10)
+ax.set_xticks(range(2004, 2023, 2))
+ax.set_xticklabels([str(y) for y in range(2004, 2023, 2)], fontsize=9)
+ax.set_yticks([])
+ax.spines[["left", "top", "right"]].set_visible(False)
+ax.legend(fontsize=9, frameon=False, loc="lower right")
+fig.tight_layout()
+save_extra_fig(fig, "rolling_window_diagram")
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Q2b — Plot: OOS RMSE vs latent dimension (rolling average per dim)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q2b: Rolling OOS RMSE vs dim ──")
 
-ROLL_SUBDIR = "train3Y_test3M_step6M"
+ROLL_SUBDIR = "train5Y_test3M_step6M"
 
 ROLL_DIVERGE_THRESHOLD = 100.0  # bps — rolling windows above this are training failures
 
@@ -562,7 +639,7 @@ def load_rolling_avg(dim):
     Windows where avg_rmse_bps > ROLL_DIVERGE_THRESHOLD are excluded (diverged training)."""
     path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
                         ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                        f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test3M_step6M.csv")
     if not os.path.exists(path):
         return None
     df = pd.read_csv(path)
@@ -646,7 +723,7 @@ print("\n── Q3b: Rolling RMSE over time (d=3) ── ")
 
 roll_path_d3 = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{LATENT_DIM}",
                              ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                             f"oos_rolling_bbg_dim{LATENT_DIM}_train3Y_test3M_step6M.csv")
+                             f"oos_rolling_bbg_dim{LATENT_DIM}_train5Y_test3M_step6M.csv")
 
 if os.path.exists(roll_path_d3):
     df_roll = pd.read_csv(roll_path_d3)
