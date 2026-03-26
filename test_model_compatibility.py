@@ -42,12 +42,12 @@ except Exception as e:
 # Test 3: Test forward pass (returns S_hat only by default)
 print("\n[TEST 3] Testing forward pass with default output (S_hat only)...")
 try:
-    # Use realistic swap curve values (not random; random ones lead to NaN due to untrained weights)
+    # More stable curve values
     X_test = torch.tensor([
-        [1.0, 1.2, 1.4, 1.6, 1.8, 1.9, 2.0, 2.1],
-        [1.1, 1.3, 1.5, 1.7, 1.8, 1.95, 2.05, 2.15],
-        [0.9, 1.1, 1.3, 1.5, 1.7, 1.85, 1.95, 2.05],
-        [1.05, 1.25, 1.45, 1.65, 1.75, 1.9, 2.0, 2.1],
+        [1.5, 1.55, 1.60, 1.65, 1.70, 1.72, 1.74, 1.76],
+        [1.52, 1.57, 1.62, 1.67, 1.72, 1.74, 1.76, 1.78],
+        [1.48, 1.53, 1.58, 1.63, 1.68, 1.70, 1.72, 1.74],
+        [1.51, 1.56, 1.61, 1.66, 1.71, 1.73, 1.75, 1.77],
     ], dtype=torch.float32)  # batch of 4 realistic swap curves
     with torch.no_grad():
         output = model(X_test)
