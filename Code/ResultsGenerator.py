@@ -407,21 +407,41 @@ if _m1 is not None:
 fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
 axes_flat = axes.flatten()
 
-for ax_i, _dim in enumerate([2, 3, 4]):
-    ax = axes_flat[ax_i]
+# first pass: compute residuals and find global x and y axis range
+_resid_data = {}
+_x_min, _x_max = np.inf, -np.inf
+for _dim in [2, 3, 4]:
     if _dim not in _all_dim_S_hat:
-        ax.set_visible(False)
         continue
-
     resid = (X_train[mask_train] - _all_dim_S_hat[_dim][mask_train]).numpy() * 10000
     resid_flat = resid.flatten()
     resid_flat = resid_flat[np.isfinite(resid_flat)]
+    _resid_data[_dim] = resid_flat
+    _x_min = min(_x_min, resid_flat.min())
+    _x_max = max(_x_max, resid_flat.max())
 
-    ax.hist(resid_flat, bins=120, color=DIM_COLORS[_dim], edgecolor="none", alpha=0.85)
+# compute y_max using shared x range and same bins
+_y_max = 0
+_shared_bins = np.linspace(_x_min, _x_max, 121)
+for _dim, resid_flat in _resid_data.items():
+    counts, _ = np.histogram(resid_flat, bins=_shared_bins)
+    _y_max = max(_y_max, counts.max())
+
+# second pass: plot all panels with shared x and y axes
+for ax_i, _dim in enumerate([2, 3, 4]):
+    ax = axes_flat[ax_i]
+    if _dim not in _resid_data:
+        ax.set_visible(False)
+        continue
+
+    resid_flat = _resid_data[_dim]
+    ax.hist(resid_flat, bins=_shared_bins, color=DIM_COLORS[_dim], edgecolor="none", alpha=0.85)
     ax.axvline(0, color="black", linewidth=1.2, linestyle="--")
     ax.axvline(np.mean(resid_flat), color="#d7191c", linewidth=1.5, linestyle="--")
     ax.axvline(np.percentile(resid_flat,  5), color="0.4", linewidth=1.0, linestyle=":")
     ax.axvline(np.percentile(resid_flat, 95), color="0.4", linewidth=1.0, linestyle=":")
+    ax.set_xlim(_x_min, _x_max)
+    ax.set_ylim(0, _y_max * 1.08)
     ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11, fontweight="bold")
     ax.set_xlabel("Residual (bps)")
     ax.set_ylabel("Count")
@@ -502,7 +522,7 @@ save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
 # ─────────────────────────────────────────────────────────────────────────────
 # Q1c — Plot: Histogram of residuals (actual − fitted) in bps
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q1c: Residual histogram ──")
+print("\n── Q1c: Residual histogram  ──")
 
 resid_train = (X_train[mask_train] - S_hat_train[mask_train]).numpy() * 10000  # → bps
 resid_flat  = resid_train.flatten()
@@ -656,14 +676,21 @@ ROLL_SUBDIR = "train5Y_test6M_step6M"
 
 ROLL_DIVERGE_THRESHOLD = 100.0  # bps — rolling windows above this are training failures
 
+_ROLL_FALLBACK_SUBDIR = "train3Y_test3M_step6M"
+
 def load_rolling_avg(dim):
     """Return average OOS RMSE across valid rolling windows for a given dim.
-    Windows where avg_rmse_bps > ROLL_DIVERGE_THRESHOLD are excluded (diverged training)."""
+    Falls back to old train3Y_test3M_step6M results if new ones are not yet available."""
     path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
                         ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
                         f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
-        return None
+        path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+        if not os.path.exists(path):
+            return None
+        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
     df = pd.read_csv(path)
     valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
     n_bad = len(df) - len(valid)
@@ -672,27 +699,87 @@ def load_rolling_avg(dim):
               f"(avg_rmse_bps > {ROLL_DIVERGE_THRESHOLD} bps)")
     return float(valid["avg_rmse_bps"].mean())
 
+def load_rolling_df(dim):
+    """Return full rolling CSV DataFrame for a given dim, with fallback."""
+    path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+        if not os.path.exists(path):
+            return None
+        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
+def load_ekf_rolling_avg(n_factors):
+    """Return average OOS RMSE across valid rolling windows for EKF DNS n_factors model."""
+    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    return float(df["avg_rmse_bps"].mean())
+
+def load_ekf_rolling_df(n_factors):
+    """Return full rolling CSV for EKF DNS n_factors model."""
+    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
 roll_avgs = {}
-for dim in [1, 2, 3, 4]:
+for dim in [2, 3, 4]:
     avg = load_rolling_avg(dim)
     if avg is not None:
         roll_avgs[dim] = avg
 
+# load EKF DNS rolling averages for dims 2, 3, 4
+ekf_roll_avgs = {}
+for _nf in [2, 3, 4]:
+    _avg = load_ekf_rolling_avg(_nf)
+    if _avg is not None:
+        ekf_roll_avgs[_nf] = _avg
+
 if len(roll_avgs) >= 2:
-    dims = sorted(roll_avgs.keys())
-    avgs = [roll_avgs[d] for d in dims]
+    _dims = [d for d in [2, 3, 4] if d in roll_avgs]
+    _x    = np.arange(len(_dims))
+    _w    = 0.35
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    bars = ax.bar([str(d) for d in dims], avgs,
-                  color=[DIM_COLORS[d] for d in dims],
-                  width=0.55, edgecolor="none")
-    best_dim = min(roll_avgs, key=roll_avgs.get)
-    for bar, d, val in zip(bars, dims, avgs):
-        label = f"{val:.1f}" + (" *" if d == best_dim else "")
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.15,
-                label, ha="center", va="bottom", fontsize=10, fontweight="bold")
+    fig, ax = plt.subplots(figsize=(7, 4))
 
-    ax.set_ylabel("Average Rolling OOS RMSE (bps)")
+    # AE bars
+    _ae_bars = ax.bar(_x - _w/2, [roll_avgs[d] for d in _dims],
+                      width=_w, color=[DIM_COLORS[d] for d in _dims],
+                      edgecolor="none", label="Autoencoder")
+
+    # EKF DNS bars
+    _ekf_vals = [ekf_roll_avgs.get(d, np.nan) for d in _dims]
+    _ekf_bars = ax.bar(_x + _w/2, _ekf_vals,
+                       width=_w, color="lightgray",
+                       edgecolor="none", label="EKF DNS")
+
+    # value labels
+    for bar, val in zip(_ae_bars, [roll_avgs[d] for d in _dims]):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                f"{val:.1f}", ha="center", va="bottom", fontsize=9)
+    for bar, val in zip(_ekf_bars, _ekf_vals):
+        if np.isfinite(val):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                    f"{val:.1f}", ha="center", va="bottom", fontsize=9)
+
+    ax.set_xticks(_x)
+    ax.set_xticklabels([f"$\\ell={d}$" for d in _dims], fontsize=10)
+    ax.set_ylabel("Average Rolling OOS RMSE (bps)", fontsize=10)
+    ax.legend(fontsize=9, frameon=False)
     ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
     fig.tight_layout()
     save_fig(fig, "Q2b_rolling_oos_vs_dim")
@@ -743,13 +830,9 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q3b: Rolling RMSE over time (d=3) ── ")
 
-roll_path_d3 = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{LATENT_DIM}",
-                             ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                             f"oos_rolling_bbg_dim{LATENT_DIM}_train5Y_test6M_step6M.csv")
+df_roll = load_rolling_df(LATENT_DIM)
 
-if os.path.exists(roll_path_d3):
-    df_roll = pd.read_csv(roll_path_d3)
-    df_roll["test_start"] = pd.to_datetime(df_roll["test_start"])
+if df_roll is not None:
 
     fig, ax = plt.subplots(figsize=(11, 4.5))
 
@@ -760,9 +843,17 @@ if os.path.exists(roll_path_d3):
             ax.plot(df_roll.loc[valid, "test_start"], df_roll.loc[valid, col],
                     linewidth=1.0, alpha=0.55, color=currency_color_map[ccy], label=ccy)
 
-    # average line — thin dashed
+    # AE average line
     ax.plot(df_roll["test_start"], df_roll["avg_rmse_bps"],
-            linewidth=1.2, color="black", linestyle="--", label="Average", zorder=5)
+            linewidth=1.2, color="black", linestyle="--",
+            label=f"AE $\\ell={LATENT_DIM}$ avg", zorder=5)
+
+    # EKF DNS 3f average line
+    _ekf_df3 = load_ekf_rolling_df(LATENT_DIM)
+    if _ekf_df3 is not None:
+        ax.plot(_ekf_df3["test_start"], _ekf_df3["avg_rmse_bps"],
+                linewidth=1.2, color="dimgray", linestyle=":",
+                label=f"EKF DNS {LATENT_DIM}f avg", zorder=5)
 
     # event markers
     for label, date_str in EVENTS.items():
@@ -778,7 +869,7 @@ if os.path.exists(roll_path_d3):
     fig.tight_layout()
     save_fig(fig, "Q3b_rolling_rmse_over_time")
 else:
-    print(f"  SKIPPED — rolling CSV not found at {roll_path_d3}")
+    print(f"  SKIPPED — no rolling CSV found for dim={LATENT_DIM}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1506,9 +1597,69 @@ for _dim in ALL_DIMS_PARAM:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DONE
+# DONE — Output summary
 # ─────────────────────────────────────────────────────────────────────────────
-print(f"\n{'='*60}")
-print(f"Q outputs saved to:  {FIGURES_OUT}")
-print(f"Param plots saved to: {PARAMS_DIR}")
-print(f"{'='*60}")
+
+_OK   = "✅"
+_WARN = "⚠️ "
+_SKIP = "❌"
+
+# determine model source for each dim
+def _model_src(dim):
+    src = dim_model_sources.get(dim, None)
+    if src is None:           return (_SKIP,  "no checkpoint found")
+    if "ep5000" in src:       return (_OK,    f"ep5000 checkpoint")
+    if "OOSSplit" in src:     return (_WARN,  f"fallback: OOSSplit ep2500 (rerun after ep5000 training)")
+    return (_OK, src)
+
+# determine rolling source for each dim
+def _roll_src(dim):
+    new_path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+                            ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    old_path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+    if os.path.exists(new_path): return (_OK,   "train5Y_test6M_step6M")
+    if os.path.exists(old_path): return (_WARN, "fallback: train3Y_test3M_step6M (rerun OutOfSampleRoll.py)")
+    return (_SKIP, "no rolling CSV found — run OutOfSampleRoll.py")
+
+_manifest_ok = os.path.exists(MANIFEST_PATH)
+
+print(f"\n{'='*65}")
+print(f"  OUTPUT SUMMARY")
+print(f"{'='*65}")
+
+print(f"\n  {'IN-SAMPLE':─<55}")
+icon, src = _model_src(LATENT_DIM)
+print(f"  {icon}  Q1a  IS RMSE table          — all dims, ep5000 logs")
+print(f"  {icon}  Q1e  Training loss curves   — all dims, ep5000 logs")
+print(f"  {icon}  Q1b  Fitted vs actual        — {src}")
+print(f"  {icon}  Q1d  Fitted vs actual (all dims) — {src}")
+print(f"  {icon}  Q1c/Q1d  Residual histograms — {src}")
+print(f"  {icon}  Q6a  RMSE by tenor           — {src}")
+print(f"  {icon}  Q6b  RMSE over time          — {src}")
+print(f"  {icon}  Q7   Sharpe ratio            — {src}")
+
+print(f"\n  {'OUT-OF-SAMPLE (SPLIT)':─<55}")
+icon2, src2 = _model_src(LATENT_DIM)
+print(f"  {icon2}  Q2a  IS vs OOS RMSE table   — {src2}")
+print(f"  {'✅' if _manifest_ok else _SKIP}  Q3a  Seed robustness table   — {'run_manifest.json found' if _manifest_ok else 'SKIPPED — run OutOfSampleSplit.py'}")
+print(f"  {'✅'}  Q4a  AE vs EKF DNS table     — fixed split OOS")
+print(f"  {'✅'}  Q4c  Per-currency bar chart  — fixed split OOS")
+
+print(f"\n  {'OUT-OF-SAMPLE (ROLLING)':─<55}")
+for _d in [2, 3, 4]:
+    icon_r, src_r = _roll_src(_d)
+    print(f"  {icon_r}  Q2b/Q3b  dim={_d}              — {src_r}")
+
+print(f"\n  {'LATENT FACTOR':─<55}")
+icon3, src3 = _model_src(LATENT_DIM)
+print(f"  {icon3}  Q5a  Latent factors over time — {src3}")
+print(f"  {_OK}  Q5b  PCA heatmap + projections — global PCA on IS data")
+print(f"  {_OK}  Q5b  Scree plot (PVE)           — global PCA on IS data")
+
+print(f"\n{'='*65}")
+print(f"  Figures → {FIGURES_OUT}")
+print(f"  Params  → {PARAMS_DIR}")
+print(f"{'='*65}\n")
