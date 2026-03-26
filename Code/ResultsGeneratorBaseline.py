@@ -87,7 +87,7 @@ X_full   = X_tensor_full.float()
 meta_full_df = meta_full.copy()
 meta_full_df["as_of_date"] = pd.to_datetime(meta_full_df["as_of_date"])
 
-TRAIN_MASK = (meta_full_df["as_of_date"] >= "2004-01-01") & \
+TRAIN_MASK = (meta_full_df["as_of_date"] >= "2010-01-01") & \
              (meta_full_df["as_of_date"] <= "2020-12-31")
 TEST_MASK  = (meta_full_df["as_of_date"] >= "2021-01-01") & \
              (meta_full_df["as_of_date"] <= "2022-12-31")
@@ -577,7 +577,7 @@ print("\n── Extra: Rolling window diagram ──")
 _train_years  = 5
 _test_months  = 6
 _step_months  = 6
-_data_start   = pd.Timestamp("2004-01-01")
+_data_start   = pd.Timestamp("2010-01-01")
 _data_end     = pd.Timestamp("2022-12-31")
 _total_months = (_data_end.year - _data_start.year) * 12 + (_data_end.month - _data_start.month)
 
@@ -609,7 +609,7 @@ ax.barh(_top_y, _to_x(_data_end) - _to_x(_data_start),
         left=_to_x(_data_start), height=_row_h,
         color=_col_full, edgecolor="none", zorder=2)
 ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
-        _top_y, "Full series  (2004–2022)",
+        _top_y, "Full series  (2010–2022)",
         va="center", ha="center", fontsize=9, color="dimgray")
 
 # ── rolling windows (staggered) — W1 to W5 ───────────────────────────────────
@@ -655,8 +655,8 @@ ax.text(_to_x(_data_start) - 0.15, _last_y, f"$W_{{{_n_total}}}$",
 # ── axes formatting ───────────────────────────────────────────────────────────
 ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
 ax.set_ylim(-0.5, _top_y + 0.8)
-ax.set_xticks(range(2004, 2023, 2))
-ax.set_xticklabels([str(y) for y in range(2004, 2023, 2)], fontsize=9)
+ax.set_xticks(range(2010, 2023, 2))
+ax.set_xticklabels([str(y) for y in range(2010, 2023, 2)], fontsize=9)
 ax.set_yticks([])
 ax.text(_to_x(_data_start) - 1.3,
         (_n_show + 1) / 2, "Windows",
@@ -1439,7 +1439,7 @@ print(worst[["as_of_date", "ccy", "rmse_bps"]].to_string())
 # ─────────────────────────────────────────────────────────────────────────────
 # Q7 — IS Sharpe ratio by tenor, one plot per latent dimension
 #      Source: ep5000 checkpoint (fallback: OOSSplit best seed)
-#      Data:   X_train (2004-2020)
+#      Data:   X_train (2010-2020)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q7: IS Sharpe ratio by tenor (all dims) ──")
 

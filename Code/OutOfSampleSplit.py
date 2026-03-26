@@ -48,7 +48,7 @@ final_div_factor = 3000.0
 LOG_EVERY  = 100
 
 # Train/test split dates
-TRAIN_START = "2004-01-01"
+TRAIN_START = "2010-01-01"
 TRAIN_END   = "2020-12-31"
 TEST_START  = "2021-01-01"
 TEST_END    = "2022-12-31"
