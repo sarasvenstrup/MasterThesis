@@ -38,7 +38,7 @@ LATENT_DIM = 2
 
 # Recommended rolling window setup (baseline OOS)
 TRAIN_YEARS = 5
-TEST_MONTHS = 3          # <-- recommended (was 3)
+TEST_MONTHS = 6
 STEP_MONTHS = 6
 MIN_TRAIN_OBS = 200
 

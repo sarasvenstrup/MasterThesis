@@ -1,5 +1,6 @@
 # OutOfSampleSplit.py
 # Run from repo root: python OutOfSampleSplit.py
+# This script will be used to test the robustness of the model.
 
 import os
 import sys

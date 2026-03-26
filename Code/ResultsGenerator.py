@@ -11,7 +11,7 @@
 #   - OOS_split_dim3/ep2500/checkpoint_seed*.pt             (Q1, Q5, Q6)
 #   - OOS_split_dim3/ep2500/run_manifest.json               (Q3 seeds table)
 #   - kalman_benchmark_oos/ekf_dns_{1,2,3,4}f/rmse_summary.csv (Q4)
-#   - OOS_roll_dim{1,2,3,4}/train5Y_test3M_step6M/ep2500/   (Q2, Q3, Q4)
+#   - OOS_roll_dim{1,2,3,4}/train5Y_test6M_step6M/ep2500/   (Q2, Q3, Q4)
 #     └─ rolling CSVs for dim1/dim2 may still be running — those sections
 #        are skipped gracefully with a warning if not yet available.
 
@@ -562,7 +562,7 @@ print(table_q2a.to_string())
 print("\n── Extra: Rolling window diagram ──")
 
 _train_years  = 5
-_test_months  = 3
+_test_months  = 6
 _step_months  = 6
 _data_start   = pd.Timestamp("2004-01-01")
 _data_end     = pd.Timestamp("2022-12-31")
@@ -575,54 +575,83 @@ while _d + pd.DateOffset(months=_test_months) <= _data_end + pd.DateOffset(days=
     _w_starts.append(_d)
     _d = _d + pd.DateOffset(months=_step_months)
 
-# show only 5 evenly spaced windows for clarity
-_n_show   = 5
-_indices  = np.linspace(0, len(_w_starts) - 1, _n_show, dtype=int)
-_show     = [_w_starts[i] for i in _indices]
+# show 6 consecutive windows starting from the first, to show the staggered structure
+_n_show = 3
+_show   = _w_starts[:_n_show]
 
 def _to_x(ts):
-    return (ts.year - _data_start.year) + (ts.month - _data_start.month) / 12.0
+    return ts.year + (ts.month - 1) / 12.0
 
 _col_train = custom_palette[0]
-_col_test  = custom_palette[1]
-_row_h     = 0.35
-_gap       = 0.15
+_col_test  = custom_palette[3]
+_col_full  = "lightgray"
+_row_h     = 0.45
+_n_rows    = _n_show + 2   # windows + dots row + full series row
 
-fig, ax = plt.subplots(figsize=(10, 3.2))
+fig, ax = plt.subplots(figsize=(11, 4.2))
 
-# full sample reference bar
-ax.barh(len(_show) + _gap, _to_x(_data_end) - _to_x(_data_start),
+# ── full series bar at top ────────────────────────────────────────────────────
+_top_y = _n_show + 2
+ax.barh(_top_y, _to_x(_data_end) - _to_x(_data_start),
         left=_to_x(_data_start), height=_row_h,
-        color="lightgray", edgecolor="none", zorder=2)
+        color=_col_full, edgecolor="none", zorder=2)
 ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
-        len(_show) + _gap, "Full sample (2004–2022)",
-        va="center", ha="center", fontsize=8, color="dimgray")
+        _top_y, "Full series  (2004–2022)",
+        va="center", ha="center", fontsize=9, color="dimgray")
 
-# rolling windows
+# ── rolling windows (staggered) — W1 to W5 ───────────────────────────────────
 for i, test_start in enumerate(_show):
     train_start = test_start - pd.DateOffset(years=_train_years)
-    train_end   = test_start - pd.DateOffset(days=1)
     test_end    = test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
-    y = len(_show) - 1 - i
+    y = _n_show - i + 1   # top window = W1
 
     ax.barh(y, _to_x(test_start) - _to_x(train_start),
             left=_to_x(train_start), height=_row_h,
-            color=_col_train, edgecolor="none", zorder=2, label="Training" if i == 0 else "")
+            color=_col_train, edgecolor="none", zorder=2,
+            label="Training" if i == 0 else "")
     ax.barh(y, _to_x(test_end) - _to_x(test_start),
             left=_to_x(test_start), height=_row_h,
-            color=_col_test, edgecolor="none", zorder=2, label="Test" if i == 0 else "")
-    ax.text(_to_x(train_start) - 0.1, y,
-            f"Window {_indices[i]+1}", va="center", ha="right", fontsize=8)
+            color=_col_test, edgecolor="none", zorder=2,
+            label="Test" if i == 0 else "")
+    ax.text(_to_x(_data_start) - 0.15, y, f"$W_{{{i+1}}}$",
+            va="center", ha="right", fontsize=9)
 
+# ── dots row ──────────────────────────────────────────────────────────────────
+_dots_y = 1
+ax.text(_to_x(_data_start) - 0.15, _dots_y, "$\\vdots$",
+        va="center", ha="right", fontsize=11)
+ax.text(_to_x(_data_start) + 7.5, _dots_y, "$\\vdots$",
+        va="center", ha="center", fontsize=11)
+
+# ── last window Wn ────────────────────────────────────────────────────────────
+_last_test_start = _w_starts[-1]
+_last_train_start = _last_test_start - pd.DateOffset(years=_train_years)
+_last_test_end    = _last_test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
+_last_y = 0
+_n_total = len(_w_starts)
+
+ax.barh(_last_y, _to_x(_last_test_start) - _to_x(_last_train_start),
+        left=_to_x(_last_train_start), height=_row_h,
+        color=_col_train, edgecolor="none", zorder=2)
+ax.barh(_last_y, _to_x(_last_test_end) - _to_x(_last_test_start),
+        left=_to_x(_last_test_start), height=_row_h,
+        color=_col_test, edgecolor="none", zorder=2)
+ax.text(_to_x(_data_start) - 0.15, _last_y, f"$W_{{{_n_total}}}$",
+        va="center", ha="right", fontsize=9)
+
+# ── axes formatting ───────────────────────────────────────────────────────────
 ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
-ax.set_ylim(-0.5, len(_show) + 0.8)
-ax.set_xlabel("Year", fontsize=10)
+ax.set_ylim(-0.5, _top_y + 0.8)
 ax.set_xticks(range(2004, 2023, 2))
 ax.set_xticklabels([str(y) for y in range(2004, 2023, 2)], fontsize=9)
 ax.set_yticks([])
+ax.text(_to_x(_data_start) - 1.3,
+        (_n_show + 1) / 2, "Windows",
+        va="center", ha="center", fontsize=9, rotation=90, color="dimgray")
 ax.spines[["left", "top", "right"]].set_visible(False)
-ax.legend(fontsize=9, frameon=False, loc="lower right")
-fig.tight_layout()
+ax.legend(fontsize=9, frameon=False,
+          loc="center left", bbox_to_anchor=(1.01, 0.5))
+fig.tight_layout(rect=[0, 0, 0.92, 1])
 save_extra_fig(fig, "rolling_window_diagram")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -630,7 +659,7 @@ save_extra_fig(fig, "rolling_window_diagram")
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q2b: Rolling OOS RMSE vs dim ──")
 
-ROLL_SUBDIR = "train5Y_test3M_step6M"
+ROLL_SUBDIR = "train5Y_test6M_step6M"
 
 ROLL_DIVERGE_THRESHOLD = 100.0  # bps — rolling windows above this are training failures
 
@@ -639,7 +668,7 @@ def load_rolling_avg(dim):
     Windows where avg_rmse_bps > ROLL_DIVERGE_THRESHOLD are excluded (diverged training)."""
     path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
                         ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                        f"oos_rolling_bbg_dim{dim}_train5Y_test3M_step6M.csv")
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
         return None
     df = pd.read_csv(path)
@@ -723,7 +752,7 @@ print("\n── Q3b: Rolling RMSE over time (d=3) ── ")
 
 roll_path_d3 = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{LATENT_DIM}",
                              ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                             f"oos_rolling_bbg_dim{LATENT_DIM}_train5Y_test3M_step6M.csv")
+                             f"oos_rolling_bbg_dim{LATENT_DIM}_train5Y_test6M_step6M.csv")
 
 if os.path.exists(roll_path_d3):
     df_roll = pd.read_csv(roll_path_d3)
