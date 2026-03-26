@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 
-from Code.model.Encoder import Encoder
-from Code.model.DecoderG import DecoderG
-from Code.model.K_mu import KMu
-from Code.model.H_sigma import HSigma
-from Code.model.R_short import RShort
+from .Encoder import Encoder
+from .DecoderG import DecoderG
+from .K_mu import KMu
+from .H_sigma import HSigma
+from .R_short import RShort
 
 from Code.utils.rates import par_swap_from_discount
 from Code.utils.sigma_matrix import L_from_sigmas_rhos

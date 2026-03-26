@@ -263,7 +263,7 @@ else:
 # ==========================================================
 # Save trained model checkpoint
 # ==========================================================
-CHECKPOINT_DIR = os.path.join(REPO_ROOT, "checkpoints")
+CHECKPOINT_DIR = os.path.join(REPO_ROOT, "..", "checkpoints")
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 checkpoint_path = os.path.join(
