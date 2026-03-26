@@ -3,7 +3,10 @@ import re
 import pandas as pd
 from typing import Tuple, Dict, List
 import numpy as np
-from utils import helpers as H
+try:
+    from Code.utils import helpers as H
+except ImportError:
+    from utils import helpers as H
 
 import torch
 import matplotlib as mpl
