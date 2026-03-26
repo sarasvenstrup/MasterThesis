@@ -341,13 +341,20 @@ def build_all_dataframes(root: str = ROOT, target_tenors: List[int] = TARGET_TEN
         "root_used": root,
     }
 
+
 def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
-    data = build_all_dataframes()
+    assert use in {"test", "bbg"}, f"Unknown use='{use}'"
+    assert len(target_tenors) == 8, f"Expected 8 target tenors, got {len(target_tenors)}"
+
+    data = build_all_dataframes(root=ROOT, target_tenors=target_tenors)
 
     if use == "test":
         df_wide_complete = data["df_wide_test_full"].copy()
     else:
         df_wide_complete = data["df_wide_bbg_full"].copy()
+
+    if df_wide_complete.empty:
+        raise ValueError(f"No complete curves found for use='{use}' and tenors={target_tenors}")
 
     tenors = np.array([float(x) for x in target_tenors], dtype=float)
 
@@ -369,6 +376,9 @@ def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
 
     # training sample after date cut
     df_wide = df_wide_all[df_wide_all["as_of_date"] >= "2010-01-01"].copy()
+    if df_wide.empty:
+        raise ValueError("No training rows remain after date filter >= 2010-01-01")
+
     meta = df_wide[["as_of_date", "ccy"]].reset_index(drop=True)
 
     X = df_wide[list(target_tenors)].to_numpy(dtype=np.float32)

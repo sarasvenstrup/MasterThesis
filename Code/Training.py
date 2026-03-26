@@ -38,19 +38,14 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # ==========================================================
 # Settings
 # ==========================================================
-LATENT_DIM = 3
+LATENT_DIM = 2
 EPOCHS = 100
-
-# IMPORTANT CHANGE:
-# - We evaluate avg RMSE (bps) every epoch (for plotting)
-# - We still only write CSV / print every LOG_EVERY epochs
-EVAL_EVERY = 1
-LOG_EVERY = 10
-
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
-TARGET_MSE = 1e-8  # set to -1 to disable early stop
+EVAL_EVERY = 1
+LOG_EVERY = 10
+TARGET_MSE = 1e-8
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", f"dim{LATENT_DIM}", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
@@ -67,7 +62,7 @@ torch.manual_seed(0)
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-max_lr = 3e-3
+max_lr = 1e-3
 optim = torch.optim.Adam(model.parameters(), lr=max_lr)
 
 scheduler = OneCycleLR(
@@ -95,8 +90,7 @@ def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> t
     N = X.shape[0]
     for i in range(0, N, batch_size):
         xb = X[i:i + batch_size].to(device)
-        out = model(xb)
-        S_hat = out[0]
+        S_hat = model(xb)
         outs.append(S_hat.detach().cpu())
     return torch.cat(outs, dim=0)
 
@@ -159,8 +153,7 @@ for epoch in range(EPOCHS):
         xb = xb_cpu.to(device)
 
         optim.zero_grad(set_to_none=True)
-        out = model(xb)
-        S_hat = out[0]
+        S_hat = model(xb)
 
         loss = loss_fn(S_hat, xb)
         if not torch.isfinite(loss):
@@ -266,7 +259,6 @@ if len(avg_rmse_bps_hist) > 0:
     print("Saved avg RMSE plot:", rmse_fig_path)
 else:
     print("No RMSE history to plot (avg_rmse_bps_hist empty).")
-
 
 # ==========================================================
 # Save trained model checkpoint

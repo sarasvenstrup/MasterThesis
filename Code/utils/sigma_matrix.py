@@ -181,10 +181,9 @@ def L_from_sigmas_rhos(sigmas: torch.Tensor, rhos: torch.Tensor | None = None, e
             raise ValueError("rhos is required for d=3 (shape (B,3)).")
         return L_from_sigmas_rhos_3d(sigmas, rhos, eps=eps)
     elif d == 4:
-        # rhos should be (B,3)
+        # rhos should be (B,6), not (B,4)
         if rhos is None:
             raise ValueError("rhos is required for d=4 (shape (B,4)).")
         return L_from_sigmas_rhos_4d(sigmas, rhos, eps=eps)
-
     else:
-        raise NotImplementedError("Only d=1,2,3 implemented for (sigmas, rhos) parameterization.")
+        raise NotImplementedError("Only d=1,2,3,4 implemented for (sigmas, rhos) parameterization.")
