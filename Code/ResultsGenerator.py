@@ -672,27 +672,71 @@ def load_rolling_avg(dim):
               f"(avg_rmse_bps > {ROLL_DIVERGE_THRESHOLD} bps)")
     return float(valid["avg_rmse_bps"].mean())
 
+def load_ekf_rolling_avg(n_factors):
+    """Return average OOS RMSE across valid rolling windows for EKF DNS n_factors model."""
+    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    return float(df["avg_rmse_bps"].mean())
+
+def load_ekf_rolling_df(n_factors):
+    """Return full rolling CSV for EKF DNS n_factors model."""
+    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
 roll_avgs = {}
 for dim in [1, 2, 3, 4]:
     avg = load_rolling_avg(dim)
     if avg is not None:
         roll_avgs[dim] = avg
 
+# load EKF DNS rolling averages for dims 2, 3, 4
+ekf_roll_avgs = {}
+for _nf in [2, 3, 4]:
+    _avg = load_ekf_rolling_avg(_nf)
+    if _avg is not None:
+        ekf_roll_avgs[_nf] = _avg
+
 if len(roll_avgs) >= 2:
-    dims = sorted(roll_avgs.keys())
-    avgs = [roll_avgs[d] for d in dims]
+    _dims = [d for d in [2, 3, 4] if d in roll_avgs]
+    _x    = np.arange(len(_dims))
+    _w    = 0.35
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    bars = ax.bar([str(d) for d in dims], avgs,
-                  color=[DIM_COLORS[d] for d in dims],
-                  width=0.55, edgecolor="none")
-    best_dim = min(roll_avgs, key=roll_avgs.get)
-    for bar, d, val in zip(bars, dims, avgs):
-        label = f"{val:.1f}" + (" *" if d == best_dim else "")
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.15,
-                label, ha="center", va="bottom", fontsize=10, fontweight="bold")
+    fig, ax = plt.subplots(figsize=(7, 4))
 
-    ax.set_ylabel("Average Rolling OOS RMSE (bps)")
+    # AE bars
+    _ae_bars = ax.bar(_x - _w/2, [roll_avgs[d] for d in _dims],
+                      width=_w, color=[DIM_COLORS[d] for d in _dims],
+                      edgecolor="none", label="Autoencoder")
+
+    # EKF DNS bars
+    _ekf_vals = [ekf_roll_avgs.get(d, np.nan) for d in _dims]
+    _ekf_bars = ax.bar(_x + _w/2, _ekf_vals,
+                       width=_w, color="lightgray",
+                       edgecolor="none", label="EKF DNS")
+
+    # value labels
+    for bar, val in zip(_ae_bars, [roll_avgs[d] for d in _dims]):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                f"{val:.1f}", ha="center", va="bottom", fontsize=9)
+    for bar, val in zip(_ekf_bars, _ekf_vals):
+        if np.isfinite(val):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                    f"{val:.1f}", ha="center", va="bottom", fontsize=9)
+
+    ax.set_xticks(_x)
+    ax.set_xticklabels([f"$\\ell={d}$" for d in _dims], fontsize=10)
+    ax.set_ylabel("Average Rolling OOS RMSE (bps)", fontsize=10)
+    ax.legend(fontsize=9, frameon=False)
     ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
     fig.tight_layout()
     save_fig(fig, "Q2b_rolling_oos_vs_dim")
@@ -760,9 +804,17 @@ if os.path.exists(roll_path_d3):
             ax.plot(df_roll.loc[valid, "test_start"], df_roll.loc[valid, col],
                     linewidth=1.0, alpha=0.55, color=currency_color_map[ccy], label=ccy)
 
-    # average line — thin dashed
+    # AE average line
     ax.plot(df_roll["test_start"], df_roll["avg_rmse_bps"],
-            linewidth=1.2, color="black", linestyle="--", label="Average", zorder=5)
+            linewidth=1.2, color="black", linestyle="--",
+            label=f"AE $\\ell={LATENT_DIM}$ avg", zorder=5)
+
+    # EKF DNS 3f average line
+    _ekf_df3 = load_ekf_rolling_df(LATENT_DIM)
+    if _ekf_df3 is not None:
+        ax.plot(_ekf_df3["test_start"], _ekf_df3["avg_rmse_bps"],
+                linewidth=1.2, color="dimgray", linestyle=":",
+                label=f"EKF DNS {LATENT_DIM}f avg", zorder=5)
 
     # event markers
     for label, date_str in EVENTS.items():
