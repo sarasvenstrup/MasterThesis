@@ -1,6 +1,6 @@
-# ResultsGenerator.py
-# Generates all thesis result figures and tables from existing checkpoints and CSVs.
-# Run from repo root: python Code/ResultsGenerator.py
+# ResultsGeneratorBaseline.py
+# Generates all thesis result figures and tables from BASELINE variant checkpoints and CSVs.
+# Run from repo root: python Code/ResultsGeneratorBaseline.py
 #
 # Outputs:
 #   Figures/thesis_results/   → all .png figures
@@ -87,7 +87,7 @@ X_full   = X_tensor_full.float()
 meta_full_df = meta_full.copy()
 meta_full_df["as_of_date"] = pd.to_datetime(meta_full_df["as_of_date"])
 
-TRAIN_MASK = (meta_full_df["as_of_date"] >= "2004-01-01") & \
+TRAIN_MASK = (meta_full_df["as_of_date"] >= "2010-01-01") & \
              (meta_full_df["as_of_date"] <= "2020-12-31")
 TEST_MASK  = (meta_full_df["as_of_date"] >= "2021-01-01") & \
              (meta_full_df["as_of_date"] <= "2022-12-31")
@@ -100,7 +100,7 @@ meta_test  = meta_full_df.loc[TEST_MASK.values].reset_index(drop=True)
 TENOR_COLS = list(TARGET_TENORS)   # [1, 2, 3, 5, 10, 15, 20, 30]
 
 # ── model loading helpers ─────────────────────────────────────────────────────
-CKPT_DIR      = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{LATENT_DIM}",
+CKPT_DIR      = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{LATENT_DIM}_baseline",
                               f"ep{SPLIT_EPOCHS}")
 MANIFEST_PATH = os.path.join(CKPT_DIR, "run_manifest.json")
 
@@ -124,7 +124,7 @@ def load_ep5000_model(dim):
 
     # fallback: OOSSplit best-seed checkpoint
     warnings.warn(f"ep5000 checkpoint not found for dim={dim} — falling back to OOSSplit ep{SPLIT_EPOCHS}")
-    ckpt_dir = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{dim}", f"ep{SPLIT_EPOCHS}")
+    ckpt_dir = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{dim}_baseline", f"ep{SPLIT_EPOCHS}")
     manifest_p = os.path.join(ckpt_dir, "run_manifest.json")
     seed = 0
     if os.path.exists(manifest_p):
@@ -272,7 +272,7 @@ save_fig(fig, "Q1e_training_loss_curves")
 # ─────────────────────────────────────────────────────────────────────────────
 def load_split_rmse(dim, epochs=SPLIT_EPOCHS):
     """Return (IS mean series, OOS mean series) from OOSSplit results."""
-    manifest_p = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{dim}",
+    manifest_p = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{dim}_baseline",
                               f"ep{epochs}", "run_manifest.json")
     if os.path.exists(manifest_p):
         with open(manifest_p) as f:
@@ -300,7 +300,7 @@ def load_split_rmse(dim, epochs=SPLIT_EPOCHS):
                     pd.Series({c: np.nanmean(v) for c, v in oos_vals.items()}))
 
     # fallback: rmse_summary.csv
-    path = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{dim}",
+    path = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{dim}_baseline",
                         f"ep{epochs}", "rmse_summary.csv")
     if not os.path.exists(path):
         warnings.warn(f"Missing: {path}")
@@ -577,7 +577,7 @@ print("\n── Extra: Rolling window diagram ──")
 _train_years  = 5
 _test_months  = 6
 _step_months  = 6
-_data_start   = pd.Timestamp("2004-01-01")
+_data_start   = pd.Timestamp("2010-01-01")
 _data_end     = pd.Timestamp("2022-12-31")
 _total_months = (_data_end.year - _data_start.year) * 12 + (_data_end.month - _data_start.month)
 
@@ -609,7 +609,7 @@ ax.barh(_top_y, _to_x(_data_end) - _to_x(_data_start),
         left=_to_x(_data_start), height=_row_h,
         color=_col_full, edgecolor="none", zorder=2)
 ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
-        _top_y, "Full series  (2004–2022)",
+        _top_y, "Full series  (2010–2022)",
         va="center", ha="center", fontsize=9, color="dimgray")
 
 # ── rolling windows (staggered) — W1 to W5 ───────────────────────────────────
@@ -655,8 +655,8 @@ ax.text(_to_x(_data_start) - 0.15, _last_y, f"$W_{{{_n_total}}}$",
 # ── axes formatting ───────────────────────────────────────────────────────────
 ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
 ax.set_ylim(-0.5, _top_y + 0.8)
-ax.set_xticks(range(2004, 2023, 2))
-ax.set_xticklabels([str(y) for y in range(2004, 2023, 2)], fontsize=9)
+ax.set_xticks(range(2010, 2023, 2))
+ax.set_xticklabels([str(y) for y in range(2010, 2023, 2)], fontsize=9)
 ax.set_yticks([])
 ax.text(_to_x(_data_start) - 1.3,
         (_n_show + 1) / 2, "Windows",
@@ -681,11 +681,11 @@ _ROLL_FALLBACK_SUBDIR = "train3Y_test3M_step6M"
 def load_rolling_avg(dim):
     """Return average OOS RMSE across valid rolling windows for a given dim.
     Falls back to old train3Y_test3M_step6M results if new ones are not yet available."""
-    path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+    path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}_baseline",
                         ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
                         f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+        path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}_baseline",
                             _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
                             f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
         if not os.path.exists(path):
@@ -701,11 +701,11 @@ def load_rolling_avg(dim):
 
 def load_rolling_df(dim):
     """Return full rolling CSV DataFrame for a given dim, with fallback."""
-    path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+    path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}_baseline",
                         ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
                         f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+        path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}_baseline",
                             _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
                             f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
         if not os.path.exists(path):
@@ -717,7 +717,7 @@ def load_rolling_df(dim):
 
 def load_ekf_rolling_avg(n_factors):
     """Return average OOS RMSE across valid rolling windows for EKF DNS n_factors model."""
-    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
+    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos_baseline",
                         "ekf_dns_rolling",
                         f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
@@ -727,7 +727,7 @@ def load_ekf_rolling_avg(n_factors):
 
 def load_ekf_rolling_df(n_factors):
     """Return full rolling CSV for EKF DNS n_factors model."""
-    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
+    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos_baseline",
                         "ekf_dns_rolling",
                         f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
@@ -878,7 +878,7 @@ else:
 print("\n── Q4a: AE vs Kalman table ──")
 
 def load_kalman_rmse(dim):
-    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos",
+    path = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos_baseline",
                         f"ekf_dns_{dim}f", "rmse_summary.csv")
     if not os.path.exists(path):
         return None
@@ -1439,7 +1439,7 @@ print(worst[["as_of_date", "ccy", "rmse_bps"]].to_string())
 # ─────────────────────────────────────────────────────────────────────────────
 # Q7 — IS Sharpe ratio by tenor, one plot per latent dimension
 #      Source: ep5000 checkpoint (fallback: OOSSplit best seed)
-#      Data:   X_train (2004-2020)
+#      Data:   X_train (2010-2020)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q7: IS Sharpe ratio by tenor (all dims) ──")
 
@@ -1614,10 +1614,10 @@ def _model_src(dim):
 
 # determine rolling source for each dim
 def _roll_src(dim):
-    new_path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+    new_path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}_baseline",
                             ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
                             f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
-    old_path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}",
+    old_path = os.path.join(REPO_ROOT, "Figures", f"OOS_roll_dim{dim}_baseline",
                             _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
                             f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
     if os.path.exists(new_path): return (_OK,   "train5Y_test6M_step6M")

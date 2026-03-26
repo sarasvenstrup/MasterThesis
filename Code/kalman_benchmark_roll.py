@@ -35,6 +35,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import my_data, TARGET_TENORS
+from Code.config import VARIANT
 from Code.kalman_benchmark import (
     ns_loadings, ekf_filter_smoother, ekf_forward_only,
     estimate_A_Q, estimate_R, rmse_bps, swap_curve_from_ns,
@@ -48,7 +49,7 @@ STEP_MONTHS    = 6
 N_FACTORS_LIST = [2, 3, 4]
 CCY_ORDER      = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
-OUT_ROOT = os.path.join(REPO_ROOT, "Figures", "kalman_benchmark_oos", "ekf_dns_rolling")
+OUT_ROOT = os.path.join(REPO_ROOT, "Figures", f"kalman_benchmark_oos_{VARIANT}", "ekf_dns_rolling")
 os.makedirs(OUT_ROOT, exist_ok=True)
 
 # ── load data ─────────────────────────────────────────────────────────────────

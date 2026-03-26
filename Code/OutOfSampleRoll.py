@@ -24,6 +24,7 @@ if REPO_ROOT not in sys.path:
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
+from Code.config import VARIANT
 
 torch.set_num_threads(4)
 torch.set_num_interop_threads(2)
@@ -58,7 +59,7 @@ ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 FIGURES_DIR = os.path.join(
     REPO_ROOT,
     "Figures",
-    f"OOS_roll_dim{LATENT_DIM}",
+    f"OOS_roll_dim{LATENT_DIM}_{VARIANT}",
     f"train{TRAIN_YEARS}Y_test{TEST_MONTHS}M_step{STEP_MONTHS}M",
     f"ep{EPOCHS}"
 )
