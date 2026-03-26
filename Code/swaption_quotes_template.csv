@@ -1,0 +1,5 @@
+label,expiry,tenor,strike,option_type,norm_vol_bp,notional
+1Yx5Y payer,1.0,5,0.0300,payer,50,1.0
+2Yx10Y receiver,2.0,10,0.0250,receiver,45,10000000
+5Yx10Y payer,5.0,10,0.0350,payer,55,1.0
+

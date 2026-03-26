@@ -1,22 +1,20 @@
 import torch
 import numpy as np
-import pandas as pd
 import os
 import sys
 import argparse
 import math
-import matplotlib.pyplot as plt
 from scipy.stats import norm
 from scipy.optimize import minimize_scalar
 
-# Add current directory to path for imports
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
+# Add project root to path for imports
+CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CODE_ROOT, ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from Code.load_swapdata import my_data
 from Code.model.full_model import FullModel
-from Code.utils.rates import par_swap_from_discount
 from Code.utils.sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (
     d_tau_autograd_nodewise,
@@ -167,6 +165,57 @@ def price_cap(r_paths, dt, strike, notional=1.0):
     cap_price = cap_values.mean().item()
     return cap_price
 
+def forward_swap_and_annuity_from_discount(P_mkt, tenor):
+    """Compute par swap rate and fixed-leg annuity using annual discount factors."""
+    if tenor <= 0:
+        raise ValueError(f"tenor must be positive, got {tenor}")
+    if tenor > P_mkt.shape[1]:
+        raise ValueError(f"tenor={tenor} exceeds available discount grid up to {P_mkt.shape[1]}Y")
+
+    annuity = P_mkt[:, :tenor].sum(dim=1)
+    terminal_df = P_mkt[:, tenor - 1]
+    forward_swap = (1.0 - terminal_df) / annuity
+    return forward_swap, annuity
+
+def extract_forward_swap_curve_params(model, z, expiry, tenor):
+    """
+    Extract the time-0 forward-starting swap rate and annuity from the decoded curve.
+
+    Used for pricing swaptions directly from quoted normal vols.
+    """
+    expiry_int = int(round(expiry))
+    if abs(expiry - expiry_int) > 1e-8:
+        raise ValueError(
+            f"expiry={expiry} is not on the model annual grid; quote pricing currently expects integer-year expiries"
+        )
+    if expiry_int < 0:
+        raise ValueError(f"expiry must be non-negative, got {expiry}")
+
+    with torch.no_grad():
+        P_mkt, _, _, _, _, _, _, _ = decode_from_latent_script(model, z)
+
+    max_maturity = P_mkt.shape[1]
+    if expiry_int + tenor > max_maturity:
+        raise ValueError(
+            f"expiry + tenor = {expiry_int + tenor} exceeds available discount grid up to {max_maturity}Y"
+        )
+
+    if expiry_int == 0:
+        P_expiry = torch.ones(P_mkt.shape[0], device=P_mkt.device, dtype=P_mkt.dtype)
+    else:
+        P_expiry = P_mkt[:, expiry_int - 1]
+
+    P_end = P_mkt[:, expiry_int + tenor - 1]
+    annuity = P_mkt[:, expiry_int:expiry_int + tenor].sum(dim=1)
+    forward_swap = (P_expiry - P_end) / annuity
+
+    return {
+        'forward_swap': forward_swap.mean().item(),
+        'annuity': annuity.mean().item(),
+        'forward_swaps': forward_swap.detach().cpu().numpy().tolist(),
+        'annuities': annuity.detach().cpu().numpy().tolist(),
+    }
+
 def price_swaption(z_paths, r_paths, model, dt, strike, expiry, tenor, notional=1.0):
     """
     Price a European swaption (call on swap rate).
@@ -191,18 +240,11 @@ def price_swaption(z_paths, r_paths, model, dt, strike, expiry, tenor, notional=
         # Decode to get discount factors and swap rate at expiry
         with torch.no_grad():
             P_mkt, _, _, _, _, _, _, _ = decode_from_latent_script(model, z_at_expiry.unsqueeze(0))
-            S_all = par_swap_from_discount(P_mkt, model.tenors)
-        
-        # Use 5Y tenor for swap rate (index 3 in model.tenors which is [1,2,3,5,10,15,20,30])
-        swap_idx = min(3, P_mkt.shape[1] - 1)
-        S_at_expiry = S_all[0, swap_idx].item()
-        
-        # Compute annuity as sum of discount factors from expiry onwards
-        # For simplicity: sum of first 'tenor' discount factors
-        annuity = 0.0
-        for tau_idx in range(min(tenor, P_mkt.shape[1])):
-            annuity += P_mkt[0, tau_idx].item()
-        
+            forward_swap, annuity_tensor = forward_swap_and_annuity_from_discount(P_mkt, tenor)
+
+        S_at_expiry = forward_swap[0].item()
+        annuity = annuity_tensor[0].item()
+
         # Swaption payoff at expiry
         payoff_at_expiry = max(S_at_expiry - strike, 0.0) * annuity * notional
         
@@ -254,7 +296,7 @@ def implied_normal_vol(market_price, forward, strike, expiry, annuity, notional,
         theoretical = bachelier_price(forward, strike, sigma, expiry, annuity, notional, is_call)
         return (theoretical - market_price) ** 2
     
-    result = minimize_scalar(objective, bounds=(1e-6, 1.0), method='bounded')
+    result = minimize_scalar(objective, bounds=(1e-6, 10.0), method='bounded')
     
     return result.x if result.success else np.nan
 
@@ -285,14 +327,10 @@ def extract_market_params_at_expiry(z_paths, model, device, dt, expiry, tenor):
         
         with torch.no_grad():
             P_mkt, _, _, _, _, _, _, _ = decode_from_latent_script(model, z_at_expiry.unsqueeze(0))
-            S_all = par_swap_from_discount(P_mkt, model.tenors)
-        
-        swap_idx = min(3, P_mkt.shape[1] - 1)
-        forward_swap = S_all[0, swap_idx].item()
-        forward_swaps.append(forward_swap)
-        
-        annuity = sum(P_mkt[0, tau_idx].item() for tau_idx in range(min(tenor, P_mkt.shape[1])))
-        annuities.append(annuity)
+            forward_swap, annuity = forward_swap_and_annuity_from_discount(P_mkt, tenor)
+
+        forward_swaps.append(forward_swap[0].item())
+        annuities.append(annuity[0].item())
     
     avg_forward = np.mean(forward_swaps)
     avg_annuity = np.mean(annuities)
@@ -373,7 +411,7 @@ def main():
     meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=USE)
 
     # Load trained model
-    checkpoint_path = os.path.join(REPO_ROOT, "..", "checkpoints", f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.pt")
+    checkpoint_path = os.path.join(PROJECT_ROOT, "checkpoints", f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.pt")
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
     
@@ -389,31 +427,31 @@ def main():
     with torch.no_grad():
         z0 = model.encoder(S0)
     print(f"Initial latent state z0: {z0.cpu().numpy().flatten()}")
-
-    # Simulate latent paths
-    print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT})...")
-    with torch.no_grad():
-        z_paths, r_paths = simulate_latent_paths(
-            model=model,
-            z0=z0,
-            n_paths=N_PATHS,
-            n_steps=N_STEPS,
-            dt=DT,
-            device=device,
-            simple_diffusion=SIMPLE_DIFFUSION,
-            kappa=KAPPA,
-            theta=THETA,
-            sigma_simple=SIGMA_SIMPLE
-        )
-    print("Simulation completed.")
-
     # Determine call/put direction
     IS_CALL = not args.is_receiver
     PRICING_MODE = args.pricing_mode
     NORM_VOL_INPUT = args.norm_vol
 
+    z_paths = None
+    r_paths = None
+
     # Price the option
     if OPTION_TYPE == "cap":
+        print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT})...")
+        with torch.no_grad():
+            z_paths, r_paths = simulate_latent_paths(
+                model=model,
+                z0=z0,
+                n_paths=N_PATHS,
+                n_steps=N_STEPS,
+                dt=DT,
+                device=device,
+                simple_diffusion=SIMPLE_DIFFUSION,
+                kappa=KAPPA,
+                theta=THETA,
+                sigma_simple=SIGMA_SIMPLE
+            )
+        print("Simulation completed.")
         price = price_cap(r_paths, DT, STRIKE, NOTIONAL)
         print(f"Cap price: {price:.6f} (strike={STRIKE}, notional={NOTIONAL})")
     elif OPTION_TYPE == "swaption":
@@ -422,9 +460,9 @@ def main():
             if NORM_VOL_INPUT is None:
                 raise ValueError("--norm_vol required when using norm_vol_quote pricing mode")
             
-            # Extract market parameters at expiry
-            print("Extracting market parameters at swaption expiry...")
-            market_params = extract_market_params_at_expiry(z_paths, model, device, DT, EXPIRY, TENOR)
+            # Extract current forward-starting swap parameters from the decoded curve
+            print("Extracting forward swap and annuity from current curve...")
+            market_params = extract_forward_swap_curve_params(model, z0, EXPIRY, TENOR)
             forward_swap = market_params['forward_swap']
             annuity = market_params['annuity']
             
@@ -447,6 +485,21 @@ def main():
             print(f"  (strike={STRIKE}, expiry={EXPIRY}, tenor={TENOR}, notional={NOTIONAL})")
             
         else:  # monte_carlo mode (default)
+            print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT})...")
+            with torch.no_grad():
+                z_paths, r_paths = simulate_latent_paths(
+                    model=model,
+                    z0=z0,
+                    n_paths=N_PATHS,
+                    n_steps=N_STEPS,
+                    dt=DT,
+                    device=device,
+                    simple_diffusion=SIMPLE_DIFFUSION,
+                    kappa=KAPPA,
+                    theta=THETA,
+                    sigma_simple=SIGMA_SIMPLE
+                )
+            print("Simulation completed.")
             # Price using Monte Carlo simulation
             price = price_swaption(z_paths, r_paths, model, DT, STRIKE, EXPIRY, TENOR, NOTIONAL)
             print(f"Swaption price (Monte Carlo): {price:.6f} (strike={STRIKE}, expiry={EXPIRY}, tenor={TENOR}, notional={NOTIONAL})")
