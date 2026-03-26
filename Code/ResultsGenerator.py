@@ -105,19 +105,8 @@ CKPT_DIR      = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{LATENT_DIM}",
 MANIFEST_PATH = os.path.join(CKPT_DIR, "run_manifest.json")
 
 def _load_state_dict_compat(model, ckpt_path):
-    """Load state dict, remapping old KMu keys (K.lin.*) to new (K.V / K.N)."""
+    """Load state dict from checkpoint."""
     state = torch.load(ckpt_path, map_location=device)
-    if any(k.startswith("K.lin") for k in state):
-        warnings.warn(f"Remapping old KMu keys (K.lin → K.V/N) in {ckpt_path}")
-        new_state = {}
-        for k, v in state.items():
-            if k == "K.lin.weight":
-                new_state["K.V"] = v        # same shape (d, d)
-            elif k == "K.lin.bias":
-                new_state["K.N"] = v        # same shape (d,)
-            else:
-                new_state[k] = v
-        state = new_state
     model.load_state_dict(state, strict=True)
 
 def load_ep5000_model(dim):
@@ -592,7 +581,7 @@ _col_full  = "lightgray"
 _row_h     = 0.45
 _n_rows    = _n_show + 2   # windows + dots row + full series row
 
-fig, ax = plt.subplots(figsize=(11, 4.2))
+fig, ax = plt.subplots(figsize=(11, 3.2))
 
 # ── full series bar at top ────────────────────────────────────────────────────
 _top_y = _n_show + 2
@@ -1371,8 +1360,8 @@ def extract_sharpe(model, X, batch=256):
     sr_list = []
     for i in range(0, X.shape[0], batch):
         xb = X[i:i+batch].to(device)
-        _, _, _, _, _, _, _, _, _, arb = model(xb)
-        sr_list.append(arb["SR_tau"].cpu())
+        _, aux = model(xb, do_arb_checks=True, return_aux=True)
+        sr_list.append(aux["arb"]["SR_tau"].cpu())
     return torch.cat(sr_list)   # (N, 30)
 
 _dim = 3
