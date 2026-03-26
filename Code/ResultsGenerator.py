@@ -163,7 +163,11 @@ def run_inference(model, X, batch=256):
     S_list, z_list, mu_list, L_list, r_list = [], [], [], [], []
     for i in range(0, X.shape[0], batch):
         xb = X[i:i+batch].to(device)
-        S_hat, z, _, _, _, _, mu, sigma_L, r_tilde, _ = model(xb)
+        S_hat, aux = model(xb, return_aux=True)
+        z = aux["z"]
+        sigma_L = aux["sigma"]
+        mu = aux["mu"]
+        r_tilde = aux["r_tilde"]
         S_list.append(S_hat.cpu());  z_list.append(z.cpu())
         mu_list.append(mu.cpu());    L_list.append(sigma_L.cpu())
         r_list.append(r_tilde.cpu())

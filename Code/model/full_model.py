@@ -123,9 +123,12 @@ class FullModel(nn.Module):
         S_in:
             (B,8) or (8,)
 
-        Returns:
-            S_hat                         if return_aux=False
-            (S_hat, aux_dict)             if return_aux=True
+        Returns (default, for backward compatibility with ResultsGenerator):
+            (S_hat, z, P_full, A_vals, B_vals, G_vals, mu, sigma, r_tilde, arb)
+            where all tensors are (B, ...) shaped
+        
+        If return_aux=True:
+            (S_hat, aux_dict) where aux_dict contains all computed quantities
         """
         squeeze_back = False
         if S_in.dim() == 1:
