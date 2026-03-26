@@ -230,8 +230,14 @@ rather than patterns specific to the training period.
 
 
 In each rolling window, the model is trained on a five-year period
-and evaluated on the subsequent three months, stepping forward six
+and evaluated on the subsequent six months, stepping forward six
 months at a time, yielding approximately 26 windows in total.
+
+Argument 1: The test window of six months is chosen to ensure non-overlapping
+evaluation periods and a stable RMSE estimate, while the five-year
+training window provides sufficient data for convergence.
+
+Argument 2: more windows beats longer windows for demonstrating generalisation robustly.
 
 \begin{figure}[ht]
     \centering
@@ -325,6 +331,10 @@ Seeds 4 and 7 diverged and are excluded from the mean.}
 \label{tab:Q3a}
 \end{table}
 
+THIS TABLE IS INTEDED TO CHECK FOR THE ROBUSTNESS; AND THAT IS WHY WE DO IT ONLY ON A WINDOW SPLIT FOR COMPUTATIONAL PURPOSES.
+
+
+
 % ── Q3b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
@@ -333,6 +343,17 @@ Seeds 4 and 7 diverged and are excluded from the mean.}
     showing variation across rolling windows.}
     \label{fig:Q3b}
 \end{figure}
+
+
+This figure is inteded to see how the out-of sample RMSE varies across time and not only as a an average.
+
+
+
+The next is to see how well the Auto encoder performs compared to a benchmark, which we have chosen to be the Dynamic Nelsion siegel, using the extended kalman filter.
+
+
+
+
 
 % ── Q4a ──────────────────────────────────────────────────────
 \begin{table}[H]
