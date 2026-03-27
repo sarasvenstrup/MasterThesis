@@ -3,9 +3,17 @@ import torch.nn as nn
 
 from .Encoder import Encoder
 from .DecoderG import DecoderG
-from .K_mu import KMu
-from .H_sigma import HSigma
-from .R_short import RShort
+
+# Conditional import of K, H, R based on VARIANT from config
+from Code.config import VARIANT
+if VARIANT == "stable":
+    from .K_mu_stable import KMuStable as KMu
+    from .R_short_stable import RShortStable as RShort
+    from .H_sigma_stable import HSigmaStable as HSigma
+else:
+    from .K_mu import KMu
+    from .R_short import RShort
+    from .H_sigma import HSigma
 
 from Code.utils.rates import par_swap_from_discount
 from Code.utils.sigma_matrix import L_from_sigmas_rhos

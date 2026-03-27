@@ -17,6 +17,10 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
+PROJECT_ROOT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
@@ -38,6 +42,10 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # ==========================================================
 # Settings
 # ==========================================================
+
+# --- User option: show plots interactively? ---
+SHOW_PLOTS = True  # Set to False to only save plots
+
 LATENT_DIM = 2
 EPOCHS = 100
 BATCH_SIZE = 32
@@ -230,6 +238,7 @@ print("Training done.")
 # ==========================================================
 # Plots
 # ==========================================================
+
 # 1) Learning rate plot (per step)
 fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
 ax.plot(np.arange(len(lrs_per_step)), lrs_per_step, linewidth=1.0)
@@ -239,8 +248,10 @@ ax.set_title(f"Learning rate schedule — OneCycleLR (dim={LATENT_DIM}, ep={EPOC
 fig.tight_layout()
 lr_fig_path = os.path.join(FIGURES_DIR, f"lr_schedule_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png")
 fig.savefig(lr_fig_path, dpi=300)
-plt.close(fig)
 print("Saved LR plot:", lr_fig_path)
+if SHOW_PLOTS:
+    plt.show()
+plt.close(fig)
 
 # 2) Average RMSE (bps) convergence plot (NOW EVERY EPOCH)
 if len(avg_rmse_bps_hist) > 0:
@@ -248,15 +259,17 @@ if len(avg_rmse_bps_hist) > 0:
     avg_logged = [v for e, v in avg_rmse_bps_hist]
 
     fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-    ax.plot(epochs_logged, avg_logged, linewidth=1.0)  # removed markers to keep 5000 points readable
+    ax.plot(epochs_logged, avg_logged, linewidth=1.0)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Average RMSE (bps)")
     ax.set_title(f"Average RMSE across currencies (bps) — convergence (dim={LATENT_DIM})")
     fig.tight_layout()
     rmse_fig_path = os.path.join(FIGURES_DIR, f"avg_rmse_bps_convergence_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png")
     fig.savefig(rmse_fig_path, dpi=300)
-    plt.close(fig)
     print("Saved avg RMSE plot:", rmse_fig_path)
+    if SHOW_PLOTS:
+        plt.show()
+    plt.close(fig)
 else:
     print("No RMSE history to plot (avg_rmse_bps_hist empty).")
 

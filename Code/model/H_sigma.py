@@ -50,7 +50,7 @@ class HSigma(nn.Module):
         # 2) Correlations (in (-1,1))
         if self.n_corr > 0:
             atanh_rhos = raw[:, self.d:]  # (B,n_corr)
-            rhos = torch.tanh(atanh_rhos).clamp(-0.999, 0.999)
+            rhos = torch.tanh(atanh_rhos)  # tanh naturally bounds to (-1, 1), no need to clamp
         else:
             rhos = raw[:, :0]  # (B,0) empty
 

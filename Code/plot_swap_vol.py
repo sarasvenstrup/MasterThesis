@@ -117,10 +117,14 @@ def vol_to_long_df(meta: pd.DataFrame, V_tensor: torch.Tensor, tenors: List[int]
     return long.sort_values(["ccy", "tenor", "as_of_date"]).reset_index(drop=True)
 
 
+
 # ============================================================
 # MAIN
 # ============================================================
 def main():
+    # --- User option: show plots interactively? ---
+    SHOW_PLOTS = True  # Set to False to only save plots
+
     USE = "bbg"  # same as training
 
     # ---- User knobs ----
@@ -205,8 +209,11 @@ def main():
         ax.grid(True)
         ax.legend(ncol=5, frameon=False)
 
-        H.save_figure(fig, plot_cfg,
-                      f"{ann_tag}_vol_time_by_ccy_{t}Y_hl{HALF_LIFE_MONTHS:g}")
+        plot_path = os.path.join(FIGURES_DIR, f"{ann_tag}_vol_time_by_ccy_{t}Y_hl{HALF_LIFE_MONTHS:g}.png")
+        fig.savefig(plot_path, dpi=300)
+        print(f"Saved volatility plot for {t}Y swap to {plot_path}")
+        if SHOW_PLOTS:
+            plt.show()
         plt.close(fig)
 
 

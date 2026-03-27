@@ -6,6 +6,7 @@ import argparse
 import math
 from scipy.stats import norm
 from scipy.optimize import minimize_scalar
+import matplotlib.pyplot as plt
 
 # Add project root to path for imports
 CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -87,6 +88,7 @@ def simulate_latent_paths(model, z0, n_paths, n_steps, dt, device, simple_diffus
 
         z_paths[:, t + 1, :] = z
         r_paths[:, t + 1] = get_r(model, z)
+
 
     return z_paths, r_paths
 
@@ -360,6 +362,64 @@ def price_swaption_from_norm_vol(forward, strike, norm_vol, expiry, annuity, not
     """
     return bachelier_price(forward, strike, norm_vol, expiry, annuity, notional, is_call)
 
+def run_vol_surface_grid(model, z0, DT, NOTIONAL, device, out_dir, strikes, expiries, tenors, n_paths, n_steps):
+    """
+    Compute implied normal vols for a grid of strikes, expiries, and tenors.
+    Save results as CSV and plot smiles/surfaces.
+    """
+    import pandas as pd
+    os.makedirs(out_dir, exist_ok=True)
+    results = []
+    for expiry in expiries:
+        for tenor in tenors:
+            row = {"expiry": expiry, "tenor": tenor}
+            vols = []
+            for strike in strikes:
+                # Simulate paths
+                z_paths, r_paths = simulate_latent_paths(
+                    model=model, z0=z0, n_paths=n_paths, n_steps=n_steps, dt=DT, device=device
+                )
+                price = price_swaption(z_paths, r_paths, model, DT, strike, expiry, tenor, NOTIONAL)
+                market_params = extract_market_params_at_expiry(z_paths, model, device, DT, expiry, tenor)
+                forward_swap = market_params['forward_swap']
+                annuity = market_params['annuity']
+                norm_vol = implied_normal_vol(
+                    market_price=price,
+                    forward=forward_swap,
+                    strike=strike,
+                    expiry=expiry,
+                    annuity=annuity,
+                    notional=NOTIONAL,
+                    is_call=True
+                )
+                row[f"vol_{strike}"] = norm_vol
+                vols.append(norm_vol)
+            results.append(row)
+    df = pd.DataFrame(results)
+    csv_path = os.path.join(out_dir, "implied_vol_surface.csv")
+    df.to_csv(csv_path, index=False)
+    print(f"Saved implied vol surface CSV to {csv_path}")
+    # Plot smiles for each expiry/tenor
+    SHOW_PLOTS = True
+    for expiry in expiries:
+        for tenor in tenors:
+            df_row = df[(df["expiry"] == expiry) & (df["tenor"] == tenor)]
+            if df_row.empty:
+                continue
+            vols = [df_row.iloc[0][f"vol_{strike}"] for strike in strikes]
+            plt.figure(figsize=(7,4))
+            plt.plot(strikes, vols, marker='o')
+            plt.title(f"Implied Normal Vol Smile\nExpiry={expiry}y, Tenor={tenor}y")
+            plt.xlabel("Strike")
+            plt.ylabel("Implied Normal Volatility")
+            plt.grid(True)
+            plot_path = os.path.join(out_dir, f"vol_smile_exp{expiry}_ten{tenor}.png")
+            plt.savefig(plot_path, dpi=200)
+            print(f"Saved vol smile plot to {plot_path}")
+            if SHOW_PLOTS:
+                plt.show()
+            plt.close()
+
 def main():
     parser = argparse.ArgumentParser(description="Price options using simulated paths from FullModel")
     parser.add_argument("--latent_dim", type=int, default=2, help="Latent dimension")
@@ -383,6 +443,15 @@ def main():
     parser.add_argument("--pricing_mode", type=str, choices=["monte_carlo", "norm_vol_quote"], default="monte_carlo", 
                        help="Pricing mode: 'monte_carlo' for simulation-based, 'norm_vol_quote' for direct Bachelier pricing from norm vol")
     parser.add_argument("--is_receiver", action="store_true", help="Price receiver swaption (put) instead of payer swaption (call)")
+    parser.add_argument("--run_vol_surface_grid", action="store_true", help="Run grid of swaption pricings and compute implied vols")
+
+    # New arguments for vol surface grid
+    parser.add_argument("--strikes", type=str, default="0.01,0.02,0.03,0.04,0.05", help="Comma-separated list of strikes")
+    parser.add_argument("--expiries", type=str, default="0.5,1.0,1.5,2.0", help="Comma-separated list of expiries (in years)")
+    parser.add_argument("--tenors", type=str, default="1,2,3,4,5", help="Comma-separated list of tenors (in years)")
+    parser.add_argument("--grid_n_paths", type=int, default=100, help="Number of paths for grid simulation")
+    parser.add_argument("--grid_n_steps", type=int, default=60, help="Number of steps for grid simulation")
+    parser.add_argument("--output_dir", type=str, default=".", help="Output directory for vol surface CSV and plots")
 
     args = parser.parse_args()
 
@@ -531,6 +600,28 @@ def main():
                         print(f"Difference: {abs(norm_vol - NORM_VOL_INPUT):.6f} ({abs(norm_vol - NORM_VOL_INPUT)*10000:.2f} bp)")
                 else:
                     print("Could not compute implied normal volatility (optimization failed)")
+    
+    # Run grid of swaption pricings if requested
+    if args.run_vol_surface_grid:
+        strikes = [float(s) for s in args.strikes.split(",")]
+        expiries = [float(e) for e in args.expiries.split(",")]
+        tenors = [int(t) for t in args.tenors.split(",")]
+        output_dir = args.output_dir
+
+        print("Running vol surface grid pricing...")
+        run_vol_surface_grid(
+            model=model,
+            z0=z0,
+            DT=DT,
+            NOTIONAL=NOTIONAL,
+            device=device,
+            out_dir=output_dir,
+            strikes=strikes,
+            expiries=expiries,
+            tenors=tenors,
+            n_paths=args.grid_n_paths,
+            n_steps=args.grid_n_steps
+        )
 
     print("Pricing completed.")
 

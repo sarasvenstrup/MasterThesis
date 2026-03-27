@@ -53,12 +53,14 @@ def vols_from_cov(Sigma: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     if Sigma.ndim != 3 or Sigma.shape[-1] != Sigma.shape[-2]:
         raise ValueError(f"Expected Sigma shape (B,d,d), got {tuple(Sigma.shape)}")
     diag = torch.diagonal(Sigma, dim1=1, dim2=2)
+    # Clamp for numerical safety before sqrt (positive-definite assumption)
     return torch.sqrt(torch.clamp(diag, min=eps))
 
 
 def corr_from_cov(Sigma: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """Sigma: (B,d,d) -> Corr: (B,d,d)."""
     vol = vols_from_cov(Sigma, eps=eps)  # (B,d)
+    # Clamp for numerical safety to prevent division by zero
     denom = torch.clamp(vol.unsqueeze(2) * vol.unsqueeze(1), min=eps)  # (B,d,d)
     Corr = Sigma / denom
     d = Corr.shape[1]

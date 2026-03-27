@@ -8,7 +8,7 @@ def L_from_sigmas_rhos_1d(sigmas: torch.Tensor, eps: float = 1e-12) -> torch.Ten
     """
     device, dtype = sigmas.device, sigmas.dtype
     B = sigmas.shape[0]
-    s1 = torch.clamp(sigmas[:, 0], min=eps)  # just to be safe
+    s1 = sigmas[:, 0]  # HSigmaStable guarantees s1 > 0, no clamp needed
 
     L = torch.zeros(B, 1, 1, device=device, dtype=dtype)
     L[:, 0, 0] = s1
@@ -25,10 +25,11 @@ def L_from_sigmas_rhos_2d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     device, dtype = sigmas.device, sigmas.dtype
     B = sigmas.shape[0]
 
-    s1 = sigmas[:, 0]
-    s2 = sigmas[:, 1]
+    s1 = sigmas[:, 0]  # HSigmaStable guarantees positive, no clamp
+    s2 = sigmas[:, 1]  # HSigmaStable guarantees positive, no clamp
     rho = rhos[:, 0]
 
+    # Clamp only for mathematical necessity before sqrt (prevent sqrt(negative))
     sqrt1mr2 = torch.sqrt(torch.clamp(1.0 - rho**2, min=eps))
 
     L = torch.zeros(B, 2, 2, device=device, dtype=dtype)
@@ -49,14 +50,15 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
     device, dtype = sigmas.device, sigmas.dtype
     B = sigmas.shape[0]
 
-    s1 = sigmas[:, 0]
-    s2 = sigmas[:, 1]
-    s3 = sigmas[:, 2]
+    s1 = sigmas[:, 0]  # HSigmaStable guarantees positive
+    s2 = sigmas[:, 1]  # HSigmaStable guarantees positive
+    s3 = sigmas[:, 2]  # HSigmaStable guarantees positive
 
     rho12 = rhos[:, 0]
     rho13 = rhos[:, 1]
     rho23 = rhos[:, 2]
 
+    # Clamp only for mathematical necessity before sqrt
     one_minus_r12_sq = torch.clamp(1.0 - rho12**2, min=eps)
     sqrt_one_minus_r12_sq = torch.sqrt(one_minus_r12_sq)
 
@@ -70,7 +72,7 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
 
     # last diagonal must be real
     inside = 1.0 - rho13**2 - ((rho23 - rho12 * rho13)**2) / one_minus_r12_sq
-    inside = torch.clamp(inside, min=eps)
+    inside = torch.clamp(inside, min=eps)  # Clamp for mathematical necessity before sqrt
     L22 = s3 * torch.sqrt(inside)
 
     L = torch.zeros(B, 3, 3, device=device, dtype=dtype)
