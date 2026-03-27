@@ -16,7 +16,7 @@ if PROJECT_ROOT not in sys.path:
 
 from Code.load_swapdata import my_data
 from Code.model.full_model import FullModel
-from Code.utils.sigma_matrix import L_from_sigmas_rhos
+from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (
     d_tau_autograd_nodewise,
     grad_and_trace_cov_hess_G,

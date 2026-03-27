@@ -24,7 +24,7 @@ SHOW_PLOTS = True  # Set to False to only save plots
 from Code.load_swapdata import my_data
 from Code.model.full_model import FullModel
 from Code.utils.rates import par_swap_from_discount
-from Code.utils.sigma_matrix import L_from_sigmas_rhos
+from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (
     d_tau_autograd_nodewise,
     grad_and_trace_cov_hess_G,

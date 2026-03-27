@@ -6,7 +6,6 @@ import sys
 import math
 import torch
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
 torch.set_num_threads(4)
@@ -22,7 +21,7 @@ if REPO_ROOT not in sys.path:
 
 from Code.load_swapdata import my_data
 from Code.model.full_model import FullModel
-from Code.utils.sigma_matrix import L_from_sigmas_rhos
+from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (
     d_tau_autograd_nodewise,
     grad_and_trace_cov_hess_G,
