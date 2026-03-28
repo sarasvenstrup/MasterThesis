@@ -38,7 +38,7 @@ try:
         decode_from_latent_script,
     )
 except ImportError:
-    from Code.simulate_model import (
+    from Code.Pricing.simulate_model import (
         load_initial_curve,
         simulate_latent_paths,
         decode_from_latent_script,
