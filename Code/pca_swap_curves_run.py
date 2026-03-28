@@ -10,7 +10,7 @@ from sklearn.decomposition import PCA
 # Repo-root detection
 # ---------------------------------------------------------
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 

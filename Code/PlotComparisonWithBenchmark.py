@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 
 # ── path setup ─────────────────────────────────────────────────────────────────
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 

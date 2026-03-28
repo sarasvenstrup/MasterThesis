@@ -16,7 +16,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 # First we set out working directory, in order for all our outputs to be saved in the same folder.
 
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 

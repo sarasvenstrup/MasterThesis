@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 
 # ============================= Environment Setup & Imports ===============================
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 
@@ -47,15 +47,15 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 SHOW_PLOTS = True  # Set to False to only save plots
 
 LATENT_DIM = 2
-EPOCHS = 100
+EPOCHS = 5000
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
 EVAL_EVERY = 1
-LOG_EVERY = 10
+LOG_EVERY = 1000
 TARGET_MSE = 1e-8
 
-FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", f"dim{LATENT_DIM}", f"ep{EPOCHS}")
+FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 USE = "bbg"

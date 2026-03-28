@@ -14,7 +14,7 @@ from typing import List, Optional
 # Repo root setup (same as training script)
 # -----------------------------
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 

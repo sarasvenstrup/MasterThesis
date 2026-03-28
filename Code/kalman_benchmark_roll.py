@@ -26,7 +26,7 @@ import pandas as pd
 
 # ── path setup ────────────────────────────────────────────────────────────────
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     REPO_ROOT = os.path.dirname(REPO_ROOT)
 except NameError:
     REPO_ROOT = os.getcwd()
@@ -49,7 +49,7 @@ STEP_MONTHS    = 6
 N_FACTORS_LIST = [2, 3, 4]
 CCY_ORDER      = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
-OUT_ROOT = os.path.join(REPO_ROOT, "Figures", f"kalman_benchmark_oos_{VARIANT}", "ekf_dns_rolling")
+OUT_ROOT = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults", "ekf_dns_rolling")
 os.makedirs(OUT_ROOT, exist_ok=True)
 
 # ── load data ─────────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ df["ccy"]        = df["ccy"].astype(str)
 tenors_arr       = np.array(TARGET_TENORS, dtype=float)
 
 # ── rolling window schedule ───────────────────────────────────────────────────
-date_min = df["as_of_date"].min()
+date_min = max(df["as_of_date"].min(), pd.Timestamp("2010-01-01"))
 date_max = df["as_of_date"].max()
 
 roll_starts = []

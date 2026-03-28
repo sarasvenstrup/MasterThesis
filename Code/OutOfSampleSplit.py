@@ -17,7 +17,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 
 # ── path setup ─────────────────────────────────────────────────────────────────
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 
@@ -42,7 +42,7 @@ LATENT_DIM = 3
 EPOCHS     = 2500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
-N_SEEDS    = 10        # train N times with different seeds, report average
+N_SEEDS    = 12        # train N times with different seeds, report average
 max_lr     = 3e-3
 final_div_factor = 3000.0
 LOG_EVERY  = 100
@@ -55,7 +55,7 @@ TEST_END    = "2022-12-31"
 
 ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
-FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{LATENT_DIM}_{VARIANT}", f"ep{EPOCHS}")
+FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{LATENT_DIM}_{VARIANT}", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
 print("Output dir:", FIGURES_DIR)
 
@@ -93,7 +93,7 @@ def predict_S_hat(model, X, batch_size=256):
     outs = []
     for i in range(0, X.shape[0], batch_size):
         xb = X[i:i + batch_size].to(device)
-        outs.append(model(xb)[0].detach().cpu())
+        outs.append(model(xb).detach().cpu())
     return torch.cat(outs, dim=0)
 
 @torch.no_grad()
@@ -103,10 +103,10 @@ def predict_full(model, X, batch_size=256):
     all_S, all_z, all_SR = [], [], []
     for i in range(0, X.shape[0], batch_size):
         xb = X[i:i + batch_size].to(device)
-        S_hat, z, P_mkt, A, B, G, mu, sigma, r_tilde, arb = model(xb)
+        S_hat, aux = model(xb, return_aux=True, do_arb_checks=True)
         all_S.append(S_hat.cpu())
-        all_z.append(z.cpu())
-        all_SR.append(arb["SR_tau"].cpu())
+        all_z.append(aux["z"].cpu())
+        all_SR.append(aux["arb"]["SR_tau"].cpu())
     return torch.cat(all_S), torch.cat(all_z), torch.cat(all_SR)
 
 def rmse_bps_on_subset(model, X_sub, meta_sub):
@@ -136,7 +136,7 @@ def train_model(X_tr, seed=0):
         for (xb_cpu,) in loader:
             xb = xb_cpu.to(device)
             optim.zero_grad(set_to_none=True)
-            loss = loss_fn(model(xb)[0], xb)
+            loss = loss_fn(model(xb), xb)
             if not torch.isfinite(loss):
                 continue
             loss.backward()

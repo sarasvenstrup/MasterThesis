@@ -10,7 +10,7 @@ import warnings
 import matplotlib.pyplot as plt
 
 # Add current directory to path for imports
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_ROOT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
 
 if REPO_ROOT not in sys.path:

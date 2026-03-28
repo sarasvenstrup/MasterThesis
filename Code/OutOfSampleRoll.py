@@ -14,7 +14,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 
 # ============================= Environment Setup & Imports ===============================
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 
@@ -59,6 +59,8 @@ ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 FIGURES_DIR = os.path.join(
     REPO_ROOT,
     "Figures",
+    "OOSResults",
+    "Roll",
     f"OOS_roll_dim{LATENT_DIM}_{VARIANT}",
     f"train{TRAIN_YEARS}Y_test{TEST_MONTHS}M_step{STEP_MONTHS}M",
     f"ep{EPOCHS}"
@@ -94,7 +96,7 @@ def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> t
     for i in range(0, N, batch_size):
         xb = X[i:i + batch_size].to(device)
         out = model(xb)
-        outs.append(out[0].detach().cpu())
+        outs.append(out.detach().cpu())
     return torch.cat(outs, dim=0)
 
 def rmse_bps_on_subset(model: nn.Module, X_sub: torch.Tensor, meta_sub: pd.DataFrame):
@@ -153,8 +155,7 @@ def train_one_window(X_train: torch.Tensor):
             xb = xb_cpu.to(device)
 
             optim.zero_grad(set_to_none=True)
-            out = model(xb)
-            S_hat = out[0]
+            S_hat = model(xb)
 
             loss = loss_fn(S_hat, xb)
             if not torch.isfinite(loss):
@@ -187,7 +188,7 @@ def train_one_window(X_train: torch.Tensor):
     return model, np.array(train_mse_hist), np.array(lr_hist)
 
 # ============================= Build rolling schedule ===============================
-date_min = meta["as_of_date"].min()
+date_min = max(meta["as_of_date"].min(), pd.Timestamp("2010-01-01"))
 date_max = meta["as_of_date"].max()
 
 start = date_min + pd.DateOffset(years=TRAIN_YEARS)
