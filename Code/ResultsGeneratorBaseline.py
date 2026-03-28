@@ -115,7 +115,7 @@ def _load_state_dict_compat(model, ckpt_path):
 def load_ep5000_model(dim):
     """Load ep5000 training checkpoint from Figures/dim{N}/ep5000/.
     Falls back to OOSSplit best-seed checkpoint if ep5000 checkpoint not yet available."""
-    ckpt_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}",
+    ckpt_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
                              f"ep{TRAIN_LOG_EPOCHS}",
                              f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
     if os.path.exists(ckpt_path):
@@ -146,7 +146,13 @@ def load_ep5000_model(dim):
 
 print(f"Loading ℓ={LATENT_DIM} model (ep5000, fallback to OOSSplit)...")
 best_model, best_model_source = load_ep5000_model(LATENT_DIM)
-print(f"  Source: {best_model_source}")
+_has_main_model = best_model is not None
+if not _has_main_model:
+    print(f"  ⚠️  No checkpoint found for dim={LATENT_DIM} — "
+          f"plots that need this model will be skipped. "
+          f"Run Training.py (LATENT_DIM={LATENT_DIM}, EPOCHS={TRAIN_LOG_EPOCHS}) to fix.")
+else:
+    print(f"  Source: {best_model_source}")
 
 # ── inference helpers ──────────────────────────────────────────────────────────
 @torch.no_grad()
@@ -167,15 +173,22 @@ def run_inference(model, X, batch=256):
             torch.cat(mu_list), torch.cat(L_list), torch.cat(r_list))
 
 print("Running inference on train + test sets...")
-S_hat_train, Z_train, _, _, _ = run_inference(best_model, X_train)
-S_hat_test,  Z_test,  _, _, _ = run_inference(best_model, X_test)
+if _has_main_model:
+    S_hat_train, Z_train, _, _, _ = run_inference(best_model, X_train)
+    S_hat_test,  Z_test,  _, _, _ = run_inference(best_model, X_test)
+else:
+    S_hat_train = S_hat_test = Z_train = Z_test = None
 
 # finite masks
 def finite_mask(X, S):
     return torch.isfinite(X).all(1) & torch.isfinite(S).all(1)
 
-mask_train = finite_mask(X_train, S_hat_train)
-mask_test  = finite_mask(X_test,  S_hat_test)
+if _has_main_model:
+    mask_train = finite_mask(X_train, S_hat_train)
+    mask_test  = finite_mask(X_test,  S_hat_test)
+else:
+    mask_train = torch.zeros(len(X_train), dtype=torch.bool)
+    mask_test  = torch.zeros(len(X_test),  dtype=torch.bool)
 
 def save_fig(fig, name):
     path = os.path.join(FIGURES_OUT, name + ".png")
@@ -212,7 +225,7 @@ CCY_LOG_COLS = [f"rmse_bps_{c}" for c in CCY_ORDER]
 
 def load_training_log_rmse(dim, epochs=TRAIN_LOG_EPOCHS):
     """Load final-epoch IS RMSE per currency from dim{N}/ep{E} training log CSV."""
-    path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}",
+    path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
                         f"ep{epochs}", f"train_rmse_log_bbg_dim{dim}_ep{epochs}.csv")
     if not os.path.exists(path):
         warnings.warn(f"Missing training log: {path}")
@@ -250,7 +263,7 @@ print("\n── Q1e: Training loss curves  ──")
 
 fig, ax = plt.subplots(figsize=(8, 4))
 for dim in [1, 2, 3, 4]:
-    _log_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}",
+    _log_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
                              f"ep{TRAIN_LOG_EPOCHS}",
                              f"train_rmse_log_bbg_dim{dim}_ep{TRAIN_LOG_EPOCHS}.csv")
     if not os.path.exists(_log_path):
@@ -318,55 +331,58 @@ def load_split_rmse(dim, epochs=SPLIT_EPOCHS):
 # Q1b — Plot: Fitted vs actual for 3 representative dates (IS)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q1b: Fitted vs actual (representative dates) ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q1b skipped — no checkpoint for dim={LATENT_DIM}")
+if not _has_main_model:
+    print(f"  ⚠️  Q1b skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    REPRESENTATIVE_DATES = {
+        "Normal market (2016-08-31)":  "2016-08-31",
+        "Crisis (2020-03-31)":         "2020-03-31",
+        "Low-rate (2019-06-30)":       "2019-06-30",
+    }
+    SHOW_CCYS = ["EUR", "USD"]   # show 2 currencies per date for clarity
 
-REPRESENTATIVE_DATES = {
-    "Normal market (2016-08-31)":  "2016-08-31",
-    "Crisis (2020-03-31)":         "2020-03-31",
-    "Low-rate (2019-06-30)":       "2019-06-30",
-}
-SHOW_CCYS = ["EUR", "USD"]   # show 2 currencies per date for clarity
+    scale = 100.0 if SCALE_IS_PERCENT else 1.0
 
-scale = 100.0 if SCALE_IS_PERCENT else 1.0
+    fig, axes = plt.subplots(len(SHOW_CCYS), len(REPRESENTATIVE_DATES),
+                             figsize=(5 * len(REPRESENTATIVE_DATES), 3.8 * len(SHOW_CCYS)),
+                             sharey=False)
 
-fig, axes = plt.subplots(len(SHOW_CCYS), len(REPRESENTATIVE_DATES),
-                         figsize=(5 * len(REPRESENTATIVE_DATES), 3.8 * len(SHOW_CCYS)),
-                         sharey=False)
+    for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
+        target_date = pd.Timestamp(date_str)
 
-for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
-    target_date = pd.Timestamp(date_str)
+        for row_i, ccy in enumerate(SHOW_CCYS):
+            ax = axes[row_i][col_i]
 
-    for row_i, ccy in enumerate(SHOW_CCYS):
-        ax = axes[row_i][col_i]
+            mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
+            if mask_ccy.sum() == 0:
+                ax.set_visible(False)
+                continue
 
-        # pick closest available date for this currency (train set)
-        mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
-        if mask_ccy.sum() == 0:
-            ax.set_visible(False)
-            continue
+            dates_ccy = pd.to_datetime(meta_train.loc[mask_ccy, "as_of_date"])
+            idx_local  = (dates_ccy - target_date).abs().argmin()
+            actual_date = dates_ccy.iloc[idx_local]
+            global_idx  = np.where(mask_ccy)[0][idx_local]
 
-        dates_ccy = pd.to_datetime(meta_train.loc[mask_ccy, "as_of_date"])
-        idx_local  = (dates_ccy - target_date).abs().argmin()
-        actual_date = dates_ccy.iloc[idx_local]
-        global_idx  = np.where(mask_ccy)[0][idx_local]
+            actual = X_train[global_idx].numpy() * scale
+            fitted = S_hat_train[global_idx].numpy() * scale
+            fitted_color = custom_palette[CCY_ORDER.index(ccy) % len(custom_palette)]
 
-        actual = X_train[global_idx].numpy() * scale
-        fitted = S_hat_train[global_idx].numpy() * scale
-        fitted_color = custom_palette[CCY_ORDER.index(ccy) % len(custom_palette)]
+            ax.plot(tenors, actual, "o-",  color="black", linewidth=2.0, markersize=5)
+            ax.plot(tenors, fitted, "s--", color=fitted_color, linewidth=2.0, markersize=5)
 
-        ax.plot(tenors, actual, "o-",  color="black", linewidth=2.0, markersize=5)
-        ax.plot(tenors, fitted, "s--", color=fitted_color, linewidth=2.0, markersize=5)
+            if row_i == 0:
+                ax.set_title(label, fontsize=10, fontweight="bold")
+            if col_i == 0:
+                ax.set_ylabel(f"{ccy}, {'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec.)'}",
+                              fontsize=9)
+            ax.tick_params(axis="x", labelsize=8)
+            ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
+                    transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
 
-        if row_i == 0:
-            ax.set_title(label, fontsize=10, fontweight="bold")
-        if col_i == 0:
-            ax.set_ylabel(f"{ccy}, {'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec.)'}",
-                          fontsize=9)
-        ax.tick_params(axis="x", labelsize=8)
-        ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
-                transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
-
-fig.tight_layout()
-save_fig(fig, "Q1b_fitted_vs_actual")
+    fig.tight_layout()
+    save_fig(fig, "Q1b_fitted_vs_actual")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -380,8 +396,9 @@ dim_models = {}
 dim_model_sources = {}
 for _dim in [2, 3, 4]:
     if _dim == LATENT_DIM:
-        dim_models[_dim] = best_model
-        dim_model_sources[_dim] = best_model_source
+        if best_model is not None:
+            dim_models[_dim] = best_model
+            dim_model_sources[_dim] = best_model_source
     else:
         _m, _src = load_ep5000_model(_dim)
         if _m is not None:
@@ -419,13 +436,18 @@ for _dim in [2, 3, 4]:
     resid = (X_train[mask_train] - _all_dim_S_hat[_dim][mask_train]).numpy() * 10000
     resid_flat = resid.flatten()
     resid_flat = resid_flat[np.isfinite(resid_flat)]
+    if len(resid_flat) == 0:
+        continue
     _resid_data[_dim] = resid_flat
     _x_min = min(_x_min, resid_flat.min())
     _x_max = max(_x_max, resid_flat.max())
 
 # compute y_max using shared x range and same bins
 _y_max = 0
-_shared_bins = np.linspace(_x_min, _x_max, 121)
+if not _resid_data or not np.isfinite(_x_min):
+    _shared_bins = np.linspace(-50, 50, 121)  # fallback when no data
+else:
+    _shared_bins = np.linspace(_x_min, _x_max, 121)
 for _dim, resid_flat in _resid_data.items():
     counts, _ = np.histogram(resid_flat, bins=_shared_bins)
     _y_max = max(_y_max, counts.max())
@@ -526,30 +548,32 @@ save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
 # Q1c — Plot: Histogram of residuals (actual − fitted) in bps
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q1c: Residual histogram  ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q1c skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    resid_train = (X_train[mask_train] - S_hat_train[mask_train]).numpy() * 10000  # → bps
+    resid_flat  = resid_train.flatten()
+    resid_flat  = resid_flat[np.isfinite(resid_flat)]
 
-resid_train = (X_train[mask_train] - S_hat_train[mask_train]).numpy() * 10000  # → bps
-resid_flat  = resid_train.flatten()
-resid_flat  = resid_flat[np.isfinite(resid_flat)]
-
-fig, ax = plt.subplots(figsize=(7, 4))
-ax.hist(resid_flat, bins=120, color=custom_palette[0], edgecolor="none", alpha=0.85)
-ax.axvline(0, color="black", linewidth=1.2, linestyle="--")
-ax.axvline(np.mean(resid_flat),  color="#d7191c", linewidth=1.5,
-           linestyle="--", label=f"Mean = {np.mean(resid_flat):.2f} bps")
-ax.axvline(np.percentile(resid_flat, 5),  color="0.4", linewidth=1.0,
-           linestyle=":", label=f"5th/95th pct = {np.percentile(resid_flat,5):.1f} / "
-                                f"{np.percentile(resid_flat,95):.1f} bps")
-ax.axvline(np.percentile(resid_flat, 95), color="0.4", linewidth=1.0, linestyle=":")
-ax.set_xlabel("Residual (bps)")
-ax.set_ylabel("Count")
-ax.legend(fontsize=9, frameon=False)
-ax.text(0.97, 0.95,
-        f"N={len(resid_flat):,}\nStd={np.std(resid_flat):.2f} bps\n"
-        f"Kurt={float(pd.Series(resid_flat).kurt()):.2f}",
-        transform=ax.transAxes, fontsize=8, ha="right", va="top",
-        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"))
-fig.tight_layout()
-save_fig(fig, "Q1c_residual_histogram")
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.hist(resid_flat, bins=120, color=custom_palette[0], edgecolor="none", alpha=0.85)
+    ax.axvline(0, color="black", linewidth=1.2, linestyle="--")
+    ax.axvline(np.mean(resid_flat),  color="#d7191c", linewidth=1.5,
+               linestyle="--", label=f"Mean = {np.mean(resid_flat):.2f} bps")
+    ax.axvline(np.percentile(resid_flat, 5),  color="0.4", linewidth=1.0,
+               linestyle=":", label=f"5th/95th pct = {np.percentile(resid_flat,5):.1f} / "
+                                    f"{np.percentile(resid_flat,95):.1f} bps")
+    ax.axvline(np.percentile(resid_flat, 95), color="0.4", linewidth=1.0, linestyle=":")
+    ax.set_xlabel("Residual (bps)")
+    ax.set_ylabel("Count")
+    ax.legend(fontsize=9, frameon=False)
+    ax.text(0.97, 0.95,
+            f"N={len(resid_flat):,}\nStd={np.std(resid_flat):.2f} bps\n"
+            f"Kurt={float(pd.Series(resid_flat).kurt()):.2f}",
+            transform=ax.transAxes, fontsize=8, ha="right", va="top",
+            bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"))
+    fig.tight_layout()
+    save_fig(fig, "Q1c_residual_histogram")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -954,40 +978,39 @@ for _dim in [2, 3, 4]:
 # Q5a — Plot: Latent factors over time (full IS sample, per currency)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q5a: Latent factors over time ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q5a skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    Z_np    = Z_train[mask_train].numpy()
+    dates_z = pd.to_datetime(meta_train.loc[mask_train.numpy(), "as_of_date"])
+    ccys_z  = meta_train.loc[mask_train.numpy(), "ccy"].values
 
-Z_np    = Z_train[mask_train].numpy()
-dates_z = pd.to_datetime(meta_train.loc[mask_train.numpy(), "as_of_date"])
-ccys_z  = meta_train.loc[mask_train.numpy(), "ccy"].values
+    fig, axes = plt.subplots(LATENT_DIM, 1,
+                             figsize=(12, 3.2 * LATENT_DIM), sharex=True)
+    if LATENT_DIM == 1:
+        axes = [axes]
 
-fig, axes = plt.subplots(LATENT_DIM, 1,
-                         figsize=(12, 3.2 * LATENT_DIM), sharex=True)
-if LATENT_DIM == 1:
-    axes = [axes]
+    for ccy in CCY_ORDER:
+        idx = (ccys_z == ccy)
+        if idx.sum() == 0:
+            continue
+        sort_i = np.argsort(dates_z.values[idx])
+        for dim_i, ax in enumerate(axes):
+            ax.plot(dates_z.values[idx][sort_i], Z_np[idx][:, dim_i][sort_i],
+                    linewidth=1.1, alpha=0.8, label=ccy,
+                    color=currency_color_map[ccy])
 
-for ccy in CCY_ORDER:
-    idx = (ccys_z == ccy)
-    if idx.sum() == 0:
-        continue
-    sort_i = np.argsort(dates_z.values[idx])
     for dim_i, ax in enumerate(axes):
-        ax.plot(dates_z.values[idx][sort_i], Z_np[idx][:, dim_i][sort_i],
-                linewidth=1.1, alpha=0.8, label=ccy,
-                color=currency_color_map[ccy])
+        ax.set_ylabel(f"$z_{dim_i+1}$", fontsize=12)
+        ax.axhline(0, color="black", linewidth=0.6, linestyle="--")
+        for ev_label, ev_date in EVENTS.items():
+            ax.axvline(pd.Timestamp(ev_date), color="0.6", linewidth=0.8, linestyle=":")
 
-for dim_i, ax in enumerate(axes):
-    ax.set_ylabel(f"$z_{dim_i+1}$", fontsize=12)
-    ax.axhline(0, color="black", linewidth=0.6, linestyle="--")
-    # event markers
     for ev_label, ev_date in EVENTS.items():
-        ax.axvline(pd.Timestamp(ev_date), color="0.6", linewidth=0.8, linestyle=":")
-    pass  # legend removed — currency colours described in caption
-
-# add event text on top panel only
-for ev_label, ev_date in EVENTS.items():
-    axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
-                 ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
-fig.tight_layout()
-save_fig(fig, "Q5a_latent_factors_over_time")
+        axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
+                     ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
+    fig.tight_layout()
+    save_fig(fig, "Q5a_latent_factors_over_time")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1008,10 +1031,12 @@ scale_div = 100.0 if SCALE_IS_PERCENT else 1.0
 # ── Global PCA on IS swap rates (all currencies stacked) ─────────────────────
 # Used as model-neutral reference basis for Q5b
 from sklearn.decomposition import PCA as _SKLearnPCA
-_X_is_all  = X_train[mask_train].numpy()                     # (N_is, 8)
-_finite_is = np.isfinite(_X_is_all).all(axis=1)
-_X_is_pca  = _X_is_all[_finite_is] / scale_div               # scale-consistent
-_global_pca = _SKLearnPCA(n_components=8)
+# Use a direct finite mask on X_train — PCA is model-neutral, does not need mask_train
+_pca_finite    = torch.isfinite(X_train).all(1)
+_X_is_all      = X_train[_pca_finite].numpy()                # (N_is, 8)
+_finite_is     = np.isfinite(_X_is_all).all(axis=1)          # should be all True after above
+_X_is_pca      = _X_is_all[_finite_is] / scale_div           # scale-consistent
+_global_pca    = _SKLearnPCA(n_components=8)
 _global_pca.fit(_X_is_pca)
 _pc_vecs = _global_pca.components_                            # (8, 8) — rows are eigenvectors
 print(f"  Global PCA explained variance ratios: "
@@ -1023,7 +1048,7 @@ _n_plot_pcs     = 3
 _pc_plot_labels = [f"PC {j+1}" for j in range(_n_plot_pcs)]
 
 # compute PC scores for all IS observations, averaged across currencies per date
-_meta_is       = meta_train.loc[mask_train.numpy()].copy().reset_index(drop=True)
+_meta_is       = meta_train.loc[_pca_finite.numpy()].copy().reset_index(drop=True)
 _meta_is       = _meta_is[_finite_is].copy().reset_index(drop=True)
 _meta_is["as_of_date"] = pd.to_datetime(_meta_is["as_of_date"])
 _pc_vecs_plot  = _pc_vecs                            # global eigenvectors
@@ -1063,7 +1088,7 @@ save_fig(fig, "Q5b_pca_loadings")
 
 for _dim in DIMS_PLOT:
     _Z    = dim_Z_hat[_dim]
-    _mask = finite_mask(X_train, dim_S_hat[_dim]) & mask_train  # IS only
+    _mask = finite_mask(X_train, dim_S_hat[_dim]) & _pca_finite  # IS only (model-neutral finite mask)
     _Z_np = _Z[_mask].numpy()
     _X_np = X_train[_mask].numpy() / scale_div                  # (N, 8) scaled
 
@@ -1217,170 +1242,160 @@ if _corr_matrices:
 # Q6a — Plot: RMSE broken down by tenor (1Y, 2Y, 3Y, 5Y, 10Y, 15Y, 20Y, 30Y)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q6a: RMSE by tenor (full dataset, ep5000 training run) ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q6a skipped — no checkpoint for dim={LATENT_DIM}")
+    X_eval = S_eval = None
+else:
+    X_eval = X_train[mask_train].numpy()
+    S_eval = S_hat_train[mask_train].numpy()
 
-X_eval = X_train[mask_train].numpy()
-S_eval = S_hat_train[mask_train].numpy()
+if _has_main_model:
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
 
-fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    ax = axes[0]
+    for _dim in DIMS_PLOT:
+        _S_eval_dim = dim_S_hat[_dim][mask_train].numpy()
+        _finite     = np.isfinite(X_eval).all(1) & np.isfinite(_S_eval_dim).all(1)
+        _rmse_dim   = np.sqrt(np.mean((X_eval[_finite] - _S_eval_dim[_finite])**2, axis=0)) * 10000
+        ax.plot(TENOR_COLS, _rmse_dim, marker="o", linewidth=1.4, markersize=4,
+                color=DIM_COLORS[_dim], label=f"$\\ell={_dim}$")
+    ax.set_ylabel("RMSE (bps)", fontsize=10)
+    ax.set_xlabel("Maturity", fontsize=10)
+    ax.set_xticks(TENOR_COLS)
+    ax.legend(frameon=False, fontsize=10)
 
-# left: per-tenor RMSE for all dims overlaid
-ax = axes[0]
-for _dim in DIMS_PLOT:
-    _S_eval_dim = dim_S_hat[_dim][mask_train].numpy()
-    _finite     = np.isfinite(X_eval).all(1) & np.isfinite(_S_eval_dim).all(1)
-    _rmse_dim   = np.sqrt(np.mean((X_eval[_finite] - _S_eval_dim[_finite])**2, axis=0)) * 10000
-    ax.plot(TENOR_COLS, _rmse_dim, marker="o", linewidth=1.4, markersize=4,
-            color=DIM_COLORS[_dim], label=f"$\\ell={_dim}$")
-ax.set_ylabel("RMSE (bps)", fontsize=10)
-ax.set_xlabel("Maturity", fontsize=10)
-ax.set_xticks(TENOR_COLS)
-ax.legend(frameon=False, fontsize=10)
+    ax = axes[1]
+    for ccy in CCY_ORDER:
+        idx = (meta_train.loc[mask_train.numpy(), "ccy"].values == ccy)
+        if idx.sum() == 0:
+            continue
+        rmse_ccy = np.sqrt(np.mean((X_eval[idx] - S_eval[idx])**2, axis=0)) * 10000
+        ax.plot(TENOR_COLS, rmse_ccy, marker="o", linewidth=1.4,
+                markersize=4, color=currency_color_map[ccy])
 
-# right: per-currency lines
-ax = axes[1]
-for ccy in CCY_ORDER:
-    idx = (meta_train.loc[mask_train.numpy(), "ccy"].values == ccy)
-    if idx.sum() == 0:
-        continue
-    rmse_ccy = np.sqrt(np.mean((X_eval[idx] - S_eval[idx])**2, axis=0)) * 10000
-    ax.plot(TENOR_COLS, rmse_ccy, marker="o", linewidth=1.4,
-            markersize=4, color=currency_color_map[ccy])
-
-ax.set_ylabel("RMSE (bps)", fontsize=10)
-ax.set_xlabel("Maturity", fontsize=10)
-ax.set_xticks(TENOR_COLS)
-
-fig.tight_layout()
-save_fig(fig, "Q6a_rmse_by_tenor")
+    ax.set_ylabel("RMSE (bps)", fontsize=10)
+    ax.set_xlabel("Maturity", fontsize=10)
+    ax.set_xticks(TENOR_COLS)
+    fig.tight_layout()
+    save_fig(fig, "Q6a_rmse_by_tenor")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Q6d — Plot: IS RMSE by tenor — all latent dims overlaid (ℓ=2, 3, 4)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q6d: RMSE by tenor — all dims (bar chart) ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q6d skipped — no checkpoint for dim={LATENT_DIM} (mask_train undefined)")
+else:
+    _oos_mask = ~mask_train
+    rmse_by_dim = {}
+    for _dim in DIMS_PLOT:
+        _S_hat  = dim_S_hat[_dim]
+        _X_oos  = X_train[_oos_mask].numpy()
+        _S_oos  = _S_hat[_oos_mask].numpy()
+        _finite = np.isfinite(_X_oos).all(1) & np.isfinite(_S_oos).all(1)
+        rmse_by_dim[_dim] = np.sqrt(
+            np.mean((_X_oos[_finite] - _S_oos[_finite])**2, axis=0)) * 10000
 
-# Compute per-tenor OOS RMSE for each dim
-_oos_mask = ~mask_train
-rmse_by_dim = {}
-for _dim in DIMS_PLOT:
-    _S_hat  = dim_S_hat[_dim]
-    _X_oos  = X_train[_oos_mask].numpy()
-    _S_oos  = _S_hat[_oos_mask].numpy()
-    _finite = np.isfinite(_X_oos).all(1) & np.isfinite(_S_oos).all(1)
-    rmse_by_dim[_dim] = np.sqrt(
-        np.mean((_X_oos[_finite] - _S_oos[_finite])**2, axis=0)) * 10000  # bps
+    _oos_k3_q6d = load_kalman_rmse(3)
+    n_tenors = len(TENOR_COLS)
+    n_dims   = len(DIMS_PLOT)
+    width    = 0.22
+    x        = np.arange(n_tenors)
+    _dim_styles_q6d = {2: "-", 3: "--", 4: ":"}
 
-# Load EKF DNS 3f average OOS RMSE for reference line
-_oos_k3_q6d = load_kalman_rmse(3)
+    fig, ax = plt.subplots(figsize=(11, 4.5))
+    for i, _dim in enumerate(DIMS_PLOT):
+        offset = (i - (n_dims - 1) / 2) * width
+        ax.bar(x + offset, rmse_by_dim[_dim], width,
+               label=r"AE ($\ell$=" + str(_dim) + ")",
+               color=DIM_COLORS[_dim], edgecolor="none")
 
-n_tenors = len(TENOR_COLS)
-n_dims   = len(DIMS_PLOT)
-width    = 0.22
-x        = np.arange(n_tenors)
+    for _dim in DIMS_PLOT:
+        avg = float(np.mean(rmse_by_dim[_dim]))
+        ax.axhline(avg, color=DIM_COLORS[_dim], linewidth=1.2,
+                   linestyle=_dim_styles_q6d.get(_dim, "--"), alpha=0.85)
 
-_dim_styles_q6d = {2: "-", 3: "--", 4: ":"}
+    if _oos_k3_q6d is not None:
+        _avg_k3 = float(_oos_k3_q6d.drop("Average", errors="ignore").mean())
+        ax.axhline(_avg_k3, color=custom_palette[0], linewidth=1.4, linestyle="-.",
+                   label=r"EKF DNS ($\ell$=3) avg", zorder=5)
 
-fig, ax = plt.subplots(figsize=(11, 4.5))
-
-for i, _dim in enumerate(DIMS_PLOT):
-    offset = (i - (n_dims - 1) / 2) * width
-    ax.bar(x + offset, rmse_by_dim[_dim], width,
-           label=r"AE ($\ell$=" + str(_dim) + ")",
-           color=DIM_COLORS[_dim], edgecolor="none")
-
-# average lines per AE dim — distinct styles
-for _dim in DIMS_PLOT:
-    avg = float(np.mean(rmse_by_dim[_dim]))
-    ax.axhline(avg, color=DIM_COLORS[_dim], linewidth=1.2,
-               linestyle=_dim_styles_q6d.get(_dim, "--"), alpha=0.85)
-
-# EKF DNS 3f overall average as horizontal reference
-if _oos_k3_q6d is not None:
-    _avg_k3 = float(_oos_k3_q6d.drop("Average", errors="ignore").mean())
-    ax.axhline(_avg_k3, color=custom_palette[0], linewidth=1.4, linestyle="-.",
-               label=r"EKF DNS ($\ell$=3) avg", zorder=5)
-
-ax.set_xticks(x)
-ax.set_xticklabels([str(t) for t in TENOR_COLS])
-ax.set_ylabel("OOS RMSE (bps)")
-ax.legend(frameon=False, fontsize=10)
-fig.tight_layout()
-save_fig(fig, "Q6d_rmse_by_tenor_all_dims")
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(t) for t in TENOR_COLS])
+    ax.set_ylabel("OOS RMSE (bps)")
+    ax.legend(frameon=False, fontsize=10)
+    fig.tight_layout()
+    save_fig(fig, "Q6d_rmse_by_tenor_all_dims")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Q6b — Plot: RMSE over time (monthly average IS)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q6b: RMSE over time ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q6b skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    meta_eval_z = meta_train.loc[mask_train.numpy()].copy().reset_index(drop=True)
+    meta_eval_z["as_of_date"] = pd.to_datetime(meta_eval_z["as_of_date"])
+    meta_eval_z["rmse_bps"] = np.sqrt(np.mean((X_eval - S_eval)**2, axis=1)) * 10000
+    meta_eval_z["ym"] = meta_eval_z["as_of_date"].dt.to_period("M")
 
-meta_eval_z = meta_train.loc[mask_train.numpy()].copy().reset_index(drop=True)
-meta_eval_z["as_of_date"] = pd.to_datetime(meta_eval_z["as_of_date"])
-meta_eval_z["rmse_bps"] = np.sqrt(
-    np.mean((X_eval - S_eval)**2, axis=1)) * 10000
+    monthly_avg   = meta_eval_z.groupby("ym")["rmse_bps"].mean()
+    monthly_dates = monthly_avg.index.to_timestamp()
 
-meta_eval_z["ym"] = meta_eval_z["as_of_date"].dt.to_period("M")
+    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
 
-# monthly average across all currencies
-monthly_avg = meta_eval_z.groupby("ym")["rmse_bps"].mean()
-monthly_dates = monthly_avg.index.to_timestamp()
+    ax = axes[0]
+    ax.plot(monthly_dates, monthly_avg.values, linewidth=1.2, color="black",
+            linestyle="--", label="All-ccy avg")
+    ax.set_ylabel("Avg RMSE (bps)")
 
-fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+    ax = axes[1]
+    for ccy in CCY_ORDER:
+        idx_c = meta_eval_z["ccy"] == ccy
+        if idx_c.sum() == 0:
+            continue
+        m_ccy = meta_eval_z.loc[idx_c].groupby("ym")["rmse_bps"].mean()
+        ax.plot(m_ccy.index.to_timestamp(), m_ccy.values,
+                linewidth=1.1, alpha=0.75, color=currency_color_map[ccy])
+    ax.set_ylabel("RMSE (bps)")
 
-# top: average across currencies
-ax = axes[0]
-ax.plot(monthly_dates, monthly_avg.values, linewidth=1.2, color="black",
-        linestyle="--", label="All-ccy avg")
-ax.set_ylabel("Avg RMSE (bps)")
+    for ev_label, ev_date in EVENTS.items():
+        for axi in axes:
+            axi.axvline(pd.Timestamp(ev_date), color="0.55", linewidth=1.0, linestyle="--")
+        axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
+                     ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
 
-# bottom: per-currency
-ax = axes[1]
-for ccy in CCY_ORDER:
-    idx_c = meta_eval_z["ccy"] == ccy
-    if idx_c.sum() == 0:
-        continue
-    m_ccy = meta_eval_z.loc[idx_c].groupby("ym")["rmse_bps"].mean()
-    ax.plot(m_ccy.index.to_timestamp(), m_ccy.values,
-            linewidth=1.1, alpha=0.75, color=currency_color_map[ccy])
-
-ax.set_ylabel("RMSE (bps)")
-
-# event shading on both panels
-for ev_label, ev_date in EVENTS.items():
-    for axi in axes:
-        axi.axvline(pd.Timestamp(ev_date), color="0.55",
-                    linewidth=1.0, linestyle="--")
-    axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
-                 ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
-
-fig.autofmt_xdate()
-fig.tight_layout()
-save_fig(fig, "Q6b_rmse_over_time")
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    save_fig(fig, "Q6b_rmse_over_time")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Q6c — Table: Top 10 worst-fitting (currency, date) pairs
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q6c: Top worst-fitting pairs ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q6c skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    meta_eval_z2 = meta_train.loc[mask_train.numpy()].copy().reset_index(drop=True)
+    meta_eval_z2["as_of_date"] = pd.to_datetime(meta_eval_z2["as_of_date"])
+    meta_eval_z2["rmse_bps"] = np.sqrt(np.mean((X_eval - S_eval)**2, axis=1)) * 10000
 
-meta_eval_z2 = meta_train.loc[mask_train.numpy()].copy().reset_index(drop=True)
-meta_eval_z2["as_of_date"] = pd.to_datetime(meta_eval_z2["as_of_date"])
-meta_eval_z2["rmse_bps"] = np.sqrt(
-    np.mean((X_eval - S_eval)**2, axis=1)) * 10000
+    for i, t in enumerate(TENOR_COLS):
+        meta_eval_z2[f"resid_{t}Y_bps"] = (S_eval[:, i] - X_eval[:, i]) * 10000
 
-# also store per-tenor residuals for context
-for i, t in enumerate(TENOR_COLS):
-    meta_eval_z2[f"resid_{t}Y_bps"] = (S_eval[:, i] - X_eval[:, i]) * 10000
+    worst = (meta_eval_z2.nlargest(10, "rmse_bps")
+             [["as_of_date", "ccy", "rmse_bps"] +
+              [f"resid_{t}Y_bps" for t in TENOR_COLS]]
+             .reset_index(drop=True))
+    worst["as_of_date"] = worst["as_of_date"].dt.strftime("%Y-%m-%d")
+    worst = worst.round(2)
+    worst.index = worst.index + 1
 
-worst = (meta_eval_z2.nlargest(10, "rmse_bps")
-         [["as_of_date", "ccy", "rmse_bps"] +
-          [f"resid_{t}Y_bps" for t in TENOR_COLS]]
-         .reset_index(drop=True))
-worst["as_of_date"] = worst["as_of_date"].dt.strftime("%Y-%m-%d")
-worst = worst.round(2)
-worst.index = worst.index + 1   # rank from 1
-
-save_table(worst, "Q6c_top10_worst_pairs")
-print(worst[["as_of_date", "ccy", "rmse_bps"]].to_string())
+    save_table(worst, "Q6c_top10_worst_pairs")
+    print(worst[["as_of_date", "ccy", "rmse_bps"]].to_string())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1573,44 +1588,111 @@ def _roll_src(dim):
 
 _manifest_ok = os.path.exists(MANIFEST_PATH)
 
+# ── per-dim split CSV check ────────────────────────────────────────────────────
+def _split_csv_ok(dim):
+    p = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split",
+                     f"OOS_split_dim{dim}_baseline", f"ep{SPLIT_EPOCHS}", "rmse_summary.csv")
+    return os.path.exists(p)
+
 print(f"\n{'='*65}")
 print(f"  OUTPUT SUMMARY")
 print(f"{'='*65}")
 
+# ── IN-SAMPLE ─────────────────────────────────────────────────────────────────
 print(f"\n  {'IN-SAMPLE':─<55}")
-icon, src = _model_src(LATENT_DIM)
-print(f"  {icon}  Q1a  IS RMSE table          — all dims, ep5000 logs")
-print(f"  {icon}  Q1e  Training loss curves   — all dims, ep5000 logs")
-print(f"  {icon}  Q1b  Fitted vs actual        — {src}")
-print(f"  {icon}  Q1d  Fitted vs actual (all dims) — {src}")
-print(f"  {icon}  Q1c/Q1d  Residual histograms — {src}")
-print(f"  {icon}  Q6a  RMSE by tenor           — {src}")
-print(f"  {icon}  Q6b  RMSE over time          — {src}")
-print(f"  {icon}  Q7   Sharpe ratio            — {src}")
+# Q1a / Q1e only need CSV logs (no checkpoint)
+_csv_dims_ok = [d for d in [1, 2, 3, 4]
+                if os.path.exists(os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                                               f"dim{d}_baseline", f"ep{TRAIN_LOG_EPOCHS}",
+                                               f"train_rmse_log_bbg_dim{d}_ep{TRAIN_LOG_EPOCHS}.csv"))]
+_csv_icon = _OK if set(_csv_dims_ok) >= {2, 3, 4} else (_WARN if _csv_dims_ok else _SKIP)
+print(f"  {_csv_icon}  Q1a  IS RMSE table          — ep{TRAIN_LOG_EPOCHS} logs found for dims {_csv_dims_ok}")
+print(f"  {_csv_icon}  Q1e  Training loss curves   — ep{TRAIN_LOG_EPOCHS} logs found for dims {_csv_dims_ok}")
 
+# Q1b uses LATENT_DIM only
+icon_q1b, src_q1b = _model_src(LATENT_DIM)
+print(f"  {icon_q1b}  Q1b  Fitted vs actual (dim={LATENT_DIM}) — {src_q1b}")
+
+# Q1d / residuals / Q6a / Q6b use all dims
+print(f"  {'IN-SAMPLE (per dim)':─<52}")
+for _d in [1, 2, 3, 4]:
+    _icon_d, _src_d = _model_src(_d)
+    print(f"    {_icon_d}  dim={_d}  Q1d/Q1c/Q6a/Q6b/params — {_src_d}")
+
+# Q7 uses dim=3 hardcoded
+icon_q7, src_q7 = _model_src(3)
+print(f"  {icon_q7}  Q7   Sharpe ratio (dim=3)  — {src_q7}")
+
+# ── OUT-OF-SAMPLE (SPLIT) ─────────────────────────────────────────────────────
 print(f"\n  {'OUT-OF-SAMPLE (SPLIT)':─<55}")
-_split_ok = os.path.exists(MANIFEST_PATH) or any(
-    os.path.exists(os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{d}_baseline",
-                                f"ep{SPLIT_EPOCHS}", "rmse_summary.csv"))
-    for d in [1, 2, 3, 4]
-)
-icon2 = _OK if _split_ok else _SKIP
-src2  = f"ep{SPLIT_EPOCHS} OOSSplit results" if _split_ok else "SKIPPED — run OutOfSampleSplit.py"
-print(f"  {icon2}  Q2a  IS vs OOS RMSE table   — {src2}")
-print(f"  {'✅' if _manifest_ok else _SKIP}  Q3a  Seed robustness table   — {'run_manifest.json found' if _manifest_ok else 'SKIPPED — run OutOfSampleSplit.py'}")
-print(f"  {'✅'}  Q4a  AE vs EKF DNS table     — fixed split OOS")
-print(f"  {'✅'}  Q4b  Per-currency bar chart (dim 2,3,4)  — fixed split OOS")
+for _d in [1, 2, 3, 4]:
+    _icon_s = _OK if _split_csv_ok(_d) else _SKIP
+    _src_s  = f"ep{SPLIT_EPOCHS} OOSSplit CSV found" if _split_csv_ok(_d) \
+              else f"SKIPPED — run OutOfSampleSplit.py (dim={_d})"
+    print(f"  {_icon_s}  Q2a  IS vs OOS RMSE (dim={_d}) — {_src_s}")
 
+print(f"  {'✅' if _manifest_ok else _SKIP}  Q3a  Seed robustness table   — "
+      f"{'run_manifest.json found' if _manifest_ok else 'SKIPPED — run OutOfSampleSplit.py (all dims)'}")
+print(f"  {'✅'}  Q4a  AE vs EKF DNS table     — fixed split OOS")
+
+_q4b_dims_ok = [d for d in [2, 3, 4] if _split_csv_ok(d)]
+_q4b_icon = _OK if set(_q4b_dims_ok) >= {2, 3, 4} else (_WARN if _q4b_dims_ok else _SKIP)
+print(f"  {_q4b_icon}  Q4b  Per-currency bar chart — split OOS dims {_q4b_dims_ok} available")
+
+# ── OUT-OF-SAMPLE (ROLLING) ───────────────────────────────────────────────────
 print(f"\n  {'OUT-OF-SAMPLE (ROLLING)':─<55}")
 for _d in [2, 3, 4]:
     icon_r, src_r = _roll_src(_d)
     print(f"  {icon_r}  Q2b/Q3b  dim={_d}              — {src_r}")
 
+# ── LATENT FACTOR ─────────────────────────────────────────────────────────────
 print(f"\n  {'LATENT FACTOR':─<55}")
-icon3, src3 = _model_src(LATENT_DIM)
-print(f"  {icon3}  Q5a  Latent factors over time — {src3}")
+icon_q5a, src_q5a = _model_src(LATENT_DIM)
+print(f"  {icon_q5a}  Q5a  Latent factors over time (dim={LATENT_DIM}) — {src_q5a}")
 print(f"  {_OK}  Q5b  PCA heatmap + projections — global PCA on IS data")
 print(f"  {_OK}  Q5b  Scree plot (PVE)           — global PCA on IS data")
+
+# ── ACTION REQUIRED ───────────────────────────────────────────────────────────
+_actions = []
+
+# Missing ep5000 checkpoints
+_missing_ckpt_dims = [d for d in [1, 2, 3, 4] if dim_model_sources.get(d) is None]
+_fallback_ckpt_dims = [d for d in [1, 2, 3, 4]
+                       if dim_model_sources.get(d) is not None and "OOSSplit" in dim_model_sources.get(d, "")]
+if _missing_ckpt_dims:
+    _actions.append(f"  🔴  Run Training.py for dims {_missing_ckpt_dims} at ep={TRAIN_LOG_EPOCHS} "
+                    f"→ regenerates checkpoint_dim{{N}}_ep{TRAIN_LOG_EPOCHS}.pt")
+if _fallback_ckpt_dims:
+    _actions.append(f"  🟡  Run Training.py for dims {_fallback_ckpt_dims} at ep={TRAIN_LOG_EPOCHS} "
+                    f"→ currently using OOSSplit ep{SPLIT_EPOCHS} fallback (results are approximate)")
+
+# Missing OOS split CSVs
+_missing_split_dims = [d for d in [1, 2, 3, 4] if not _split_csv_ok(d)]
+if _missing_split_dims:
+    _actions.append(f"  🔴  Run OutOfSampleSplit.py for dims {_missing_split_dims} "
+                    f"→ needed for Q2a, Q3a, Q4a, Q4b")
+
+# Missing rolling CSVs
+_missing_roll_dims = [d for d in [2, 3, 4] if _roll_src(d)[0] == _SKIP]
+_fallback_roll_dims = [d for d in [2, 3, 4] if _roll_src(d)[0] == _WARN]
+if _missing_roll_dims:
+    _actions.append(f"  🔴  Run OutOfSampleRoll.py for dims {_missing_roll_dims} "
+                    f"→ needed for Q2b, Q3b")
+if _fallback_roll_dims:
+    _actions.append(f"  🟡  Run OutOfSampleRoll.py for dims {_fallback_roll_dims} "
+                    f"→ currently using train3Y fallback (rerun for train5Y results)")
+
+# Missing seed manifest
+if not _manifest_ok:
+    _actions.append(f"  🔴  Run OutOfSampleSplit.py (generates run_manifest.json) "
+                    f"→ needed for Q3a seed robustness table")
+
+print(f"\n  {'ACTION REQUIRED':─<55}")
+if _actions:
+    for _a in _actions:
+        print(_a)
+else:
+    print(f"  {_OK}  All figures generated — no missing inputs detected.")
 
 print(f"\n{'='*65}")
 print(f"  Figures → {FIGURES_OUT}")
