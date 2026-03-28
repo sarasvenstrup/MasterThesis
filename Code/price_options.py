@@ -1,174 +1,113 @@
-import torch
-import numpy as np
 import os
 import sys
 import argparse
-import math
+import warnings
+
+import torch
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 from scipy.stats import norm
 from scipy.optimize import minimize_scalar
-import matplotlib.pyplot as plt
 
-# Add project root to path for imports
+# ---------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------
 CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CODE_ROOT, ".."))
+
+if CODE_ROOT not in sys.path:
+    sys.path.insert(0, CODE_ROOT)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# ---------------------------------------------------------------------
+# Force stable variant BEFORE importing FullModel / simulation helpers
+# ---------------------------------------------------------------------
+from Code import config
+config.VARIANT = "stable"
+
 from Code.load_swapdata import my_data
 from Code.model.full_model import FullModel
-from Code.model.sigma_matrix import L_from_sigmas_rhos
-from Code.utils.ode import (
-    d_tau_autograd_nodewise,
-    grad_and_trace_cov_hess_G,
-    paper_alpha_beta_gamma_trace,
-    solve_AB,
-)
 
-@torch.no_grad()
-def get_mu(model, z):
-    return model.K(z)
-
-@torch.no_grad()
-def get_L(model, z):
-    sigmas, rhos = model.H(z)
-    return L_from_sigmas_rhos(sigmas, rhos)
-
-@torch.no_grad()
-def get_r(model, z):
-    r = model.R(z)
-    if r.ndim == 2 and r.shape[-1] == 1:
-        r = r.squeeze(-1)
-    return r
-
-def load_initial_curve(use, idx_choice, device):
-    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=use)
-    X_tensor = X_tensor.float()
-
-    if idx_choice < 0:
-        idx_choice = X_tensor.shape[0] + idx_choice
-
-    if idx_choice < 0 or idx_choice >= X_tensor.shape[0]:
-        raise IndexError(f"idx_choice={idx_choice} out of bounds")
-
-    S0 = X_tensor[idx_choice:idx_choice + 1].to(device)
-    meta_row = meta.iloc[idx_choice] if hasattr(meta, "iloc") else None
-    return S0, meta_row, X_tensor, meta
-
-def simulate_latent_paths(model, z0, n_paths, n_steps, dt, device, simple_diffusion=False, kappa=0.5, theta=0.0, sigma_simple=0.1):
-    if z0.dim() != 2 or z0.shape[0] != 1:
-        raise ValueError(f"Expected z0 shape (1,d), got {tuple(z0.shape)}")
-
-    d = z0.shape[1]
-    sqrt_dt = math.sqrt(dt)
-
-    z = z0.repeat(n_paths, 1).to(device)
-
-    z_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=z.dtype)
-    r_paths = torch.empty((n_paths, n_steps + 1), device=device, dtype=z.dtype)
-
-    z_paths[:, 0, :] = z
-    r_paths[:, 0] = get_r(model, z)
-
-    for t in range(n_steps):
-        mu = get_mu(model, z)
-        L = get_L(model, z)
-
-        if simple_diffusion:
-            # Simple OU diffusion
-            eps = torch.randn(n_paths, d, device=device, dtype=z.dtype)
-            shock = sigma_simple * eps
-            z = theta + (z - theta) * torch.exp(-kappa * dt) + shock * sqrt_dt
-        else:
-            eps = torch.randn(n_paths, d, device=device, dtype=z.dtype)
-            shock = torch.bmm(L, eps.unsqueeze(-1)).squeeze(-1)
-            z = z + mu * dt + shock * sqrt_dt
-
-        if not torch.isfinite(z).all():
-            raise RuntimeError(f"Non-finite z encountered at step {t+1}")
-
-        z_paths[:, t + 1, :] = z
-        r_paths[:, t + 1] = get_r(model, z)
-
-
-    return z_paths, r_paths
-
-def decode_from_latent_script(model, z):
-    squeeze_back = False
-
-    if z.dim() == 1:
-        z = z.unsqueeze(0)
-        squeeze_back = True
-
-    device = z.device
-    dtype = z.dtype
-
-    tau = torch.arange(0, model.tau_max + 1, device=device, dtype=dtype)
-
-    G_vals = model.G(z, tau)
-    if G_vals.dim() == 1:
-        G_vals = G_vals.unsqueeze(0)
-
-    mu = model.K(z)
-    sigmas, rhos = model.H(z)
-    r_tilde = model.R(z)
-    if r_tilde.ndim == 2 and r_tilde.shape[-1] == 1:
-        r_tilde = r_tilde.squeeze(-1)
-
-    sigma = L_from_sigmas_rhos(sigmas, rhos)
-
-    def G_single(z_single):
-        return model.G(z_single.unsqueeze(0), tau).squeeze(0)
-
-    dG_dtau = d_tau_autograd_nodewise(model.G, z, tau)
-    grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, sigma)
-
-    alpha, beta, gamma = paper_alpha_beta_gamma_trace(
-        G=G_vals,
-        dG_dtau=dG_dtau,
-        grad_z_G=grad_z_G,
-        trace_cov_hess=trace_cov_hess,
-        mu=mu,
-        sigma=sigma,
-        r_tilde=r_tilde,
+# Import shared simulation / decode logic from your simulation file
+try:
+    from simulate_model import (
+        load_initial_curve,
+        simulate_latent_paths,
+        decode_from_latent_script,
+    )
+except ImportError:
+    from Code.simulate_model import (
+        load_initial_curve,
+        simulate_latent_paths,
+        decode_from_latent_script,
     )
 
-    A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)
+SHOW_PLOTS = True
 
-    P_full = torch.exp(A_vals - B_vals * G_vals)
-    P_mkt = P_full[:, 1:]
 
-    return P_mkt, A_vals, B_vals, G_vals, mu, sigma, r_tilde, None
+# ---------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------
+def tenor_label(tenor_value):
+    return f"{int(tenor_value)}Y"
 
-def price_cap(r_paths, dt, strike, notional=1.0):
+
+def load_model(checkpoint_path: str, device: torch.device) -> FullModel:
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    if "model_config" in checkpoint:
+        model_config = checkpoint["model_config"]
+        print(f"Loading model with saved configuration: {model_config}")
+        model = FullModel(**model_config)
+    else:
+        print("[WARNING] Checkpoint missing 'model_config'. Using defaults.")
+        model = FullModel(latent_dim=checkpoint["latent_dim"])
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model = model.to(device).double()
+    model.eval()
+
+    saved_variant = checkpoint.get("variant", "unknown")
+    print(f"Loaded model from {checkpoint_path}")
+    print(f"  Variant: {saved_variant}")
+    print(f"  Model dtype: {next(model.parameters()).dtype}")
+    return model
+
+
+def discount_factors_from_short_rate_paths(r_paths: torch.Tensor, dt: float) -> torch.Tensor:
     """
-    Price a cap on the short rate.
-    Assumes annual cap with quarterly resets (simplified).
-    Cap rate: strike
-    Notional: notional
+    Pathwise discount factors D(t_i) = exp(-integral_0^{t_i} r(u) du)
+    using trapezoidal integration on the simulated short-rate grid.
+
+    Args:
+        r_paths: (n_paths, n_steps+1)
+        dt: time step
+
+    Returns:
+        D: (n_paths, n_steps+1), with D[:,0] = 1
     """
-    n_paths, n_steps1 = r_paths.shape
-    n_steps = n_steps1 - 1  # number of intervals
+    n_paths, n_times = r_paths.shape
+    D = torch.ones((n_paths, n_times), device=r_paths.device, dtype=r_paths.dtype)
 
-    # Assume cap resets every dt (e.g., monthly)
-    # Payoff at each reset: max(r(t) - strike, 0) * dt * notional
-    # Discounted back to t=0
+    if n_times > 1:
+        increments = 0.5 * dt * (r_paths[:, 1:] + r_paths[:, :-1])  # (n_paths, n_times-1)
+        integral = torch.cumsum(increments, dim=1)
+        D[:, 1:] = torch.exp(-integral)
 
-    cap_values = torch.zeros(n_paths, device=r_paths.device, dtype=r_paths.dtype)
+    return D
 
-    for t in range(1, n_steps1):  # start from t=1
-        time_to_reset = t * dt
-        r_at_reset = r_paths[:, t]
-        payoff = torch.clamp(r_at_reset - strike, min=0.0) * dt * notional
-        # Discount factor approximation: exp(-integral r du) ≈ exp(-r * time_to_reset)
-        # For simplicity, use the short rate at reset for discounting
-        df = torch.exp(-r_at_reset * time_to_reset)
-        cap_values += payoff * df
 
-    cap_price = cap_values.mean().item()
-    return cap_price
+def spot_swap_and_annuity_from_discount(P_mkt: torch.Tensor, tenor: int):
+    """
+    Spot-start par swap and annuity from discount factors observed at a given date.
 
-def forward_swap_and_annuity_from_discount(P_mkt, tenor):
-    """Compute par swap rate and fixed-leg annuity using annual discount factors."""
+    P_mkt[:,0] = P(t, t+1), ..., P_mkt[:, tenor-1] = P(t, t+tenor)
+    """
     if tenor <= 0:
         raise ValueError(f"tenor must be positive, got {tenor}")
     if tenor > P_mkt.shape[1]:
@@ -179,16 +118,48 @@ def forward_swap_and_annuity_from_discount(P_mkt, tenor):
     forward_swap = (1.0 - terminal_df) / annuity
     return forward_swap, annuity
 
+
+def forward_start_swap_and_annuity_from_discount(P_mkt: torch.Tensor, start_idx: int, tenor: int):
+    """
+    Forward-starting swap and annuity from time-0 discount curve.
+
+    Args:
+        P_mkt: (B, tau_max) = [P(0,1), P(0,2), ..., P(0,tau_max)]
+        start_idx: integer start in years (0 means spot-start)
+        tenor: swap tenor in years
+    """
+    if start_idx < 0:
+        raise ValueError(f"start_idx must be non-negative, got {start_idx}")
+    if tenor <= 0:
+        raise ValueError(f"tenor must be positive, got {tenor}")
+    if start_idx + tenor > P_mkt.shape[1]:
+        raise ValueError(
+            f"start_idx + tenor = {start_idx + tenor} exceeds available grid up to {P_mkt.shape[1]}Y"
+        )
+
+    if start_idx == 0:
+        P_start = torch.ones(P_mkt.shape[0], device=P_mkt.device, dtype=P_mkt.dtype)
+    else:
+        P_start = P_mkt[:, start_idx - 1]
+
+    P_end = P_mkt[:, start_idx + tenor - 1]
+    annuity = P_mkt[:, start_idx:start_idx + tenor].sum(dim=1)
+    forward_swap = (P_start - P_end) / annuity
+    return forward_swap, annuity
+
+
 def extract_forward_swap_curve_params(model, z, expiry, tenor):
     """
-    Extract the time-0 forward-starting swap rate and annuity from the decoded curve.
+    Extract time-0 forward-starting swap rate and annuity from today's decoded curve.
 
-    Used for pricing swaptions directly from quoted normal vols.
+    This is the appropriate input for quote-style Bachelier pricing / implied vol,
+    but only when expiry is on the model's annual grid.
     """
     expiry_int = int(round(expiry))
     if abs(expiry - expiry_int) > 1e-8:
         raise ValueError(
-            f"expiry={expiry} is not on the model annual grid; quote pricing currently expects integer-year expiries"
+            f"expiry={expiry} is not on the model annual grid; time-0 forward extraction "
+            f"currently requires integer-year expiry"
         )
     if expiry_int < 0:
         raise ValueError(f"expiry must be non-negative, got {expiry}")
@@ -196,230 +167,282 @@ def extract_forward_swap_curve_params(model, z, expiry, tenor):
     with torch.no_grad():
         P_mkt, _, _, _, _, _, _, _ = decode_from_latent_script(model, z)
 
-    max_maturity = P_mkt.shape[1]
-    if expiry_int + tenor > max_maturity:
-        raise ValueError(
-            f"expiry + tenor = {expiry_int + tenor} exceeds available discount grid up to {max_maturity}Y"
-        )
-
-    if expiry_int == 0:
-        P_expiry = torch.ones(P_mkt.shape[0], device=P_mkt.device, dtype=P_mkt.dtype)
-    else:
-        P_expiry = P_mkt[:, expiry_int - 1]
-
-    P_end = P_mkt[:, expiry_int + tenor - 1]
-    annuity = P_mkt[:, expiry_int:expiry_int + tenor].sum(dim=1)
-    forward_swap = (P_expiry - P_end) / annuity
+    forward_swap, annuity = forward_start_swap_and_annuity_from_discount(P_mkt, expiry_int, tenor)
 
     return {
-        'forward_swap': forward_swap.mean().item(),
-        'annuity': annuity.mean().item(),
-        'forward_swaps': forward_swap.detach().cpu().numpy().tolist(),
-        'annuities': annuity.detach().cpu().numpy().tolist(),
+        "forward_swap": forward_swap.mean().item(),
+        "annuity": annuity.mean().item(),
+        "forward_swaps": forward_swap.detach().cpu().numpy().tolist(),
+        "annuities": annuity.detach().cpu().numpy().tolist(),
     }
 
-def price_swaption(z_paths, r_paths, model, dt, strike, expiry, tenor, notional=1.0):
+
+def extract_market_params_at_expiry(z_paths, model, dt, expiry, tenor):
     """
-    Price a European swaption (call on swap rate).
-    At expiry, compute swap rate, payoff max(S - strike, 0) * annuity, discounted back.
+    Pathwise average spot-start swap rate / annuity at option expiry.
+    This is a fallback for non-integer expiries when quote-style time-0 forward
+    extraction is unavailable on the annual grid.
     """
-    n_paths = z_paths.shape[0]
+    n_steps = z_paths.shape[1] - 1
+    expiry_idx = min(int(round(expiry / dt)), n_steps)
+
+    z_at_expiry = z_paths[:, expiry_idx, :]  # (n_paths, d)
+
+    with torch.no_grad():
+        P_mkt, _, _, _, _, _, _, _ = decode_from_latent_script(model, z_at_expiry)
+        forward_swap, annuity = spot_swap_and_annuity_from_discount(P_mkt, tenor)
+
+    return {
+        "forward_swap": forward_swap.mean().item(),
+        "annuity": annuity.mean().item(),
+        "forward_swaps": forward_swap.detach().cpu().numpy().tolist(),
+        "annuities": annuity.detach().cpu().numpy().tolist(),
+    }
+
+
+# ---------------------------------------------------------------------
+# Product pricing
+# ---------------------------------------------------------------------
+def price_cap(r_paths: torch.Tensor, dt: float, strike: float, notional: float = 1.0) -> float:
+    """
+    Price a cap on the short rate using pathwise discounting.
+
+    Payoff at each reset date t_i:
+        max(r(t_i) - K, 0) * dt * notional
+    """
+    D = discount_factors_from_short_rate_paths(r_paths, dt)  # (n_paths, n_steps+1)
+
+    payoffs = torch.clamp(r_paths[:, 1:] - strike, min=0.0) * dt * notional
+    pv = (D[:, 1:] * payoffs).sum(dim=1)
+
+    return pv.mean().item()
+
+
+def price_swaption(
+    z_paths: torch.Tensor,
+    r_paths: torch.Tensor,
+    model,
+    dt: float,
+    strike: float,
+    expiry: float,
+    tenor: int,
+    notional: float = 1.0,
+    is_call: bool = True,
+) -> float:
+    """
+    Price a European payer/receiver swaption by Monte Carlo.
+
+    At expiry:
+      - decode the curve from z(expiry)
+      - compute the spot-start underlying swap rate of tenor years
+      - apply payer/receiver payoff
+      - discount back using pathwise integrated short rate
+    """
     n_steps = z_paths.shape[1] - 1
     total_time = n_steps * dt
-    
-    # Calculate index at expiry
+
     if expiry > total_time:
-        print(f"Warning: expiry {expiry} > total simulated time {total_time}, using last step")
+        warnings.warn(
+            f"expiry={expiry} exceeds simulated horizon={total_time}; using last step instead",
+            RuntimeWarning
+        )
         expiry_idx = n_steps
     else:
         expiry_idx = min(int(round(expiry / dt)), n_steps)
 
-    swaption_values = []
+    z_at_expiry = z_paths[:, expiry_idx, :]  # (n_paths, d)
 
-    for p in range(n_paths):
-        z_at_expiry = z_paths[p, expiry_idx, :]
-        
-        # Decode to get discount factors and swap rate at expiry
-        with torch.no_grad():
-            P_mkt, _, _, _, _, _, _, _ = decode_from_latent_script(model, z_at_expiry.unsqueeze(0))
-            forward_swap, annuity_tensor = forward_swap_and_annuity_from_discount(P_mkt, tenor)
+    with torch.no_grad():
+        P_mkt, _, _, _, _, _, _, _ = decode_from_latent_script(model, z_at_expiry)
+        swap_rate, annuity = spot_swap_and_annuity_from_discount(P_mkt, tenor)
 
-        S_at_expiry = forward_swap[0].item()
-        annuity = annuity_tensor[0].item()
-
-        # Swaption payoff at expiry
-        payoff_at_expiry = max(S_at_expiry - strike, 0.0) * annuity * notional
-        
-        # Discount back to t=0 using the simulated short rates
-        # Simple approximation: discount using average short rate
-        avg_rate = r_paths[p, :expiry_idx+1].mean().item() if expiry_idx > 0 else r_paths[p, 0].item()
-        df_to_expiry = np.exp(-avg_rate * expiry) if np.isfinite(avg_rate) else 1.0
-        
-        swaption_value = payoff_at_expiry * df_to_expiry
-        
-        if np.isfinite(swaption_value):
-            swaption_values.append(swaption_value)
-
-    if len(swaption_values) == 0:
-        print("Warning: All swaption values are non-finite!")
-        return 0.0
-    
-    swaption_price = np.mean(swaption_values)
-    return swaption_price
-
-def bachelier_price(forward, strike, sigma, expiry, annuity, notional, is_call=True):
-    """
-    Bachelier model for swaption pricing (normal volatility).
-    Price = annuity * notional * [-(K-F) * N(-d) + sigma * sqrt(T) * n(d)]
-    where d = (F - K) / (sigma * sqrt(T))
-    """
-    if sigma <= 0 or expiry <= 0:
-        return 0.0
-    
-    intrinsic = max(forward - strike, 0.0) if is_call else max(strike - forward, 0.0)
-    
-    if sigma * np.sqrt(expiry) < 1e-10:
-        return annuity * notional * intrinsic
-    
-    d = (forward - strike) / (sigma * np.sqrt(expiry))
-    
     if is_call:
-        price = annuity * notional * ((forward - strike) * norm.cdf(d) + sigma * np.sqrt(expiry) * norm.pdf(d))
+        payoff = torch.clamp(swap_rate - strike, min=0.0)
     else:
-        price = annuity * notional * ((strike - forward) * norm.cdf(-d) + sigma * np.sqrt(expiry) * norm.pdf(d))
-    
-    return price
+        payoff = torch.clamp(strike - swap_rate, min=0.0)
 
-def implied_normal_vol(market_price, forward, strike, expiry, annuity, notional, is_call=True, initial_guess=0.01):
-    """
-    Calculate implied normal volatility from market price using Bachelier model.
-    """
+    payoff = payoff * annuity * notional
+
+    D = discount_factors_from_short_rate_paths(r_paths, dt)
+    pv = D[:, expiry_idx] * payoff
+
+    pv = pv[torch.isfinite(pv)]
+    if pv.numel() == 0:
+        warnings.warn("All swaption PVs are non-finite", RuntimeWarning)
+        return 0.0
+
+    return pv.mean().item()
+
+
+# ---------------------------------------------------------------------
+# Bachelier / normal vol
+# ---------------------------------------------------------------------
+def bachelier_price(forward, strike, sigma, expiry, annuity, notional, is_call=True):
+    if sigma <= 0 or expiry <= 0:
+        intrinsic = max(forward - strike, 0.0) if is_call else max(strike - forward, 0.0)
+        return annuity * notional * intrinsic
+
+    vol_term = sigma * np.sqrt(expiry)
+    if vol_term < 1e-12:
+        intrinsic = max(forward - strike, 0.0) if is_call else max(strike - forward, 0.0)
+        return annuity * notional * intrinsic
+
+    d = (forward - strike) / vol_term
+
+    if is_call:
+        return annuity * notional * ((forward - strike) * norm.cdf(d) + vol_term * norm.pdf(d))
+    return annuity * notional * ((strike - forward) * norm.cdf(-d) + vol_term * norm.pdf(d))
+
+
+def implied_normal_vol(market_price, forward, strike, expiry, annuity, notional, is_call=True):
     def objective(sigma):
         theoretical = bachelier_price(forward, strike, sigma, expiry, annuity, notional, is_call)
         return (theoretical - market_price) ** 2
-    
-    result = minimize_scalar(objective, bounds=(1e-6, 10.0), method='bounded')
-    
+
+    result = minimize_scalar(objective, bounds=(1e-8, 10.0), method="bounded")
     return result.x if result.success else np.nan
 
-def extract_market_params_at_expiry(z_paths, model, device, dt, expiry, tenor):
-    """
-    Extract forward swap rate and annuity at swaption expiry from model.
-    
-    Args:
-        z_paths: Simulated latent paths (n_paths, n_steps+1, latent_dim)
-        model: FullModel instance
-        device: torch device
-        dt: time step size
-        expiry: expiry time
-        tenor: swaption tenor
-    
-    Returns:
-        forward_swap, annuity, z_at_expiry (dict with path-averaged values)
-    """
-    n_paths = z_paths.shape[0]
-    n_steps = z_paths.shape[1] - 1
-    expiry_idx = min(int(round(expiry / dt)), n_steps)
-    
-    forward_swaps = []
-    annuities = []
-    
-    for p in range(n_paths):
-        z_at_expiry = z_paths[p, expiry_idx, :]
-        
-        with torch.no_grad():
-            P_mkt, _, _, _, _, _, _, _ = decode_from_latent_script(model, z_at_expiry.unsqueeze(0))
-            forward_swap, annuity = forward_swap_and_annuity_from_discount(P_mkt, tenor)
-
-        forward_swaps.append(forward_swap[0].item())
-        annuities.append(annuity[0].item())
-    
-    avg_forward = np.mean(forward_swaps)
-    avg_annuity = np.mean(annuities)
-    
-    return {
-        'forward_swap': avg_forward,
-        'annuity': avg_annuity,
-        'forward_swaps': forward_swaps,
-        'annuities': annuities
-    }
 
 def price_swaption_from_norm_vol(forward, strike, norm_vol, expiry, annuity, notional=1.0, is_call=True):
-    """
-    Price a swaption using normal (Bachelier) model with quoted normal volatility.
-    
-    Args:
-        forward: Forward swap rate
-        strike: Strike rate
-        norm_vol: Normal volatility (in decimal, e.g., 0.01 for 1%)
-        expiry: Time to expiry
-        annuity: Annuity factor (sum of discount factors)
-        notional: Notional amount
-        is_call: True for call (payer swaption), False for put (receiver swaption)
-    
-    Returns:
-        Price of the swaption
-    """
     return bachelier_price(forward, strike, norm_vol, expiry, annuity, notional, is_call)
 
-def run_vol_surface_grid(model, z0, DT, NOTIONAL, device, out_dir, strikes, expiries, tenors, n_paths, n_steps):
+
+def choose_implied_vol_inputs(model, z0, z_paths, dt, expiry, tenor):
     """
-    Compute implied normal vols for a grid of strikes, expiries, and tenors.
-    Save results as CSV and plot smiles/surfaces.
+    Use time-0 forward-start parameters when expiry is on the annual grid.
+    Otherwise fall back to pathwise average parameters at expiry.
     """
-    import pandas as pd
+    expiry_int = int(round(expiry))
+    if abs(expiry - expiry_int) < 1e-8:
+        params = extract_forward_swap_curve_params(model, z0, expiry, tenor)
+        params["source"] = "time0_forward_curve"
+        return params
+
+    warnings.warn(
+        f"expiry={expiry} is off the annual grid; using pathwise average expiry parameters "
+        f"for implied vol inversion instead of time-0 forward-starting parameters",
+        RuntimeWarning
+    )
+    params = extract_market_params_at_expiry(z_paths, model, dt, expiry, tenor)
+    params["source"] = "pathwise_expiry_average"
+    return params
+
+
+# ---------------------------------------------------------------------
+# Vol surface grid
+# ---------------------------------------------------------------------
+def run_vol_surface_grid(
+    model,
+    z0,
+    dt,
+    notional,
+    device,
+    out_dir,
+    strikes,
+    expiries,
+    tenors,
+    n_paths,
+    n_steps,
+    simple_diffusion=False,
+    kappa=0.5,
+    theta=0.0,
+    sigma_simple=0.1,
+    discretization="euler",
+    is_call=True,
+):
     os.makedirs(out_dir, exist_ok=True)
+
+    print("Simulating paths once for the full vol grid...")
+    with torch.no_grad():
+        z_paths, r_paths, _, _ = simulate_latent_paths(
+            model=model,
+            z0=z0,
+            n_paths=n_paths,
+            n_steps=n_steps,
+            dt=dt,
+            device=device,
+            simple_diffusion=simple_diffusion,
+            kappa=kappa,
+            theta=theta,
+            sigma_simple=sigma_simple,
+            discretization=discretization,
+        )
+
     results = []
+
     for expiry in expiries:
         for tenor in tenors:
             row = {"expiry": expiry, "tenor": tenor}
-            vols = []
+
+            price_cache = {}
             for strike in strikes:
-                # Simulate paths
-                z_paths, r_paths = simulate_latent_paths(
-                    model=model, z0=z0, n_paths=n_paths, n_steps=n_steps, dt=DT, device=device
+                price = price_swaption(
+                    z_paths=z_paths,
+                    r_paths=r_paths,
+                    model=model,
+                    dt=dt,
+                    strike=strike,
+                    expiry=expiry,
+                    tenor=tenor,
+                    notional=notional,
+                    is_call=is_call,
                 )
-                price = price_swaption(z_paths, r_paths, model, DT, strike, expiry, tenor, NOTIONAL)
-                market_params = extract_market_params_at_expiry(z_paths, model, device, DT, expiry, tenor)
-                forward_swap = market_params['forward_swap']
-                annuity = market_params['annuity']
+                price_cache[strike] = price
+                row[f"price_{strike}"] = price
+
+            vol_inputs = choose_implied_vol_inputs(model, z0, z_paths, dt, expiry, tenor)
+            forward_swap = vol_inputs["forward_swap"]
+            annuity = vol_inputs["annuity"]
+            row["vol_input_source"] = vol_inputs["source"]
+            row["forward_swap"] = forward_swap
+            row["annuity"] = annuity
+
+            for strike in strikes:
                 norm_vol = implied_normal_vol(
-                    market_price=price,
+                    market_price=price_cache[strike],
                     forward=forward_swap,
                     strike=strike,
                     expiry=expiry,
                     annuity=annuity,
-                    notional=NOTIONAL,
-                    is_call=True
+                    notional=notional,
+                    is_call=is_call,
                 )
                 row[f"vol_{strike}"] = norm_vol
-                vols.append(norm_vol)
+
             results.append(row)
+
     df = pd.DataFrame(results)
     csv_path = os.path.join(out_dir, "implied_vol_surface.csv")
     df.to_csv(csv_path, index=False)
     print(f"Saved implied vol surface CSV to {csv_path}")
-    # Plot smiles for each expiry/tenor
-    SHOW_PLOTS = True
+
     for expiry in expiries:
         for tenor in tenors:
             df_row = df[(df["expiry"] == expiry) & (df["tenor"] == tenor)]
             if df_row.empty:
                 continue
+
             vols = [df_row.iloc[0][f"vol_{strike}"] for strike in strikes]
-            plt.figure(figsize=(7,4))
-            plt.plot(strikes, vols, marker='o')
+
+            plt.figure(figsize=(7, 4))
+            plt.plot(strikes, vols, marker="o")
             plt.title(f"Implied Normal Vol Smile\nExpiry={expiry}y, Tenor={tenor}y")
             plt.xlabel("Strike")
             plt.ylabel("Implied Normal Volatility")
             plt.grid(True)
+
             plot_path = os.path.join(out_dir, f"vol_smile_exp{expiry}_ten{tenor}.png")
             plt.savefig(plot_path, dpi=200)
             print(f"Saved vol smile plot to {plot_path}")
+
             if SHOW_PLOTS:
                 plt.show()
             plt.close()
 
+
+# ---------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Price options using simulated paths from FullModel")
     parser.add_argument("--latent_dim", type=int, default=2, help="Latent dimension")
@@ -427,31 +450,50 @@ def main():
     parser.add_argument("--use", type=str, default="bbg", help="Data source")
     parser.add_argument("--n_paths", type=int, default=1000, help="Number of simulation paths")
     parser.add_argument("--n_steps", type=int, default=120, help="Number of time steps")
-    parser.add_argument("--dt", type=float, default=1/12, help="Time step size")
+    parser.add_argument("--dt", type=float, default=1 / 12, help="Time step size")
     parser.add_argument("--idx_choice", type=int, default=-1, help="Index of initial curve")
-    parser.add_argument("--option_type", type=str, choices=["cap", "swaption"], default="cap", help="Type of option to price")
+
+    parser.add_argument("--option_type", type=str, choices=["cap", "swaption"], default="cap")
     parser.add_argument("--strike", type=float, default=0.03, help="Strike rate")
     parser.add_argument("--notional", type=float, default=1.0, help="Notional amount")
+
     parser.add_argument("--simple_diffusion", action="store_true", help="Use simple OU diffusion")
     parser.add_argument("--kappa", type=float, default=0.5, help="Mean reversion for simple diffusion")
     parser.add_argument("--theta", type=float, default=0.0, help="Long-run mean for simple diffusion")
     parser.add_argument("--sigma_simple", type=float, default=0.1, help="Volatility for simple diffusion")
+    parser.add_argument(
+        "--discretization",
+        type=str,
+        default="euler",
+        choices=["euler", "milstein", "second_order_milstein"],
+        help="Discretization scheme for latent SDE",
+    )
+
     parser.add_argument("--expiry", type=float, default=1.0, help="Expiry for swaption")
     parser.add_argument("--tenor", type=int, default=5, help="Tenor for swaption")
-    parser.add_argument("--output_norm_vol", action="store_true", help="Output implied normal volatility for swaptions")
-    parser.add_argument("--norm_vol", type=float, default=None, help="Input normal volatility for direct swaption pricing (in decimal, e.g., 0.01 for 1%)")
-    parser.add_argument("--pricing_mode", type=str, choices=["monte_carlo", "norm_vol_quote"], default="monte_carlo", 
-                       help="Pricing mode: 'monte_carlo' for simulation-based, 'norm_vol_quote' for direct Bachelier pricing from norm vol")
-    parser.add_argument("--is_receiver", action="store_true", help="Price receiver swaption (put) instead of payer swaption (call)")
-    parser.add_argument("--run_vol_surface_grid", action="store_true", help="Run grid of swaption pricings and compute implied vols")
+    parser.add_argument("--output_norm_vol", action="store_true", help="Output implied normal volatility")
+    parser.add_argument(
+        "--norm_vol",
+        type=float,
+        default=None,
+        help="Input normal volatility for direct Bachelier pricing (decimal, e.g. 0.01)",
+    )
+    parser.add_argument(
+        "--pricing_mode",
+        type=str,
+        choices=["monte_carlo", "norm_vol_quote"],
+        default="monte_carlo",
+        help="Pricing mode",
+    )
+    parser.add_argument("--is_receiver", action="store_true", help="Receiver swaption instead of payer")
+    parser.add_argument("--run_vol_surface_grid", action="store_true", help="Run grid of swaption pricings")
 
-    # New arguments for vol surface grid
-    parser.add_argument("--strikes", type=str, default="0.01,0.02,0.03,0.04,0.05", help="Comma-separated list of strikes")
-    parser.add_argument("--expiries", type=str, default="0.5,1.0,1.5,2.0", help="Comma-separated list of expiries (in years)")
-    parser.add_argument("--tenors", type=str, default="1,2,3,4,5", help="Comma-separated list of tenors (in years)")
-    parser.add_argument("--grid_n_paths", type=int, default=100, help="Number of paths for grid simulation")
-    parser.add_argument("--grid_n_steps", type=int, default=60, help="Number of steps for grid simulation")
-    parser.add_argument("--output_dir", type=str, default=".", help="Output directory for vol surface CSV and plots")
+    parser.add_argument("--strikes", type=str, default="0.01,0.02,0.03,0.04,0.05")
+    parser.add_argument("--expiries", type=str, default="0.5,1.0,1.5,2.0")
+    parser.add_argument("--tenors", type=str, default="1,2,3,4,5")
+    parser.add_argument("--grid_n_paths", type=int, default=100)
+    parser.add_argument("--grid_n_steps", type=int, default=60)
+    parser.add_argument("--output_dir", type=str, default=".")
 
     args = parser.parse_args()
 
@@ -469,46 +511,32 @@ def main():
     KAPPA = args.kappa
     THETA = args.theta
     SIGMA_SIMPLE = args.sigma_simple
+    DISCRETIZATION = args.discretization
     EXPIRY = args.expiry
     TENOR = args.tenor
     OUTPUT_NORM_VOL = args.output_norm_vol
+    PRICING_MODE = args.pricing_mode
+    NORM_VOL_INPUT = args.norm_vol
+    IS_CALL = not args.is_receiver
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load data to get tenors
+    # Keep this if you want access to tenors / scaling metadata
     meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=USE)
 
-    # Load trained model
     checkpoint_path = os.path.join(PROJECT_ROOT, "checkpoints", f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.pt")
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model = FullModel(latent_dim=checkpoint['latent_dim'])
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
-    model.eval()
-    print(f"Loaded model from {checkpoint_path}")
+    model = load_model(checkpoint_path, device)
 
-    # Load initial curve
     S0, meta_row, X_tensor, meta = load_initial_curve(USE, IDX_CHOICE, device)
     with torch.no_grad():
         z0 = model.encoder(S0)
-    print(f"Initial latent state z0: {z0.cpu().numpy().flatten()}")
-    # Determine call/put direction
-    IS_CALL = not args.is_receiver
-    PRICING_MODE = args.pricing_mode
-    NORM_VOL_INPUT = args.norm_vol
+    print(f"Initial latent state z0: {z0.detach().cpu().numpy().flatten()}")
 
-    z_paths = None
-    r_paths = None
-
-    # Price the option
     if OPTION_TYPE == "cap":
-        print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT})...")
+        print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT}, scheme={DISCRETIZATION})...")
         with torch.no_grad():
-            z_paths, r_paths = simulate_latent_paths(
+            z_paths, r_paths, _, _ = simulate_latent_paths(
                 model=model,
                 z0=z0,
                 n_paths=N_PATHS,
@@ -518,28 +546,28 @@ def main():
                 simple_diffusion=SIMPLE_DIFFUSION,
                 kappa=KAPPA,
                 theta=THETA,
-                sigma_simple=SIGMA_SIMPLE
+                sigma_simple=SIGMA_SIMPLE,
+                discretization=DISCRETIZATION,
             )
         print("Simulation completed.")
+
         price = price_cap(r_paths, DT, STRIKE, NOTIONAL)
         print(f"Cap price: {price:.6f} (strike={STRIKE}, notional={NOTIONAL})")
+
     elif OPTION_TYPE == "swaption":
         if PRICING_MODE == "norm_vol_quote":
-            # Price directly from normal volatility quote
             if NORM_VOL_INPUT is None:
-                raise ValueError("--norm_vol required when using norm_vol_quote pricing mode")
-            
-            # Extract current forward-starting swap parameters from the decoded curve
-            print("Extracting forward swap and annuity from current curve...")
+                raise ValueError("--norm_vol is required when pricing_mode=norm_vol_quote")
+
+            print("Extracting time-0 forward swap and annuity from current curve...")
             market_params = extract_forward_swap_curve_params(model, z0, EXPIRY, TENOR)
-            forward_swap = market_params['forward_swap']
-            annuity = market_params['annuity']
-            
+            forward_swap = market_params["forward_swap"]
+            annuity = market_params["annuity"]
+
             print(f"  Forward swap rate: {forward_swap:.6f}")
-            print(f"  Annuity factor: {annuity:.6f}")
-            print(f"  Input normal volatility: {NORM_VOL_INPUT:.6f} ({NORM_VOL_INPUT*10000:.2f} bp)")
-            
-            # Price swaption using Bachelier model
+            print(f"  Annuity factor:    {annuity:.6f}")
+            print(f"  Input norm vol:    {NORM_VOL_INPUT:.6f} ({NORM_VOL_INPUT * 10000:.2f} bp)")
+
             price = price_swaption_from_norm_vol(
                 forward=forward_swap,
                 strike=STRIKE,
@@ -547,16 +575,16 @@ def main():
                 expiry=EXPIRY,
                 annuity=annuity,
                 notional=NOTIONAL,
-                is_call=IS_CALL
+                is_call=IS_CALL,
             )
             swaption_type = "Payer" if IS_CALL else "Receiver"
             print(f"{swaption_type} swaption price (from norm vol): {price:.6f}")
             print(f"  (strike={STRIKE}, expiry={EXPIRY}, tenor={TENOR}, notional={NOTIONAL})")
-            
-        else:  # monte_carlo mode (default)
-            print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT})...")
+
+        else:
+            print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT}, scheme={DISCRETIZATION})...")
             with torch.no_grad():
-                z_paths, r_paths = simulate_latent_paths(
+                z_paths, r_paths, _, _ = simulate_latent_paths(
                     model=model,
                     z0=z0,
                     n_paths=N_PATHS,
@@ -566,21 +594,34 @@ def main():
                     simple_diffusion=SIMPLE_DIFFUSION,
                     kappa=KAPPA,
                     theta=THETA,
-                    sigma_simple=SIGMA_SIMPLE
+                    sigma_simple=SIGMA_SIMPLE,
+                    discretization=DISCRETIZATION,
                 )
             print("Simulation completed.")
-            # Price using Monte Carlo simulation
-            price = price_swaption(z_paths, r_paths, model, DT, STRIKE, EXPIRY, TENOR, NOTIONAL)
-            print(f"Swaption price (Monte Carlo): {price:.6f} (strike={STRIKE}, expiry={EXPIRY}, tenor={TENOR}, notional={NOTIONAL})")
-            
-            # If requested, compute implied normal volatility
+
+            price = price_swaption(
+                z_paths=z_paths,
+                r_paths=r_paths,
+                model=model,
+                dt=DT,
+                strike=STRIKE,
+                expiry=EXPIRY,
+                tenor=TENOR,
+                notional=NOTIONAL,
+                is_call=IS_CALL,
+            )
+
+            swaption_type = "Payer" if IS_CALL else "Receiver"
+            print(
+                f"{swaption_type} swaption price (Monte Carlo): {price:.6f} "
+                f"(strike={STRIKE}, expiry={EXPIRY}, tenor={TENOR}, notional={NOTIONAL})"
+            )
+
             if OUTPUT_NORM_VOL or NORM_VOL_INPUT is not None:
-                # Extract market parameters
-                market_params = extract_market_params_at_expiry(z_paths, model, device, DT, EXPIRY, TENOR)
-                forward_swap = market_params['forward_swap']
-                annuity = market_params['annuity']
-                
-                # Calculate implied normal vol
+                vol_inputs = choose_implied_vol_inputs(model, z0, z_paths, DT, EXPIRY, TENOR)
+                forward_swap = vol_inputs["forward_swap"]
+                annuity = vol_inputs["annuity"]
+
                 norm_vol = implied_normal_vol(
                     market_price=price,
                     forward=forward_swap,
@@ -588,42 +629,49 @@ def main():
                     expiry=EXPIRY,
                     annuity=annuity,
                     notional=NOTIONAL,
-                    is_call=IS_CALL
+                    is_call=IS_CALL,
                 )
-                
+
                 if np.isfinite(norm_vol):
-                    print(f"Implied normal volatility: {norm_vol:.6f} (basis points: {norm_vol*10000:.2f})")
-                    
-                    # If norm_vol was provided as input, compare
+                    print(f"Implied normal volatility: {norm_vol:.6f} ({norm_vol * 10000:.2f} bp)")
+                    print(f"Implied vol inputs source: {vol_inputs['source']}")
+
                     if NORM_VOL_INPUT is not None:
-                        print(f"Input normal volatility: {NORM_VOL_INPUT:.6f} ({NORM_VOL_INPUT*10000:.2f} bp)")
-                        print(f"Difference: {abs(norm_vol - NORM_VOL_INPUT):.6f} ({abs(norm_vol - NORM_VOL_INPUT)*10000:.2f} bp)")
+                        diff = abs(norm_vol - NORM_VOL_INPUT)
+                        print(f"Input normal volatility: {NORM_VOL_INPUT:.6f} ({NORM_VOL_INPUT * 10000:.2f} bp)")
+                        print(f"Difference: {diff:.6f} ({diff * 10000:.2f} bp)")
                 else:
                     print("Could not compute implied normal volatility (optimization failed)")
-    
-    # Run grid of swaption pricings if requested
+
     if args.run_vol_surface_grid:
         strikes = [float(s) for s in args.strikes.split(",")]
         expiries = [float(e) for e in args.expiries.split(",")]
-        tenors = [int(t) for t in args.tenors.split(",")]
+        tenors_grid = [int(t) for t in args.tenors.split(",")]
         output_dir = args.output_dir
 
         print("Running vol surface grid pricing...")
         run_vol_surface_grid(
             model=model,
             z0=z0,
-            DT=DT,
-            NOTIONAL=NOTIONAL,
+            dt=DT,
+            notional=NOTIONAL,
             device=device,
             out_dir=output_dir,
             strikes=strikes,
             expiries=expiries,
-            tenors=tenors,
+            tenors=tenors_grid,
             n_paths=args.grid_n_paths,
-            n_steps=args.grid_n_steps
+            n_steps=args.grid_n_steps,
+            simple_diffusion=SIMPLE_DIFFUSION,
+            kappa=KAPPA,
+            theta=THETA,
+            sigma_simple=SIGMA_SIMPLE,
+            discretization=DISCRETIZATION,
+            is_call=IS_CALL,
         )
 
     print("Pricing completed.")
+
 
 if __name__ == "__main__":
     main()

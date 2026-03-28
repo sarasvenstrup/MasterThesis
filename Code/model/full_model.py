@@ -45,29 +45,36 @@ class FullModel(nn.Module):
         r_hidden: int = 4,
         g_bias: bool = True,
         hr_bias: bool = False,
+        sigma_init: float = 0.015,
     ):
         super().__init__()
 
-        # First reproduce the paper in 2D.
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.tau_max = tau_max
         self.tenors = tenors if tenors is not None else [1, 2, 3, 5, 10, 15, 20, 30]
         assert max(self.tenors) <= self.tau_max, "All tenors must be <= tau_max."
 
-        # Fixed annual maturity grid: 0,1,...,tau_max
         self.register_buffer(
             "_tau_grid",
             torch.arange(0, tau_max + 1, dtype=torch.float32),
             persistent=False,
         )
 
-        # Networks
-        self.encoder = Encoder(input_dim, latent_dim)          # (8 -> 2)
-        self.G = DecoderG(latent_dim, g_hidden, g_bias)        # (z, tau) -> scalar
-        self.K = KMu(latent_dim=latent_dim, bias=True)         # mu(z) = Mz + N
-        self.H = HSigma(latent_dim, h_hidden, hr_bias)         # -> log sigmas, atanh rho
-        self.R = RShort(latent_dim, r_hidden, hr_bias)         # -> r_tilde(z)
+        self.encoder = Encoder(input_dim, latent_dim)
+        self.G = DecoderG(latent_dim, g_hidden, g_bias)
+        
+        # Conditional initialization based on VARIANT
+        if VARIANT == "stable":
+            # Stable versions: different signatures
+            self.K = KMu(latent_dim=latent_dim, bias=True)
+            self.H = HSigma(hidden_dim=h_hidden, bias=hr_bias, sigma_init=sigma_init)
+            self.R = RShort(latent_dim=latent_dim, hidden_dim=r_hidden, bias=hr_bias)
+        else:
+            # Baseline versions: original signatures
+            self.K = KMu(latent_dim=latent_dim, bias=True)
+            self.H = HSigma(latent_dim=latent_dim, hidden_dim=h_hidden, bias=hr_bias)
+            self.R = RShort(latent_dim=latent_dim, hidden_dim=r_hidden, bias=hr_bias)
 
     def _tau(self, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         return self._tau_grid.to(device=device, dtype=dtype)

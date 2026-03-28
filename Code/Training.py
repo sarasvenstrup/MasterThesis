@@ -5,11 +5,14 @@ import os
 import sys
 import torch
 import torch.nn as nn
+
 torch.set_num_threads(4)  # --- Torch thread settings MUST be first Torch-related thing ---
 torch.set_num_interop_threads(2)
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.data import TensorDataset, DataLoader
 
 # ============================= Environment Setup & Imports ===============================
 try:
@@ -24,6 +27,7 @@ if PROJECT_ROOT not in sys.path:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from Code import config
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
@@ -31,6 +35,7 @@ from Code.model.full_model import FullModel
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
 print("MPS available:", hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
+print("Active model variant from config.py:", config.VARIANT)
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Using device:", device)
@@ -47,12 +52,12 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 SHOW_PLOTS = True  # Set to False to only save plots
 
 LATENT_DIM = 2
-EPOCHS = 5000
+EPOCHS = 100
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
 EVAL_EVERY = 1
-LOG_EVERY = 1000
+LOG_EVERY = 10
 TARGET_MSE = 1e-8
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}", f"ep{EPOCHS}")
@@ -62,7 +67,6 @@ USE = "bbg"
 meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=USE)
 X_tensor = X_tensor.float()
 
-from torch.utils.data import TensorDataset, DataLoader
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
@@ -93,13 +97,19 @@ def row_finite_mask(t: torch.Tensor) -> torch.Tensor:
 
 @torch.no_grad()
 def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    was_training = model.training
     model.eval()
+
     outs = []
     N = X.shape[0]
     for i in range(0, N, batch_size):
         xb = X[i:i + batch_size].to(device)
         S_hat = model(xb)
         outs.append(S_hat.detach().cpu())
+
+    if was_training:
+        model.train()
+
     return torch.cat(outs, dim=0)
 
 def eval_rmse_bps(model: nn.Module, X_full: torch.Tensor, meta_full: pd.DataFrame, batch_size: int = 256):
@@ -160,7 +170,7 @@ for epoch in range(EPOCHS):
     for (xb_cpu,) in loader:
         xb = xb_cpu.to(device)
 
-        optim.zero_grad(set_to_none=True)
+        optim.zero_grad(set_to_none=USE_SET_TO_NONE)
         S_hat = model(xb)
 
         loss = loss_fn(S_hat, xb)
@@ -253,7 +263,7 @@ if SHOW_PLOTS:
     plt.show()
 plt.close(fig)
 
-# 2) Average RMSE (bps) convergence plot (NOW EVERY EPOCH)
+# 2) Average RMSE (bps) convergence plot
 if len(avg_rmse_bps_hist) > 0:
     epochs_logged = [e for e, v in avg_rmse_bps_hist]
     avg_logged = [v for e, v in avg_rmse_bps_hist]
@@ -284,11 +294,17 @@ checkpoint_path = os.path.join(
     f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.pt"
 )
 
+model_config = {
+    "latent_dim": LATENT_DIM,
+}
+
 torch.save({
     "model_state_dict": model.state_dict(),
+    "model_config": model_config,
     "latent_dim": LATENT_DIM,
     "epochs": EPOCHS,
     "use_data": USE,
+    "variant": config.VARIANT,
 }, checkpoint_path)
 
 print("Saved checkpoint:", checkpoint_path)
