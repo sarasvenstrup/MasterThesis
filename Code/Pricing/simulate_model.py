@@ -26,6 +26,8 @@ if REPO_ROOT not in sys.path:
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# THIS IS A TEST COMMENT
+
 # IMPORTANT:
 # config.py is the single source of truth for the active variant.
 from Code import config

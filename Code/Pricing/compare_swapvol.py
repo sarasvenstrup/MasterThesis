@@ -288,6 +288,19 @@ def price_date(
                     # Spot-start swap rates at time T for each path
                     swap_rate_T, ann_T = spot_swap_and_annuity_from_discount(P_mkt_T, tenor)
                     
+                    # Validity check: reject if too many paths have degenerate rates
+                    # (negative rates or annuities < 0.5 indicate model extrapolation failure)
+                    bad_paths = (swap_rate_T < 0) | (ann_T < 0.5) | ~torch.isfinite(swap_rate_T) | ~torch.isfinite(ann_T)
+                    frac_bad = bad_paths.float().mean().item()
+                    
+                    if frac_bad > 0.1:
+                        warnings.warn(
+                            f"  [{expiry}Yx{tenor}Y] {frac_bad*100:.1f}% of paths have degenerate rates "
+                            f"(negative or invalid) — model extrapolation failing at this maturity — skipping",
+                            RuntimeWarning,
+                        )
+                        continue
+                    
                     # Payer payoff: max(S(T) - K, 0) * A(T)
                     payoff = torch.clamp(swap_rate_T - F_market, min=0.0) * ann_T
                     
