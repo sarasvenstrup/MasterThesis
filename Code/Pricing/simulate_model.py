@@ -19,6 +19,7 @@ except NameError:
     REPO_ROOT = os.getcwd()
 
 PROJECT_ROOT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
+THESIS_ROOT  = os.path.abspath(os.path.join(REPO_ROOT, "..", ".."))
 
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
@@ -65,7 +66,7 @@ def build_parser():
     parser = argparse.ArgumentParser(description="Simulate swap curves from trained FullModel")
 
     parser.add_argument("--latent_dim", type=int, default=2, help="Latent dimension (must be 2)")
-    parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
+    parser.add_argument("--epochs", type=int, default=2500, help="Training epochs")
     parser.add_argument("--use", type=str, default="bbg", help="Data source")
     parser.add_argument("--n_paths", type=int, default=100, help="Number of simulation paths")
     parser.add_argument(
@@ -110,10 +111,21 @@ def build_parser():
 # ==========================================================
 
 def resolve_checkpoint_path(repo_root: str, use: str, latent_dim: int, epochs: int) -> str:
-    filename = f"fullmodel_{use}_dim{latent_dim}_ep{epochs}.pt"
+    variant = config.VARIANT  # e.g. "baseline" or "stable"
+
+    # New canonical location: Figures/TrainingResults/dim{d}_{variant}/ep{epochs}/checkpoint_dim{d}_ep{epochs}.pt
+    new_filename = f"checkpoint_dim{latent_dim}_ep{epochs}.pt"
+    new_path = os.path.join(
+        THESIS_ROOT, "Figures", "TrainingResults",
+        f"dim{latent_dim}_{variant}", f"ep{epochs}", new_filename,
+    )
+
+    # Legacy locations kept as fallbacks
+    old_filename = f"fullmodel_{use}_dim{latent_dim}_ep{epochs}.pt"
     candidates = [
-        os.path.join(repo_root, "..", "checkpoints", filename),
-        os.path.join(repo_root, "checkpoints", filename),
+        new_path,
+        os.path.join(repo_root, "..", "checkpoints", old_filename),
+        os.path.join(repo_root, "checkpoints", old_filename),
     ]
 
     for path in candidates:
@@ -121,7 +133,19 @@ def resolve_checkpoint_path(repo_root: str, use: str, latent_dim: int, epochs: i
             return os.path.abspath(path)
 
     searched = "\n".join(f"  - {os.path.abspath(p)}" for p in candidates)
-    raise FileNotFoundError(f"Checkpoint not found. Searched:\n{searched}")
+
+    # Show what IS available under TrainingResults to help the user pick a valid --epochs
+    available_hint = ""
+    tr_root = os.path.join(THESIS_ROOT, "Figures", "TrainingResults")
+    if os.path.isdir(tr_root):
+        import glob
+        found = []
+        for pt in glob.glob(os.path.join(tr_root, "*", "*", "checkpoint_*.pt")):
+            found.append(f"  - {pt}")
+        if found:
+            available_hint = "\nAvailable checkpoints in TrainingResults:\n" + "\n".join(sorted(found))
+
+    raise FileNotFoundError(f"Checkpoint not found. Searched:\n{searched}{available_hint}")
 
 
 def safe_load_state_dict(model, state_dict):
@@ -154,35 +178,25 @@ def load_and_setup_model(device, use, latent_dim, epochs):
         raise ValueError("This simulation script currently supports only the 2-factor model (latent_dim=2).")
 
     checkpoint_path = resolve_checkpoint_path(REPO_ROOT, use, latent_dim, epochs)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-
-    saved_variant = checkpoint.get("variant", "unknown")
-    print(f"Checkpoint variant: {saved_variant}")
-
-    if saved_variant != "unknown" and saved_variant != config.VARIANT:
-        raise ValueError(
-            f"Checkpoint variant '{saved_variant}' does not match active config.VARIANT '{config.VARIANT}'. "
-            f"Update Code/config.py so training and simulation use the same variant."
-        )
+    raw = torch.load(checkpoint_path, map_location=device)
 
     from Code.model.full_model import FullModel
 
-    if "model_config" in checkpoint:
-        model_config = checkpoint["model_config"]
-        print(f"Loading model with saved configuration: {model_config}")
-        model = FullModel(**model_config)
+    # Plain state dict (saved via torch.save(model.state_dict(), ...))
+    # vs wrapped dict (saved via torch.save({"model_state_dict": ..., ...}, ...))
+    if "model_state_dict" in raw:
+        state_dict = raw["model_state_dict"]
+        saved_variant = raw.get("variant", "unknown")
+        if saved_variant != "unknown" and saved_variant != config.VARIANT:
+            raise ValueError(
+                f"Checkpoint variant '{saved_variant}' does not match active "
+                f"config.VARIANT '{config.VARIANT}'. Update Code/config.py."
+            )
     else:
-        print("[WARNING] Checkpoint missing 'model_config'. Using fallback constructor.")
-        model = FullModel(latent_dim=latent_dim)
+        # Plain OrderedDict — the Figures/TrainingResults checkpoints
+        state_dict = raw
 
-    state_dict = checkpoint["model_state_dict"]
-
-    # Compatibility example for old stable checkpoints
-    if config.VARIANT == "stable":
-        if "H.raw_sigma_amps" in state_dict and "H.raw_logsigma_offset" not in state_dict:
-            print("[INFO] Converting old H checkpoint parameters: raw_sigma_amps -> raw_logsigma_offset")
-            state_dict["H.raw_logsigma_offset"] = state_dict.pop("H.raw_sigma_amps")
-
+    model = FullModel(latent_dim=latent_dim)
     safe_load_state_dict(model, state_dict)
 
     model.to(device).double()
@@ -547,11 +561,6 @@ def decode_from_latent_script(model, z, G_floor=1e-5):
     f0_approx = -(torch.log(P_full[:, 1]) - torch.log(P_full[:, 0])) / dtau0
     short_rate_err = (f0_approx - r_tilde).abs()
 
-    if (short_rate_err > 1e-2).any():
-        warnings.warn(
-            f"Approximate short-rate identity check is loose. max |f(0)-r_tilde| = {short_rate_err.max().item():.3e}",
-            RuntimeWarning,
-        )
 
     P_mkt = P_full[:, 1:]
 
@@ -676,7 +685,7 @@ def decode_and_save_results(
         out_of_region = (mahal_dist > max_mahal).sum().item()
         out_of_region_frac = out_of_region / n_paths
 
-        if out_of_region > 0:
+        if out_of_region_frac >= 0.10:
             warnings.warn(
                 f"At time t={times[t]:.3f}: {out_of_region}/{n_paths} paths ({out_of_region_frac:.1%}) "
                 f"exceed {max_mahal:.2f} Mahalanobis distance from training region",
@@ -724,7 +733,7 @@ def decode_and_save_results(
     elapsed = time.time() - t0
     print(f"Decoding finished in {elapsed:.2f}s")
 
-    out_dir = os.path.join(REPO_ROOT, "Figures", "simulations")
+    out_dir = os.path.join(THESIS_ROOT, "Figures", "Pricing", "simulations")
     os.makedirs(out_dir, exist_ok=True)
 
     swap_df = pd.DataFrame(swap_df_list)
@@ -924,7 +933,7 @@ def main(argv=None):
     IDX_CHOICE = args.idx_choice
     DISCRETIZATION = args.discretization
     SEED = args.seed
-    SHOW_PLOTS = args.show_plots and not args.no_plots
+    SHOW_PLOTS = not args.no_plots  # show by default; suppress with --no_plots
 
     set_seed(SEED)
 

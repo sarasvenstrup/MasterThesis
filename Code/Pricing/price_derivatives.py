@@ -13,8 +13,9 @@ from scipy.optimize import minimize_scalar
 # ---------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------
-CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
+CODE_ROOT    = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CODE_ROOT, ".."))
+THESIS_ROOT  = os.path.abspath(os.path.join(CODE_ROOT, "..", ".."))
 
 if CODE_ROOT not in sys.path:
     sys.path.insert(0, CODE_ROOT)
@@ -27,25 +28,27 @@ if PROJECT_ROOT not in sys.path:
 from Code import config
 config.VARIANT = "stable"
 
-from Code.load_swapdata import my_data
 from Code.model.full_model import FullModel
 
 # Import shared simulation / decode logic from your simulation file
 try:
     from simulate_model import (
-        load_initial_curve,
+        load_data_and_initial_curve,
         simulate_latent_paths,
         decode_from_latent_script,
+        resolve_checkpoint_path,
+        safe_load_state_dict,
     )
 except ImportError:
     from Code.Pricing.simulate_model import (
-        load_initial_curve,
+        load_data_and_initial_curve,
         simulate_latent_paths,
         decode_from_latent_script,
+        resolve_checkpoint_path,
+        safe_load_state_dict,
     )
 
 SHOW_PLOTS = True
-
 
 # ---------------------------------------------------------------------
 # Utilities
@@ -54,27 +57,31 @@ def tenor_label(tenor_value):
     return f"{int(tenor_value)}Y"
 
 
-def load_model(checkpoint_path: str, device: torch.device) -> FullModel:
+def load_model(checkpoint_path: str, device: torch.device, latent_dim: int = 2) -> FullModel:
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    raw = torch.load(checkpoint_path, map_location=device)
 
-    if "model_config" in checkpoint:
-        model_config = checkpoint["model_config"]
-        print(f"Loading model with saved configuration: {model_config}")
-        model = FullModel(**model_config)
+    # Plain state dict (Figures/TrainingResults checkpoints) vs wrapped dict
+    if "model_state_dict" in raw:
+        state_dict = raw["model_state_dict"]
+        saved_variant = raw.get("variant", "unknown")
+        if saved_variant != "unknown" and saved_variant != config.VARIANT:
+            raise ValueError(
+                f"Checkpoint variant '{saved_variant}' does not match active "
+                f"config.VARIANT '{config.VARIANT}'. Update Code/config.py."
+            )
     else:
-        print("[WARNING] Checkpoint missing 'model_config'. Using defaults.")
-        model = FullModel(latent_dim=checkpoint["latent_dim"])
+        state_dict = raw   # plain OrderedDict
 
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model = FullModel(latent_dim=latent_dim)
+    safe_load_state_dict(model, state_dict)
     model = model.to(device).double()
     model.eval()
 
-    saved_variant = checkpoint.get("variant", "unknown")
     print(f"Loaded model from {checkpoint_path}")
-    print(f"  Variant: {saved_variant}")
+    print(f"  Active config variant: {config.VARIANT}")
     print(f"  Model dtype: {next(model.parameters()).dtype}")
     return model
 
@@ -343,10 +350,6 @@ def run_vol_surface_grid(
     tenors,
     n_paths,
     n_steps,
-    simple_diffusion=False,
-    kappa=0.5,
-    theta=0.0,
-    sigma_simple=0.1,
     discretization="euler",
     is_call=True,
 ):
@@ -361,10 +364,6 @@ def run_vol_surface_grid(
             n_steps=n_steps,
             dt=dt,
             device=device,
-            simple_diffusion=simple_diffusion,
-            kappa=kappa,
-            theta=theta,
-            sigma_simple=sigma_simple,
             discretization=discretization,
         )
 
@@ -445,90 +444,79 @@ def run_vol_surface_grid(
 # ---------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Price options using simulated paths from FullModel")
-    parser.add_argument("--latent_dim", type=int, default=2, help="Latent dimension")
-    parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
-    parser.add_argument("--use", type=str, default="bbg", help="Data source")
-    parser.add_argument("--n_paths", type=int, default=1000, help="Number of simulation paths")
-    parser.add_argument("--n_steps", type=int, default=120, help="Number of time steps")
-    parser.add_argument("--dt", type=float, default=1 / 12, help="Time step size")
-    parser.add_argument("--idx_choice", type=int, default=-1, help="Index of initial curve")
+    parser.add_argument("--latent_dim",  type=int,   default=2,      help="Latent dimension")
+    parser.add_argument("--epochs",      type=int,   default=2500,   help="Training epochs")
+    parser.add_argument("--use",         type=str,   default="bbg",  help="Data source")
+    parser.add_argument("--n_paths",     type=int,   default=1000,   help="Number of simulation paths")
+    parser.add_argument("--n_steps",     type=int,   default=120,    help="Number of time steps")
+    parser.add_argument("--dt",          type=float, default=1/12,   help="Time step size")
+    parser.add_argument("--idx_choice",  type=int,   default=-1,     help="Index of initial curve")
 
-    parser.add_argument("--option_type", type=str, choices=["cap", "swaption"], default="cap")
-    parser.add_argument("--strike", type=float, default=0.03, help="Strike rate")
-    parser.add_argument("--notional", type=float, default=1.0, help="Notional amount")
+    parser.add_argument("--option_type", type=str,   choices=["cap", "swaption"], default="cap")
+    parser.add_argument("--strike",      type=float, default=0.03,   help="Strike rate")
+    parser.add_argument("--notional",    type=float, default=1.0,    help="Notional amount")
 
-    parser.add_argument("--simple_diffusion", action="store_true", help="Use simple OU diffusion")
-    parser.add_argument("--kappa", type=float, default=0.5, help="Mean reversion for simple diffusion")
-    parser.add_argument("--theta", type=float, default=0.0, help="Long-run mean for simple diffusion")
-    parser.add_argument("--sigma_simple", type=float, default=0.1, help="Volatility for simple diffusion")
     parser.add_argument(
-        "--discretization",
-        type=str,
-        default="euler",
-        choices=["euler", "milstein", "second_order_milstein"],
+        "--discretization", type=str, default="euler",
+        choices=["euler", "milstein", "milstein_pc"],
         help="Discretization scheme for latent SDE",
     )
 
-    parser.add_argument("--expiry", type=float, default=1.0, help="Expiry for swaption")
-    parser.add_argument("--tenor", type=int, default=5, help="Tenor for swaption")
-    parser.add_argument("--output_norm_vol", action="store_true", help="Output implied normal volatility")
+    parser.add_argument("--expiry",      type=float, default=1.0,    help="Expiry for swaption")
+    parser.add_argument("--tenor",       type=int,   default=5,      help="Tenor for swaption")
+    parser.add_argument("--output_norm_vol", action="store_true",    help="Output implied normal volatility")
     parser.add_argument(
-        "--norm_vol",
-        type=float,
-        default=None,
+        "--norm_vol", type=float, default=None,
         help="Input normal volatility for direct Bachelier pricing (decimal, e.g. 0.01)",
     )
     parser.add_argument(
-        "--pricing_mode",
-        type=str,
-        choices=["monte_carlo", "norm_vol_quote"],
-        default="monte_carlo",
-        help="Pricing mode",
+        "--pricing_mode", type=str, choices=["monte_carlo", "norm_vol_quote"], default="monte_carlo",
     )
-    parser.add_argument("--is_receiver", action="store_true", help="Receiver swaption instead of payer")
-    parser.add_argument("--run_vol_surface_grid", action="store_true", help="Run grid of swaption pricings")
+    parser.add_argument("--is_receiver", action="store_true",        help="Receiver swaption instead of payer")
+    parser.add_argument("--run_vol_surface_grid", action="store_true")
 
-    parser.add_argument("--strikes", type=str, default="0.01,0.02,0.03,0.04,0.05")
-    parser.add_argument("--expiries", type=str, default="0.5,1.0,1.5,2.0")
-    parser.add_argument("--tenors", type=str, default="1,2,3,4,5")
+    parser.add_argument("--strikes",      type=str, default="0.01,0.02,0.03,0.04,0.05")
+    parser.add_argument("--expiries",     type=str, default="0.5,1.0,1.5,2.0")
+    parser.add_argument("--tenors",       type=str, default="1,2,3,4,5")
     parser.add_argument("--grid_n_paths", type=int, default=100)
     parser.add_argument("--grid_n_steps", type=int, default=60)
-    parser.add_argument("--output_dir", type=str, default=".")
+    parser.add_argument(
+        "--output_dir", type=str,
+        default=os.path.join(THESIS_ROOT, "Figures", "Pricing"),
+    )
 
     args = parser.parse_args()
 
-    LATENT_DIM = args.latent_dim
-    EPOCHS = args.epochs
-    USE = args.use
-    N_PATHS = args.n_paths
-    N_STEPS = args.n_steps
-    DT = args.dt
-    IDX_CHOICE = args.idx_choice
-    OPTION_TYPE = args.option_type
-    STRIKE = args.strike
-    NOTIONAL = args.notional
-    SIMPLE_DIFFUSION = args.simple_diffusion
-    KAPPA = args.kappa
-    THETA = args.theta
-    SIGMA_SIMPLE = args.sigma_simple
+    LATENT_DIM     = args.latent_dim
+    EPOCHS         = args.epochs
+    USE            = args.use
+    N_PATHS        = args.n_paths
+    N_STEPS        = args.n_steps
+    DT             = args.dt
+    IDX_CHOICE     = args.idx_choice
+    OPTION_TYPE    = args.option_type
+    STRIKE         = args.strike
+    NOTIONAL       = args.notional
     DISCRETIZATION = args.discretization
-    EXPIRY = args.expiry
-    TENOR = args.tenor
+    EXPIRY         = args.expiry
+    TENOR          = args.tenor
     OUTPUT_NORM_VOL = args.output_norm_vol
-    PRICING_MODE = args.pricing_mode
+    PRICING_MODE   = args.pricing_mode
     NORM_VOL_INPUT = args.norm_vol
-    IS_CALL = not args.is_receiver
+    IS_CALL        = not args.is_receiver
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Keep this if you want access to tenors / scaling metadata
-    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=USE)
+    checkpoint_path = resolve_checkpoint_path(CODE_ROOT, USE, LATENT_DIM, EPOCHS)
+    model = load_model(checkpoint_path, device, latent_dim=LATENT_DIM)
 
-    checkpoint_path = os.path.join(PROJECT_ROOT, "checkpoints", f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.pt")
-    model = load_model(checkpoint_path, device)
+    data = load_data_and_initial_curve(USE, IDX_CHOICE, device)
+    S0       = data["S0"]
+    tenors   = data["tenors"]
+    meta_row = data["meta_row"]
+    print(f"Initial curve metadata row:\n{meta_row}")
 
-    S0, meta_row, X_tensor, meta = load_initial_curve(USE, IDX_CHOICE, device)
     with torch.no_grad():
         z0 = model.encoder(S0)
     print(f"Initial latent state z0: {z0.detach().cpu().numpy().flatten()}")
@@ -537,20 +525,10 @@ def main():
         print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT}, scheme={DISCRETIZATION})...")
         with torch.no_grad():
             z_paths, r_paths, _, _ = simulate_latent_paths(
-                model=model,
-                z0=z0,
-                n_paths=N_PATHS,
-                n_steps=N_STEPS,
-                dt=DT,
-                device=device,
-                simple_diffusion=SIMPLE_DIFFUSION,
-                kappa=KAPPA,
-                theta=THETA,
-                sigma_simple=SIGMA_SIMPLE,
-                discretization=DISCRETIZATION,
+                model=model, z0=z0, n_paths=N_PATHS, n_steps=N_STEPS,
+                dt=DT, device=device, discretization=DISCRETIZATION,
             )
         print("Simulation completed.")
-
         price = price_cap(r_paths, DT, STRIKE, NOTIONAL)
         print(f"Cap price: {price:.6f} (strike={STRIKE}, notional={NOTIONAL})")
 
@@ -561,21 +539,16 @@ def main():
 
             print("Extracting time-0 forward swap and annuity from current curve...")
             market_params = extract_forward_swap_curve_params(model, z0, EXPIRY, TENOR)
-            forward_swap = market_params["forward_swap"]
-            annuity = market_params["annuity"]
+            forward_swap  = market_params["forward_swap"]
+            annuity       = market_params["annuity"]
 
             print(f"  Forward swap rate: {forward_swap:.6f}")
             print(f"  Annuity factor:    {annuity:.6f}")
             print(f"  Input norm vol:    {NORM_VOL_INPUT:.6f} ({NORM_VOL_INPUT * 10000:.2f} bp)")
 
             price = price_swaption_from_norm_vol(
-                forward=forward_swap,
-                strike=STRIKE,
-                norm_vol=NORM_VOL_INPUT,
-                expiry=EXPIRY,
-                annuity=annuity,
-                notional=NOTIONAL,
-                is_call=IS_CALL,
+                forward=forward_swap, strike=STRIKE, norm_vol=NORM_VOL_INPUT,
+                expiry=EXPIRY, annuity=annuity, notional=NOTIONAL, is_call=IS_CALL,
             )
             swaption_type = "Payer" if IS_CALL else "Receiver"
             print(f"{swaption_type} swaption price (from norm vol): {price:.6f}")
@@ -585,32 +558,15 @@ def main():
             print(f"Simulating {N_PATHS} paths with {N_STEPS} steps (dt={DT}, scheme={DISCRETIZATION})...")
             with torch.no_grad():
                 z_paths, r_paths, _, _ = simulate_latent_paths(
-                    model=model,
-                    z0=z0,
-                    n_paths=N_PATHS,
-                    n_steps=N_STEPS,
-                    dt=DT,
-                    device=device,
-                    simple_diffusion=SIMPLE_DIFFUSION,
-                    kappa=KAPPA,
-                    theta=THETA,
-                    sigma_simple=SIGMA_SIMPLE,
-                    discretization=DISCRETIZATION,
+                    model=model, z0=z0, n_paths=N_PATHS, n_steps=N_STEPS,
+                    dt=DT, device=device, discretization=DISCRETIZATION,
                 )
             print("Simulation completed.")
 
             price = price_swaption(
-                z_paths=z_paths,
-                r_paths=r_paths,
-                model=model,
-                dt=DT,
-                strike=STRIKE,
-                expiry=EXPIRY,
-                tenor=TENOR,
-                notional=NOTIONAL,
-                is_call=IS_CALL,
+                z_paths=z_paths, r_paths=r_paths, model=model, dt=DT,
+                strike=STRIKE, expiry=EXPIRY, tenor=TENOR, notional=NOTIONAL, is_call=IS_CALL,
             )
-
             swaption_type = "Payer" if IS_CALL else "Receiver"
             print(
                 f"{swaption_type} swaption price (Monte Carlo): {price:.6f} "
@@ -618,24 +574,18 @@ def main():
             )
 
             if OUTPUT_NORM_VOL or NORM_VOL_INPUT is not None:
-                vol_inputs = choose_implied_vol_inputs(model, z0, z_paths, DT, EXPIRY, TENOR)
-                forward_swap = vol_inputs["forward_swap"]
-                annuity = vol_inputs["annuity"]
+                vol_inputs    = choose_implied_vol_inputs(model, z0, z_paths, DT, EXPIRY, TENOR)
+                forward_swap  = vol_inputs["forward_swap"]
+                annuity       = vol_inputs["annuity"]
 
                 norm_vol = implied_normal_vol(
-                    market_price=price,
-                    forward=forward_swap,
-                    strike=STRIKE,
-                    expiry=EXPIRY,
-                    annuity=annuity,
-                    notional=NOTIONAL,
-                    is_call=IS_CALL,
+                    market_price=price, forward=forward_swap, strike=STRIKE,
+                    expiry=EXPIRY, annuity=annuity, notional=NOTIONAL, is_call=IS_CALL,
                 )
 
                 if np.isfinite(norm_vol):
                     print(f"Implied normal volatility: {norm_vol:.6f} ({norm_vol * 10000:.2f} bp)")
                     print(f"Implied vol inputs source: {vol_inputs['source']}")
-
                     if NORM_VOL_INPUT is not None:
                         diff = abs(norm_vol - NORM_VOL_INPUT)
                         print(f"Input normal volatility: {NORM_VOL_INPUT:.6f} ({NORM_VOL_INPUT * 10000:.2f} bp)")
@@ -644,30 +594,17 @@ def main():
                     print("Could not compute implied normal volatility (optimization failed)")
 
     if args.run_vol_surface_grid:
-        strikes = [float(s) for s in args.strikes.split(",")]
-        expiries = [float(e) for e in args.expiries.split(",")]
-        tenors_grid = [int(t) for t in args.tenors.split(",")]
-        output_dir = args.output_dir
+        strikes     = [float(s) for s in args.strikes.split(",")]
+        expiries    = [float(e) for e in args.expiries.split(",")]
+        tenors_grid = [int(t)   for t in args.tenors.split(",")]
+        output_dir  = args.output_dir
 
         print("Running vol surface grid pricing...")
         run_vol_surface_grid(
-            model=model,
-            z0=z0,
-            dt=DT,
-            notional=NOTIONAL,
-            device=device,
-            out_dir=output_dir,
-            strikes=strikes,
-            expiries=expiries,
-            tenors=tenors_grid,
-            n_paths=args.grid_n_paths,
-            n_steps=args.grid_n_steps,
-            simple_diffusion=SIMPLE_DIFFUSION,
-            kappa=KAPPA,
-            theta=THETA,
-            sigma_simple=SIGMA_SIMPLE,
-            discretization=DISCRETIZATION,
-            is_call=IS_CALL,
+            model=model, z0=z0, dt=DT, notional=NOTIONAL, device=device,
+            out_dir=output_dir, strikes=strikes, expiries=expiries, tenors=tenors_grid,
+            n_paths=args.grid_n_paths, n_steps=args.grid_n_steps,
+            discretization=DISCRETIZATION, is_call=IS_CALL,
         )
 
     print("Pricing completed.")
