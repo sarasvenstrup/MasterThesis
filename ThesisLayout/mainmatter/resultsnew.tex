@@ -3,6 +3,8 @@
 This chapter presents the empirical results for the arbitrage-free autoencoder model fitted to swap rate curves across nine currencies. The analysis is structured around four themes. We begin by examining in-sample reconstruction accuracy as a function of the number of latent factors $\ell \in \{1, 2, 3, 4\}$, using models trained for 5\,000 epochs, and assess convergence through training loss curves. We then evaluate out-of-sample performance in both a fixed-window and a rolling scheme, benchmarking against the Extended Kalman Filter Dynamic Nelson--Siegel (EKF-DNS) model. Next, we present arbitrage diagnostics based on the Sharpe-ratio criterion implied by the risk-neutral drift, and examine how the no-arbitrage constraint is satisfied across maturities. Finally, we interpret the extracted latent factors through their correlation with classical yield curve drivers---level, slope, and curvature---and inspect the time series of the risk-neutral parameters $\mu$, $\sigma$, $\varrho$, and $\tilde{r}$ to assess economic plausibility.
 
 
+
+
 % UP here we need to say the goal of assessing the larger factor models.
 % Whereas \citet{MatinWanPoulsen2025} fix the number of latent factors at $\ell=2$, we extend the analysis to $\ell\in\{1,2,3,4\}$, allowing us to examine the trade-off between model complexity and reconstruction accuracy.
 
@@ -399,11 +401,45 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
     \label{fig:Q4c}
 \end{figure}
 
+
 We should compare the benchmark for the three models for the benchmark across all models to give a fair comparison.
 
 
 
 We also need to add the benchmark comparison to the Rolling OOS experiment.
+
+
+DET NEDENSTÅENDE SKAL SKRIVES /KOMMENTERES ET ELLER ANDET STED
+During training, the forward pass of the model computes bond prices on
+a discrete grid $\tau \in \{0, 1, \ldots, \tau_{\max}\}$ as
+\begin{equation}
+    P(\tau) = \exp\!\bigl(A(\tau) - B(\tau)\,z\bigr),
+\end{equation}
+where $A(\tau)$ and $B(\tau)$ are solutions to the Riccati ODEs with
+boundary conditions $A(0) = 0$ and $B(0) = 0$, ensuring $P(0) = 1$.
+In practice, the ODE solver introduces numerical errors of order
+$10^{-6}$, so $B(0)$ is only approximately zero. For an untrained
+model, the encoder output $z$ can be large due to random
+initialisation, meaning the product $B(0) \cdot z$ may exceed the
+tolerance threshold, causing $P(0)$ to deviate from 1 beyond the
+acceptable margin. To avoid premature termination of training, the
+boundary condition check is therefore only enforced when
+arbitrage diagnostics are explicitly requested, and with a relaxed
+tolerance of $10^{-4}$ appropriate for the numerical precision of
+the ODE solver. Importantly, this has no effect on the no-arbitrage
+property of the model itself, which is enforced structurally through
+the ODE boundary conditions rather than through this diagnostic check.
+The assertion serves only as a post-hoc sanity check and its removal
+from the training loop does not alter the theoretical guarantees of
+the model.
+
+
+
+
+
+Yes, the change was made in fullmodel.py — specifically in the forward() method. The assertion was moved from the main body of the forward pass (where it ran on every call) to inside the if doarbchecks: block (where it only runs when explicitly requested).
+
+This means this change affects both the baseline and stable variants since fullmodel.py is shared. But since it is purely a numerical stability fix with no effect on the model's mathematical properties, this is fine — you would want this fix in both variants.
 
 
 % ─────────────────────────────────────────────────────────────
