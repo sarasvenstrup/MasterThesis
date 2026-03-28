@@ -282,6 +282,38 @@ def price_swaption(
 
 
 # ---------------------------------------------------------------------
+# Black 76 / lognormal vol
+# ---------------------------------------------------------------------
+def black76_price(forward, strike, sigma, expiry, annuity, notional=1.0, is_call=True):
+    """Black 76 formula for swaption pricing (lognormal swap rate)."""
+    if forward <= 0 or strike <= 0 or sigma <= 0 or expiry <= 0:
+        intrinsic = max(forward - strike, 0.0) if is_call else max(strike - forward, 0.0)
+        return annuity * notional * intrinsic
+
+    sqrt_T = np.sqrt(expiry)
+    d1 = (np.log(forward / strike) + 0.5 * sigma ** 2 * expiry) / (sigma * sqrt_T)
+    d2 = d1 - sigma * sqrt_T
+
+    if is_call:
+        return annuity * notional * (forward * norm.cdf(d1) - strike * norm.cdf(d2))
+    return annuity * notional * (strike * norm.cdf(-d2) - forward * norm.cdf(-d1))
+
+
+def implied_black76_vol(market_price, forward, strike, expiry, annuity, notional=1.0, is_call=True):
+    """Invert Black 76 formula to get implied lognormal vol.
+    Returns np.nan if forward or strike is non-positive (use Bachelier instead).
+    """
+    if forward <= 0 or strike <= 0:
+        return np.nan
+
+    def objective(sigma):
+        return black76_price(forward, strike, sigma, expiry, annuity, notional, is_call) - market_price
+
+    result = minimize_scalar(objective, bounds=(1e-8, 10.0), method="bounded")
+    return result.x if result.success else np.nan
+
+
+# ---------------------------------------------------------------------
 # Bachelier / normal vol
 # ---------------------------------------------------------------------
 def bachelier_price(forward, strike, sigma, expiry, annuity, notional, is_call=True):
