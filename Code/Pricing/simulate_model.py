@@ -74,11 +74,11 @@ def build_parser():
     parser.add_argument(
         "--n_steps",
         type=int,
-        default=120,
-        help="Number of time steps (e.g. 120 for 10 years monthly)",
+        default=24,
+        help="Number of time steps (e.g. 24 for 2 years monthly, 120 for 10 years monthly)",
     )
     parser.add_argument("--dt", type=float, default=1 / 12, help="Time step size")
-    parser.add_argument("--idx_choice", type=int, default=-1, help="Index of initial curve (-1 for latest)")
+    parser.add_argument("--idx_choice", type=int, default=1390, help="Index of initial curve (-1 for latest, 1390 = USD Nov 2016, most central USD curve)")
     parser.add_argument(
         "--discretization",
         type=str,
@@ -780,6 +780,7 @@ def decode_and_save_results(
 # ==========================================================
 
 def generate_plots(
+    model,
     z_paths,
     r_paths,
     mu_paths,
@@ -852,6 +853,63 @@ def generate_plots(
     if show_plots:
         plt.show()
     plt.close(fig_L)
+
+    # Sigma and rho plot
+    n_corr = latent_dim * (latent_dim - 1) // 2
+    n_sigma_rho_rows = latent_dim + (1 if n_corr > 0 else 0)
+    fig_sr, axes_sr = plt.subplots(n_sigma_rho_rows, 1, figsize=(10, 3 * n_sigma_rho_rows), sharex=True)
+    axes_sr = np.atleast_1d(axes_sr)
+
+    # collect sigma and rho over time for the first n_plot paths
+    T = z_paths.shape[1]
+    sigma_over_time = [[] for _ in range(latent_dim)]
+    rho_over_time   = [[] for _ in range(n_corr)]
+
+    with torch.no_grad():
+        for t in range(T):
+            z_t = z_paths[:n_plot, t, :]
+            sigmas_t, rhos_t = model.H(z_t)          # (n_plot, d), (n_plot, n_corr)
+            for i in range(latent_dim):
+                sigma_over_time[i].append(sigmas_t[:, i].cpu().numpy())
+            for k in range(n_corr):
+                rho_over_time[k].append(rhos_t[:, k].cpu().numpy())
+
+    # sigma subplots
+    for i in range(latent_dim):
+        ax = axes_sr[i]
+        sigma_arr = np.array(sigma_over_time[i])      # (T, n_plot)
+        for p in range(n_plot):
+            ax.plot(times, sigma_arr[:, p], alpha=0.7)
+        ax.set_ylabel(f"$\\sigma_{i+1}(z_t)$")
+        ax.grid(True, alpha=0.3)
+
+    # rho subplots
+    corr_idx = 0
+    for i in range(latent_dim):
+        for j in range(i + 1, latent_dim):
+            ax = axes_sr[latent_dim + corr_idx]
+            rho_arr = np.array(rho_over_time[corr_idx])   # (T, n_plot)
+            for p in range(n_plot):
+                ax.plot(times, rho_arr[:, p], alpha=0.7)
+            ax.set_ylabel(f"$\\rho_{{{i+1}{j+1}}}(z_t)$")
+            ax.set_ylim(-1, 1)
+            ax.axhline(0, color="black", linewidth=0.5, linestyle="--")
+            ax.grid(True, alpha=0.3)
+            corr_idx += 1
+
+    axes_sr[-1].set_xlabel("Time (years)")
+    fig_sr.suptitle("Volatilities and correlations along simulated paths")
+    plt.tight_layout()
+
+    sr_plot_path = os.path.join(
+        out_dir,
+        f"simulated_sigma_rho_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.png",
+    )
+    fig_sr.savefig(sr_plot_path, dpi=300)
+    print(f"Saved sigma/rho plot to {sr_plot_path}")
+    if show_plots:
+        plt.show()
+    plt.close(fig_sr)
 
     # Latent paths + short rate
     fig_lat, axes = plt.subplots(latent_dim + 1, 1, figsize=(10, 6), sharex=True)
@@ -1014,6 +1072,7 @@ def main(argv=None):
     # ========== Plot ==========
     if not args.no_plots:
         generate_plots(
+            model=model,
             z_paths=z_paths,
             r_paths=r_paths,
             mu_paths=mu_paths,

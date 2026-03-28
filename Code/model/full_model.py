@@ -68,7 +68,7 @@ class FullModel(nn.Module):
         if VARIANT == "stable":
             # Stable versions: different signatures
             self.K = KMu(latent_dim=latent_dim, bias=True)
-            self.H = HSigma(hidden_dim=h_hidden, bias=hr_bias, sigma_init=sigma_init)
+            self.H = HSigma(latent_dim=latent_dim, hidden_dim=h_hidden, bias=hr_bias, sigma_init=sigma_init)
             self.R = RShort(latent_dim=latent_dim, hidden_dim=r_hidden, bias=hr_bias)
         else:
             # Baseline versions: original signatures
