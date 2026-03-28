@@ -78,10 +78,9 @@ PRINT_EVERY = 10
 
 # Output folders
 OUTPUT_ROOT = os.path.join(
-    REPO_ROOT,
-    "Experiments",
-    "compare_baseline_stable",
-    f"use_{USE}_dim{LATENT_DIM}_ep{EPOCHS}"
+    os.path.dirname(os.path.abspath(__file__)),
+    "Results",
+    f"compare_baseline_stable_use_{USE}_dim{LATENT_DIM}_ep{EPOCHS}"
 )
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
