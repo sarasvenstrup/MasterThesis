@@ -1,201 +1,164 @@
+\subsection{Stabilized parameterizations of $K$, $H$, and $R$}
 
-%========================================================
-\chapter{Numerical Implementation and Estimation Strategy}
-\label{chap:implementation_training}
-%========================================================
+In the baseline specification, the latent-factor dynamics are parameterized by three neural
+networks: a drift network $K$ of the form $\mu(z)=Mz+N$, a volatility network $H$
+mapping the latent state to $(\log \sigma_1,\log \sigma_2,\operatorname{atanh}(\rho))$,
+and a short-rate network $R$ mapping the latent state to $\tilde r(z)$. In the present
+two-factor setting, these networks determine the coefficients of the risk-neutral dynamics
+in \eqref{eq:30}--\eqref{eq:33}. While this baseline parameterization is flexible, we found
+that it may lead to numerical instability when the model is simulated forward or when the
+latent state moves outside regions well covered by the training data. We therefore replace
+the original forms of $K$, $H$, and $R$ by stabilized parameterizations that preserve the
+financial interpretation of the model while enforcing basic structural regularity.
 
-This section describes how the affine-inspired encoder--decoder framework developed in Section \ref{chap:encoderdecodermodel} is implemented numerically and trained on the data described in Section \ref{chap:datadescription}. The implementation follows the theoretical construction closely: the encoder maps observed swap rates to a latent state, the decoder produces the quantities entering the no-arbitrage ODE system, and the resulting bond prices are transformed into model-implied swap rates. Since the arbitrage restrictions are embedded directly in the bond-pricing structure, they remain satisfied throughout.
-
-The model is implemented in \texttt{Python} using the \texttt{PyTorch} library, which provides efficient tensor-based computation and automatic differentiation, allowing the entire \textcolor{red}{pricing pipeline(synes vi skal uddybe hvad den er)}, including the numerical ODE solver, to be treated as a differentiable computational graph. In the following, we set $M=8$ corresponding to the maturity grid
-\[
-\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
-\]
-and consider latent dimensions $\ell\in\{1,2,3,4\}$.
-
-%--------------------------------------------------------
-\section{Forward Pass and Numerical Solution}
-%--------------------------------------------------------
-
-For each observation date $t$, the input consists of the observed par swap rate vector
-\(
-\mathbf{S}_t \in \mathbb{R}^8.
-\)
-The forward pass mirrors the theoretical architecture introduced in Section~\ref{chap
-:encoderdecodermodel}. First, the observed swap curve is encoded into a latent state
-\[
-z_t = A_1 \mathbf{S}_t, \qquad z_t\in\mathbb{R}^\ell,
-\]
-where $A_1\in\mathbb{R}^{\ell\times 8}$ is the learned encoder matrix.
-
-Conditional on $z_t$, the decoder evaluates $\mathcal{G}(z_t,\tau)$ together with the parameterizations of the drift $\mu(z_t)$, the volatility matrix $\sigma(z_t)$, and the short rate $\tilde r(z_t)$. The drift is modeled as an affine transformation of the latent state, while the volatility and short-rate functions are obtained from the neural networks $\mathcal{H}$ and $\mathcal{H}$ respectively. The volatility network outputs is constructed, ensuring that instantaneous covariance matrix 
-\[
-\Sigma(z_t)=\sigma(z_t)\sigma(z_t)^\top,
-\]
-is positive semidefinite by construction.
-
-Using automatic differentiation, the derivatives of $\mathcal{G}(z_t,\tau)$ required for the coefficient functions $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ are computed on
-\[
-\tau \in \{0,1,\dots,30\}.
-\]
-The inclusion of $\tau=0$ allows the boundary conditions $A_{z_t}(0)=B_{z_t}(0)=0$ to be imposed directly.
-
-For each realized latent state $z_t$, the coupled ODE system
-\begin{align}
-\partial_\tau B_{z_t}(\tau) &= \alpha_{z_t}(\tau) B_{z_t}(\tau) + \beta_{z_t}(\tau), \\
-\partial_\tau A_{z_t}(\tau) &= B_{z_t}(\tau)^2 \gamma_{z_t}(\tau),
-\end{align}
-is solved numerically on this grid using a fourth-order Runge-Kutta scheme with the 3/8-rule. \textcolor{red}{(refer til appendix?)}
-
-The resulting functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ are substituted into \eqref{affineinspiredzcbprices}, yielding zero-coupon bond prices on maturities $\tau\in\{1,...,30\}$. Model-implied swap rates are then obtained from these bond prices using \eqref{estimatedswaprates}, evaluated at the $M=8$ observed maturities.
-
-
-Each forward pass therefore maps an observed swap curve $\mathbf{S}_t$ to a reconstructed swap curve $\tilde{\mathbf{S}}_t$ through the sequence
-\[
-\mathbf{S}_t
-\;\longrightarrow\;
-z_t
-\;\longrightarrow\;
-(G,\mu,\sigma,\tilde r)
-\;\longrightarrow\;
-(\alpha,\beta,\gamma)
-\;\longrightarrow\;
-(A,B)
-\;\longrightarrow\;
-P(z_t,\tau)
-\;\longrightarrow\;
-\tilde{\mathbf{S}}_t .
-\]
-Because all steps are implemented using differentiable tensor operations, the entire pricing map remains differentiable with respect to the model parameters.
-
-%--------------------------------------------------------
-\section{Numerical Arbitrage Diagnostics}
-%--------------------------------------------------------
-
-Although the decoder is constructed so that the no-arbitrage restriction is satisfied by design, it is still useful to verify this property numerically after solving the ODE system. To this end, we compute a maturity-by-maturity residual of the bond-pricing equation together with an associated approximate Sharpe-ratio diagnostic.
-
-For each observation date $t$ and each maturity $\tau$ on the grid, the model produces the quantities
-\[
-G(z_t,\tau), \qquad A_{z_t}(\tau), \qquad B_{z_t}(\tau),
-\]
-as well as the risk-neutral objects
-\[
-\mu(z_t), \qquad \sigma(z_t), \qquad \tilde r(z_t).
-\]
-Using automatic differentiation, we also compute the maturity derivative $\partial_\tau G(z_t,\tau)$, the gradient $\nabla_z G(z_t,\tau)$, and the trace term
-\[
-\mathrm{Tr}\!\left(\sigma(z_t)^\top H_z G(z_t,\tau)\sigma(z_t)\right),
-\]
-where $H_z G$ denotes the Hessian of $G$ with respect to the latent state.
-
-The numerical ODE solver delivers the functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ on the maturity grid. Their derivatives with respect to maturity are obtained directly from the ODE system,
-\begin{align}
-\partial_\tau B_{z_t}(\tau) &= \alpha_{z_t}(\tau) B_{z_t}(\tau) + \beta_{z_t}(\tau), \\
-\partial_\tau A_{z_t}(\tau) &= \gamma_{z_t}(\tau) B_{z_t}(\tau)^2.
-\end{align}
-
-Combining these objects, we define the bond-pricing residual
+\paragraph{Stabilization of the drift network $K$.}
+In the baseline model, the drift is specified as
 \begin{equation}
-R_t(\tau)
-=
--\tilde r(z_t)
--\partial_\tau A_{z_t}(\tau)
-+G(z_t,\tau)\partial_\tau B_{z_t}(\tau)
-+B_{z_t}(\tau)\Xi_t(\tau)
-+B_{z_t}(\tau)^2\gamma_{z_t}(\tau),
-\label{eq:arb_residual}
+\mu(z)=Mz+N,
+\label{eq:k_baseline_combined}
 \end{equation}
-where
+where $M \in \mathbb{R}^{d\times d}$ and $N \in \mathbb{R}^d$ are trainable parameters.
+Although this form is intended to model mean reversion, it does not guarantee that the
+learned matrix $M$ is stable. In particular, if $M$ has an eigenvalue with non-negative
+real part, the deterministic part of the latent dynamics may fail to be mean-reverting.
+
+To enforce stability by construction, we replace $M$ by the parameterization
 \begin{equation}
-\Xi_t(\tau)
-=
-\partial_\tau G(z_t,\tau)
--
-\nabla_z G(z_t,\tau)^\top \mu(z_t)
--
-\frac12
-\mathrm{Tr}\!\left(
-\sigma(z_t)^\top H_z G(z_t,\tau)\sigma(z_t)
-\right).
-\label{eq:Xi_term}
+M = -\left(V^\top V + \varepsilon I_d\right),
+\label{eq:k_stable_combined}
 \end{equation}
-
-If the decoded bond prices satisfy the no-arbitrage pricing relation exactly, then $R_t(\tau)=0$ for all maturities. In practice, small nonzero values may arise because of numerical approximation, finite solver tolerance, and automatic-differentiation error.
-
-To obtain a scale-normalized diagnostic comparable across maturities, we follow the Sharpe-ratio logic discussed in the theory chapter and define the approximate Sharpe ratio
+where $V \in \mathbb{R}^{d\times d}$ is trainable, $I_d$ is the identity matrix, and
+$\varepsilon>0$ is a small constant. The stabilized drift is therefore
 \begin{equation}
-\mathrm{SR}_t(\tau)
-=
-\frac{R_t(\tau)}{\tau \bar{\sigma}},
-\label{eq:sr_numerical}
+\mu(z)= -\left(V^\top V + \varepsilon I_d\right)z + N.
+\label{eq:k_stable_drift_combined}
 \end{equation}
-where $\bar{\sigma}>0$ is a fixed volatility scaling constant. In the implementation, we set
-\[
-\bar{\sigma}=0.006.
-\]
-
-The quantities $R_t(\tau)$ and $\mathrm{SR}_t(\tau)$ are computed on the full maturity grid $\tau=1,\dots,30$ for each observation. They are not included in the training loss, but are retained as post-estimation diagnostics of the numerical consistency of the decoded bond curve. In the empirical analysis, we summarize these diagnostics across dates, maturities, and currencies, and also report representative maturity profiles.
-
-%--------------------------------------------------------
-\section{Estimation Objective}
-%--------------------------------------------------------
-
-Let $\Omega$ denote the collection of all trainable parameters in the model, including the encoder matrix $A_1$ and the parameters governing the decoder components $\mathcal{G}, \mathcal{K}, \mathcal{H}$ and $\mathcal{R}$. The model is \textcolor{red}{trained} by minimizing the mean squared error between observed and reconstructed swap rates across the \textcolor{red}{sample},
+Since $V^\top V$ is positive semidefinite, the matrix $V^\top V+\varepsilon I_d$ is
+strictly positive definite, and hence $M$ is negative definite. Indeed, for every nonzero
+$x \in \mathbb{R}^d$,
 \begin{equation}
-\mathcal{L}(\Omega)
+x^\top Mx
 =
-\frac{1}{N}
-\sum_{t=1}^{N}
-\sum_{\tau \in M}
+-x^\top\left(V^\top V+\varepsilon I_d\right)x
+=
+-\|Vx\|^2-\varepsilon\|x\|^2
+<0.
+\end{equation}
+It follows that all eigenvalues of $M$ are real and strictly negative. The linear drift is
+therefore mean-reverting by construction. The corresponding equilibrium point is
+\begin{equation}
+z^\ast = \left(V^\top V+\varepsilon I_d\right)^{-1}N,
+\end{equation}
+so that the drift may equivalently be written as
+\begin{equation}
+\mu(z)=-Q(z-z^\ast),
+\qquad
+Q:=V^\top V+\varepsilon I_d.
+\end{equation}
+This preserves the original linear structure of $K$, while ensuring a stable latent drift.
+
+\paragraph{Stabilization of the volatility network $H$.}
+In the baseline model, the network $H$ outputs transformed volatility parameters,
+\begin{equation}
+H(z)=
+\begin{pmatrix}
+\log \sigma_1(z) \\
+\log \sigma_2(z) \\
+\operatorname{atanh}(\rho(z))
+\end{pmatrix},
+\label{eq:h_baseline_combined}
+\end{equation}
+which are then mapped back through exponentiation and the hyperbolic tangent. This
+ensures $\sigma_i(z)>0$ and $\rho(z)\in(-1,1)$, but it does not prevent the volatilities
+from becoming arbitrarily small or arbitrarily large, nor does it prevent the correlation
+from approaching $\pm 1$ too closely. In the two-factor diffusion matrix
+\begin{equation}
+\sigma(z)=
+\begin{pmatrix}
+\sigma_1(z) & 0 \\
+\rho(z)\sigma_2(z) & \sqrt{1-\rho(z)^2}\,\sigma_2(z)
+\end{pmatrix},
+\label{eq:h_diffusion_combined}
+\end{equation}
+such behavior may lead to poor numerical conditioning.
+
+To regularize these outputs, we replace the original transformation by the smooth bounded
+parameterization
+\begin{equation}
+\log \sigma_i(z)
+=
+\log \sigma_{\min}
++
+\bigl(\log \sigma_{\max}-\log \sigma_{\min}\bigr)
+\,\operatorname{sigmoid}\!\bigl(h_i(z)+c_i\bigr),
+\qquad i=1,2,
+\label{eq:h_stable_sigma_combined}
+\end{equation}
+and
+\begin{equation}
+\rho(z)=\rho_{\max}\tanh\!\bigl(h_\rho(z)\bigr),
+\label{eq:h_stable_rho_combined}
+\end{equation}
+where $h_1(z)$, $h_2(z)$ and $h_\rho(z)$ denote the raw outputs of the final layer,
+$0<\sigma_{\min}<\sigma_{\max}$ are fixed bounds, $\rho_{\max}\in(0,1)$ is fixed, and
+$c_1,c_2$ are learnable offsets. Consequently,
+\begin{equation}
+\sigma_i(z)\in(\sigma_{\min},\sigma_{\max}),
+\qquad i=1,2,
+\end{equation}
+and
+\begin{equation}
+\rho(z)\in(-\rho_{\max},\rho_{\max}),
+\qquad \rho_{\max}<1.
+\end{equation}
+Hence, the volatilities remain strictly positive and uniformly bounded, while the
+correlation is kept strictly away from the singular values $\pm 1$. In particular, the
+term $\sqrt{1-\rho(z)^2}$ in \eqref{eq:h_diffusion_combined} remains real and bounded
+away from zero, which improves the conditioning of the diffusion matrix during both
+training and simulation.
+
+\paragraph{Stabilization of the short-rate network $R$.}
+In the baseline model, the short rate is represented by a feedforward network
+\begin{equation}
+\tilde r(z)=R_\theta(z),
+\label{eq:r_baseline_combined}
+\end{equation}
+with unconstrained scalar output. While flexible, this form allows the network to produce
+implausibly large positive or negative short rates when evaluated outside the region well
+covered by the training data. Since $\tilde r(z)$ enters directly into the no-arbitrage
+ODE system and the bank-account process, such values may create numerical instability.
+
+We therefore replace the unconstrained output layer by the bounded parameterization
+\begin{equation}
+\tilde r(z)=r_{\mathrm{center}} + r_{\mathrm{scale}}\tanh\!\bigl(f_\theta(z)\bigr),
+\label{eq:r_stable_combined}
+\end{equation}
+where $f_\theta:\mathbb{R}^d\to\mathbb{R}$ has the same hidden architecture as the
+original network, $r_{\mathrm{center}}\in\mathbb{R}$ is a learnable center, and
+$r_{\mathrm{scale}}>0$ is a learnable scale. To enforce positivity of the scale, we write
+\begin{equation}
+r_{\mathrm{scale}}=\operatorname{softplus}(a)+\varepsilon_r,
+\label{eq:r_scale_combined}
+\end{equation}
+where $a\in\mathbb{R}$ is unconstrained and $\varepsilon_r>0$ is a small constant.
+Since $\tanh(x)\in(-1,1)$ for all $x$, the stabilized short rate satisfies
+\begin{equation}
+\tilde r(z)\in
 \left(
-S_t(\tau)-\tilde S_t(\tau;\Omega)
-\right)^2,
-\label{eq:training_loss}
+r_{\mathrm{center}}-r_{\mathrm{scale}},
+\;
+r_{\mathrm{center}}+r_{\mathrm{scale}}
+\right).
 \end{equation}
-where $N$ denotes the number of observations. The estimator is defined as
-\begin{equation}
-\hat{\Omega}
-=
-\arg\min_{\Omega}\mathcal{L}(\Omega).
-\end{equation}
+Thus, the short rate remains in a learnable but controlled interval. This is a smooth
+reparameterization rather than a hard clipping rule, and it therefore preserves
+differentiability while preventing extreme outputs.
 
-
-%--------------------------------------------------------
-\section{Gradient-Based Optimization}
-%--------------------------------------------------------
-
-The optimization problem in \eqref{eq:training_loss} is solved using stochastic gradient-based method\textcolor{red}{s}, as described in Section X \textcolor{red}{REFERENCE to machine learning theory}. Parameter updates are obtained by backpropagating the loss through the full computational graph. 
-
-\textcolor{red}{A key feature of the implementation is that differentiation extends through the numerical ODE solver.}
-
-Since the Runge--Kutta recursion is implemented using elementary tensor operations, automatic differentiation propagates gradients through
-
-\begin{half}
-\begin{enumerate}[label=\textbf{\arabic* \,\textcolor{UCPHred}{|}}, itemsep=0pt, topsep=0pt, parsep=0pt, partopsep=0pt]
-    \item the encoder mapping $A_1 \mathbf{S}_t$,
-    \item the parameterizations of $\mathcal{G}(z_t,\tau)$, $\mu(z_t)$, $\sigma(z_t)$, and $\tilde r(z_t)$,
-    \item the construction of the coefficient functions $\alpha_{z_t}(\tau)$, $\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$,
-    \item the numerical solution of the ODE system for $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$,
-    \item and the final transformation from bond prices to swap rates.
-\end{enumerate}
-\end{half}
-
-Each parameter update therefore reflects the effect of the corresponding model component on the entire reconstructed term structure.
-
-Training is performed using mini-batch stochastic gradient descent together with the Adam optimizer and learning rate scheduling, as discussed in the machine learning section. \textcolor{red}{har vi ikke allerede nævnt dette tidligere, og hvorfor ikek bare skrevet netop dette og så kun en gang? Istedet skal vi så ikke nævne hvilke værdier vi er endt med til dette learning rate scheduling?}
-
-
-
-CONCLUSION
-
-The fitted parameters $\hat{\Omega}$ define a term strucutre model that simultaneously extracts a low dimensional representation of the observed swap curve and prices zero-coupon bonds consistently with the risk-neutral no-arbitrage condition.
-
-
-%--------------------------------------------------------
-%\section{Interpretation}
-%--------------------------------------------------------
-
-%\textcolor{red}{Ville mene at dette afsnit er unødvendigt, da alle tingene er blevet nævnt tidligere, og endda flere gange tidligere}
-
-%The numerical implementation is a direct computational counterpart of the theoretical model. The encoder extracts a low-dimensional representation of the observed swap curve, while the decoder maps this latent state into an arbitrage-free zero-coupon bond curve by solving the no-arbitrage ODE system derived earlier. Estimation therefore amounts to learning the parameters of a structured neural architecture in which financial consistency is enforced by construction rather than imposed through ex post corrections.
-
-%This distinction is important. In alternative neural yield curve models, no-arbitrage restrictions may be introduced through penalty terms added to the loss function. In the present framework, the pricing structure itself ensures that the generated discount curves satisfy the no-arbitrage condition whenever the ODE system is solved. The estimation problem is therefore restricted to fitting the data within a model class that is already economically admissible.
+\paragraph{Summary.}
+The three modifications above target different sources of instability. The stabilized
+drift network $K$ guarantees a stable mean-reverting linear drift; the stabilized
+volatility network $H$ keeps volatilities bounded and correlations away from $\pm 1$;
+and the stabilized short-rate network $R$ prevents extreme short-rate realizations.
+Together, these changes preserve the economic interpretation of the original
+parameterization while improving the numerical robustness of the latent-factor dynamics
+used in the arbitrage-free decoder.
