@@ -26,18 +26,24 @@ for idx, col in enumerate(data_columns):
     code = code_row[idx] if idx < len(code_row) else None
     code_str = str(code).strip() if code is not None else ''
     if code_str.isdigit():
-        if len(code_str) == 2:
+        n = len(code_str)
+        if n == 2:
             option_maturity = int(code_str[0])
-            swap_tenor = int(code_str[1])
-        elif len(code_str) == 3:
-            option_maturity = int(code_str[0:2])
-            swap_tenor = int(code_str[2])
-        elif len(code_str) == 4:
-            option_maturity = int(code_str[0:2])
-            swap_tenor = int(code_str[2:])
+            swap_tenor      = int(code_str[1])
+        elif n == 3:
+            # e.g. "110" → (1,10),  "510" → (5,10),  "101" → (10,1)
+            if code_str[:2] == "10":          # 10Y option
+                option_maturity = 10
+                swap_tenor      = int(code_str[2])
+            else:                              # 1Y or 5Y option, 10Y tenor
+                option_maturity = int(code_str[0])
+                swap_tenor      = int(code_str[1:])
+        elif n == 4:                           # e.g. "1010" → (10,10)
+            option_maturity = int(code_str[:2])
+            swap_tenor      = int(code_str[2:])
         else:
             option_maturity = None
-            swap_tenor = None
+            swap_tenor      = None
         col_map[col] = (option_maturity, swap_tenor)
     else:
         col_map[col] = (None, None)
