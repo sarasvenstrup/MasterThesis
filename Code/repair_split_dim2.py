@@ -5,6 +5,9 @@ due to a crash after saving checkpoints and rmse_summary.csv.
 
 Saves results to the same folder OutOfSampleSplit would have used:
   Figures/OOS_split_dim2_baseline/ep2500/
+
+This will be deleted as soon as the split OOS has run!
+
 """
 import os
 import sys

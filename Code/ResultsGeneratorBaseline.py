@@ -907,103 +907,47 @@ print(table_q4a.to_string())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Q4b — Plot: Per-currency bar chart, AE d=3 vs best Kalman (EKF DNS 3f & 4f)
+# Q4b — Plot: Per-currency bar chart, one plot per dim (AE ℓ vs EKF DNS ℓf)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q4b: Per-currency bar chart ──")
+print("\n── Q4b: Per-currency bar chart (one plot per dim) ──")
 
-_, oos_ae3  = load_split_rmse(3)
-oos_k3 = load_kalman_rmse(3)
-oos_k4 = load_kalman_rmse(4)
+for _dim in [2, 3, 4]:
+    _, oos_ae  = load_split_rmse(_dim)
+    oos_k      = load_kalman_rmse(_dim)
 
-if oos_ae3 is not None and oos_k3 is not None:
+    if oos_ae is None or oos_k is None:
+        print(f"  SKIPPED dim={_dim} — missing AE or Kalman OOS data.")
+        continue
+
     x      = np.arange(len(CCY_ORDER))
     width  = 0.26
     labels = CCY_ORDER
 
     fig, ax = plt.subplots(figsize=(11, 5))
 
-    bars_ae = ax.bar(x - width / 2,
-                     [oos_ae3.get(c, np.nan) for c in labels],
-                     width, label=r"AE ($\ell$=3)",
-                     color=custom_palette[2], edgecolor="none")
+    ax.bar(x - width / 2,
+           [oos_ae.get(c, np.nan) for c in labels],
+           width, label=rf"AE ($\ell$={_dim})",
+           color=custom_palette[_dim - 1], edgecolor="none")
 
-    bars_k3 = ax.bar(x + width / 2,
-                     [oos_k3.get(c, np.nan) for c in labels],
-                     width, label=r"EKF DNS ($\ell$=3)",
-                     color=custom_palette[0], edgecolor="none")
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels)
-    ax.set_ylabel("OOS RMSE (bps)")
-    ax.legend(frameon=False, fontsize=9)
-
-    # Add horizontal average lines
-    avg_ae = oos_ae3.drop("Average", errors="ignore").mean()
-    ax.axhline(avg_ae, color=custom_palette[2], linewidth=1.0, linestyle="--", alpha=0.7)
-    avg_k3 = oos_k3.drop("Average", errors="ignore").mean()
-    ax.axhline(avg_k3, color=custom_palette[0], linewidth=1.0, linestyle="--", alpha=0.7)
-
-    fig.tight_layout()
-    save_fig(fig, "Q4b_per_currency_bar_chart")
-else:
-    print("  SKIPPED — missing AE or Kalman OOS data.")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Q4c — Plot: Per-currency bar chart, AE ℓ=2,3,4 vs EKF DNS 3f
-# ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q4c: Per-currency bar chart (AE ℓ=2,3,4 vs EKF DNS 3f) ──")
-
-_, oos_ae2 = load_split_rmse(2)
-_, oos_ae3c = load_split_rmse(3)
-_, oos_ae4 = load_split_rmse(4)
-oos_k3c = load_kalman_rmse(3)
-
-if oos_ae2 is not None and oos_ae3c is not None and oos_ae4 is not None and oos_k3c is not None:
-    x      = np.arange(len(CCY_ORDER))
-    width  = 0.20
-    labels = CCY_ORDER
-
-    fig, ax = plt.subplots(figsize=(13, 5))
-
-    bars_ae2 = ax.bar(x - 1.5 * width,
-                      [oos_ae2.get(c, np.nan) for c in labels],
-                      width, label=r"AE $\ell$=2",
-                      color=custom_palette[1], edgecolor="none")
-
-    bars_ae3 = ax.bar(x - 0.5 * width,
-                      [oos_ae3c.get(c, np.nan) for c in labels],
-                      width, label=r"AE $\ell$=3",
-                      color=custom_palette[2], edgecolor="none")
-
-    bars_ae4 = ax.bar(x + 0.5 * width,
-                      [oos_ae4.get(c, np.nan) for c in labels],
-                      width, label=r"AE $\ell$=4",
-                      color=custom_palette[3], edgecolor="none")
-
-    bars_k3 = ax.bar(x + 1.5 * width,
-                     [oos_k3c.get(c, np.nan) for c in labels],
-                     width, label=r"EKF DNS ($\ell$=3)",
-                     color=custom_palette[0], edgecolor="none")
+    ax.bar(x + width / 2,
+           [oos_k.get(c, np.nan) for c in labels],
+           width, label=rf"EKF DNS ($\ell$={_dim})",
+           color=custom_palette[0], edgecolor="none")
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("OOS RMSE (bps)")
     ax.legend(frameon=False, fontsize=9)
 
-    # average lines — distinct styles matching DIM_STYLES
-    _avg_styles = [(oos_ae2, custom_palette[1], "-"),
-                   (oos_ae3c, custom_palette[2], "--"),
-                   (oos_ae4, custom_palette[3], ":"),
-                   (oos_k3c, custom_palette[0], "-")]
-    for oos, col, ls in _avg_styles:
-        avg = oos.drop("Average", errors="ignore").mean()
-        ax.axhline(avg, color=col, linewidth=1.2, linestyle=ls, alpha=0.85)
+    avg_ae = oos_ae.drop("Average", errors="ignore").mean()
+    ax.axhline(avg_ae, color=custom_palette[_dim - 1], linewidth=1.0, linestyle="--", alpha=0.7)
+    avg_k = oos_k.drop("Average", errors="ignore").mean()
+    ax.axhline(avg_k, color=custom_palette[0], linewidth=1.0, linestyle="--", alpha=0.7)
 
     fig.tight_layout()
-    save_fig(fig, "Q4c_per_currency_bar_chart_all_dims")
-else:
-    print("  SKIPPED — missing AE or Kalman OOS data.")
+    save_fig(fig, f"Q4b_per_currency_bar_chart_dim{_dim}")
+    print(f"  Saved Q4b dim={_dim}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1655,7 +1599,7 @@ src2  = f"ep{SPLIT_EPOCHS} OOSSplit results" if _split_ok else "SKIPPED — run 
 print(f"  {icon2}  Q2a  IS vs OOS RMSE table   — {src2}")
 print(f"  {'✅' if _manifest_ok else _SKIP}  Q3a  Seed robustness table   — {'run_manifest.json found' if _manifest_ok else 'SKIPPED — run OutOfSampleSplit.py'}")
 print(f"  {'✅'}  Q4a  AE vs EKF DNS table     — fixed split OOS")
-print(f"  {'✅'}  Q4c  Per-currency bar chart  — fixed split OOS")
+print(f"  {'✅'}  Q4b  Per-currency bar chart (dim 2,3,4)  — fixed split OOS")
 
 print(f"\n  {'OUT-OF-SAMPLE (ROLLING)':─<55}")
 for _d in [2, 3, 4]:
