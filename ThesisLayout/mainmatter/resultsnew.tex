@@ -391,15 +391,27 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 \label{tab:Q4a}
 \end{table}
 
-% ── Q4c ──────────────────────────────────────────────────────
 
-\begin{figure}[H]
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
-    \caption{Out-of-sample RMSE (bps) per currency for autoencoder
-    dimensions $\ell=2,3,4$ and EKF DNS 3-factor benchmark.}
-    \label{fig:Q4c}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{Figures/Q4b_per_currency_bar_chart_dim2.png}
+        \caption{$\ell = 2$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{Figures/Q4b_per_currency_bar_chart_dim3.png}
+        \caption{$\ell = 3$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{Figures/Q4b_per_currency_bar_chart_dim4.png}
+        \caption{$\ell = 4$}
+    \end{subfigure}
+    \caption{OOS RMSE per currency for the autoencoder (AE) and EKF DNS benchmark across latent dimensions $\ell = 2, 3, 4$. Dashed horizontal lines indicate the cross-currency average for each model.}
+    \label{fig:Q4b_per_currency}
 \end{figure}
+
 
 
 We should compare the benchmark for the three models for the benchmark across all models to give a fair comparison.
