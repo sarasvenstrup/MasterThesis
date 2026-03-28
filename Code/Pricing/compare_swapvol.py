@@ -463,7 +463,35 @@ def run_comparison():
     df = pd.DataFrame(records)
     csv_path = os.path.join(OUT_DIR, "vol_comparison.csv")
     df.to_csv(csv_path, index=False)
-    print(f"\nSaved comparison CSV â†’ {csv_path}")
+    print(f"\nSaved comparison CSV -> {csv_path}")
+
+    # Export to Excel with formatting
+    xlsx_path = os.path.join(OUT_DIR, "vol_comparison.xlsx")
+    try:
+        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Comparison")
+            
+            # Basic formatting
+            worksheet = writer.sheets["Comparison"]
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            # Freeze header row
+            worksheet.freeze_panes = "A2"
+        
+        print(f"Saved comparison XLSX -> {xlsx_path}")
+    except Exception as e:
+        print(f"[WARNING] Could not save Excel file: {e}")
+        print(f"  (openpyxl may not be installed. CSV file saved successfully.)")
 
     # â”€â”€ Summary table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     df_v = df.dropna(subset=["model_vol_bp", "market_vol_bp"])
