@@ -14,11 +14,11 @@ import torch
 
 # ============================= Environment Setup ===============================
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 
-PROJECT_ROOT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
+PROJECT_ROOT = REPO_ROOT
 
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)

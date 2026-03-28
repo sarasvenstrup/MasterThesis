@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 # Path to the SwapVol_OIS.xlsx file
-EXCEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'SwapVol_OIS.xlsx')
+EXCEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'SwapData', 'SwapVol.xlsx')
 
 # Read the sheet, get both the code row (option/swap) and the data row
 header_rows = [1, 4]  # 2nd row (index 1) for codes, 5th row (index 4) for data

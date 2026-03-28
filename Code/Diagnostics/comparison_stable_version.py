@@ -74,7 +74,7 @@ VAL_END = "2020-12-31"
 DATE_COL = None
 
 # Logging
-PRINT_EVERY = 10
+PRINT_EVERY = 100
 
 # Output folders
 OUTPUT_ROOT = os.path.join(
@@ -95,8 +95,7 @@ USE_SET_TO_NONE = True
 
 device = (
     torch.device("cuda") if torch.cuda.is_available()
-    else torch.device("mps") if hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-    else torch.device("cpu")
+    else torch.device("cpu")  # torchdiffeq ODE solver does not support MPS
 )
 
 print("Torch:", torch.__version__)
