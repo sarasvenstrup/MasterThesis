@@ -1,141 +1,100 @@
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from Code.utils.common import CenteredSoftStep
 
 
 class HSigmaStable(nn.Module):
     """
-    Stable volatility/correlation network with mathematically guaranteed positive sigmas.
+    Structurally stable 2D H-network.
 
-    Implements:
-        σ_i(z) = σ_min + σ_amp_i * sigmoid(g_i(z))
-        ρ_ij(z) = tanh(h_ij(z))
+    Guarantees:
+      sigma_i(z) in (sigma_min, sigma_max)
+      rho(z)     in (-rho_max, rho_max), with rho_max < 1
 
-    This design guarantees:
-        - σ_i(z) > σ_min > 0 always (positive volatility by construction)
-        - σ_i(z) ≤ σ_min + σ_amp_i (bounded above)
-        - Smooth gradients via sigmoid/tanh
-        - ρ_ij(z) ∈ (-1, 1) (bounded correlation)
+    Smooth bounded parameterization:
+      log_sigma_i(z) = log_sigma_min
+                       + (log_sigma_max - log_sigma_min) * sigmoid(h_i(z) + offset_i)
+      rho(z)         = rho_max * tanh(h_rho(z))
 
-    Motivation:
-        The original H network uses σ = exp(f(z)), which has no upper bound.
-        This causes:
-        1. Unbounded shocks as z varies
-        2. Decoder failures at large |z|
-        3. Numerical instabilities in long-horizon MC
+    This is not clamping. It is a smooth reparameterization.
 
-        With sigmoid parameterization, volatility is controlled and matches
-        the decoder's safe latent region.
-
-    Paper/Reference:
-        Same architecture as original H (2,4,3) for latent_dim=2,
-        but with safe output transformation inspired by R_short_stable.
+    Why this version:
+      - closer to the paper, which models log(sigma_i) and atanh(rho)
+      - guarantees positive and bounded volatilities
+      - guarantees correlation stays away from ±1
+      - guarantees the 2D Cholesky factor is always real
     """
 
     def __init__(
         self,
-        latent_dim: int,
         hidden_dim: int,
         bias: bool = False,
-        sigma_min: float = 0.5,
-        sigma_amp_init: float = 0.5,
+        sigma_init: float = 0.015,
+        sigma_min: float = 1e-4,
+        sigma_max: float = 0.20,
+        rho_max: float = 0.999,
     ):
-        """
-        Args:
-            latent_dim: Dimension of latent factors (typically 2)
-            hidden_dim: Hidden layer dimension (typically 4)
-            bias: Whether to use bias in linear layers (default False for stability)
-            sigma_min: Floor for all volatilities, must be > 0 (default 0.5)
-            sigma_amp_init: Initial amplitude per dimension (default 0.5)
-
-        Guarantees:
-            σ_i(z) ∈ (sigma_min, sigma_min + sigma_amp_i] for all z and i
-        """
         super().__init__()
-        self.d = int(latent_dim)
-        self.n_corr = self.d * (self.d - 1) // 2
+
+        if not (0.0 < sigma_min < sigma_max):
+            raise ValueError("Require 0 < sigma_min < sigma_max.")
+        if not (sigma_min < sigma_init < sigma_max):
+            raise ValueError("Require sigma_min < sigma_init < sigma_max.")
+        if not (0.0 < rho_max < 1.0):
+            raise ValueError("Require 0 < rho_max < 1.")
+
+        self.d = 2
+        self.n_corr = 1
+
         self.sigma_min = float(sigma_min)
+        self.sigma_max = float(sigma_max)
+        self.rho_max = float(rho_max)
 
-        if sigma_min <= 0:
-            raise ValueError(f"sigma_min must be > 0, got {sigma_min}")
-
-        out_dim = self.d + self.n_corr
+        self.log_sigma_min = math.log(self.sigma_min)
+        self.log_sigma_max = math.log(self.sigma_max)
+        self.log_sigma_range = self.log_sigma_max - self.log_sigma_min
 
         self.net = nn.Sequential(
-            nn.Linear(self.d, hidden_dim, bias=bias),
+            nn.Linear(2, hidden_dim, bias=bias),
             CenteredSoftStep(),
-            nn.Linear(hidden_dim, out_dim, bias=bias),
+            nn.Linear(hidden_dim, 3, bias=bias),  # [raw_logsigma1, raw_logsigma2, raw_rho]
         )
 
-        # Learnable positive amplitudes per dimension
-        # Initialize via inverse softplus to start near sigma_amp_init
-        # softplus(x) ≈ log(1 + exp(x)), so inverse is roughly log(exp(y) - 1) = log(expm1(y))
-        init_amp = max(float(sigma_amp_init), 1e-8)
-        raw_init = math.log(math.expm1(init_amp))
-        self.raw_sigma_amps = nn.Parameter(
-            torch.full((self.d,), float(raw_init))
-        )
+        # Flat initial surface
+        nn.init.zeros_(self.net[-1].weight)
+        if self.net[-1].bias is not None:
+            nn.init.zeros_(self.net[-1].bias)
 
-    def sigma_amps(self):
-        """
-        Compute sigma amplitudes from unconstrained parameters.
+        # Choose offset so that sigma = sigma_init when raw output is zero
+        target = (math.log(sigma_init) - self.log_sigma_min) / self.log_sigma_range
+        target = min(max(target, 1e-8), 1.0 - 1e-8)
+        raw_init = math.log(target / (1.0 - target))  # logit(target)
 
-        Returns:
-            sigma_amps: (d,) Always positive
-        """
-        return F.softplus(self.raw_sigma_amps)
+        self.raw_logsigma_offset = nn.Parameter(torch.full((2,), raw_init))
 
     def forward(self, z: torch.Tensor, return_raw: bool = False):
-        """
-        Compute σ(z) and ρ(z) with mathematically guaranteed positive volatilities.
-
-        Uses sigmoid for bounded positive sigmas and tanh for bounded correlations.
-
-        Args:
-            z: (B,d) or (d,) latent factors
-            return_raw: If True, return raw network outputs instead of processed ones
-
-        Returns (default):
-            sigmas: (B,d) volatilities, all strictly positive and bounded
-            rhos: (B,n_corr) correlations, bounded in (-1, 1)
-
-        If return_raw=True:
-            raw: (B, d + n_corr) unbounded network outputs
-        """
         if z.dim() == 1:
             z = z.unsqueeze(0)
 
-        # Get unbounded network output
-        raw = self.net(z)  # (B, d + n_corr)
+        raw = self.net(z)  # (B, 3)
+
+        # Smoothly bounded log-sigmas
+        raw_logsigmas = raw[:, :2] + self.raw_logsigma_offset
+        log_sigmas = self.log_sigma_min + self.log_sigma_range * torch.sigmoid(raw_logsigmas)
+        sigmas = torch.exp(log_sigmas)
+
+        # Smoothly bounded correlation away from ±1
+        raw_rho = raw[:, 2:3]
+        rhos = self.rho_max * torch.tanh(raw_rho)
 
         if return_raw:
-            return raw
-
-        # === 1) Volatilities (guaranteed positive and bounded) ===
-        raw_sigmas = raw[:, : self.d]  # (B, d), unbounded from network
-        sigma_amps = self.sigma_amps()  # (d,), always positive
-
-        # σ_i(z) = σ_min + σ_amp_i * sigmoid(raw_sigma_i)
-        # sigmoid maps (-∞, +∞) → (0, 1)
-        # So σ_i ∈ (σ_min, σ_min + σ_amp_i)
-        # This is GUARANTEED positive for all z!
-        sigmas = (
-            self.sigma_min
-            + sigma_amps.unsqueeze(0) * torch.sigmoid(raw_sigmas)
-        )  # (B, d)
-
-        # === 2) Correlations (in (-1, 1)) ===
-        if self.n_corr > 0:
-            raw_rhos = raw[:, self.d :]  # (B, n_corr)
-            # tanh maps (-∞, +∞) → (-1, 1)
-            rhos = torch.tanh(raw_rhos)
-        else:
-            rhos = raw[:, :0]  # (B, 0) empty
+            return {
+                "raw": raw,
+                "raw_logsigmas": raw_logsigmas,
+                "log_sigmas": log_sigmas,
+                "raw_rho": raw_rho,
+            }
 
         return sigmas, rhos
-
-
-
