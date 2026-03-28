@@ -1,8 +1,7 @@
 """
 Runner script: runs OOS stages sequentially.
 
-  Stage 1 — OutOfSampleSplit.py: LATENT_DIM = 2, 3, 4
-  Stage 2 — OutOfSampleRoll.py:  LATENT_DIM = 2, 3, 4
+  OutOfSampleRoll.py: LATENT_DIM = 3, 4
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -20,14 +19,8 @@ except NameError:
 
 STAGES = [
     {
-        "name":   "RepairSplitDim2",
-        "script": os.path.join(REPO_ROOT, "Code", "repair_split_dim2.py"),
-        "dims":   [2],        # single run, no LATENT_DIM patching needed
-        "no_patch": True,     # script has LATENT_DIM hardcoded
-    },
-    {
-        "name":   "OutOfSampleSplit",
-        "script": os.path.join(REPO_ROOT, "Code", "OutOfSampleSplit.py"),
+        "name":   "OutOfSampleRoll",
+        "script": os.path.join(REPO_ROOT, "Code", "OutOfSampleRoll.py"),
         "dims":   [3, 4],
     },
 ]
@@ -57,11 +50,7 @@ for stage in STAGES:
         print(f"  [{run_num}/{total_runs}] {stage['name']}  LATENT_DIM={dim}")
         print(f"{'='*60}\n")
 
-        no_patch = stage.get("no_patch", False)
-        if no_patch:
-            original_source = None
-        else:
-            original_source = patch_latent_dim(stage["script"], dim)
+        original_source = patch_latent_dim(stage["script"], dim)
 
         env = os.environ.copy()
         env["PYTHONPATH"] = REPO_ROOT
@@ -73,8 +62,7 @@ for stage in STAGES:
                 env=env,
             )
         finally:
-            if original_source is not None:
-                restore_source(stage["script"], original_source)
+            restore_source(stage["script"], original_source)
 
         if result.returncode != 0:
             print(f"\n[ERROR] {stage['name']} failed for LATENT_DIM={dim} "

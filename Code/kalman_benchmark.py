@@ -22,9 +22,18 @@
 from __future__ import annotations
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
+try:
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+except NameError:
+    REPO_ROOT = os.getcwd()
+
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import my_data, TARGET_TENORS
 
@@ -468,7 +477,7 @@ if __name__ == "__main__":
     tenors = np.array(TARGET_TENORS, dtype=float)
 
     from Code.config import VARIANT
-    root_dir   = os.path.join(os.getcwd(), "Figures", "KalmanBenchmarkResults")
+    root_dir   = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults")
     fit_stores = {}  # {n_factors: fit_store}
 
     for n_factors in [1, 2, 3, 4]:

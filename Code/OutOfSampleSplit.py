@@ -17,7 +17,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 
 # ── path setup ─────────────────────────────────────────────────────────────────
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     REPO_ROOT = os.getcwd()
 
@@ -55,7 +55,7 @@ TEST_END    = "2022-12-31"
 
 ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
-FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", f"OOS_split_dim{LATENT_DIM}_{VARIANT}", f"ep{EPOCHS}")
+FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{LATENT_DIM}_{VARIANT}", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
 print("Output dir:", FIGURES_DIR)
 

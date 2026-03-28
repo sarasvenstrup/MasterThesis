@@ -27,7 +27,6 @@ import pandas as pd
 # ── path setup ────────────────────────────────────────────────────────────────
 try:
     REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    REPO_ROOT = os.path.dirname(REPO_ROOT)
 except NameError:
     REPO_ROOT = os.getcwd()
 
