@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize_scalar, brentq
 
 # ---------------------------------------------------------------------
 # Paths
@@ -334,12 +334,18 @@ def bachelier_price(forward, strike, sigma, expiry, annuity, notional, is_call=T
 
 
 def implied_normal_vol(market_price, forward, strike, expiry, annuity, notional, is_call=True):
-    def objective(sigma):
-        theoretical = bachelier_price(forward, strike, sigma, expiry, annuity, notional, is_call)
-        return (theoretical - market_price) ** 2
+    if market_price <= 0:
+        return 0.0
 
-    result = minimize_scalar(objective, bounds=(1e-8, 10.0), method="bounded")
-    return result.x if result.success else np.nan
+    def objective(sigma):
+        return bachelier_price(forward, strike, sigma, expiry, annuity, notional, is_call) - market_price
+
+    try:
+        # brentq finds the root of objective (price - market_price = 0)
+        # This correctly handles boundary cases unlike the squared minimize_scalar approach
+        return brentq(objective, 1e-8, 10.0, xtol=1e-10, rtol=1e-8)
+    except ValueError:
+        return np.nan
 
 
 def price_swaption_from_norm_vol(forward, strike, norm_vol, expiry, annuity, notional=1.0, is_call=True):

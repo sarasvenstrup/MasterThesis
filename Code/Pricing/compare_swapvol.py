@@ -100,6 +100,15 @@ N_STEPS    = 120        # 10-year horizon at monthly steps
 DT         = 1 / 12
 MAX_DATES  = 30         # cap number of dates for manageable runtime
 
+# Dates where EUR rates are closest to the model long-run mean (2012-2014 window).
+# On these dates simulated paths stay near the ATM strike, giving non-degenerate prices.
+# Set to None to use the full date range with random subsampling.
+NEUTRAL_DATES = [
+    "2012-05-31", "2014-07-31", "2013-04-30", "2012-08-31",
+    "2014-06-30", "2012-07-31", "2012-12-31", "2014-05-30",
+    "2014-08-29", "2013-03-29",
+]
+
 DEVICE     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EXCEL_PATH = os.path.join(THESIS_ROOT, "SwapData", "SwapVol.xlsx")
 OUT_DIR    = os.path.join(THESIS_ROOT, "Figures", "Pricing", "vol_comparison")
@@ -322,31 +331,17 @@ def price_date(
                 warnings.warn(f"  [{expiry}Yx{tenor}Y] MC pricing failed: {exc}", RuntimeWarning)
                 continue
 
-            # -- Invert MC price to implied vol ------------------------------------
-            # Use Black 76 (lognormal) when forward > 0; fall back to Bachelier
-            # (normal) for negative/zero rates (e.g. EUR pre-2022).
-            if F_market > 0:
-                model_vol = implied_black76_vol(
-                    market_price=mc_price,
-                    forward=F_market,
-                    strike=F_market,
-                    expiry=float(expiry),
-                    annuity=ann_0,
-                    notional=1.0,
-                    is_call=True,
-                )
-                vol_model = "Black76"
-            else:
-                model_vol = implied_normal_vol(
-                    market_price=mc_price,
-                    forward=F_market,
-                    strike=F_market,
-                    expiry=float(expiry),
-                    annuity=ann_0,
-                    notional=1.0,
-                    is_call=True,
-                )
-                vol_model = "Bachelier"
+            # -- Invert MC price to Bachelier (normal) implied vol -----------------
+            model_vol = implied_normal_vol(
+                market_price=mc_price,
+                forward=F_market,
+                strike=F_market,
+                expiry=float(expiry),
+                annuity=ann_0,
+                notional=1.0,
+                is_call=True,
+            )
+            vol_model = "Bachelier"
 
             results[(expiry, tenor)] = {
                 "F_market":  F_market,
@@ -413,7 +408,14 @@ def run_comparison():
         print(f"  EUR curves : {lo.date()} -> {hi.date()}")
         return None
 
-    if len(vol_dates) > MAX_DATES:
+    if NEUTRAL_DATES is not None:
+        neutral = pd.to_datetime(NEUTRAL_DATES)
+        vol_dates = vol_dates[vol_dates.isin(neutral)]
+        print(f"  Filtered to {len(vol_dates)} neutral dates (rates near model long-run mean)")
+        if len(vol_dates) == 0:
+            print("[ERROR] None of the NEUTRAL_DATES appear in the vol data.")
+            return None
+    elif len(vol_dates) > MAX_DATES:
         step      = max(1, len(vol_dates) // MAX_DATES)
         vol_dates = vol_dates[::step][:MAX_DATES]
         print(f"  Subsampled to {len(vol_dates)} dates (step={step})")

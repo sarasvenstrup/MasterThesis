@@ -9,4 +9,4 @@
 # Changing this one line switches the entire pipeline.
 # ─────────────────────────────────────────────────────────────
 
-VARIANT = "stable"
+VARIANT = "baseline"
