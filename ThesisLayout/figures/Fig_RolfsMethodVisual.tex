@@ -19,10 +19,10 @@
 % ======================
 % Input layer (3 visible nodes)
 % ======================
-\node[neuron, fill=grey!40] (S1)  at (0,  2.5) {$S_{1}$};
-\node[neuron, fill=grey!40] (S2)  at (0,  1.0) {$S_{2}$};
+\node[neuron, fill=gray!40] (S1)  at (0,  2.5) {$S_{1}$};
+\node[neuron, fill=gray!40] (S2)  at (0,  1.0) {$S_{2}$};
 \node at (0, -0.2) {$\vdots$};
-\node[neuron, fill=grey!40] (SM)  at (0, -2.2) {$S_{M}$};
+\node[neuron, fill=gray!40] (SM)  at (0, -2.2) {$S_{M}$};
 
 % ======================
 % Latent layer
@@ -52,37 +52,37 @@
 % ======================
 % Reconstructed swaps
 % ======================
-\node[neuron, fill=grey!10] (St1) at (16,  2.5) {$\tilde{S}_{1}$};
-\node[neuron, fill=grey!10] (St2) at (16,  1.0) {$\tilde{S}_{2}$};
+\node[neuron, fill=gray!10] (St1) at (16,  2.5) {$\tilde{S}_{1}$};
+\node[neuron, fill=gray!10] (St2) at (16,  1.0) {$\tilde{S}_{2}$};
 \node at (16, -0.2) {$\vdots$};
-\node[neuron, fill=grey!10] (StM) at (16, -2.2) {$\tilde{S}_{M}$};
+\node[neuron, fill=gray!10] (StM) at (16, -2.2) {$\tilde{S}_{M}$};
 
 % ======================
 % Connections
 % ======================
 \foreach \s in {S1,S2,SM} {
-    \draw[->, draw=darkgrey] (\s) -- (Z1);
-    \draw[->, draw=darkgrey] (\s) -- (Zd);
+    \draw[->, draw=darkgray] (\s) -- (Z1);
+    \draw[->, draw=darkgray] (\s) -- (Zd);
 }
 
 \foreach \j in {1,...,10} {
-    \draw[->, draw=darkgrey] (Ztop) -- (H\j);
-    \draw[->, draw=darkgrey] (Z1)   -- (H\j);
-    \draw[->, draw=darkgrey] (Zd)   -- (H\j);
+    \draw[->, draw=darkgray] (Ztop) -- (H\j);
+    \draw[->, draw=darkgray] (Z1)   -- (H\j);
+    \draw[->, draw=darkgray] (Zd)   -- (H\j);
 }
 
 \foreach \i in {1,...,10} {
-    \draw[->, draw=darkgrey]         (H\i) -- (P1);
-    \draw[->, dashed, draw=darkgrey] (H\i) -- (P2);
-    \draw[->, dotted, draw=darkgrey] (H\i) -- (P30);
+    \draw[->, draw=darkgray]         (H\i) -- (P1);
+    \draw[->, dashed, draw=darkgray] (H\i) -- (P2);
+    \draw[->, dotted, draw=darkgray] (H\i) -- (P30);
 }
 
-\draw[->, draw=darkgrey] (P1) -- (St1);
-\draw[->, draw=darkgrey] (P1) -- (St2);
-\draw[->, draw=darkgrey] (P2) -- (St2);
-\draw[->, draw=darkgrey] (P1)  -- (StM);
-\draw[->, draw=darkgrey] (P2)  -- (StM);
-\draw[->, draw=darkgrey] (P30) -- (StM);
+\draw[->, draw=darkgray] (P1) -- (St1);
+\draw[->, draw=darkgray] (P1) -- (St2);
+\draw[->, draw=darkgray] (P2) -- (St2);
+\draw[->, draw=darkgray] (P1)  -- (StM);
+\draw[->, draw=darkgray] (P2)  -- (StM);
+\draw[->, draw=darkgray] (P30) -- (StM);
 
 % ======================
 % Brackets

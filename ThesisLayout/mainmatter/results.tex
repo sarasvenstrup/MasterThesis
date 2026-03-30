@@ -20,32 +20,32 @@ We begin by comparing the in-sample training performance of the one- to four-fac
 Table~\ref{tab:avg_rmse_comparison} reports the average root mean square reconstruction error (RMSE), measured in basis points, across training epochs.
 
 % Average RMSE across epochs
-\begin{table}[h!]
-\centering
-{\small
-\pgfplotstableread[col sep=comma]{Figures/dim1/ep5000/train_rmse_log_bbg_dim1_ep5000.csv}\datone
-\pgfplotstableread[col sep=comma]{Figures/dim2/ep5000/train_rmse_log_bbg_dim2_ep5000.csv}\dattwo
-\pgfplotstableread[col sep=comma]{Figures/dim3/ep5000/train_rmse_log_bbg_dim3_ep5000.csv}\datthree
-\pgfplotstableread[col sep=comma]{Figures/dim4/ep5000/train_rmse_log_bbg_dim4_ep5000.csv}\datfour
+%\begin{table}[h!]
+%\centering
+%{\small
+%\pgfplotstableread[col sep=comma]{Figures/dim1/ep5000/train_rmse_log_bbg_dim1_ep5000.csv}\datone
+%\pgfplotstableread[col sep=comma]{Figures/dim2/ep5000/train_rmse_log_bbg_dim2_ep5000.csv}\dattwo
+%\pgfplotstableread[col sep=comma]{Figures/dim3/ep5000/train_rmse_log_bbg_dim3_ep5000.csv}\datthree
+%\pgfplotstableread[col sep=comma]{Figures/dim4/ep5000/train_rmse_log_bbg_dim4_ep5000.csv}\datfour
 
-\pgfplotstablecreatecol[copy column from table={\datone}{avg_rmse_bps}]{factor1}{\dattwo}
-\pgfplotstablecreatecol[copy column from table={\datthree}{avg_rmse_bps}]{factor3}{\dattwo}
-\pgfplotstablecreatecol[copy column from table={\datfour}{avg_rmse_bps}]{factor4}{\dattwo}
+%\pgfplotstablecreatecol[copy column from table={\datone}{avg_rmse_bps}]{factor1}{\dattwo}
+%\pgfplotstablecreatecol[copy column from table={\datthree}{avg_rmse_bps}]{factor3}{\dattwo}
+%\pgfplotstablecreatecol[copy column from table={\datfour}{avg_rmse_bps}]{factor4}{\dattwo}
 
-\pgfplotstabletypeset[
-  columns={epoch, factor1, avg_rmse_bps, factor3, factor4},
-  columns/epoch/.style={column type=r},
-  columns/factor1/.style={column name={1-factor}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/avg_rmse_bps/.style={column name={2-factor}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/factor3/.style={column name={3-factor}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/factor4/.style={column name={4-factor}, column type=r, fixed, precision=2, fixed zerofill},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={before row=\midrule, after row=\bottomrule},
-]{\dattwo}
-}
-\caption{Average RMSE (in basis points) across epochs for the 1- to 4-factor models.}
-\label{tab:avg_rmse_comparison}
-\end{table}
+%\pgfplotstabletypeset[
+%  columns={epoch, factor1, avg_rmse_bps, factor3, factor4},
+%  columns/epoch/.style={column type=r},
+%  columns/factor1/.style={column name={1-factor}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/avg_rmse_bps/.style={column name={2-factor}, %column type=r, fixed, precision=2, fixed zerofill},
+%  columns/factor3/.style={column name={3-factor}, column %type=r, fixed, precision=2, fixed zerofill},
+%  columns/factor4/.style={column name={4-factor}, column %type=r, fixed, precision=2, fixed zerofill},
+%  every head row/.style={before row=\toprule, after %row=\midrule},
+%  every last row/.style={before row=\midrule, after %row=\bottomrule},
+%]{\dattwo}
+%}
+%\caption{Average RMSE (in basis points) across epochs for %the 1- to 4-factor models.}
+%\label{tab:avg_rmse_comparison}
+%\end{table}
 
 The results show a clear monotonic improvement in in-sample fit as the latent dimension increases. 
 At the end of training, the average RMSE is approximately 32.71 bps for the one-factor model, 10.13 bps for the two-factor model, 6.08 bps for the three-factor model, and 4.33 bps for the four-factor model. 
@@ -61,32 +61,32 @@ To illustrate the cross-sectional fit in more detail, Table~\ref{tab:train_rmse}
 
 
 % Average RMSE across epochs for all ccy's for 3-factor
-\begin{table}[h!]
-\centering
-{\scriptsize
-\pgfplotstabletypeset[
-  col sep=comma,
-  header=true,
-  columns={epoch, time_total_sec, avg_rmse_bps, rmse_bps_AUD, rmse_bps_CAD, rmse_bps_DKK, rmse_bps_EUR, rmse_bps_JPY, rmse_bps_NOK, rmse_bps_SEK, rmse_bps_GBP, rmse_bps_USD},
-  columns/epoch/.style={column type=r},
-  columns/time_total_sec/.style={column name={Time (s)}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/avg_rmse_bps/.style={column name={Avg RMSE (bps)}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_AUD/.style={column name={AUD}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_CAD/.style={column name={CAD}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_DKK/.style={column name={DKK}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_EUR/.style={column name={EUR}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_JPY/.style={column name={JPY}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_NOK/.style={column name={NOK}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_SEK/.style={column name={SEK}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_GBP/.style={column name={GBP}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/rmse_bps_USD/.style={column name={USD}, column type=r, fixed, precision=2, fixed zerofill},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={before row=\midrule, after row=\bottomrule},
-]{Figures/dim3/ep5000/train_rmse_log_bbg_dim3_ep5000.csv}
-}
-\caption{Training RMSE (in basis points) across epochs for the 3-factor model.}
-\label{tab:train_rmse}
-\end{table}
+%\begin{table}[h!]
+%\centering
+%{\scriptsize
+%\pgfplotstabletypeset[
+%  col sep=comma,
+%  header=true,
+%  columns={epoch, time_total_sec, avg_rmse_bps, rmse_bps_AUD, rmse_bps_CAD, rmse_bps_DKK, rmse_bps_EUR, rmse_bps_JPY, rmse_bps_NOK, rmse_bps_SEK, rmse_bps_GBP, rmse_bps_USD},
+%  columns/epoch/.style={column type=r},
+%  columns/time_total_sec/.style={column name={Time (s)}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/avg_rmse_bps/.style={column name={Avg RMSE (bps)}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_AUD/.style={column name={AUD}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_CAD/.style={column name={CAD}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_DKK/.style={column name={DKK}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_EUR/.style={column name={EUR}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_JPY/.style={column name={JPY}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_NOK/.style={column name={NOK}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_SEK/.style={column name={SEK}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_GBP/.style={column name={GBP}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/rmse_bps_USD/.style={column name={USD}, column type=r, fixed, precision=2, fixed zerofill},
+%  every head row/.style={before row=\toprule, after row=\midrule},
+%  every last row/.style={before row=\midrule, after row=\bottomrule},
+%]{Figures/dim3/ep5000/train_rmse_log_bbg_dim3_ep5000.csv}
+%}
+%\caption{Training RMSE (in basis points) across epochs for the 3-factor model.}
+%\label{tab:train_rmse}
+%\end{table}
 
 The three-factor specification achieves a final average training RMSE of roughly 6 bps, with some heterogeneity across currencies. 
 The reconstruction errors are lowest for CAD, GBP and USD, while JPY remains somewhat harder to fit. 
@@ -103,83 +103,83 @@ The summary statistics are reported in Table~\ref{tab:rmse_summary_comparison}.
 
 
 % Oos and IS comparison for Autoencoder and EKF
-\begin{table}[h!]
-\centering
-{\small
+%\begin{table}[h!]
+%\centering
+%{\small
 % ── Autoencoder ──────────────────────────────────────────────────────────────
-\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim1/ep2500/rmse_summary.csv}\sumone
-\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim2/ep2500/rmse_summary.csv}\sumtwo
-\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim3/ep2500/rmse_summary.csv}\sumthree
-\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim4/ep2500/rmse_summary.csv}\sumfour
+%\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim1/ep2500/rmse_summary.csv}\sumone
+%\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim2/ep2500/rmse_summary.csv}\sumtwo
+%\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim3/ep2500/rmse_summary.csv}\sumthree
+%\pgfplotstableread[col sep=comma]{Figures/OOS_split_dim4/ep2500/rmse_summary.csv}\sumfour
 % ── EKF Kalman ───────────────────────────────────────────────────────────────
-\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_1f/rmse_summary.csv}\ekfone
-\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_2f/rmse_summary.csv}\ekftwo
-\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_3f/rmse_summary.csv}\ekfthree
-\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_4f/rmse_summary.csv}\ekffour
+%\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_1f/rmse_summary.csv}\ekfone
+%\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_2f/rmse_summary.csv}\ekftwo
+%\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_3f/rmse_summary.csv}\ekfthree
+%\pgfplotstableread[col sep=comma]{Figures/kalman_benchmark_oos/ekf_dns_4f/rmse_summary.csv}\ekffour
 
 % ── Extract Average row — Autoencoder ────────────────────────────────────────
-\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumone \let\ISmeani\pgfplotsretval
-\pgfplotstablegetelem{1}{IS std (bps)}\of\sumone \let\ISstdi\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumone \let\OOSmeani\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumone \let\OOSstdi\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumone \let\ISmeani\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS std (bps)}\of\sumone \let\ISstdi\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumone \let\OOSmeani\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumone \let\OOSstdi\pgfplotsretval
 
-\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumtwo \let\ISmeanii\pgfplotsretval
-\pgfplotstablegetelem{1}{IS std (bps)}\of\sumtwo \let\ISstdii\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumtwo \let\OOSmeanii\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumtwo \let\OOSstdii\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumtwo \let\ISmeanii\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS std (bps)}\of\sumtwo \let\ISstdii\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumtwo \let\OOSmeanii\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumtwo \let\OOSstdii\pgfplotsretval
 
-\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumthree \let\ISmeaniii\pgfplotsretval
-\pgfplotstablegetelem{1}{IS std (bps)}\of\sumthree \let\ISstdiii\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumthree \let\OOSmeaniii\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumthree \let\OOSstdiii\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumthree \let\ISmeaniii\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS std (bps)}\of\sumthree \let\ISstdiii\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumthree \let\OOSmeaniii\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumthree \let\OOSstdiii\pgfplotsretval
 
-\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumfour \let\ISmeaniv\pgfplotsretval
-\pgfplotstablegetelem{1}{IS std (bps)}\of\sumfour \let\ISstdiv\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumfour \let\OOSmeaniv\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumfour \let\OOSstdiv\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS mean (bps)}\of\sumfour \let\ISmeaniv\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS std (bps)}\of\sumfour \let\ISstdiv\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS mean (bps)}\of\sumfour \let\OOSmeaniv\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS std (bps)}\of\sumfour \let\OOSstdiv\pgfplotsretval
 
 % ── Extract Average row — EKF Kalman ─────────────────────────────────────────
-\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekfone \let\EKFISmeani\pgfplotsretval
-\pgfplotstablegetelem{1}{IS std (bps)}\of\ekfone \let\EKFISstdi\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekfone \let\EKFOOSmeani\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekfone \let\EKFOOSstdi\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekfone \let\EKFISmeani\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS std (bps)}\of\ekfone \let\EKFISstdi\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekfone \let\EKFOOSmeani\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekfone \let\EKFOOSstdi\pgfplotsretval
 
-\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekftwo \let\EKFISmeanii\pgfplotsretval
-\pgfplotstablegetelem{1}{IS std (bps)}\of\ekftwo \let\EKFISstdii\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekftwo \let\EKFOOSmeanii\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekftwo \let\EKFOOSstdii\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekftwo \let\EKFISmeanii\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS std (bps)}\of\ekftwo \let\EKFISstdii\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekftwo \let\EKFOOSmeanii\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekftwo \let\EKFOOSstdii\pgfplotsretval
 
-\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekfthree \let\EKFISmeaniii\pgfplotsretval
-\pgfplotstablegetelem{1}{IS std (bps)}\of\ekfthree \let\EKFISstdiii\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekfthree \let\EKFOOSmeaniii\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekfthree \let\EKFOOSstdiii\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekfthree \let\EKFISmeaniii\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS std (bps)}\of\ekfthree \let\EKFISstdiii\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekfthree \let\EKFOOSmeaniii\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekfthree \let\EKFOOSstdiii\pgfplotsretval
 
-\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekffour \let\EKFISmeaniv\pgfplotsretval
-\pgfplotstablegetelem{1}{IS std (bps)}\of\ekffour \let\EKFISstdiv\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekffour \let\EKFOOSmeaniv\pgfplotsretval
-\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekffour \let\EKFOOSstdiv\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS mean (bps)}\of\ekffour \let\EKFISmeaniv\pgfplotsretval
+%\pgfplotstablegetelem{1}{IS std (bps)}\of\ekffour \let\EKFISstdiv\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS mean (bps)}\of\ekffour \let\EKFOOSmeaniv\pgfplotsretval
+%\pgfplotstablegetelem{1}{OOS std (bps)}\of\ekffour \let\EKFOOSstdiv\pgfplotsretval
 
-\begin{tabular}{llrrrr}
-\toprule
-\textbf{Model} & \textbf{Factors} & \textbf{IS mean} & \textbf{IS std} & \textbf{OOS mean} & \textbf{OOS std} \\
-\midrule
-\multirow{4}{*}{Autoencoder}
- & 1 & \rounded{\ISmeani}   & \rounded{\ISstdi}   & \rounded{\OOSmeani}   & \rounded{\OOSstdi}   \\
- & 2 & \rounded{\ISmeanii}  & \rounded{\ISstdii}  & \rounded{\OOSmeanii}  & \rounded{\OOSstdii}  \\
- & 3 & \rounded{\ISmeaniii} & \rounded{\ISstdiii} & \rounded{\OOSmeaniii} & \rounded{\OOSstdiii} \\
- & 4 & \rounded{\ISmeaniv}  & \rounded{\ISstdiv}  & \rounded{\OOSmeaniv}  & \rounded{\OOSstdiv}  \\
-\midrule
-\multirow{4}{*}{EKF DNS}
- & 1 & \rounded{\EKFISmeani}   & \rounded{\EKFISstdi}   & \rounded{\EKFOOSmeani}   & \rounded{\EKFOOSstdi}   \\
- & 2 & \rounded{\EKFISmeanii}  & \rounded{\EKFISstdii}  & \rounded{\EKFOOSmeanii}  & \rounded{\EKFOOSstdii}  \\
- & 3 & \rounded{\EKFISmeaniii} & \rounded{\EKFISstdiii} & \rounded{\EKFOOSmeaniii} & \rounded{\EKFOOSstdiii} \\
- & 4 & \rounded{\EKFISmeaniv}  & \rounded{\EKFISstdiv}  & \rounded{\EKFOOSmeaniv}  & \rounded{\EKFOOSstdiv}  \\
-\bottomrule
-\end{tabular}
-}
-\caption{Average in-sample and out-of-sample RMSE (in basis points) across factor models and estimation methods.}
-\label{tab:rmse_summary_comparison}
-\end{table}
+%\begin{tabular}{llrrrr}
+%\toprule
+%\textbf{Model} & \textbf{Factors} & \textbf{IS mean} & \textbf{IS std} & \textbf{OOS mean} & \textbf{OOS std} \\
+%\midrule
+%\multirow{4}{*}{Autoencoder}
+% & 1 & \rounded{\ISmeani}   & \rounded{\ISstdi}   & \rounded{\OOSmeani}   & \rounded{\OOSstdi}   \\
+% & 2 & \rounded{\ISmeanii}  & \rounded{\ISstdii}  & \rounded{\OOSmeanii}  & \rounded{\OOSstdii}  \\
+% & 3 & \rounded{\ISmeaniii} & \rounded{\ISstdiii} & \rounded{\OOSmeaniii} & \rounded{\OOSstdiii} \\
+% & 4 & \rounded{\ISmeaniv}  & \rounded{\ISstdiv}  & \rounded{\OOSmeaniv}  & \rounded{\OOSstdiv}  \\
+%\midrule
+%\multirow{4}{*}{EKF DNS}
+% & 1 & \rounded{\EKFISmeani}   & \rounded{\EKFISstdi}   & \rounded{\EKFOOSmeani}   & \rounded{\EKFOOSstdi}   \\
+% & 2 & \rounded{\EKFISmeanii}  & \rounded{\EKFISstdii}  & \rounded{\EKFOOSmeanii}  & \rounded{\EKFOOSstdii}  \\
+% & 3 & \rounded{\EKFISmeaniii} & \rounded{\EKFISstdiii} & \rounded{\EKFOOSmeaniii} & \rounded{\EKFOOSstdiii} \\
+% & 4 & \rounded{\EKFISmeaniv}  & \rounded{\EKFISstdiv}  & \rounded{\EKFOOSmeaniv}  & \rounded{\EKFOOSstdiv}  \\
+%\bottomrule
+%\end{tabular}
+%}
+%\caption{Average in-sample and out-of-sample RMSE (in basis points) across factor models and estimation methods.}
+%\label{tab:rmse_summary_comparison}
+%\end{table}
 
 
 Several conclusions emerge from Table~\ref{tab:rmse_summary_comparison}. 
@@ -195,28 +195,28 @@ A more definitive benchmark comparison should therefore be based on longer train
 Figures~\ref{fig:autoencoder_oos_compare}--\ref{fig:ekf_vs_auto_4f} provide representative examples of reconstructed and observed curves out of sample.
 
 % Autoencoder reconstruction comparison across factors
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/autoencoder_comparison_oos.png}
-    \caption{XXX}
-\end{figure}
+%\begin{figure}[H]
+%    \centering
+%    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/autoencoder_comparison_oos.png}
+%    \caption{XXX}
+%\end{figure}
 
 % Autoencoder reconstruction comparison across factors
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_2f_oos.png}
-    \caption{XXX}
-\end{figure}
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_3f_oos.png}
-    \caption{XXX}
-\end{figure}
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_4f_oos.png}
-    \caption{XXX}
-\end{figure}
+%\begin{figure}[H]
+%    \centering
+%    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_2f_oos.png}
+%    \caption{XXX}
+%\end{figure}
+%\begin{figure}[H]
+%    \centering
+%    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_3f_oos.png}
+%    \caption{XXX}
+%\end{figure}
+%\begin{figure}[H]
+%    \centering
+%    \includegraphics[width=0.9\textwidth]{Figures/comparison/ep2500/kalman_vs_autoencoder_4f_oos.png}
+%    \caption{XXX}
+%\end{figure}
 
 Visual inspection confirms the quantitative findings. 
 The autoencoder captures the overall level and slope of the swap curves well, but the higher-factor specifications are materially better at reproducing curvature and long-end deviations. 
