@@ -12,5 +12,23 @@
   "torch_version": "2.6.0",
   "numpy_version": "2.2.2",
   "run_started": "2026-03-30T15:02:59",
-  "window_results": {}
+  "window_results": {
+    "2015-01-01": {
+      "avg_rmse_bps": 12.0746,
+      "per_ccy_bps": {
+        "AUD": 9.5103,
+        "CAD": 8.132,
+        "DKK": 9.5703,
+        "EUR": 8.6396,
+        "JPY": 14.0083,
+        "NOK": 11.2365,
+        "SEK": 17.5208,
+        "GBP": 14.4069,
+        "USD": 15.6468
+      },
+      "train_minutes": 18.48,
+      "n_train": 522,
+      "n_test": 54
+    }
+  }
 }

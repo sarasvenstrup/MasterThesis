@@ -758,8 +758,8 @@ _show   = _w_starts[:_n_show]
 def _to_x(ts):
     return ts.year + (ts.month - 1) / 12.0
 
-_col_train = custom_palette[0]
-_col_test  = custom_palette[3]
+_col_train = custom_palette[4]
+_col_test  = custom_palette[6]
 _col_full  = "lightgray"
 _row_h     = 0.45
 _n_rows    = _n_show + 2   # windows + dots row + full series row
