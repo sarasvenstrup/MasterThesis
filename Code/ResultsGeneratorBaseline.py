@@ -470,7 +470,7 @@ _rep_dates = {
     "Crisis (2020-03-31)":  "2020-03-31",
     "Low-rate (2019-06-30)": "2019-06-30",
 }
-_show_ccys_alldim = ["EUR", "USD", "JPY", "CAD"]
+_show_ccys_alldim = ["EUR", "USD", "JPY"]
 _dim_colors = {d: DIM_COLORS[d] for d in [2, 3, 4]}
 _dim_styles = {2: "-", 3: "-", 4: "-"}
 
@@ -522,6 +522,86 @@ for col_i, (label, date_str) in enumerate(_rep_dates.items()):
 
 fig.tight_layout()
 save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1e_zcb — Plot: Swap curves + implied ZCB yields, all currencies, one date
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1e_zcb: Swap + ZCB curves (all currencies, 2021-11-30) ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q1e_zcb skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    _zcb_target = pd.Timestamp("2021-11-30")
+    _zcb_scale  = 100.0 if SCALE_IS_PERCENT else 1.0
+
+    # Use full dataset (train + test combined)
+    _meta_full_dt = meta_full_df.copy()
+    _meta_full_dt["as_of_date"] = pd.to_datetime(_meta_full_dt["as_of_date"])
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    ax_swap, ax_zcb = axes
+
+    for ccy in CCY_ORDER:
+        _col = currency_color_map[ccy]
+        mask_ccy = (_meta_full_dt["ccy"] == ccy).values
+        if mask_ccy.sum() == 0:
+            continue
+
+        dates_ccy = _meta_full_dt.loc[mask_ccy, "as_of_date"]
+        idx_local = (dates_ccy - _zcb_target).abs().argmin()
+        global_idx = np.where(mask_ccy)[0][idx_local]
+        actual_date = dates_ccy.iloc[idx_local]
+
+        x_obs = X_full[[global_idx]]   # (1, n_tenors)
+
+        with torch.no_grad():
+            S_hat_obs, aux_obs = best_model(x_obs.to(device), return_aux=True)
+
+        actual  = x_obs[0].numpy()   * _zcb_scale
+        fitted  = S_hat_obs[0].cpu().numpy() * _zcb_scale
+
+        # Left panel: swap curves
+        ax_swap.plot(tenors, actual, "o-",  color=_col, linewidth=1.8,
+                     markersize=4, label=ccy)
+        ax_swap.plot(tenors, fitted, "--",  color=_col, linewidth=1.2, alpha=0.8)
+
+        # Right panel: ZCB yields from P_full on model's tau_grid
+        P_full  = aux_obs["P_full"][0].cpu().numpy()       # (n_tau_grid,)
+        tau_grid = aux_obs["tau_grid"].cpu().numpy()        # (n_tau_grid,)
+        zcb_yield = -np.log(np.clip(P_full, 1e-8, None)) / tau_grid
+        ax_zcb.plot(tau_grid, zcb_yield * _zcb_scale, "--", color=_col,
+                    linewidth=1.5, label=ccy)
+
+    ax_swap.set_xlabel("Time to Maturity")
+    ax_swap.set_ylabel(f"Swap Rate ({'%' if SCALE_IS_PERCENT else 'dec.'})")
+    ax_swap.set_title("Swap curves", fontsize=10, fontweight="bold")
+    ax_swap.set_xticks(tenors)
+    ax_swap.set_xticklabels([str(int(t)) for t in tenors], fontsize=8)
+
+    ax_zcb.set_xlabel("Time to Maturity")
+    ax_zcb.set_ylabel(f"ZCB Yield ({'%' if SCALE_IS_PERCENT else 'dec.'})")
+    ax_zcb.set_title("Implied ZCB yield curves", fontsize=10, fontweight="bold")
+
+    # shared legend below the figure
+    handles, labels = ax_swap.get_legend_handles_labels()
+    # keep only actual (solid) handles — one per currency
+    fig.legend(handles, labels, loc="lower center", ncol=len(CCY_ORDER),
+               fontsize=8, frameon=False, bbox_to_anchor=(0.5, -0.04))
+
+    _actual_dates = []
+    for ccy in CCY_ORDER:
+        mask_c = (_meta_full_dt["ccy"] == ccy).values
+        if mask_c.sum() > 0:
+            dates_c = _meta_full_dt.loc[mask_c, "as_of_date"]
+            idx_l = (dates_c - _zcb_target).abs().argmin()
+            _actual_dates.append(str(dates_c.iloc[idx_l].date()))
+    _used_date = _actual_dates[0] if _actual_dates else str(_zcb_target.date())
+
+    fig.suptitle(f"AE $\\ell={LATENT_DIM}$ — {_used_date}  "
+                 f"(solid/● observed, dashed reconstructed / implied ZCB)",
+                 fontsize=9, y=1.01)
+    fig.tight_layout()
+    save_fig(fig, f"Q1e_zcb_swap_dim{LATENT_DIM}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
