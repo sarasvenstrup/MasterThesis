@@ -271,7 +271,7 @@ for dim in [1, 2, 3, 4]:
         continue
     _log_df = pd.read_csv(_log_path)
     ax.plot(_log_df["epoch"], _log_df["avg_rmse_bps"],
-            linewidth=1.2, color=custom_palette[dim - 1],
+            linewidth=1.2, color=DIM_COLORS[dim],
             label=f"$\\ell={dim}$")
 
 ax.axvline(2500, color="black", linewidth=1.0, linestyle="--", label="Epoch 2500")
@@ -491,7 +491,7 @@ _rep_dates = {
     "Low-rate (2019-06-30)": "2019-06-30",
 }
 _show_ccys_alldim = ["EUR", "USD", "JPY"]
-_dim_colors = {2: custom_palette[0], 3: custom_palette[1], 4: custom_palette[2]}
+_dim_colors = {d: DIM_COLORS[d] for d in [2, 3, 4]}
 _dim_styles = {2: "-", 3: "--", 4: ":"}
 
 _scale = 100.0 if SCALE_IS_PERCENT else 1.0
