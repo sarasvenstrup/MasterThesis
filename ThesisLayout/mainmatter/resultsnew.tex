@@ -436,10 +436,22 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 % ── Q4c ──────────────────────────────────────────────────────
 
 
+We should compare the benchmark for the three models for the benchmark across all models to give a fair comparison. and we also have the time it takes to train the model for each. However we msut keep in mind that this is a benchmark on how well the AE reconstructs swap rates, and we mist take into account that we now it produces arbitrage free swap rates, where this is not necessarily guaranteeed for our benchmark.
 
 
-We should compare the benchmark for the three models for the benchmark across all models to give a fair comparison.
-
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
+    \caption{Average rolling out-of-sample RMSE (bps) for the autoencoder and the
+    EKF DNS benchmark across latent dimensions $\ell \in \{2, 3, 4\}$.
+    Autoencoder bars are coloured by model:
+    $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).
+    EKF DNS bars are shown in grey.
+    Values are averaged across all valid rolling windows.}
+    \label{fig:Q2b}
+\end{figure}
 
 
 
