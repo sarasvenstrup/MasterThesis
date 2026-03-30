@@ -5,7 +5,7 @@ import torch.nn as nn
 from Code.utils.common import CenteredSoftStep
 
 
-class HSigmaStable(nn.Module):
+class HSigmaStable_old(nn.Module):
     """
     Structurally stable H-network for any latent dimension d.
 
@@ -112,3 +112,98 @@ class HSigmaStable(nn.Module):
             }
 
         return sigmas, rhos
+
+
+class HSigmaStable(nn.Module):
+    """
+    Generic stable diffusion network.
+
+    Outputs a lower-triangular matrix L(z) such that
+        Sigma(z) = L(z) L(z)^T
+    is automatically SPD for every z.
+
+    Diagonal entries are smoothly bounded in (sigma_min, sigma_max).
+    Off-diagonal entries are smoothly bounded in (-offdiag_max, offdiag_max).
+    """
+
+    def __init__(
+        self,
+        latent_dim: int,
+        hidden_dim: int,
+        bias: bool = False,
+        sigma_init: float = 0.015,
+        sigma_min: float = 1e-4,
+        sigma_max: float = 0.20,
+        offdiag_max: float = 0.20,
+    ):
+        super().__init__()
+
+        if not (0.0 < sigma_min < sigma_max):
+            raise ValueError("Require 0 < sigma_min < sigma_max.")
+        if not (sigma_min < sigma_init < sigma_max):
+            raise ValueError("Require sigma_min < sigma_init < sigma_max.")
+
+        self.d = int(latent_dim)
+        self.n_diag = self.d
+        self.n_off = self.d * (self.d - 1) // 2
+        self.out_dim = self.n_diag + self.n_off
+
+        self.sigma_min = float(sigma_min)
+        self.sigma_max = float(sigma_max)
+        self.offdiag_max = float(offdiag_max)
+
+        self.log_sigma_min = math.log(self.sigma_min)
+        self.log_sigma_max = math.log(self.sigma_max)
+        self.log_sigma_range = self.log_sigma_max - self.log_sigma_min
+
+        self.net = nn.Sequential(
+            nn.Linear(self.d, hidden_dim, bias=bias),
+            CenteredSoftStep(),
+            nn.Linear(hidden_dim, self.out_dim, bias=bias),
+        )
+
+        nn.init.zeros_(self.net[-1].weight)
+        if self.net[-1].bias is not None:
+            nn.init.zeros_(self.net[-1].bias)
+
+        target = (math.log(sigma_init) - self.log_sigma_min) / self.log_sigma_range
+        target = min(max(target, 1e-8), 1.0 - 1e-8)
+        raw_init = math.log(target / (1.0 - target))
+        self.raw_diag_offset = nn.Parameter(torch.full((self.d,), raw_init))
+
+        tril_i, tril_j = torch.tril_indices(row=self.d, col=self.d, offset=-1)
+        self.register_buffer("tril_i", tril_i)
+        self.register_buffer("tril_j", tril_j)
+
+    def forward(self, z: torch.Tensor, return_raw: bool = False):
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
+
+        B = z.shape[0]
+        raw = self.net(z)  # (B, d + d(d-1)/2)
+
+        raw_diag = raw[:, :self.d] + self.raw_diag_offset
+        raw_off = raw[:, self.d:]
+
+        # bounded positive diagonal
+        log_diag = self.log_sigma_min + self.log_sigma_range * torch.sigmoid(raw_diag)
+        diag = torch.exp(log_diag)  # (B, d)
+
+        # bounded off-diagonals
+        off = self.offdiag_max * torch.tanh(raw_off)  # (B, n_off)
+
+        L = torch.zeros(B, self.d, self.d, device=z.device, dtype=z.dtype)
+        L[:, torch.arange(self.d), torch.arange(self.d)] = diag
+        L[:, self.tril_i, self.tril_j] = off
+
+        if return_raw:
+            return {
+                "raw": raw,
+                "raw_diag": raw_diag,
+                "raw_off": raw_off,
+                "diag": diag,
+                "off": off,
+                "L": L,
+            }
+
+        return L

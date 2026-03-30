@@ -523,7 +523,6 @@ def run_comparison():
     return df
 
 
-# â”€â”€ Plot helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _plot_scatter(df_v: pd.DataFrame, out_dir: str):
     fig, ax = plt.subplots(figsize=(7, 6))
     sc = ax.scatter(
@@ -599,7 +598,7 @@ def _plot_timeseries(df_v: pd.DataFrame, out_dir: str):
     plt.tight_layout()
     p = os.path.join(out_dir, "vol_timeseries.png")
     plt.savefig(p, dpi=200, bbox_inches="tight")
-    print(f"Saved â†’ {p}")
+    print(f"Saved’ {p}")
     plt.show()
     plt.close()
 

@@ -176,12 +176,17 @@ class FullModel(nn.Module):
 
         # 3) Risk-neutral parameter networks
         mu = self.K(z)                                # (B,d)
-        sigmas, rhos = self.H(z)                      # (B,d), (B,1)
+
+        if VARIANT == "stable":
+            sigma = self.H(z)  # (B,d,d), already Cholesky / diffusion matrix
+        else:
+            sigmas, rhos = self.H(z)
+            sigma = L_from_sigmas_rhos(sigmas, rhos)
+
         r_tilde = self.R(z)                           # (B,1) or (B,)
         if r_tilde.ndim == 2 and r_tilde.shape[-1] == 1:
             r_tilde = r_tilde.squeeze(-1)             # (B,)
 
-        sigma = L_from_sigmas_rhos(sigmas, rhos)      # (B,d,d)
 
         # 4) Derivatives of G wrt tau and z
         def G_single(z_single: torch.Tensor) -> torch.Tensor:

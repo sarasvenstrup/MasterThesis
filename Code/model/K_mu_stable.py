@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-class KMuStable(nn.Module):
+class KMuStable_old(nn.Module):
     """
     Stable drift network K from the paper with guaranteed mean-reversion.
     
@@ -62,3 +62,58 @@ class KMuStable(nn.Module):
         
         return mu
 
+
+class KMuStable(nn.Module):
+    """
+    Mean-reverting linear drift with less restrictive stability constraint.
+
+    mu(z) = M z + N
+    with M = S - A
+
+    S is skew-symmetric  -> allows rotational / cross-factor effects
+    A is positive definite -> ensures symmetric part of M is negative definite
+
+    Therefore M is Hurwitz, so the drift is stable / mean-reverting.
+    """
+
+    def __init__(self, latent_dim: int, bias: bool = True, epsilon: float = 1e-3):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.epsilon = epsilon
+
+        # unconstrained matrix used to build skew-symmetric part
+        self.B = nn.Parameter(torch.zeros(latent_dim, latent_dim))
+
+        # unconstrained matrix used to build positive definite part
+        self.L = nn.Parameter(torch.empty(latent_dim, latent_dim))
+        nn.init.orthogonal_(self.L)
+
+        if bias:
+            self.N = nn.Parameter(torch.zeros(latent_dim))
+        else:
+            self.register_parameter("N", None)
+
+    def drift_matrix(self) -> torch.Tensor:
+        I = torch.eye(self.latent_dim, device=self.L.device, dtype=self.L.dtype)
+
+        # skew-symmetric part
+        S = self.B - self.B.t()
+
+        # positive definite part
+        A = self.L @ self.L.t() + self.epsilon * I
+
+        # Hurwitz matrix
+        M = S - A
+        return M
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
+
+        M = self.drift_matrix()
+        mu = z @ M.t()
+
+        if self.N is not None:
+            mu = mu + self.N.unsqueeze(0)
+
+        return mu
