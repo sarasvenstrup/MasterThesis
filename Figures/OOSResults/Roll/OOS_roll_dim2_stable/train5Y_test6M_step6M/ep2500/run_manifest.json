@@ -29,6 +29,23 @@
       "train_minutes": 18.48,
       "n_train": 522,
       "n_test": 54
+    },
+    "2015-07-01": {
+      "avg_rmse_bps": 11.1081,
+      "per_ccy_bps": {
+        "AUD": 10.1799,
+        "CAD": 6.107,
+        "DKK": 7.272,
+        "EUR": 12.6766,
+        "JPY": 12.2093,
+        "NOK": 8.1503,
+        "SEK": 18.2947,
+        "GBP": 12.6276,
+        "USD": 12.4555
+      },
+      "train_minutes": 18.0,
+      "n_train": 528,
+      "n_test": 54
     }
   }
 }
