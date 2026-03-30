@@ -54,8 +54,8 @@ os.makedirs(EXTRA_OUT,   exist_ok=True)
 
 # ── constants ──────────────────────────────────────────────────────────────────
 CCY_ORDER   = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
-DIM_COLORS  = {1: custom_palette[0], 2: custom_palette[1],
-               3: custom_palette[2], 4: custom_palette[3]}
+DIM_COLORS  = {1: custom_palette[8], 2: custom_palette[4],
+               3: custom_palette[0], 4: custom_palette[6]}
 LATENT_DIM       = 3
 SPLIT_EPOCHS     = 2500
 TRAIN_LOG_EPOCHS = 5000
@@ -892,7 +892,7 @@ print("\n── Q3b: Rolling RMSE over time (ℓ=2,3,4) ──")
 
 CLIP      = 100
 BAR_WIDTH = pd.Timedelta(days=50)
-_Q3b_COLORS  = {2: custom_palette[0], 3: custom_palette[1], 4: custom_palette[2]}
+_Q3b_COLORS  = {d: DIM_COLORS[d] for d in [2, 3, 4]}
 DIM_OFFSETS = {2: pd.Timedelta(days=-35), 3: pd.Timedelta(days=0), 4: pd.Timedelta(days=35)}
 
 _any_plotted = False
