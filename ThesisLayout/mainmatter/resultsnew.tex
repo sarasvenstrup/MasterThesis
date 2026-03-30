@@ -12,7 +12,7 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of the autoencoder against two criteria: the reconstruction error, measured by the root mean squared error (RMSE) in basis points (bps), and the satisfaction of the no-arbitrage constraint, assessed through the \textcolor{red}{approximate Sharpe ratio (reference or write what we mean by this diagnostic)} of zero-coupon bonds implied by the reconstructed curves. A \textcolor{red}{ quantity that should be negligible if the model is arbitrage-free by construction}
+To start of the evaluation of the Auto encoder we must first determine the criteria to which we will execute this. Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of the autoencoder against two criteria: the reconstruction error, measured by the root mean squared error (RMSE) in basis points (bps), and the satisfaction of the no-arbitrage constraint, assessed through the \textcolor{red}{approximate Sharpe ratio (reference or write what we mean by this diagnostic)} of zero-coupon bonds implied by the reconstructed curves. A \textcolor{red}{ quantity that should be negligible if the model is arbitrage-free by construction}. We will be using the reconsrtuction error, to assess the model in varios ways. Firsly in order to assess the loss of the different models and where they converge if they do. Thereafter we will be assessing the fit in with other metrics. we will be looking at the resiudal distriution, together with the visual fit of the model of different currencies. Further it is also interesting to evaluate the model not only on a currency basis but also across tenors. We also look at where the model struggles the most over time. And lastly finish with checking if the model exhibits no-arbitrage objects. 
 
 % Note to selv
 %We first confirm that the models have converged, then assess fit quality across currencies and latent dimensions, before examining where and when the model struggles most. 
@@ -21,35 +21,7 @@ Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of 
 \subsection{Loss Assessment}
 
 The model is trained on the in-sample period 2010--\textcolor{red}{different for different currencies? which we should write in the data section.} over 5\,000
-epochs. Figure~\ref{fig:training_loss} shows the average training RMSE
-across all currencies for $\ell \in \{1,2,3,4\}$. All four models
-converge well before epoch 2\,500, after which the loss curves flatten
-with no meaningful further improvement. $\ell=1$ converges
-to a substantially higher error of approximately 30 bps, indicating as one would expect that a single latent factor is insufficient to capture the variation in
-the swap rate curve, and the remaining analysis therefore focuses on
-$\ell \in \{2, 3, 4\}$.
-
-Table~\ref{tab:q1a_is_rmse} breaks this down by currency. Across all
-nine currencies, the error falls substantially from $\ell=2$ to
-$\ell=3$, with more modest gains from $\ell=3$ to $\ell=4$, suggesting
-diminishing returns to increasing model complexity. \textcolor{red}{EUR
-and JPY consistently show the highest reconstruction error — fill in
-values once results are updated.}
-
-
-We then wanna see also according to tenors. 
-
-
-
-
-and then how the in sample residuals actually are distributed. 
-
-
-Further we want to look at \underline{when} the model struggles to reconstruct the swap rates well.
-
-
-
-
+epochs. 
 
 % ── Q1e ──────────────────────────────────────────────────────
 \begin{figure}[ht]
@@ -64,6 +36,19 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
 
 
 
+Figure~\ref{fig:training_loss} shows the average training RMSE
+across all currencies for $\ell \in \{1,2,3,4\}$. All four models
+converge well before epoch 2\,500, after which the loss curves flatten
+with no meaningful further improvement. $\ell=1$ converges
+to a substantially higher error of approximately 30 bps, indicating as one would expect that a single latent factor is insufficient to capture the variation in
+the swap rate curve, and the remaining analysis therefore focuses on
+$\ell \in \{2, 3, 4\}$. Which is further supported by Table~\ref{tab:q1a_is_rmse} which breaks the RMSE down by currency. Here the model with 1 latent factor has in general very high RMSEs ranging beteen 23.44 and 50 where the other models have a far less range on 9.79 to 16.61 for mode 2 and 8.33 to 15.30 for l=3.
+
+
+Across all
+nine currencies, the error falls substantially from $\ell=2$ to
+$\ell=3$ on average, with more modest gains from $\ell=3$ to $\ell=4$, suggesting
+diminishing returns to increasing model complexity. Across all models the currency that is hardest to reconstruct for , 3 and 4 is EUR and JPY closely following.
 
 
 
@@ -96,9 +81,10 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
 
 
 
+and then how the in sample residuals actually are distributed. 
 
 % ── Q1c ──────────────────────────────────────────────────────
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
     \caption{Distribution of in-sample residuals (actual minus fitted) in
@@ -117,7 +103,82 @@ in-sample residuals pooled across all currencies and dates for
 $\ell \in \{2, 3, 4\}$. \textcolor{red}{[Comment when results are updated]}
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 \subsection{Fit diagnostics}
+
+
+Further we want to look at \underline{when} the model struggles to reconstruct the swap rates well.
+
+% ── Q6b ──────────────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
+
+    \caption{In-sample RMSE (bps) over time for $\ell=3$, per currency and cross-currency 
+    average ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}} dashed):
+    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
+    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
+    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
+    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
+    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).
+    Dashed vertical lines mark key macro events.}
+    \label{fig:Q6b}
+\end{figure}
+
+
+% ── Q6a ──────────────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6a_rmse_by_tenor.png}
+    \caption{In-sample RMSE (bps) by tenor for $\ell \in \{2, 3, 4\}$
+    (left) and per currency for $\ell=3$ (right), averaged across all
+    in-sample observations. Currencies in the right panel:
+    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
+    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
+    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
+    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
+    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
+    \label{fig:Q6a}
+\end{figure}
+
+Figure~\ref{fig:Q6a} further disaggregates the error across tenors for
+$\ell=3$. \textcolor{red}{[Fill in: describe the tenor pattern, e.g.\
+``The model fits mid-range tenors most accurately, with higher errors
+at the short end of the curve.'' — update once results are
+available.]}
+
+
+
+We now want to assess how it visually reconstructs, and if it replicates the shape well, something that A metrics such as RMSE does not reveal.
 
 
 % ── Q1d ──────────────────────────────────────────────────────
@@ -149,43 +210,7 @@ Covid-19 stress episode (March 2020), and a low-rate regime (June
 
 
 
-% ── Q6a ──────────────────────────────────────────────────────
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6a_rmse_by_tenor.png}
-    \caption{In-sample RMSE (bps) by tenor for $\ell \in \{2, 3, 4\}$
-    (left) and per currency for $\ell=3$ (right), averaged across all
-    in-sample observations. Currencies in the right panel:
-    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
-    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
-    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
-    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
-    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
-    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
-    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
-    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
-    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
-    \label{fig:Q6a}
-\end{figure}
 
-Figure~\ref{fig:Q6a} further disaggregates the error across tenors for
-$\ell=3$. \textcolor{red}{[Fill in: describe the tenor pattern, e.g.\
-``The model fits mid-range tenors most accurately, with higher errors
-at the short end of the curve.'' — update once results are
-available.]}
-
-
-
-
-
-% ── Q6b ──────────────────────────────────────────────────────
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
-    \caption{In-sample RMSE (bps) over time for $\ell=3$,
-    averaged across currencies per date.}
-    \label{fig:Q6b}
-\end{figure}
 
 
 
@@ -210,6 +235,8 @@ available.]}
     USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
     \label{fig:Q7_sharpe}
 \end{figure}
+
+
 
 
 
@@ -245,7 +272,7 @@ For $\ell = 2$ and $\ell = 3$, the IS--OOS gap is modest (12.11 vs.\ 15.57 bps a
 
 
 
-\textcolor{red}{HERE INSERT FIGURE:we need to make another figure, and move this down to the benchmarks ection, where we in this case must compare the OOS Autoencoder to the InSample.}
+\textcolor{red}{HERE we need to make another figure, and move this down to the benchmarks ection, where we in this case must compare the OOS Autoencoder to the InSample.}
 
 
 
@@ -291,8 +318,13 @@ IS: 2004--2020, OOS: 2021--2022.}
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
-    \caption{Rolling out-of-sample RMSE over time for $\ell=3$,
-    showing variation across rolling windows.}
+    \caption{Rolling out-of-sample RMSE (bps) over time for
+    $\ell=2$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=3$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}), and
+    $\ell=4$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+    showing the cross-currency average per rolling window. Shaded bars indicate
+    windows where at least one currency exceeds 100 bps; bar colour matches the
+    corresponding model. Dashed vertical lines mark key macro events.}
     \label{fig:Q3b}
 \end{figure}
 
@@ -413,50 +445,8 @@ We should compare the benchmark for the three models for the benchmark across al
 
 
 
-We also need to add the benchmark comparison to the Rolling OOS experiment.
 
 
-% ── Q2b ──────────────────────────────────────────────────────
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
-    \caption{Rolling out-of-sample RMSE (bps) by latent dimension $\ell$,
-    averaged across 34 rolling windows (3-year train, 3-month test).}
-    \label{fig:Q2b}
-\end{figure}
-
-
-DET NEDENSTÅENDE SKAL SKRIVES /KOMMENTERES ET ELLER ANDET STED
-During training, the forward pass of the model computes bond prices on
-a discrete grid $\tau \in \{0, 1, \ldots, \tau_{\max}\}$ as
-\begin{equation}
-    P(\tau) = \exp\!\bigl(A(\tau) - B(\tau)\,z\bigr),
-\end{equation}
-where $A(\tau)$ and $B(\tau)$ are solutions to the Riccati ODEs with
-boundary conditions $A(0) = 0$ and $B(0) = 0$, ensuring $P(0) = 1$.
-In practice, the ODE solver introduces numerical errors of order
-$10^{-6}$, so $B(0)$ is only approximately zero. For an untrained
-model, the encoder output $z$ can be large due to random
-initialisation, meaning the product $B(0) \cdot z$ may exceed the
-tolerance threshold, causing $P(0)$ to deviate from 1 beyond the
-acceptable margin. To avoid premature termination of training, the
-boundary condition check is therefore only enforced when
-arbitrage diagnostics are explicitly requested, and with a relaxed
-tolerance of $10^{-4}$ appropriate for the numerical precision of
-the ODE solver. Importantly, this has no effect on the no-arbitrage
-property of the model itself, which is enforced structurally through
-the ODE boundary conditions rather than through this diagnostic check.
-The assertion serves only as a post-hoc sanity check and its removal
-from the training loop does not alter the theoretical guarantees of
-the model.
-
-
-
-
-
-Yes, the change was made in fullmodel.py — specifically in the forward() method. The assertion was moved from the main body of the forward pass (where it ran on every call) to inside the if doarbchecks: block (where it only runs when explicitly requested).
-
-This means this change affects both the baseline and stable variants since fullmodel.py is shared. But since it is purely a numerical stability fix with no effect on the model's mathematical properties, this is fine — you would want this fix in both variants.
 
 
 % ─────────────────────────────────────────────────────────────
