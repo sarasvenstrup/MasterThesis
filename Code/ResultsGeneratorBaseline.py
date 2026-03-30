@@ -115,38 +115,22 @@ def _load_state_dict_compat(model, ckpt_path):
     model.load_state_dict(state, strict=True)
 
 def load_ep5000_model(dim):
-    """Load ep5000 training checkpoint from Figures/dim{N}/ep5000/.
-    Falls back to OOSSplit best-seed checkpoint if ep5000 checkpoint not yet available."""
+    """Load ep5000 training checkpoint from Figures/TrainingResults/dim{N}_baseline/ep5000/."""
     ckpt_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
                              f"ep{TRAIN_LOG_EPOCHS}",
                              f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
-    if os.path.exists(ckpt_path):
-        m = FullModel(latent_dim=dim).to(device)
-        _load_state_dict_compat(m, ckpt_path)
-        m.eval()
-        print(f"  Loaded ep5000 checkpoint dim={dim}: {ckpt_path}")
-        return m, "ep5000"
-
-    # fallback: OOSSplit best-seed checkpoint
-    warnings.warn(f"ep5000 checkpoint not found for dim={dim} — falling back to OOSSplit ep{SPLIT_EPOCHS}")
-    ckpt_dir = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{dim}_baseline", f"ep{SPLIT_EPOCHS}")
-    manifest_p = os.path.join(ckpt_dir, "run_manifest.json")
-    seed = 0
-    if os.path.exists(manifest_p):
-        with open(manifest_p) as f:
-            mf = json.load(f)
-        seed = mf.get("best_seed", 0)
-    ckpt_path = os.path.join(ckpt_dir, f"checkpoint_seed{seed}.pt")
     if not os.path.exists(ckpt_path):
-        warnings.warn(f"Fallback checkpoint not found: {ckpt_path}")
+        warnings.warn(f"⚠️  ep{TRAIN_LOG_EPOCHS} checkpoint not found for dim={dim} — SKIPPING. "
+                      f"Run Training.py (LATENT_DIM={dim}, EPOCHS={TRAIN_LOG_EPOCHS}) to fix.\n"
+                      f"  Expected: {ckpt_path}")
         return None, None
     m = FullModel(latent_dim=dim).to(device)
     _load_state_dict_compat(m, ckpt_path)
     m.eval()
-    print(f"  Loaded OOSSplit fallback dim={dim} seed={seed}: {ckpt_path}")
-    return m, f"OOSSplit_seed{seed}"
+    print(f"  Loaded ep{TRAIN_LOG_EPOCHS} checkpoint dim={dim}: {ckpt_path}")
+    return m, f"ep{TRAIN_LOG_EPOCHS}"
 
-print(f"Loading ℓ={LATENT_DIM} model (ep5000, fallback to OOSSplit)...")
+print(f"Loading ℓ={LATENT_DIM} model (ep{TRAIN_LOG_EPOCHS})...")
 best_model, best_model_source = load_ep5000_model(LATENT_DIM)
 _has_main_model = best_model is not None
 if not _has_main_model:
@@ -286,47 +270,41 @@ save_fig(fig, "Q1e_training_loss_curves")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: load OOS RMSE from OOSSplit runs (used by Q2a, Q4)
-# Source: OOS_split_dim{N}/ep{E}/run_manifest.json (preferred) or rmse_summary.csv
+# Source: OOS_split_dim{N}/ep{E}/run_manifest.json
 # ─────────────────────────────────────────────────────────────────────────────
 def load_split_rmse(dim, epochs=SPLIT_EPOCHS):
-    """Return (IS mean series, OOS mean series) from OOSSplit results."""
+    """Return (IS mean series, OOS mean series) from OOSSplit run_manifest.json."""
     manifest_p = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{dim}_baseline",
                               f"ep{epochs}", "run_manifest.json")
-    if os.path.exists(manifest_p):
-        with open(manifest_p) as f:
-            mf = json.load(f)
-        results = mf.get("seed_results", {})
-        if results:
-            ccys = CCY_ORDER + ["Average"]
-            is_vals, oos_vals = {c: [] for c in ccys}, {c: [] for c in ccys}
-            DIVERGE_THRESHOLD = 100.0
-            n_skipped = 0
-            for s_info in results.values():
-                oos_avg = s_info["oos_avg_bps"]
-                if oos_avg is None or (isinstance(oos_avg, float) and
-                                       (np.isnan(oos_avg) or oos_avg > DIVERGE_THRESHOLD)):
-                    n_skipped += 1
-                    continue
-                for ccy in CCY_ORDER:
-                    is_vals[ccy].append(s_info["is_per_ccy_bps"].get(ccy, np.nan))
-                    oos_vals[ccy].append(s_info["oos_per_ccy_bps"].get(ccy, np.nan))
-                is_vals["Average"].append(s_info["is_avg_bps"])
-                oos_vals["Average"].append(s_info["oos_avg_bps"])
-            if n_skipped:
-                print(f"  [dim={dim}] Excluded {n_skipped}/{len(results)} diverged seeds")
-            return (pd.Series({c: np.nanmean(v) for c, v in is_vals.items()}),
-                    pd.Series({c: np.nanmean(v) for c, v in oos_vals.items()}))
-
-    # fallback: rmse_summary.csv
-    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{dim}_baseline",
-                        f"ep{epochs}", "rmse_summary.csv")
-    if not os.path.exists(path):
-        warnings.warn(f"Missing: {path}")
+    if not os.path.exists(manifest_p):
+        warnings.warn(f"⚠️  run_manifest.json not found for dim={dim}_baseline ep{epochs} — SKIPPING.\n"
+                      f"  Expected: {manifest_p}")
         return None, None
-    df = pd.read_csv(path, index_col=0)
-    is_col  = [c for c in df.columns if "IS mean"  in c][0]
-    oos_col = [c for c in df.columns if "OOS mean" in c][0]
-    return df[is_col], df[oos_col]
+    with open(manifest_p) as f:
+        mf = json.load(f)
+    results = mf.get("seed_results", {})
+    if not results:
+        warnings.warn(f"⚠️  run_manifest.json for dim={dim} has no seed_results — SKIPPING.")
+        return None, None
+    ccys = CCY_ORDER + ["Average"]
+    is_vals, oos_vals = {c: [] for c in ccys}, {c: [] for c in ccys}
+    DIVERGE_THRESHOLD = 100.0
+    n_skipped = 0
+    for s_info in results.values():
+        oos_avg = s_info["oos_avg_bps"]
+        if oos_avg is None or (isinstance(oos_avg, float) and
+                               (np.isnan(oos_avg) or oos_avg > DIVERGE_THRESHOLD)):
+            n_skipped += 1
+            continue
+        for ccy in CCY_ORDER:
+            is_vals[ccy].append(s_info["is_per_ccy_bps"].get(ccy, np.nan))
+            oos_vals[ccy].append(s_info["oos_per_ccy_bps"].get(ccy, np.nan))
+        is_vals["Average"].append(s_info["is_avg_bps"])
+        oos_vals["Average"].append(s_info["oos_avg_bps"])
+    if n_skipped:
+        print(f"  [dim={dim}] Excluded {n_skipped}/{len(results)} diverged seeds")
+    return (pd.Series({c: np.nanmean(v) for c, v in is_vals.items()}),
+            pd.Series({c: np.nanmean(v) for c, v in oos_vals.items()}))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -590,12 +568,9 @@ def load_rolling_avg(dim):
                         ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
                         f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
-        if not os.path.exists(path):
-            return None
-        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
+        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline — SKIPPING.\n"
+                      f"  Expected: {path}")
+        return None
     df = pd.read_csv(path)
     valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
     n_bad = len(df) - len(valid)
@@ -604,17 +579,14 @@ def load_rolling_avg(dim):
     return float(valid["avg_rmse_bps"].mean())
 
 def load_rolling_df(dim):
-    """Return full rolling CSV DataFrame for a given dim, with fallback."""
+    """Return full rolling CSV DataFrame for a given dim."""
     path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
                         ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
                         f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
-        if not os.path.exists(path):
-            return None
-        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
+        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline — SKIPPING.\n"
+                      f"  Expected: {path}")
+        return None
     df = pd.read_csv(path)
     df["test_start"] = pd.to_datetime(df["test_start"])
     return df
