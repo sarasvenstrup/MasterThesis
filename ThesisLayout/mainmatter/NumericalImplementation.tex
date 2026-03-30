@@ -1,5 +1,7 @@
 \subsection{Stabilized parameterizations of $K$, $H$, and $R$}
 
+\textcolor{red}{Synes argumentationen skal være baseret på det teoretiske ved at K og H skal opfylde nogle constraints for at der overhovedet findes en unik løsning til vores SDE og det er derfor at vi indfører disse K, H og R. Og ikke at vi ser at den er numerisk ustabil. Synes det er meget fint at vi i forlængelse af Rolfs K, H og R introducere vores versioner. Og så kan vi så senere hen sige hvad vi ser ske i resultsat afsnittet. Tror også jeg er en smue forvirret over hvorfor vi stabilisere R på den måde, troede ikke den skulle stabilisers for den skal opfylde den hard constraint Rolf snakker og det mener jeg ikke den gør med}
+
 In the baseline specification, the latent-factor dynamics are parameterized by three neural
 networks: a drift network $K$ of the form $\mu(z)=Mz+N$, a volatility network $H$
 mapping the latent state to $(\log \sigma_1,\log \sigma_2,\operatorname{atanh}(\rho))$,
@@ -151,3 +153,6 @@ and the stabilized short-rate network $R$ prevents extreme short-rate realizatio
 Together, these changes preserve the economic interpretation of the original
 parameterization while improving the numerical robustness of the latent-factor dynamics
 used in the arbitrage-free decoder.
+
+
+ 

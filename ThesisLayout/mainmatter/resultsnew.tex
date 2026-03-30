@@ -12,7 +12,7 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of the autoencoder against two criteria: the reconstruction error, measured by the root mean squared error (RMSE) in basis points (bps), and the satisfaction of the no-arbitrage constraint, assessed through the \textcolor{red}{approximate Sharpe ratio (reference or write what we mean by this diagnostic)} of zero-coupon bonds implied by the reconstructed curves. A \textcolor{red}{a quantity that should be negligible if the model is arbitrage-free by construction}
+Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of the autoencoder against two criteria: the reconstruction error, measured by the root mean squared error (RMSE) in basis points (bps), and the satisfaction of the no-arbitrage constraint, assessed through the \textcolor{red}{approximate Sharpe ratio (reference or write what we mean by this diagnostic)} of zero-coupon bonds implied by the reconstructed curves. A \textcolor{red}{ quantity that should be negligible if the model is arbitrage-free by construction}
 
 % Note to selv
 %We first confirm that the models have converged, then assess fit quality across currencies and latent dimensions, before examining where and when the model struggles most. 
@@ -20,13 +20,12 @@ Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of 
 
 \subsection{Loss Assessment}
 
-The model is trained on the in-sample period 2004--2020 over 5\,000
+The model is trained on the in-sample period 2010--\textcolor{red}{different for different currencies? which we should write in the data section.} over 5\,000
 epochs. Figure~\ref{fig:training_loss} shows the average training RMSE
 across all currencies for $\ell \in \{1,2,3,4\}$. All four models
 converge well before epoch 2\,500, after which the loss curves flatten
-with no meaningful further improvement. As expected, $\ell=1$ converges
-to a substantially higher error of approximately 30 bps, indicating
-that a single latent factor is insufficient to capture the variation in
+with no meaningful further improvement. $\ell=1$ converges
+to a substantially higher error of approximately 30 bps, indicating as one would expect that a single latent factor is insufficient to capture the variation in
 the swap rate curve, and the remaining analysis therefore focuses on
 $\ell \in \{2, 3, 4\}$.
 
@@ -222,71 +221,25 @@ available.]}
 % ─────────────────────────────────────────────────────────────
 
 
-The strong in-sample fit established above is a necessary but not
-sufficient condition for a well-performing model, as a model that
-simply memorises the training data will appear to fit well in sample
-while failing to generalise. The rolling window evaluation tests
-whether the model captures genuine structure in the swap rate curve
-rather than patterns specific to the training period.
+While the in-sample results demonstrate that the autoencoder reconstructs the swap rate curve closely, and suggest that models with more latent factors achieve better reconstruction, a good in-sample fit alone does not guarantee that the model generalizes to new data. In particular, a model with many parameters may overfit the training period, failing to preserve its reconstruction accuracy when applied to independent observations. \textcolor{red}{(Reference to RegressionbyR Introduction - 1.2)} To assess generalization, two experiments are conducted. First, a rolling window evaluation tests out-of-sample reconstruction. Second, a robustness analysis repeats a fixed train/test split across multiple random seeds, assessing the sensitivity of out-of-sample performance to the random initialization of the model. All experiments in this section use 2,500 training epochs, which Figure~\ref{fig:training_loss} confirms is sufficient for convergence.
 
+\subsection{Rolling Window Evaluation}
 
-
-In each rolling window, the model is trained on a five-year period
-and evaluated on the subsequent six months, stepping forward six
-months at a time, yielding approximately 26 windows in total.
-
-Argument 1: The test window of six months is chosen to ensure non-overlapping
-evaluation periods and a stable RMSE estimate, while the five-year
-training window provides sufficient data for convergence.
-
-Argument 2: more windows beats longer windows for demonstrating generalisation robustly.
+To evaluate generalization and identify which latent dimension yields the best out-of-sample reconstruction, a rolling window design is used (Figure~\ref{fig:rolling_window_diagram}), yielding 18 non-overlapping test periods spanning January 2015 to December 2023.
 
 \begin{figure}[ht]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/ExtraFigures/rolling_window_diagram.png}
-    \caption{Illustration of the rolling window evaluation setup. Each window
-    consists of a five-year training period (dark) followed by a three-month
-    test period (light), stepping forward six months at a time. Five
-    representative windows are shown out of approximately 26 in total.}
+    \caption{Rolling window evaluation design: 18 windows each consisting of a five-year training period followed by a six-month test period, stepping forward six months at a time.}
     \label{fig:rolling_window_diagram}
 \end{figure}
 
 
 
-
-Since Figure~\ref{fig:training_loss} confirms convergence well before 
-2\,500 epochs, the IS/OOS comparison uses 2\,500 epochs across all 
-experiments without meaningful loss of accuracy to decrease computation time.
+The results of the rolling window scheme is summed up in \ref{fig:Q2b} and this
 
 
-% ── Q2a ──────────────────────────────────────────────────────
-%\begin{table}[h!]
-%\centering
-%{\small
-%\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q2a_IS_vs_OOS_all_dims.csv}\datqtwoa
-%\resizebox{\textwidth}{!}{%
-%\pgfplotstabletypeset[
-%%  columns={Split, Model, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
- % columns/Split/.style={string type, column type=l},
- % columns/Model/.style={string type, column type=l},
- % columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
- % columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
- % every head row/.style={before row=\toprule, after row=\midrule},
- % every last row/.style={after row=\bottomrule},
-%]{\datqtwoa}}
-%}
-%\caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
-%IS: 2004--2020, OOS: 2021--2022.}
-%\label{tab:q2a_is_oos_rmse}
-%\end{table}
+
 
 % ── Q2b ──────────────────────────────────────────────────────
 \begin{figure}[H]
@@ -299,6 +252,69 @@ experiments without meaningful loss of accuracy to decrease computation time.
 
 
 
+
+
+
+% ── Q2a ──────────────────────────────────────────────────────
+\begin{table}[h!]
+\centering
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q2a_IS_vs_OOS_all_dims.csv}\datqtwoa
+\resizebox{\textwidth}{!}{%
+\pgfplotstabletypeset[
+  columns={Split, Model, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
+  columns/Split/.style={string type, column type=l},
+  columns/Model/.style={string type, column type=l},
+  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datqtwoa}}
+}
+\caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
+IS: 2004--2020, OOS: 2021--2022.}
+\label{tab:q2a_is_oos_rmse}
+\end{table}
+
+SO HERE WE MUST CMPARE THE OSSROLL ESTIMATERS WITH THE INSAMPLE TRAINING.
+
+
+
+
+% ── Q3b ──────────────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
+    \caption{Rolling out-of-sample RMSE over time for $\ell=3$,
+    showing variation across rolling windows.}
+    \label{fig:Q3b}
+\end{figure}
+
+
+This figure is intended to see how the out-of sample RMSE varies across time and not only as a an average. where we see that the model struggles indeed
+
+
+
+
+
+
+
+
+
+
+\subsection{Robustness to Random Initialisation}
+ 
+First we want to assess the robustness of the different models.
+
+THIS TABLE IS INTEDED TO CHECK FOR THE ROBUSTNESS; AND THAT IS WHY WE DO IT ONLY ON A WINDOW SPLIT FOR COMPUTATIONAL PURPOSES.
 
 
 % ── Q3a ──────────────────────────────────────────────────────
@@ -338,27 +354,17 @@ experiments without meaningful loss of accuracy to decrease computation time.
 % \end{table}
 
 
+What is important to note here is that the model exploding mostt likelt is due to the problems with H and K being learned with no constraitn ? satistified, such that the model breaks down.
 
 
-THIS TABLE IS INTEDED TO CHECK FOR THE ROBUSTNESS; AND THAT IS WHY WE DO IT ONLY ON A WINDOW SPLIT FOR COMPUTATIONAL PURPOSES.
 
 
 
-% ── Q3b ──────────────────────────────────────────────────────
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
-    \caption{Rolling out-of-sample RMSE over time for $\ell=3$,
-    showing variation across rolling windows.}
-    \label{fig:Q3b}
-\end{figure}
+
+\section{Benchmark}
 
 
-This figure is inteded to see how the out-of sample RMSE varies across time and not only as a an average.
-
-
-\subsection{Benchmark}
-
+THIS IS ALSO WHERE WE WANT TO WRITE ACCORDING TO THE BOND MARKET GENERATED SWAPS.
 
 The next is to see how well the Auto encoder performs compared to a benchmark, which we have chosen to be the Dynamic Nelsion siegel, using the extended kalman filter.
 
