@@ -639,26 +639,24 @@ def load_ekf_rolling_df(n_factors):
     return df
 
 # Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
-#        IS  : training log at ep2500 (fallback to ep5000) — consistent with rolling windows
+#        IS  : training log at ep5000 (globally trained model)
 #        OOS : average per-currency RMSE across all rolling windows
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q2a: IS vs OOS RMSE table (all dims, rolling-based) ──")
 
 def load_is_rmse_for_rolling(dim):
-    """Load IS RMSE from training log at ep2500 (preferred) or ep5000 (fallback).
-    ep2500 is used because rolling windows are also trained to 2500 epochs."""
-    for ep in [2500, 5000]:
-        path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
-                            f"ep{ep}", f"train_rmse_log_bbg_dim{dim}_ep{ep}.csv")
-        if os.path.exists(path):
-            df = pd.read_csv(path)
-            last = df.iloc[-1]
-            result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
-            result["Average"] = float(last["avg_rmse_bps"])
-            print(f"  [dim={dim}] IS RMSE from ep{ep} training log")
-            return result
-    warnings.warn(f"No training log found for dim={dim}")
-    return None
+    """Load IS RMSE from the ep5000 training log (globally trained model)."""
+    path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        "ep5000", f"train_rmse_log_bbg_dim{dim}_ep5000.csv")
+    if not os.path.exists(path):
+        warnings.warn(f"No ep5000 training log found for dim={dim}: {path}")
+        return None
+    df = pd.read_csv(path)
+    last = df.iloc[-1]
+    result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
+    result["Average"] = float(last["avg_rmse_bps"])
+    print(f"  [dim={dim}] IS RMSE from ep5000 training log (last epoch={int(last['epoch'])})")
+    return result
 
 def load_rolling_oos_per_ccy(dim):
     """Average per-currency OOS RMSE across all valid rolling windows."""
