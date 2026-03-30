@@ -577,16 +577,115 @@ else:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ── rolling helper constants and functions (used by Q2a, Q2b, Q3b, Q4a) ──────
+ROLL_SUBDIR           = "train5Y_test6M_step6M"
+ROLL_DIVERGE_THRESHOLD = 100.0
+_ROLL_FALLBACK_SUBDIR  = "train3Y_test3M_step6M"
+
+def load_rolling_avg(dim):
+    """Return average OOS RMSE across valid rolling windows for a given dim."""
+    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+        if not os.path.exists(path):
+            return None
+        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
+    df = pd.read_csv(path)
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    n_bad = len(df) - len(valid)
+    if n_bad:
+        print(f"  [dim={dim}] Excluded {n_bad}/{len(df)} diverged rolling windows")
+    return float(valid["avg_rmse_bps"].mean())
+
+def load_rolling_df(dim):
+    """Return full rolling CSV DataFrame for a given dim, with fallback."""
+    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+        if not os.path.exists(path):
+            return None
+        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
+def load_ekf_rolling_avg(n_factors):
+    """Return average OOS RMSE across valid rolling windows for EKF DNS."""
+    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    return float(df["avg_rmse_bps"].mean())
+
+def load_ekf_rolling_df(n_factors):
+    """Return full rolling CSV for EKF DNS n_factors model."""
+    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
 # Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
+#        IS  : training log at ep2500 (fallback to ep5000) — consistent with rolling windows
+#        OOS : average per-currency RMSE across all rolling windows
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q2a: IS vs  OOS RMSE table (all dims) ──")
+print("\n── Q2a: IS vs OOS RMSE table (all dims, rolling-based) ──")
+
+def load_is_rmse_for_rolling(dim):
+    """Load IS RMSE from training log at ep2500 (preferred) or ep5000 (fallback).
+    ep2500 is used because rolling windows are also trained to 2500 epochs."""
+    for ep in [2500, 5000]:
+        path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                            f"ep{ep}", f"train_rmse_log_bbg_dim{dim}_ep{ep}.csv")
+        if os.path.exists(path):
+            df = pd.read_csv(path)
+            last = df.iloc[-1]
+            result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
+            result["Average"] = float(last["avg_rmse_bps"])
+            print(f"  [dim={dim}] IS RMSE from ep{ep} training log")
+            return result
+    warnings.warn(f"No training log found for dim={dim}")
+    return None
+
+def load_rolling_oos_per_ccy(dim):
+    """Average per-currency OOS RMSE across all valid rolling windows."""
+    df = load_rolling_df(dim)
+    if df is None:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    result = pd.Series({
+        ccy: float(valid[f"rmse_bps_{ccy}"].mean())
+        for ccy in CCY_ORDER
+        if f"rmse_bps_{ccy}" in valid.columns
+    })
+    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    return result
 
 rows_q2 = {}
 for dim in [1, 2, 3, 4]:
-    is_mean, oos_mean = load_split_rmse(dim)
-    if is_mean is not None:
+    is_mean  = load_is_rmse_for_rolling(dim)
+    oos_mean = load_rolling_oos_per_ccy(dim)
+    if is_mean is not None and oos_mean is not None:
         rows_q2[("IS",  f"$\\ell={dim}$")] = is_mean
         rows_q2[("OOS", f"$\\ell={dim}$")] = oos_mean
+    else:
+        if is_mean  is None: print(f"  [dim={dim}] IS  missing — skipped")
+        if oos_mean is None: print(f"  [dim={dim}] OOS missing — run OutOfSampleRoll.py")
 
 table_q2a = pd.DataFrame(rows_q2).T
 table_q2a.index = pd.MultiIndex.from_tuples(table_q2a.index, names=["Split", "Model"])
@@ -699,70 +798,6 @@ save_extra_fig(fig, "rolling_window_diagram")
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q2b: Rolling OOS RMSE vs dim ──")
 
-ROLL_SUBDIR = "train5Y_test6M_step6M"
-
-ROLL_DIVERGE_THRESHOLD = 100.0  # bps — rolling windows above this are training failures
-
-_ROLL_FALLBACK_SUBDIR = "train3Y_test3M_step6M"
-
-def load_rolling_avg(dim):
-    """Return average OOS RMSE across valid rolling windows for a given dim.
-    Falls back to old train3Y_test3M_step6M results if new ones are not yet available."""
-    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
-    if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
-        if not os.path.exists(path):
-            return None
-        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
-    df = pd.read_csv(path)
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    n_bad = len(df) - len(valid)
-    if n_bad:
-        print(f"  [dim={dim}] Excluded {n_bad}/{len(df)} diverged rolling windows "
-              f"(avg_rmse_bps > {ROLL_DIVERGE_THRESHOLD} bps)")
-    return float(valid["avg_rmse_bps"].mean())
-
-def load_rolling_df(dim):
-    """Return full rolling CSV DataFrame for a given dim, with fallback."""
-    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
-    if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
-        if not os.path.exists(path):
-            return None
-        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
-    df = pd.read_csv(path)
-    df["test_start"] = pd.to_datetime(df["test_start"])
-    return df
-
-def load_ekf_rolling_avg(n_factors):
-    """Return average OOS RMSE across valid rolling windows for EKF DNS n_factors model."""
-    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
-                        "ekf_dns_rolling",
-                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
-    if not os.path.exists(path):
-        return None
-    df = pd.read_csv(path)
-    return float(df["avg_rmse_bps"].mean())
-
-def load_ekf_rolling_df(n_factors):
-    """Return full rolling CSV for EKF DNS n_factors model."""
-    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
-                        "ekf_dns_rolling",
-                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
-    if not os.path.exists(path):
-        return None
-    df = pd.read_csv(path)
-    df["test_start"] = pd.to_datetime(df["test_start"])
-    return df
-
 roll_avgs = {}
 for dim in [2, 3, 4]:
     avg = load_rolling_avg(dim)
@@ -861,37 +896,66 @@ df_roll = load_rolling_df(LATENT_DIM)
 
 if df_roll is not None:
 
+    CLIP        = 100          # bps — values above this are shown as explosion bars
+    EXPLODE_COL = "#d7191c"    # alert red, consistent with rest of file
+    BAR_WIDTH   = pd.Timedelta(days=50)
+
     fig, ax = plt.subplots(figsize=(11, 4.5))
 
+    # --- per-currency lines (clipped) ----------------------------------------
     for ccy in CCY_ORDER:
         col = f"rmse_bps_{ccy}"
-        if col in df_roll.columns:
-            valid = df_roll[col].notna()
-            ax.plot(df_roll.loc[valid, "test_start"], df_roll.loc[valid, col],
-                    linewidth=1.0, alpha=0.55, color=currency_color_map[ccy], label=ccy)
+        if col not in df_roll.columns:
+            continue
+        clipped = df_roll[col].where(df_roll[col] <= CLIP)   # NaN where exploded
+        valid   = clipped.notna()
+        ax.plot(df_roll.loc[valid, "test_start"], clipped[valid],
+                linewidth=1.0, alpha=0.55, color=currency_color_map[ccy], label=ccy)
 
-    # AE average line
-    ax.plot(df_roll["test_start"], df_roll["avg_rmse_bps"],
+    # --- AE average line (clipped) -------------------------------------------
+    avg_clipped = df_roll["avg_rmse_bps"].where(df_roll["avg_rmse_bps"] <= CLIP)
+    valid_avg   = avg_clipped.notna()
+    ax.plot(df_roll.loc[valid_avg, "test_start"], avg_clipped[valid_avg],
             linewidth=1.2, color="black", linestyle="--",
             label=f"AE $\\ell={LATENT_DIM}$ avg", zorder=5)
 
-    # EKF DNS 3f average line
+    # --- EKF DNS average line (clipped) --------------------------------------
     _ekf_df3 = load_ekf_rolling_df(LATENT_DIM)
     if _ekf_df3 is not None:
-        ax.plot(_ekf_df3["test_start"], _ekf_df3["avg_rmse_bps"],
+        ekf_clipped = _ekf_df3["avg_rmse_bps"].where(_ekf_df3["avg_rmse_bps"] <= CLIP)
+        valid_ekf   = ekf_clipped.notna()
+        ax.plot(_ekf_df3.loc[valid_ekf, "test_start"], ekf_clipped[valid_ekf],
                 linewidth=1.2, color="dimgray", linestyle=":",
                 label=f"EKF DNS {LATENT_DIM}f avg", zorder=5)
 
-    # event markers
+    # --- explosion bars: one bar per date where any currency exceeds CLIP -----
+    ccy_cols    = [f"rmse_bps_{c}" for c in CCY_ORDER if f"rmse_bps_{c}" in df_roll.columns]
+    explode_max = df_roll[ccy_cols].max(axis=1)            # max RMSE across currencies per date
+    explode_mask = explode_max > CLIP
+
+    _legend_bar_added = False
+    for _, row in df_roll[explode_mask].iterrows():
+        max_val = explode_max[row.name]
+        ax.bar(row["test_start"], CLIP, width=BAR_WIDTH,
+               color=EXPLODE_COL, alpha=0.35, zorder=3,
+               label="Model exploded" if not _legend_bar_added else "_nolegend_")
+        ax.text(row["test_start"], CLIP * 0.97,
+                f"{max_val:.0f} bps",
+                fontsize=8, ha="center", va="top",
+                rotation=90, color=EXPLODE_COL, fontweight="bold", zorder=4)
+        _legend_bar_added = True
+
+    # --- event markers -------------------------------------------------------
+    ax.set_ylim(0, CLIP)
     for label, date_str in EVENTS.items():
         d = pd.Timestamp(date_str)
         if df_roll["test_start"].min() <= d <= df_roll["test_start"].max():
             ax.axvline(d, color="0.5", linewidth=1.0, linestyle="--")
-            ax.text(d, ax.get_ylim()[1] if ax.get_ylim()[1] > 1 else 1,
-                    label, fontsize=10, ha="center", va="bottom", color="0.4",
-                    rotation=0)
+            ax.text(d, CLIP, label, fontsize=10, ha="center", va="bottom",
+                    color="0.4", rotation=0)
 
     ax.set_ylabel("OOS RMSE (bps)")
+    ax.legend(fontsize=8)
     fig.autofmt_xdate()
     fig.tight_layout()
     save_fig(fig, "Q3b_rolling_rmse_over_time")
@@ -1569,10 +1633,16 @@ _SKIP = "❌"
 # determine model source for each dim
 def _model_src(dim):
     src = dim_model_sources.get(dim, None)
-    if src is None:           return (_SKIP,  "no checkpoint found")
-    if "ep5000" in src:       return (_OK,    f"ep5000 checkpoint")
-    if "OOSSplit" in src:     return (_WARN,  f"fallback: OOSSplit ep2500 (rerun after ep5000 training)")
-    return (_OK, src)
+    if src is not None:
+        if "ep5000"   in src: return (_OK,   "ep5000 checkpoint")
+        if "OOSSplit" in src: return (_WARN, "fallback: OOSSplit ep2500 (rerun after ep5000 training)")
+        return (_OK, src)
+    # not loaded as a model — check file directly
+    ckpt = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        f"ep{TRAIN_LOG_EPOCHS}", f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
+    if os.path.exists(ckpt):
+        return (_OK, "ep5000 checkpoint")
+    return (_SKIP, "no checkpoint found")
 
 # determine rolling source for each dim
 def _roll_src(dim):
