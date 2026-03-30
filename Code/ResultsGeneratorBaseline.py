@@ -470,7 +470,7 @@ _rep_dates = {
     "Crisis (2020-03-31)":  "2020-03-31",
     "Low-rate (2019-06-30)": "2019-06-30",
 }
-_show_ccys_alldim = ["EUR", "USD", "JPY"]
+_show_ccys_alldim = ["EUR", "USD", "JPY", "CAD"]
 _dim_colors = {d: DIM_COLORS[d] for d in [2, 3, 4]}
 _dim_styles = {2: "-", 3: "-", 4: "-"}
 
@@ -515,7 +515,7 @@ for col_i, (label, date_str) in enumerate(_rep_dates.items()):
         if row_i == _n_rows - 1:
             ax.set_xlabel("Maturity", fontsize=9)
         ax.set_xticks(tenors)
-        ax.set_xticklabels([str(t) for t in tenors], fontsize=7)
+        ax.set_xticklabels([str(int(t)) for t in tenors], fontsize=7)
         ax.tick_params(axis="y", labelsize=8)
         ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
                 transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
