@@ -153,6 +153,10 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
 \end{figure}
 
 
+
+We see that the model struggles to reconstruct swap rates, especially the EUR and the pegged DKK, in the period around the corona virus.
+
+
 % ── Q6a ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
@@ -173,10 +177,10 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
 \end{figure}
 
 Figure~\ref{fig:Q6a} further disaggregates the error across tenors for
-$\ell=3$. \textcolor{red}{[Fill in: describe the tenor pattern, e.g.\
-``The model fits mid-range tenors most accurately, with higher errors
-at the short end of the curve.'' — update once results are
-available.]}
+$\ell=3$. The model fits mid-range tenors most accurately, with highest errors
+at the short end of the curve and mid high errors at the long end.
+
+In the right panel we see that the JPY, USD and EUR is one pushing up the error.
 
 
 
@@ -201,6 +205,9 @@ We now want to assess how it visually reconstructs, and if it replicates the sha
 
     \label{fig:q1d_fitted_vs_actual_all_dims}
 \end{figure}
+
+
+
 
 To assess the quality of the fit beyond aggregate error metrics,
 Figure~\ref{fig:q1d_fitted_vs_actual_all_dims} shows the reconstructed
@@ -332,6 +339,8 @@ This figure is intended to see how the out-of sample RMSE varies across time and
 
 We also cmust comment on the model explosions. These have been taken out of the equation for the above results. But suspecting that these model explosions are due to the H and K, we move to the next section where we test for robustness across different seeds if these is. This insight is motivation to the stabilzation section that comes after the evaluation of the Autoencoder performance. So when we look at the model but not on the explosions, we see that dim 2 is more volatiltes across the differnt windows, where it looks like 3 dimensions has captured the udnerlying swap rate dynamics better.
 
+so we see that the model with most latent factors explodes a lot compared to the model with 2 or 3. Further it seems that they seem to explode in the same regions.
+
 
 
 
@@ -412,7 +421,7 @@ Remember to include computation time.
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q4a_AE_vs_Kalman_OOS.csv}\datqfoura
 \resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
-  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
+  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
   columns/index/.style={column name={Model}, string type, column type=l},
   columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
@@ -423,17 +432,20 @@ Remember to include computation time.
   columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/Average/.style={column name={\textbf{Avg}}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/Time (min)/.style={column name={\textbf{Time (min)}}, column type=r, fixed, precision=2, fixed zerofill},
   every head row/.style={before row=\toprule, after row=\midrule},
   every row no 2/.style={before row=\midrule},
   every row no 4/.style={before row=\midrule},
   every last row/.style={after row=\bottomrule},
 ]{\datqfoura}}
 }
-\caption{Out-of-sample RMSE (bps) per currency for the autoencoder and EKF DNS benchmarks,
-grouped by number of latent factors $\ell$ (2021--2022 test period).}
+\caption{Rolling out-of-sample RMSE (bps) per currency for the autoencoder and EKF DNS
+benchmarks, grouped by number of latent factors $\ell$.
+The final column reports average training time per rolling window in minutes.}
 \label{tab:Q4a}
 \end{table}
+
 
 % ── Q4c ──────────────────────────────────────────────────────
 
