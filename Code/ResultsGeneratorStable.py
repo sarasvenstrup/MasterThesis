@@ -121,6 +121,48 @@ def load_rolling_train_time_min(dim):
         return None
     return float(valid["time_train_sec"].mean()) / 60.0
 
+def load_baseline_rolling_df(dim):
+    """Return full rolling CSV DataFrame for baseline dim."""
+    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                        f"OOS_roll_dim{dim}_baseline",
+                        ROLL_SUBDIR, f"ep{ROLL_EP}",
+                        f"oos_rolling_bbg_dim{dim}_{ROLL_SUBDIR}.csv")
+    if not os.path.exists(path):
+        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                            f"OOS_roll_dim{dim}_baseline",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{ROLL_EP}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+        if not os.path.exists(path):
+            return None
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
+def load_baseline_rolling_oos_per_ccy(dim):
+    """Average per-currency OOS RMSE across valid baseline rolling windows."""
+    df = load_baseline_rolling_df(dim)
+    if df is None:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    result = pd.Series({
+        ccy: float(valid[f"rmse_bps_{ccy}"].mean())
+        for ccy in CCY_ORDER if f"rmse_bps_{ccy}" in valid.columns
+    })
+    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    return result
+
+def load_baseline_rolling_train_time_min(dim):
+    """Average training time (minutes) per baseline rolling window."""
+    df = load_baseline_rolling_df(dim)
+    if df is None or "time_train_sec" not in df.columns:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    return float(valid["time_train_sec"].mean()) / 60.0
+
 # ── EKF rolling helpers (shared — same as baseline) ────────────────────────────
 def load_ekf_rolling_df(n_factors):
     path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
@@ -273,10 +315,14 @@ print("\n── Q4a_stable: Stable AE vs EKF DNS OOS table ──")
 
 rows_q4 = {}
 for dim in [2, 3, 4]:
-    oos_ae = load_rolling_oos_per_ccy(dim)
-    if oos_ae is not None:
-        oos_ae["Time (min)"] = load_rolling_train_time_min(dim)
-        rows_q4[rf"AE stable $\ell$={dim}"] = oos_ae
+    oos_base = load_baseline_rolling_oos_per_ccy(dim)
+    if oos_base is not None:
+        oos_base["Time (min)"] = load_baseline_rolling_train_time_min(dim)
+        rows_q4[rf"AE baseline $\ell$={dim}"] = oos_base
+    oos_stable = load_rolling_oos_per_ccy(dim)
+    if oos_stable is not None:
+        oos_stable["Time (min)"] = load_rolling_train_time_min(dim)
+        rows_q4[rf"AE stable $\ell$={dim}"] = oos_stable
     oos_k = load_ekf_rolling_oos_per_ccy(dim)
     if oos_k is not None:
         oos_k["Time (min)"] = load_ekf_rolling_train_time_min(dim)
