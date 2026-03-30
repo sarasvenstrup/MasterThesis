@@ -1,0 +1,65 @@
+\chapter{Results for Stable vs Baseline}
+
+
+% ── Q2b stable ───────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformanceStable/Q2b_rolling_oos_vs_dim_stable.png}
+    \caption{Average rolling out-of-sample RMSE (bps) for the stable autoencoder and the
+    EKF DNS benchmark across latent dimensions $\ell \in \{2, 3, 4\}$.
+    Autoencoder bars are coloured by model:
+    $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).
+    EKF DNS bars are shown in grey.
+    Values are averaged across all valid rolling windows.}
+    \label{fig:Q2b_stable}
+\end{figure}
+
+% ── Q3b stable ───────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformanceStable/Q3b_rolling_rmse_over_time_stable.png}
+    \caption{Rolling out-of-sample RMSE (bps) over time for the stable autoencoder,
+    $\ell \in \{2, 3, 4\}$
+    ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}\ $\ell=2$,
+     {\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}\ $\ell=3$,
+     {\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}\ $\ell=4$),
+    showing the cross-currency average per rolling window. Shaded bars indicate
+    windows where at least one currency exceeds 100 bps; bar colour matches the
+    corresponding model. Dashed vertical lines mark key macro events.}
+    \label{fig:Q3b_stable}
+\end{figure}
+
+% ── Q4a stable ───────────────────────────────────────────────
+\begin{table}[H]
+\centering
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformanceStable/Q4a_AE_vs_Kalman_OOS_stable.csv}\datqfourastable
+\resizebox{\textwidth}{!}{%
+\pgfplotstabletypeset[
+  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
+  columns/index/.style={column name={Model}, string type, column type=l},
+  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
+  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/Time (min)/.style={column name={\textbf{Time (min)}}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every row no 3/.style={before row=\midrule},
+  every row no 6/.style={before row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datqfourastable}}
+}
+\caption{Rolling out-of-sample RMSE (bps) per currency for the baseline autoencoder,
+stable autoencoder, and EKF DNS benchmark, grouped by number of latent factors $\ell$.
+The final column reports average training time per rolling window in minutes.}
+
+\label{tab:Q4a_stable}
+\end{table}

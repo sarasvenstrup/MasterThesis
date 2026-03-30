@@ -31,6 +31,7 @@ if PROJECT_ROOT not in sys.path:
 # IMPORTANT:
 # config.py is the single source of truth for the active variant.
 from Code import config
+config.confirm_variant()
 from Code.load_swapdata import my_data
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (

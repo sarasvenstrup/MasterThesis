@@ -36,6 +36,8 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS, set_paper_theme
+from Code import config
+config.VARIANT = "baseline"   # always baseline — must be set before FullModel is imported
 from Code.model.full_model import FullModel
 
 torch.set_num_threads(4)
@@ -54,8 +56,8 @@ os.makedirs(EXTRA_OUT,   exist_ok=True)
 
 # ── constants ──────────────────────────────────────────────────────────────────
 CCY_ORDER   = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
-DIM_COLORS  = {1: custom_palette[0], 2: custom_palette[1],
-               3: custom_palette[2], 4: custom_palette[3]}
+DIM_COLORS  = {1: custom_palette[8], 2: custom_palette[4],
+               3: custom_palette[0], 4: custom_palette[6]}
 LATENT_DIM       = 3
 SPLIT_EPOCHS     = 2500
 TRAIN_LOG_EPOCHS = 5000
@@ -113,38 +115,22 @@ def _load_state_dict_compat(model, ckpt_path):
     model.load_state_dict(state, strict=True)
 
 def load_ep5000_model(dim):
-    """Load ep5000 training checkpoint from Figures/dim{N}/ep5000/.
-    Falls back to OOSSplit best-seed checkpoint if ep5000 checkpoint not yet available."""
+    """Load ep5000 training checkpoint from Figures/TrainingResults/dim{N}_baseline/ep5000/."""
     ckpt_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
                              f"ep{TRAIN_LOG_EPOCHS}",
                              f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
-    if os.path.exists(ckpt_path):
-        m = FullModel(latent_dim=dim).to(device)
-        _load_state_dict_compat(m, ckpt_path)
-        m.eval()
-        print(f"  Loaded ep5000 checkpoint dim={dim}: {ckpt_path}")
-        return m, "ep5000"
-
-    # fallback: OOSSplit best-seed checkpoint
-    warnings.warn(f"ep5000 checkpoint not found for dim={dim} — falling back to OOSSplit ep{SPLIT_EPOCHS}")
-    ckpt_dir = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{dim}_baseline", f"ep{SPLIT_EPOCHS}")
-    manifest_p = os.path.join(ckpt_dir, "run_manifest.json")
-    seed = 0
-    if os.path.exists(manifest_p):
-        with open(manifest_p) as f:
-            mf = json.load(f)
-        seed = mf.get("best_seed", 0)
-    ckpt_path = os.path.join(ckpt_dir, f"checkpoint_seed{seed}.pt")
     if not os.path.exists(ckpt_path):
-        warnings.warn(f"Fallback checkpoint not found: {ckpt_path}")
+        warnings.warn(f"⚠️  ep{TRAIN_LOG_EPOCHS} checkpoint not found for dim={dim} — SKIPPING. "
+                      f"Run Training.py (LATENT_DIM={dim}, EPOCHS={TRAIN_LOG_EPOCHS}) to fix.\n"
+                      f"  Expected: {ckpt_path}")
         return None, None
     m = FullModel(latent_dim=dim).to(device)
     _load_state_dict_compat(m, ckpt_path)
     m.eval()
-    print(f"  Loaded OOSSplit fallback dim={dim} seed={seed}: {ckpt_path}")
-    return m, f"OOSSplit_seed{seed}"
+    print(f"  Loaded ep{TRAIN_LOG_EPOCHS} checkpoint dim={dim}: {ckpt_path}")
+    return m, f"ep{TRAIN_LOG_EPOCHS}"
 
-print(f"Loading ℓ={LATENT_DIM} model (ep5000, fallback to OOSSplit)...")
+print(f"Loading ℓ={LATENT_DIM} model (ep{TRAIN_LOG_EPOCHS})...")
 best_model, best_model_source = load_ep5000_model(LATENT_DIM)
 _has_main_model = best_model is not None
 if not _has_main_model:
@@ -271,7 +257,7 @@ for dim in [1, 2, 3, 4]:
         continue
     _log_df = pd.read_csv(_log_path)
     ax.plot(_log_df["epoch"], _log_df["avg_rmse_bps"],
-            linewidth=1.2, color=custom_palette[dim - 1],
+            linewidth=1.2, color=DIM_COLORS[dim],
             label=f"$\\ell={dim}$")
 
 ax.axvline(2500, color="black", linewidth=1.0, linestyle="--", label="Epoch 2500")
@@ -284,47 +270,41 @@ save_fig(fig, "Q1e_training_loss_curves")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: load OOS RMSE from OOSSplit runs (used by Q2a, Q4)
-# Source: OOS_split_dim{N}/ep{E}/run_manifest.json (preferred) or rmse_summary.csv
+# Source: OOS_split_dim{N}/ep{E}/run_manifest.json
 # ─────────────────────────────────────────────────────────────────────────────
 def load_split_rmse(dim, epochs=SPLIT_EPOCHS):
-    """Return (IS mean series, OOS mean series) from OOSSplit results."""
+    """Return (IS mean series, OOS mean series) from OOSSplit run_manifest.json."""
     manifest_p = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{dim}_baseline",
                               f"ep{epochs}", "run_manifest.json")
-    if os.path.exists(manifest_p):
-        with open(manifest_p) as f:
-            mf = json.load(f)
-        results = mf.get("seed_results", {})
-        if results:
-            ccys = CCY_ORDER + ["Average"]
-            is_vals, oos_vals = {c: [] for c in ccys}, {c: [] for c in ccys}
-            DIVERGE_THRESHOLD = 100.0
-            n_skipped = 0
-            for s_info in results.values():
-                oos_avg = s_info["oos_avg_bps"]
-                if oos_avg is None or (isinstance(oos_avg, float) and
-                                       (np.isnan(oos_avg) or oos_avg > DIVERGE_THRESHOLD)):
-                    n_skipped += 1
-                    continue
-                for ccy in CCY_ORDER:
-                    is_vals[ccy].append(s_info["is_per_ccy_bps"].get(ccy, np.nan))
-                    oos_vals[ccy].append(s_info["oos_per_ccy_bps"].get(ccy, np.nan))
-                is_vals["Average"].append(s_info["is_avg_bps"])
-                oos_vals["Average"].append(s_info["oos_avg_bps"])
-            if n_skipped:
-                print(f"  [dim={dim}] Excluded {n_skipped}/{len(results)} diverged seeds")
-            return (pd.Series({c: np.nanmean(v) for c, v in is_vals.items()}),
-                    pd.Series({c: np.nanmean(v) for c, v in oos_vals.items()}))
-
-    # fallback: rmse_summary.csv
-    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{dim}_baseline",
-                        f"ep{epochs}", "rmse_summary.csv")
-    if not os.path.exists(path):
-        warnings.warn(f"Missing: {path}")
+    if not os.path.exists(manifest_p):
+        warnings.warn(f"⚠️  run_manifest.json not found for dim={dim}_baseline ep{epochs} — SKIPPING.\n"
+                      f"  Expected: {manifest_p}")
         return None, None
-    df = pd.read_csv(path, index_col=0)
-    is_col  = [c for c in df.columns if "IS mean"  in c][0]
-    oos_col = [c for c in df.columns if "OOS mean" in c][0]
-    return df[is_col], df[oos_col]
+    with open(manifest_p) as f:
+        mf = json.load(f)
+    results = mf.get("seed_results", {})
+    if not results:
+        warnings.warn(f"⚠️  run_manifest.json for dim={dim} has no seed_results — SKIPPING.")
+        return None, None
+    ccys = CCY_ORDER + ["Average"]
+    is_vals, oos_vals = {c: [] for c in ccys}, {c: [] for c in ccys}
+    DIVERGE_THRESHOLD = 100.0
+    n_skipped = 0
+    for s_info in results.values():
+        oos_avg = s_info["oos_avg_bps"]
+        if oos_avg is None or (isinstance(oos_avg, float) and
+                               (np.isnan(oos_avg) or oos_avg > DIVERGE_THRESHOLD)):
+            n_skipped += 1
+            continue
+        for ccy in CCY_ORDER:
+            is_vals[ccy].append(s_info["is_per_ccy_bps"].get(ccy, np.nan))
+            oos_vals[ccy].append(s_info["oos_per_ccy_bps"].get(ccy, np.nan))
+        is_vals["Average"].append(s_info["is_avg_bps"])
+        oos_vals["Average"].append(s_info["oos_avg_bps"])
+    if n_skipped:
+        print(f"  [dim={dim}] Excluded {n_skipped}/{len(results)} diverged seeds")
+    return (pd.Series({c: np.nanmean(v) for c, v in is_vals.items()}),
+            pd.Series({c: np.nanmean(v) for c, v in oos_vals.items()}))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -491,8 +471,8 @@ _rep_dates = {
     "Low-rate (2019-06-30)": "2019-06-30",
 }
 _show_ccys_alldim = ["EUR", "USD", "JPY"]
-_dim_colors = {2: custom_palette[0], 3: custom_palette[1], 4: custom_palette[2]}
-_dim_styles = {2: "-", 3: "--", 4: ":"}
+_dim_colors = {d: DIM_COLORS[d] for d in [2, 3, 4]}
+_dim_styles = {2: "-", 3: "-", 4: "-"}
 
 _scale = 100.0 if SCALE_IS_PERCENT else 1.0
 _n_rows = len(_show_ccys_alldim)
@@ -535,13 +515,93 @@ for col_i, (label, date_str) in enumerate(_rep_dates.items()):
         if row_i == _n_rows - 1:
             ax.set_xlabel("Maturity", fontsize=9)
         ax.set_xticks(tenors)
-        ax.set_xticklabels([str(t) for t in tenors], fontsize=7)
+        ax.set_xticklabels([str(int(t)) for t in tenors], fontsize=7)
         ax.tick_params(axis="y", labelsize=8)
         ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
                 transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
 
 fig.tight_layout()
 save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1e_zcb — Plot: Swap curves + implied ZCB yields, all currencies, one date
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1e_zcb: Swap + ZCB curves (all currencies, 2021-11-30) ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q1e_zcb skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    _zcb_target = pd.Timestamp("2021-11-30")
+    _zcb_scale  = 100.0 if SCALE_IS_PERCENT else 1.0
+
+    # Use full dataset (train + test combined)
+    _meta_full_dt = meta_full_df.copy()
+    _meta_full_dt["as_of_date"] = pd.to_datetime(_meta_full_dt["as_of_date"])
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    ax_swap, ax_zcb = axes
+
+    for ccy in CCY_ORDER:
+        _col = currency_color_map[ccy]
+        mask_ccy = (_meta_full_dt["ccy"] == ccy).values
+        if mask_ccy.sum() == 0:
+            continue
+
+        dates_ccy = _meta_full_dt.loc[mask_ccy, "as_of_date"]
+        idx_local = (dates_ccy - _zcb_target).abs().argmin()
+        global_idx = np.where(mask_ccy)[0][idx_local]
+        actual_date = dates_ccy.iloc[idx_local]
+
+        x_obs = X_full[[global_idx]]   # (1, n_tenors)
+
+        with torch.no_grad():
+            S_hat_obs, aux_obs = best_model(x_obs.to(device), return_aux=True)
+
+        actual  = x_obs[0].numpy()   * _zcb_scale
+        fitted  = S_hat_obs[0].cpu().numpy() * _zcb_scale
+
+        # Left panel: swap curves
+        ax_swap.plot(tenors, actual, "o-",  color=_col, linewidth=1.8,
+                     markersize=4, label=ccy)
+        ax_swap.plot(tenors, fitted, "--",  color=_col, linewidth=1.2, alpha=0.8)
+
+        # Right panel: ZCB yields from P_full on model's tau_grid
+        P_full  = aux_obs["P_full"][0].cpu().numpy()       # (n_tau_grid,)
+        tau_grid = aux_obs["tau_grid"].cpu().numpy()        # (n_tau_grid,)
+        zcb_yield = -np.log(np.clip(P_full, 1e-8, None)) / tau_grid
+        ax_zcb.plot(tau_grid, zcb_yield * _zcb_scale, "--", color=_col,
+                    linewidth=1.5, label=ccy)
+
+    ax_swap.set_xlabel("Time to Maturity")
+    ax_swap.set_ylabel(f"Swap Rate ({'%' if SCALE_IS_PERCENT else 'dec.'})")
+    ax_swap.set_title("Swap curves", fontsize=10, fontweight="bold")
+    ax_swap.set_xticks(tenors)
+    ax_swap.set_xticklabels([str(int(t)) for t in tenors], fontsize=8)
+
+    ax_zcb.set_xlabel("Time to Maturity")
+    ax_zcb.set_ylabel(f"ZCB Yield ({'%' if SCALE_IS_PERCENT else 'dec.'})")
+    ax_zcb.set_title("Implied ZCB yield curves", fontsize=10, fontweight="bold")
+
+    # shared legend below the figure
+    handles, labels = ax_swap.get_legend_handles_labels()
+    # keep only actual (solid) handles — one per currency
+    fig.legend(handles, labels, loc="lower center", ncol=len(CCY_ORDER),
+               fontsize=8, frameon=False, bbox_to_anchor=(0.5, -0.04))
+
+    _actual_dates = []
+    for ccy in CCY_ORDER:
+        mask_c = (_meta_full_dt["ccy"] == ccy).values
+        if mask_c.sum() > 0:
+            dates_c = _meta_full_dt.loc[mask_c, "as_of_date"]
+            idx_l = (dates_c - _zcb_target).abs().argmin()
+            _actual_dates.append(str(dates_c.iloc[idx_l].date()))
+    _used_date = _actual_dates[0] if _actual_dates else str(_zcb_target.date())
+
+    fig.suptitle(f"AE $\\ell={LATENT_DIM}$ — {_used_date}  "
+                 f"(solid/● observed, dashed reconstructed / implied ZCB)",
+                 fontsize=9, y=1.01)
+    fig.tight_layout()
+    save_fig(fig, f"Q1e_zcb_swap_dim{LATENT_DIM}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -577,16 +637,144 @@ else:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ── rolling helper constants and functions (used by Q2a, Q2b, Q3b, Q4a) ──────
+ROLL_SUBDIR           = "train5Y_test6M_step6M"
+ROLL_DIVERGE_THRESHOLD = 100.0
+_ROLL_FALLBACK_SUBDIR  = "train3Y_test3M_step6M"
+
+def load_rolling_avg(dim):
+    """Return average OOS RMSE across valid rolling windows for a given dim."""
+    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline — SKIPPING.\n"
+                      f"  Expected: {path}")
+        return None
+    df = pd.read_csv(path)
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    n_bad = len(df) - len(valid)
+    if n_bad:
+        print(f"  [dim={dim}] Excluded {n_bad}/{len(df)} diverged rolling windows")
+    return float(valid["avg_rmse_bps"].mean())
+
+def load_rolling_df(dim):
+    """Return full rolling CSV DataFrame for a given dim."""
+    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline — SKIPPING.\n"
+                      f"  Expected: {path}")
+        return None
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
+def load_ekf_rolling_avg(n_factors):
+    """Return average OOS RMSE across valid rolling windows for EKF DNS."""
+    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    return float(df["avg_rmse_bps"].mean())
+
+def load_ekf_rolling_df(n_factors):
+    """Return full rolling CSV for EKF DNS n_factors model."""
+    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
+def load_ekf_rolling_oos_per_ccy(dim):
+    """Average per-currency OOS RMSE across all valid EKF rolling windows."""
+    df = load_ekf_rolling_df(dim)
+    if df is None:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    # EKF rolling CSV uses plain currency names (AUD, CAD, ...) not rmse_bps_AUD
+    result = pd.Series({
+        ccy: float(valid[ccy].mean())
+        for ccy in CCY_ORDER
+        if ccy in valid.columns
+    })
+    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    return result
+
+def load_rolling_train_time_min(dim):
+    """Average training time (minutes) per rolling window for the AE model."""
+    df = load_rolling_df(dim)
+    if df is None or "time_train_sec" not in df.columns:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    return float(valid["time_train_sec"].mean()) / 60.0
+
+def load_ekf_rolling_train_time_min(dim):
+    """Average training time (minutes) per rolling window for the EKF DNS model."""
+    df = load_ekf_rolling_df(dim)
+    if df is None or "time_train_sec" not in df.columns:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    return float(valid["time_train_sec"].mean()) / 60.0
+
 # Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
+#        IS  : training log at ep5000 (globally trained model)
+#        OOS : average per-currency RMSE across all rolling windows
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q2a: IS vs  OOS RMSE table (all dims) ──")
+print("\n── Q2a: IS vs OOS RMSE table (all dims, rolling-based) ──")
+
+def load_is_rmse_for_rolling(dim):
+    """Load IS RMSE from the ep5000 training log (globally trained model)."""
+    path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        "ep5000", f"train_rmse_log_bbg_dim{dim}_ep5000.csv")
+    if not os.path.exists(path):
+        warnings.warn(f"No ep5000 training log found for dim={dim}: {path}")
+        return None
+    df = pd.read_csv(path)
+    last = df.iloc[-1]
+    result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
+    result["Average"] = float(last["avg_rmse_bps"])
+    print(f"  [dim={dim}] IS RMSE from ep5000 training log (last epoch={int(last['epoch'])})")
+    return result
+
+def load_rolling_oos_per_ccy(dim):
+    """Average per-currency OOS RMSE across all valid rolling windows."""
+    df = load_rolling_df(dim)
+    if df is None:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    result = pd.Series({
+        ccy: float(valid[f"rmse_bps_{ccy}"].mean())
+        for ccy in CCY_ORDER
+        if f"rmse_bps_{ccy}" in valid.columns
+    })
+    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    return result
 
 rows_q2 = {}
 for dim in [1, 2, 3, 4]:
-    is_mean, oos_mean = load_split_rmse(dim)
-    if is_mean is not None:
+    is_mean  = load_is_rmse_for_rolling(dim)
+    oos_mean = load_rolling_oos_per_ccy(dim)
+    if is_mean is not None and oos_mean is not None:
         rows_q2[("IS",  f"$\\ell={dim}$")] = is_mean
         rows_q2[("OOS", f"$\\ell={dim}$")] = oos_mean
+    else:
+        if is_mean  is None: print(f"  [dim={dim}] IS  missing — skipped")
+        if oos_mean is None: print(f"  [dim={dim}] OOS missing — run OutOfSampleRoll.py")
 
 table_q2a = pd.DataFrame(rows_q2).T
 table_q2a.index = pd.MultiIndex.from_tuples(table_q2a.index, names=["Split", "Model"])
@@ -622,8 +810,8 @@ _show   = _w_starts[:_n_show]
 def _to_x(ts):
     return ts.year + (ts.month - 1) / 12.0
 
-_col_train = custom_palette[0]
-_col_test  = custom_palette[3]
+_col_train = custom_palette[4]
+_col_test  = custom_palette[6]
 _col_full  = "lightgray"
 _row_h     = 0.45
 _n_rows    = _n_show + 2   # windows + dots row + full series row
@@ -698,70 +886,6 @@ save_extra_fig(fig, "rolling_window_diagram")
 # Q2b — Plot: OOS RMSE vs latent dimension (rolling average per dim)
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q2b: Rolling OOS RMSE vs dim ──")
-
-ROLL_SUBDIR = "train5Y_test6M_step6M"
-
-ROLL_DIVERGE_THRESHOLD = 100.0  # bps — rolling windows above this are training failures
-
-_ROLL_FALLBACK_SUBDIR = "train3Y_test3M_step6M"
-
-def load_rolling_avg(dim):
-    """Return average OOS RMSE across valid rolling windows for a given dim.
-    Falls back to old train3Y_test3M_step6M results if new ones are not yet available."""
-    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
-    if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
-        if not os.path.exists(path):
-            return None
-        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
-    df = pd.read_csv(path)
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    n_bad = len(df) - len(valid)
-    if n_bad:
-        print(f"  [dim={dim}] Excluded {n_bad}/{len(df)} diverged rolling windows "
-              f"(avg_rmse_bps > {ROLL_DIVERGE_THRESHOLD} bps)")
-    return float(valid["avg_rmse_bps"].mean())
-
-def load_rolling_df(dim):
-    """Return full rolling CSV DataFrame for a given dim, with fallback."""
-    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
-    if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
-                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
-        if not os.path.exists(path):
-            return None
-        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
-    df = pd.read_csv(path)
-    df["test_start"] = pd.to_datetime(df["test_start"])
-    return df
-
-def load_ekf_rolling_avg(n_factors):
-    """Return average OOS RMSE across valid rolling windows for EKF DNS n_factors model."""
-    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
-                        "ekf_dns_rolling",
-                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
-    if not os.path.exists(path):
-        return None
-    df = pd.read_csv(path)
-    return float(df["avg_rmse_bps"].mean())
-
-def load_ekf_rolling_df(n_factors):
-    """Return full rolling CSV for EKF DNS n_factors model."""
-    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
-                        "ekf_dns_rolling",
-                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
-    if not os.path.exists(path):
-        return None
-    df = pd.read_csv(path)
-    df["test_start"] = pd.to_datetime(df["test_start"])
-    return df
 
 roll_avgs = {}
 for dim in [2, 3, 4]:
@@ -853,50 +977,71 @@ else:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Q3b — Plot: Rolling OOS RMSE over time (d=3, per-currency + average)
+# Q3b — Plot: Rolling OOS RMSE over time (ℓ=2,3,4 average, with explosion bars)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q3b: Rolling RMSE over time (d=3) ── ")
+print("\n── Q3b: Rolling RMSE over time (ℓ=2,3,4) ──")
 
-df_roll = load_rolling_df(LATENT_DIM)
+CLIP      = 100
+BAR_WIDTH = pd.Timedelta(days=50)
+_Q3b_COLORS  = {d: DIM_COLORS[d] for d in [2, 3, 4]}
+DIM_OFFSETS = {2: pd.Timedelta(days=-35), 3: pd.Timedelta(days=0), 4: pd.Timedelta(days=35)}
 
-if df_roll is not None:
+_any_plotted = False
+fig, ax = plt.subplots(figsize=(11, 4.5))
 
-    fig, ax = plt.subplots(figsize=(11, 4.5))
+for _dim, _col in _Q3b_COLORS.items():
+    _df = load_rolling_df(_dim)
+    if _df is None:
+        print(f"  SKIPPED dim={_dim} — no rolling CSV found")
+        continue
+    _any_plotted = True
 
-    for ccy in CCY_ORDER:
-        col = f"rmse_bps_{ccy}"
-        if col in df_roll.columns:
-            valid = df_roll[col].notna()
-            ax.plot(df_roll.loc[valid, "test_start"], df_roll.loc[valid, col],
-                    linewidth=1.0, alpha=0.55, color=currency_color_map[ccy], label=ccy)
+    # average line (clipped)
+    avg_clipped = _df["avg_rmse_bps"].where(_df["avg_rmse_bps"] <= CLIP)
+    valid_avg   = avg_clipped.notna()
+    ax.plot(_df.loc[valid_avg, "test_start"], avg_clipped[valid_avg],
+            linewidth=1.8, color=_col, label=f"$\\ell={_dim}$", zorder=5)
 
-    # AE average line
-    ax.plot(df_roll["test_start"], df_roll["avg_rmse_bps"],
-            linewidth=1.2, color="black", linestyle="--",
-            label=f"AE $\\ell={LATENT_DIM}$ avg", zorder=5)
+    # explosion bars colored to match this model's line
+    ccy_cols     = [f"rmse_bps_{c}" for c in CCY_ORDER if f"rmse_bps_{c}" in _df.columns]
+    explode_max  = _df[ccy_cols].max(axis=1)
+    explode_mask = explode_max > CLIP
+    _bar_added   = False
+    for _, row in _df[explode_mask].iterrows():
+        max_val  = explode_max[row.name]
+        bar_date = row["test_start"] + DIM_OFFSETS[_dim]
+        ax.bar(bar_date, CLIP, width=BAR_WIDTH,
+               color=_col, alpha=0.30, zorder=3,
+               label=f"$\\ell={_dim}$ exploded" if not _bar_added else "_nolegend_")
+        ax.text(bar_date, CLIP * 0.97,
+                f"{max_val:.0f}", fontsize=7, ha="center", va="top",
+                rotation=90, color=_col, fontweight="bold", zorder=4)
+        _bar_added = True
 
-    # EKF DNS 3f average line
-    _ekf_df3 = load_ekf_rolling_df(LATENT_DIM)
-    if _ekf_df3 is not None:
-        ax.plot(_ekf_df3["test_start"], _ekf_df3["avg_rmse_bps"],
-                linewidth=1.2, color="dimgray", linestyle=":",
-                label=f"EKF DNS {LATENT_DIM}f avg", zorder=5)
-
+if not _any_plotted:
+    print("  Q3b SKIPPED — no rolling CSVs found for any dim")
+else:
     # event markers
+    ax.set_ylim(0, CLIP)
+    _x_min = min(
+        load_rolling_df(d)["test_start"].min()
+        for d in _Q3b_COLORS if load_rolling_df(d) is not None
+    )
+    _x_max = max(
+        load_rolling_df(d)["test_start"].max()
+        for d in _Q3b_COLORS if load_rolling_df(d) is not None
+    )
     for label, date_str in EVENTS.items():
         d = pd.Timestamp(date_str)
-        if df_roll["test_start"].min() <= d <= df_roll["test_start"].max():
+        if _x_min <= d <= _x_max:
             ax.axvline(d, color="0.5", linewidth=1.0, linestyle="--")
-            ax.text(d, ax.get_ylim()[1] if ax.get_ylim()[1] > 1 else 1,
-                    label, fontsize=10, ha="center", va="bottom", color="0.4",
-                    rotation=0)
+            ax.text(d, CLIP, label, fontsize=10, ha="center", va="bottom", color="0.4")
 
     ax.set_ylabel("OOS RMSE (bps)")
+    ax.legend(fontsize=8)
     fig.autofmt_xdate()
     fig.tight_layout()
     save_fig(fig, "Q3b_rolling_rmse_over_time")
-else:
-    print(f"  SKIPPED — no rolling CSV found for dim={LATENT_DIM}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -904,27 +1049,20 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q4a: AE vs Kalman table ──")
 
-def load_kalman_rmse(dim):
-    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
-                        f"ekf_dns_{dim}f", "rmse_summary.csv")
-    if not os.path.exists(path):
-        return None
-    df = pd.read_csv(path, index_col=0)
-    oos_col = [c for c in df.columns if "OOS mean" in c][0]
-    return df[oos_col]
-
 rows_q4 = {}
 # interleave AE and EKF DNS by dimension: (AE l=2, EKF 2f), (AE l=3, EKF 3f), (AE l=4, EKF 4f)
 for dim in [2, 3, 4]:
-    _, oos_ae_dim = load_split_rmse(dim)
+    oos_ae_dim = load_rolling_oos_per_ccy(dim)
     if oos_ae_dim is not None:
+        oos_ae_dim["Time (min)"] = load_rolling_train_time_min(dim)
         rows_q4[rf"AE $\ell$={dim}"] = oos_ae_dim
-    oos_k = load_kalman_rmse(dim)
+    oos_k = load_ekf_rolling_oos_per_ccy(dim)
     if oos_k is not None:
+        oos_k["Time (min)"] = load_ekf_rolling_train_time_min(dim)
         rows_q4[rf"EKF DNS $\ell$={dim}"] = oos_k
 
 table_q4a = pd.DataFrame(rows_q4).T
-table_q4a = table_q4a[[c for c in CCY_ORDER + ["Average"] if c in table_q4a.columns]]
+table_q4a = table_q4a[[c for c in CCY_ORDER + ["Average", "Time (min)"] if c in table_q4a.columns]]
 table_q4a = table_q4a.round(2)
 save_table(table_q4a, "Q4a_AE_vs_Kalman_OOS")
 print(table_q4a.to_string())
@@ -936,8 +1074,8 @@ print(table_q4a.to_string())
 print("\n── Q4b: Per-currency bar chart (one plot per dim) ──")
 
 for _dim in [2, 3, 4]:
-    _, oos_ae  = load_split_rmse(_dim)
-    oos_k      = load_kalman_rmse(_dim)
+    oos_ae = load_rolling_oos_per_ccy(_dim)
+    oos_k  = load_ekf_rolling_oos_per_ccy(_dim)
 
     if oos_ae is None or oos_k is None:
         print(f"  SKIPPED dim={_dim} — missing AE or Kalman OOS data.")
@@ -949,15 +1087,18 @@ for _dim in [2, 3, 4]:
 
     fig, ax = plt.subplots(figsize=(11, 5))
 
+    _ae_col = DIM_COLORS[_dim]
+    _ekf_col = custom_palette[8]   # olive/brown — distinct from AE colours
+
     ax.bar(x - width / 2,
            [oos_ae.get(c, np.nan) for c in labels],
            width, label=rf"AE ($\ell$={_dim})",
-           color=custom_palette[_dim - 1], edgecolor="none")
+           color=_ae_col, edgecolor="none")
 
     ax.bar(x + width / 2,
            [oos_k.get(c, np.nan) for c in labels],
            width, label=rf"EKF DNS ($\ell$={_dim})",
-           color=custom_palette[0], edgecolor="none")
+           color=_ekf_col, edgecolor="none")
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
@@ -965,9 +1106,9 @@ for _dim in [2, 3, 4]:
     ax.legend(frameon=False, fontsize=9)
 
     avg_ae = oos_ae.drop("Average", errors="ignore").mean()
-    ax.axhline(avg_ae, color=custom_palette[_dim - 1], linewidth=1.0, linestyle="--", alpha=0.7)
+    ax.axhline(avg_ae, color=_ae_col, linewidth=1.0, linestyle="--", alpha=0.7)
     avg_k = oos_k.drop("Average", errors="ignore").mean()
-    ax.axhline(avg_k, color=custom_palette[0], linewidth=1.0, linestyle="--", alpha=0.7)
+    ax.axhline(avg_k, color=_ekf_col, linewidth=1.0, linestyle="--", alpha=0.7)
 
     fig.tight_layout()
     save_fig(fig, f"Q4b_per_currency_bar_chart_dim{_dim}")
@@ -1297,7 +1438,7 @@ else:
         rmse_by_dim[_dim] = np.sqrt(
             np.mean((_X_oos[_finite] - _S_oos[_finite])**2, axis=0)) * 10000
 
-    _oos_k3_q6d = load_kalman_rmse(3)
+    _oos_k3_q6d = load_ekf_rolling_oos_per_ccy(3)
     n_tenors = len(TENOR_COLS)
     n_dims   = len(DIMS_PLOT)
     width    = 0.22
@@ -1344,14 +1485,8 @@ else:
     monthly_avg   = meta_eval_z.groupby("ym")["rmse_bps"].mean()
     monthly_dates = monthly_avg.index.to_timestamp()
 
-    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+    fig, ax = plt.subplots(1, 1, figsize=(12, 5))
 
-    ax = axes[0]
-    ax.plot(monthly_dates, monthly_avg.values, linewidth=1.2, color="black",
-            linestyle="--", label="All-ccy avg")
-    ax.set_ylabel("Avg RMSE (bps)")
-
-    ax = axes[1]
     for ccy in CCY_ORDER:
         idx_c = meta_eval_z["ccy"] == ccy
         if idx_c.sum() == 0:
@@ -1359,13 +1494,15 @@ else:
         m_ccy = meta_eval_z.loc[idx_c].groupby("ym")["rmse_bps"].mean()
         ax.plot(m_ccy.index.to_timestamp(), m_ccy.values,
                 linewidth=1.1, alpha=0.75, color=currency_color_map[ccy])
+
+    ax.plot(monthly_dates, monthly_avg.values, linewidth=2.2, color="black",
+            linestyle="--", label="All-ccy avg", zorder=5)
     ax.set_ylabel("RMSE (bps)")
 
     for ev_label, ev_date in EVENTS.items():
-        for axi in axes:
-            axi.axvline(pd.Timestamp(ev_date), color="0.55", linewidth=1.0, linestyle="--")
-        axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
-                     ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
+        ax.axvline(pd.Timestamp(ev_date), color="0.55", linewidth=1.0, linestyle="--")
+        ax.text(pd.Timestamp(ev_date), ax.get_ylim()[1],
+                ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
 
     fig.autofmt_xdate()
     fig.tight_layout()
@@ -1569,10 +1706,16 @@ _SKIP = "❌"
 # determine model source for each dim
 def _model_src(dim):
     src = dim_model_sources.get(dim, None)
-    if src is None:           return (_SKIP,  "no checkpoint found")
-    if "ep5000" in src:       return (_OK,    f"ep5000 checkpoint")
-    if "OOSSplit" in src:     return (_WARN,  f"fallback: OOSSplit ep2500 (rerun after ep5000 training)")
-    return (_OK, src)
+    if src is not None:
+        if "ep5000"   in src: return (_OK,   "ep5000 checkpoint")
+        if "OOSSplit" in src: return (_WARN, "fallback: OOSSplit ep2500 (rerun after ep5000 training)")
+        return (_OK, src)
+    # not loaded as a model — check file directly
+    ckpt = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        f"ep{TRAIN_LOG_EPOCHS}", f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
+    if os.path.exists(ckpt):
+        return (_OK, "ep5000 checkpoint")
+    return (_SKIP, "no checkpoint found")
 
 # determine rolling source for each dim
 def _roll_src(dim):

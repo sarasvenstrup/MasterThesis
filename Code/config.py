@@ -9,4 +9,13 @@
 # Changing this one line switches the entire pipeline.
 # ─────────────────────────────────────────────────────────────
 
+import sys
+
 VARIANT = "stable"
+
+
+def confirm_variant():
+    answer = input(f"\nConfig variant is set to: '{VARIANT}' — proceed? [y/n]: ").strip().lower()
+    if answer != "y":
+        print("Aborted.")
+        sys.exit(0)

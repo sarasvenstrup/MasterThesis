@@ -1,7 +1,8 @@
 """
-Runner script: runs OOS stages sequentially.
+Runner script: runs Training.py sequentially for multiple dims and variants.
 
-  OutOfSampleRoll.py: LATENT_DIM = 3, 4
+  Training.py (baseline): LATENT_DIM = 2, 3, 4
+  Training.py (stable):   LATENT_DIM = 1, 2, 3, 4
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -17,21 +18,40 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
+CONFIG_PATH   = os.path.join(REPO_ROOT, "Code", "config.py")
+TRAINING_PATH = os.path.join(REPO_ROOT, "Code", "Training.py")
+
 STAGES = [
     {
-        "name":   "OutOfSampleRoll",
-        "script": os.path.join(REPO_ROOT, "Code", "OutOfSampleRoll.py"),
-        "dims":   [3, 4],
+        "name":    "Training (baseline)",
+        "script":  TRAINING_PATH,
+        "variant": "baseline",
+        "dims":    [1, 2, 3, 4],
+    },
+    {
+        "name":    "Training (stable)",
+        "script":  TRAINING_PATH,
+        "variant": "stable",
+        "dims":    [1, 2, 3, 4],
     },
 ]
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def patch_latent_dim(script_path: str, dim: int) -> str:
-    """Replace LATENT_DIM = <any int> with LATENT_DIM = dim. Returns original source."""
+    """Replace LATENT_DIM = <any int> in script. Returns original source."""
     with open(script_path, "r") as f:
         original = f.read()
     patched = re.sub(r"^(LATENT_DIM\s*=\s*)\d+", rf"\g<1>{dim}", original, flags=re.MULTILINE)
     with open(script_path, "w") as f:
+        f.write(patched)
+    return original
+
+def patch_variant(variant: str) -> str:
+    """Replace VARIANT = '...' in config.py. Returns original source."""
+    with open(CONFIG_PATH, "r") as f:
+        original = f.read()
+    patched = re.sub(r'^(VARIANT\s*=\s*)["\'].*?["\']', rf'\g<1>"{variant}"', original, flags=re.MULTILINE)
+    with open(CONFIG_PATH, "w") as f:
         f.write(patched)
     return original
 
@@ -50,7 +70,8 @@ for stage in STAGES:
         print(f"  [{run_num}/{total_runs}] {stage['name']}  LATENT_DIM={dim}")
         print(f"{'='*60}\n")
 
-        original_source = patch_latent_dim(stage["script"], dim)
+        original_training = patch_latent_dim(stage["script"], dim)
+        original_config   = patch_variant(stage["variant"])
 
         env = os.environ.copy()
         env["PYTHONPATH"] = REPO_ROOT
@@ -62,7 +83,8 @@ for stage in STAGES:
                 env=env,
             )
         finally:
-            restore_source(stage["script"], original_source)
+            restore_source(stage["script"], original_training)
+            restore_source(CONFIG_PATH,     original_config)
 
         if result.returncode != 0:
             print(f"\n[ERROR] {stage['name']} failed for LATENT_DIM={dim} "

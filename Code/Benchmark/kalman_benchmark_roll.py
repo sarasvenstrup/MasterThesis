@@ -34,7 +34,8 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import my_data, TARGET_TENORS
-from Code.config import VARIANT
+from Code.config import VARIANT, confirm_variant
+confirm_variant()
 from Code.Benchmark.kalman_benchmark import (
     ns_loadings, ekf_filter_smoother, ekf_forward_only,
     estimate_A_Q, estimate_R, rmse_bps, swap_curve_from_ns,

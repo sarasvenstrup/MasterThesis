@@ -12,7 +12,7 @@ This chapter presents the empirical results for the arbitrage-free autoencoder m
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of the autoencoder against two criteria: the reconstruction error, measured by the root mean squared error (RMSE) in basis points (bps), and the satisfaction of the no-arbitrage constraint, assessed through the \textcolor{red}{approximate Sharpe ratio (reference or write what we mean by this diagnostic)} of zero-coupon bonds implied by the reconstructed curves. A \textcolor{red}{a quantity that should be negligible if the model is arbitrage-free by construction}
+To start of the evaluation of the Auto encoder we must first determine the criteria to which we will execute this. Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of the autoencoder against two criteria: the reconstruction error, measured by the root mean squared error (RMSE) in basis points (bps), and the satisfaction of the no-arbitrage constraint, assessed through the \textcolor{red}{approximate Sharpe ratio (reference or write what we mean by this diagnostic)} of zero-coupon bonds implied by the reconstructed curves. A \textcolor{red}{ quantity that should be negligible if the model is arbitrage-free by construction}. We will be using the reconsrtuction error, to assess the model in varios ways. Firsly in order to assess the loss of the different models and where they converge if they do. Thereafter we will be assessing the fit in with other metrics. we will be looking at the resiudal distriution, together with the visual fit of the model of different currencies. Further it is also interesting to evaluate the model not only on a currency basis but also across tenors. We also look at where the model struggles the most over time. And lastly finish with checking if the model exhibits no-arbitrage objects. 
 
 % Note to selv
 %We first confirm that the models have converged, then assess fit quality across currencies and latent dimensions, before examining where and when the model struggles most. 
@@ -20,37 +20,8 @@ Following \citet{MatinWanPoulsen2025}, we evaluate the in-sample performance of 
 
 \subsection{Loss Assessment}
 
-The model is trained on the in-sample period 2004--2020 over 5\,000
-epochs. Figure~\ref{fig:training_loss} shows the average training RMSE
-across all currencies for $\ell \in \{1,2,3,4\}$. All four models
-converge well before epoch 2\,500, after which the loss curves flatten
-with no meaningful further improvement. As expected, $\ell=1$ converges
-to a substantially higher error of approximately 30 bps, indicating
-that a single latent factor is insufficient to capture the variation in
-the swap rate curve, and the remaining analysis therefore focuses on
-$\ell \in \{2, 3, 4\}$.
-
-Table~\ref{tab:q1a_is_rmse} breaks this down by currency. Across all
-nine currencies, the error falls substantially from $\ell=2$ to
-$\ell=3$, with more modest gains from $\ell=3$ to $\ell=4$, suggesting
-diminishing returns to increasing model complexity. \textcolor{red}{EUR
-and JPY consistently show the highest reconstruction error — fill in
-values once results are updated.}
-
-
-We then wanna see also according to tenors. 
-
-
-
-
-and then how the in sample residuals actually are distributed. 
-
-
-Further we want to look at \underline{when} the model struggles to reconstruct the swap rates well.
-
-
-
-
+The model is trained on the in-sample period 2010--\textcolor{red}{different for different currencies? which we should write in the data section.} over 5\,000
+epochs. 
 
 % ── Q1e ──────────────────────────────────────────────────────
 \begin{figure}[ht]
@@ -65,6 +36,19 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
 
 
 
+Figure~\ref{fig:training_loss} shows the average training RMSE
+across all currencies for $\ell \in \{1,2,3,4\}$. All four models
+converge well before epoch 2\,500, after which the loss curves flatten
+with no meaningful further improvement. $\ell=1$ converges
+to a substantially higher error of approximately 30 bps, indicating as one would expect that a single latent factor is insufficient to capture the variation in
+the swap rate curve, and the remaining analysis therefore focuses on
+$\ell \in \{2, 3, 4\}$. Which is further supported by Table~\ref{tab:q1a_is_rmse} which breaks the RMSE down by currency. Here the model with 1 latent factor has in general very high RMSEs ranging beteen 23.44 and 50 where the other models have a far less range on 9.79 to 16.61 for mode 2 and 8.33 to 15.30 for l=3.
+
+
+Across all
+nine currencies, the error falls substantially from $\ell=2$ to
+$\ell=3$ on average, with more modest gains from $\ell=3$ to $\ell=4$, suggesting
+diminishing returns to increasing model complexity. Across all models the currency that is hardest to reconstruct for , 3 and 4 is EUR and JPY closely following.
 
 
 
@@ -96,10 +80,13 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
 \end{table}
 
 
+REMEMBER THAT IF WR TRAIN OVER A LONGER PERIOD - WE GET A BETTER RMSE!
 
+
+and then how the in sample residuals actually are distributed. 
 
 % ── Q1c ──────────────────────────────────────────────────────
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
     \caption{Distribution of in-sample residuals (actual minus fitted) in
@@ -118,36 +105,56 @@ in-sample residuals pooled across all currencies and dates for
 $\ell \in \{2, 3, 4\}$. \textcolor{red}{[Comment when results are updated]}
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 \subsection{Fit diagnostics}
 
 
-% ── Q1d ──────────────────────────────────────────────────────
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.png}
-    \caption{In-sample fitted versus actual swap curves for latent dimensions
-    $\ell \in \{2, 3, 4\}$ across three representative dates: a normal market
-    environment (2016-08-31), the Covid-19 stress episode (2020-03-31), and a low-rate
-    regime (2019-06-30). Rows correspond to EUR, USD, and JPY.
-    The solid line with circles ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}~$\circ$})
-    denotes the observed swap rate.
-    Reconstructions are shown for
-    $\ell=2$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}, solid),
-    $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{0.2em}{1pt} \rule[0.5ex]{0.2em}{1pt} \rule[0.5ex]{0.2em}{1pt}}, dashed), and
-    $\ell=4$ ({\color[HTML]{9C9EDE}$\cdots$}, dotted).
-    The x-axis shows tenor in years.}
+Further we want to look at \underline{when} the model struggles to reconstruct the swap rates well.
 
-    \label{fig:q1d_fitted_vs_actual_all_dims}
+% ── Q6b ──────────────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
+
+    \caption{In-sample RMSE (bps) over time for $\ell=3$, per currency and cross-currency 
+    average ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}} dashed):
+    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
+    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
+    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
+    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
+    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).
+    Dashed vertical lines mark key macro events.}
+    \label{fig:Q6b}
 \end{figure}
 
-To assess the quality of the fit beyond aggregate error metrics,
-Figure~\ref{fig:q1d_fitted_vs_actual_all_dims} shows the reconstructed
-versus observed swap curves for EUR, USD, and JPY across three
-representative dates: a normal market environment (August 2016), the
-Covid-19 stress episode (March 2020), and a low-rate regime (June
-2019).
 
 
+We see that the model struggles to reconstruct swap rates, especially the EUR and the pegged DKK, in the period around the corona virus.
 
 
 % ── Q6a ──────────────────────────────────────────────────────
@@ -170,23 +177,73 @@ Covid-19 stress episode (March 2020), and a low-rate regime (June
 \end{figure}
 
 Figure~\ref{fig:Q6a} further disaggregates the error across tenors for
-$\ell=3$. \textcolor{red}{[Fill in: describe the tenor pattern, e.g.\
-``The model fits mid-range tenors most accurately, with higher errors
-at the short end of the curve.'' — update once results are
-available.]}
+$\ell=3$. The model fits mid-range tenors most accurately, with highest errors
+at the short end of the curve and mid high errors at the long end.
+
+In the right panel we see that the JPY, USD and EUR is one pushing up the error.
 
 
 
+We now want to assess how it visually reconstructs, and if it replicates the shape well, something that A metrics such as RMSE does not reveal.
 
 
-% ── Q6b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
-    \caption{In-sample RMSE (bps) over time for $\ell=3$,
-    averaged across currencies per date.}
-    \label{fig:Q6b}
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_zcb_swap_dim3.png}
+    \caption{Swap curves and implied zero-coupon bond (ZCB) yields for the
+    autoencoder ($\ell=3$) on 30 November 2021.
+    Left panel: observed swap rates (solid with circles) and reconstructed
+    swap rates (dashed). Right panel: ZCB yields implied by the model,
+    computed as $y(\tau) = -\log P(0,\tau)/\tau$.
+    Currencies:
+    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
+    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
+    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
+    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
+    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
+    \label{fig:Q1e_zcb}
 \end{figure}
+
+
+
+
+% ── Q1d ──────────────────────────────────────────────────────
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.png}
+    \caption{In-sample fitted versus actual swap curves for latent dimensions
+    $\ell \in \{2, 3, 4\}$ across three representative dates: a normal market
+    environment (2016-08-31), the Covid-19 stress episode (2020-03-31), and a low-rate
+    regime (2019-06-30). Rows correspond to EUR, USD, and JPY.
+    The solid line with circles ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}~$\circ$})
+    denotes the observed swap rate.
+    Reconstructions are shown for
+    $\ell=2$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}, solid),
+    $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{0.2em}{1pt} \rule[0.5ex]{0.2em}{1pt} \rule[0.5ex]{0.2em}{1pt}}, dashed), and
+    $\ell=4$ ({\color[HTML]{9C9EDE}$\cdots$}, dotted).
+    The x-axis shows tenor in years.}
+
+    \label{fig:q1d_fitted_vs_actual_all_dims}
+\end{figure}
+
+
+
+
+To assess the quality of the fit beyond aggregate error metrics,
+Figure~\ref{fig:q1d_fitted_vs_actual_all_dims} shows the reconstructed
+versus observed swap curves for EUR, USD, and JPY across three
+representative dates: a normal market environment (August 2016), the
+Covid-19 stress episode (March 2020), and a low-rate regime (June
+2019).
+
+
+
+
+
 
 
 
@@ -217,46 +274,42 @@ available.]}
 
 
 
+
+
 % ─────────────────────────────────────────────────────────────
 \section{Out-of-Sample Performance and Robustness}
 % ─────────────────────────────────────────────────────────────
 
 
-The strong in-sample fit established above is a necessary but not
-sufficient condition for a well-performing model, as a model that
-simply memorises the training data will appear to fit well in sample
-while failing to generalise. The rolling window evaluation tests
-whether the model captures genuine structure in the swap rate curve
-rather than patterns specific to the training period.
+While the in-sample results demonstrate that the autoencoder reconstructs the swap rate curve closely, and suggest that models with more latent factors achieve better reconstruction, a good in-sample fit alone does not guarantee that the model generalizes to new data. In particular, a model with many parameters may overfit the training period, failing to preserve its reconstruction accuracy when applied to independent observations. \textcolor{red}{(Reference to RegressionbyR Introduction - 1.2)} To assess generalization, two experiments are conducted. First, a rolling window evaluation tests out-of-sample reconstruction. Second, a robustness analysis repeats a fixed train/test split across multiple random seeds, assessing the sensitivity of out-of-sample performance to the random initialization of the model. All experiments in this section use 2,500 training epochs, which Figure~\ref{fig:training_loss} confirms is sufficient for convergence.
 
+\subsection{Rolling Window Evaluation}
 
-
-In each rolling window, the model is trained on a five-year period
-and evaluated on the subsequent six months, stepping forward six
-months at a time, yielding approximately 26 windows in total.
-
-Argument 1: The test window of six months is chosen to ensure non-overlapping
-evaluation periods and a stable RMSE estimate, while the five-year
-training window provides sufficient data for convergence.
-
-Argument 2: more windows beats longer windows for demonstrating generalisation robustly.
+To evaluate generalization and identify which latent dimension yields the best out-of-sample reconstruction, a rolling window design is used (Figure~\ref{fig:rolling_window_diagram}), yielding 18 non-overlapping test periods spanning January 2015 to December 2023.
 
 \begin{figure}[ht]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/ExtraFigures/rolling_window_diagram.png}
-    \caption{Illustration of the rolling window evaluation setup. Each window
-    consists of a five-year training period (dark) followed by a three-month
-    test period (light), stepping forward six months at a time. Five
-    representative windows are shown out of approximately 26 in total.}
+    \caption{Rolling window evaluation design: 18 windows each consisting of a five-year training period followed by a six-month test period, stepping forward six months at a time.}
     \label{fig:rolling_window_diagram}
 \end{figure}
 
 
 
+The results of the rolling window scheme is summed up in \ref{fig:Q2b} and we clearly see that the in-sample RMSE is consistently lower than the OOS RMSE across all model dimensions. Interestingly the autoencoder with four latent factors to describe the swap rate curve, has not only the worst perfomance relative to the in sample RMSE, but also overall the worst model OOS. From these it seems that our model with three latent factor performs best OOS.
 
-Since Figure~\ref{fig:training_loss} confirms convergence well before 
-2\,500 epochs, the IS/OOS comparison uses 2\,500 epochs across all 
-experiments without meaningful loss of accuracy to decrease computation time.
+An average for the whole model is not so telling when wanting to understand the basis of this errors. IF we look on how the models perform on a currency level, we see that the model with 4 dimensions actually performs better in some case but much worse in other cases.
+
+For $\ell = 2$ and $\ell = 3$, the IS--OOS gap is modest (12.11 vs.\ 15.57 bps and 9.96 vs.\ 12.44 bps, respectively), indicating that both models generalise well to unseen data. In contrast, $\ell = 4$ achieves the lowest IS RMSE of 4.33 bps but degrades sharply out-of-sample to 17.38 bps --- nearly four times its training error --- with a particularly large EUR OOS deviation of 70.53 bps. This pattern is characteristic of overfitting: the additional latent factor captures noise in the training data rather than genuine curve structure. Together, these results suggest that $\ell = 2$ or $\ell = 3$ offers the best balance between reconstruction accuracy and generalisation.
+
+
+
+
+\textcolor{red}{HERE we need to make another figure, and move this down to the benchmarks ection, where we in this case must compare the OOS Autoencoder to the InSample.}
+
+
+
+
 
 
 % ── Q2a ──────────────────────────────────────────────────────
@@ -288,17 +341,44 @@ IS: 2004--2020, OOS: 2021--2022.}
 \label{tab:q2a_is_oos_rmse}
 \end{table}
 
-% ── Q2b ──────────────────────────────────────────────────────
+\textcolor{red}{Cant we colour the OOS and IS rows so it is easier to comapre the differnt cases viusally}
+
+
+
+
+
+% ── Q3b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
-    \caption{Rolling out-of-sample RMSE (bps) by latent dimension $\ell$,
-    averaged across 34 rolling windows (3-year train, 3-month test).}
-    \label{fig:Q2b}
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
+    \caption{Rolling out-of-sample RMSE (bps) over time for $\ell\in\{2,3,4\}$
+    showing the cross-currency average per rolling window. Shaded bars indicate
+    windows where at least one currency exceeds 100 bps; bar colour matches the
+    corresponding model. Dashed vertical lines mark key macro events.}
+    \label{fig:Q3b}
 \end{figure}
 
 
+This figure is intended to see how the out-of sample RMSE varies across time and not only as a an average. where we see that the model struggles indeed around the rate hikes and the euro struggles in the covid period. 
 
+We also cmust comment on the model explosions. These have been taken out of the equation for the above results. But suspecting that these model explosions are due to the H and K, we move to the next section where we test for robustness across different seeds if these is. This insight is motivation to the stabilzation section that comes after the evaluation of the Autoencoder performance. So when we look at the model but not on the explosions, we see that dim 2 is more volatiltes across the differnt windows, where it looks like 3 dimensions has captured the udnerlying swap rate dynamics better.
+
+so we see that the model with most latent factors explodes a lot compared to the model with 2 or 3. Further it seems that they seem to explode in the same regions.
+
+
+
+
+
+
+
+
+
+
+\subsection{Robustness to Random Initialisation}
+ 
+First we want to assess the robustness of the different models.
+
+THIS TABLE IS INTEDED TO CHECK FOR THE ROBUSTNESS; AND THAT IS WHY WE DO IT ONLY ON A WINDOW SPLIT FOR COMPUTATIONAL PURPOSES.
 
 
 % ── Q3a ──────────────────────────────────────────────────────
@@ -338,27 +418,17 @@ IS: 2004--2020, OOS: 2021--2022.}
 % \end{table}
 
 
+What is important to note here is that the model exploding mostt likelt is due to the problems with H and K being learned with no constraitn ? satistified, such that the model breaks down.
 
 
-THIS TABLE IS INTEDED TO CHECK FOR THE ROBUSTNESS; AND THAT IS WHY WE DO IT ONLY ON A WINDOW SPLIT FOR COMPUTATIONAL PURPOSES.
 
 
 
-% ── Q3b ──────────────────────────────────────────────────────
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
-    \caption{Rolling out-of-sample RMSE over time for $\ell=3$,
-    showing variation across rolling windows.}
-    \label{fig:Q3b}
-\end{figure}
+
+\section{Benchmark}
 
 
-This figure is inteded to see how the out-of sample RMSE varies across time and not only as a an average.
-
-
-\subsection{Benchmark}
-
+THIS IS ALSO WHERE WE WANT TO WRITE ACCORDING TO THE BOND MARKET GENERATED SWAPS.
 
 The next is to see how well the Auto encoder performs compared to a benchmark, which we have chosen to be the Dynamic Nelsion siegel, using the extended kalman filter.
 
@@ -375,7 +445,7 @@ Remember to include computation time.
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q4a_AE_vs_Kalman_OOS.csv}\datqfoura
 \resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
-  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
+  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
   columns/index/.style={column name={Model}, string type, column type=l},
   columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
@@ -386,67 +456,43 @@ Remember to include computation time.
   columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/Average/.style={column name={\textbf{Avg}}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/Time (min)/.style={column name={\textbf{Time (min)}}, column type=r, fixed, precision=2, fixed zerofill},
   every head row/.style={before row=\toprule, after row=\midrule},
   every row no 2/.style={before row=\midrule},
   every row no 4/.style={before row=\midrule},
   every last row/.style={after row=\bottomrule},
 ]{\datqfoura}}
 }
-\caption{Out-of-sample RMSE (bps) per currency for the autoencoder and EKF DNS benchmarks,
-grouped by number of latent factors $\ell$ (2021--2022 test period).}
+\caption{Rolling out-of-sample RMSE (bps) per currency for the autoencoder and EKF DNS
+benchmarks, grouped by number of latent factors $\ell$.
+The final column reports average training time per rolling window in minutes.}
 \label{tab:Q4a}
 \end{table}
 
+
 % ── Q4c ──────────────────────────────────────────────────────
+
+
+We should compare the benchmark for the three models for the benchmark across all models to give a fair comparison. and we also have the time it takes to train the model for each. However we msut keep in mind that this is a benchmark on how well the AE reconstructs swap rates, and we mist take into account that we now it produces arbitrage free swap rates, where this is not necessarily guaranteeed for our benchmark.
+
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
-    \caption{Out-of-sample RMSE (bps) per currency for autoencoder
-    dimensions $\ell=2,3,4$ and EKF DNS 3-factor benchmark.}
-    \label{fig:Q4c}
+    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
+    \caption{Average rolling out-of-sample RMSE (bps) for the autoencoder and the
+    EKF DNS benchmark across latent dimensions $\ell \in \{2, 3, 4\}$.
+    Autoencoder bars are coloured by model:
+    $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).
+    EKF DNS bars are shown in grey.
+    Values are averaged across all valid rolling windows.}
+    \label{fig:Q2b}
 \end{figure}
 
 
-We should compare the benchmark for the three models for the benchmark across all models to give a fair comparison.
 
-
-
-We also need to add the benchmark comparison to the Rolling OOS experiment.
-
-
-DET NEDENSTÅENDE SKAL SKRIVES /KOMMENTERES ET ELLER ANDET STED
-During training, the forward pass of the model computes bond prices on
-a discrete grid $\tau \in \{0, 1, \ldots, \tau_{\max}\}$ as
-\begin{equation}
-    P(\tau) = \exp\!\bigl(A(\tau) - B(\tau)\,z\bigr),
-\end{equation}
-where $A(\tau)$ and $B(\tau)$ are solutions to the Riccati ODEs with
-boundary conditions $A(0) = 0$ and $B(0) = 0$, ensuring $P(0) = 1$.
-In practice, the ODE solver introduces numerical errors of order
-$10^{-6}$, so $B(0)$ is only approximately zero. For an untrained
-model, the encoder output $z$ can be large due to random
-initialisation, meaning the product $B(0) \cdot z$ may exceed the
-tolerance threshold, causing $P(0)$ to deviate from 1 beyond the
-acceptable margin. To avoid premature termination of training, the
-boundary condition check is therefore only enforced when
-arbitrage diagnostics are explicitly requested, and with a relaxed
-tolerance of $10^{-4}$ appropriate for the numerical precision of
-the ODE solver. Importantly, this has no effect on the no-arbitrage
-property of the model itself, which is enforced structurally through
-the ODE boundary conditions rather than through this diagnostic check.
-The assertion serves only as a post-hoc sanity check and its removal
-from the training loop does not alter the theoretical guarantees of
-the model.
-
-
-
-
-
-Yes, the change was made in fullmodel.py — specifically in the forward() method. The assertion was moved from the main body of the forward pass (where it ran on every call) to inside the if doarbchecks: block (where it only runs when explicitly requested).
-
-This means this change affects both the baseline and stable variants since fullmodel.py is shared. But since it is purely a numerical stability fix with no effect on the model's mathematical properties, this is fine — you would want this fix in both variants.
 
 
 % ─────────────────────────────────────────────────────────────

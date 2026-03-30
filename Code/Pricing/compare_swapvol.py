@@ -7,20 +7,20 @@ Methodology
 -----------
 For each monthly date in the Bloomberg vol file that also has a EUR swap-rate
 curve in the training data:
-  1. Encode the EUR curve â†’ z0.
-  2. Decode z0 â†’ discount factors â†’ compute the forward-starting swap rate
+  1. Encode the EUR curve -> z0.
+  2. Decode z0 -> discount factors -> compute the forward-starting swap rate
      for each (expiry, tenor) pair.  The ATM forward rate is used as the strike.
   3. Simulate N_PATHS latent paths (one shared simulation per date, reused
      across all swaption structures on that date).
-  4. Price each ATM payer swaption by MC, invert to Bachelier normal vol.
+  4. Price each ATM payer swaption by MC, invert to implied vol.
   5. Compare with the Bloomberg quoted vol.
 
 Bloomberg code convention (EUVE codes)
 ---------------------------------------
-  len-2  e.g. "15"   â†’ om=1,  st=5   (1Y option, 5Y swap)
-  len-3  starts "10" â†’ om=10, st=code[2]  e.g. "101" â†’ (10, 1)
-  len-3  other       â†’ om=code[0], st=code[1:]  e.g. "110" â†’ (1, 10)
-  len-4               â†’ om=code[:2], st=code[2:]  e.g. "1010" â†’ (10, 10)
+  len-2  e.g. "15"   -> om=1,  st=5   (1Y option, 5Y swap)
+  len-3  starts "10" -> om=10, st=code[2]  e.g. "101" -> (10, 1)
+  len-3  other       -> om=code[0], st=code[1:]  e.g. "110" -> (1, 10)
+  len-4               -> om=code[:2], st=code[2:]  e.g. "1010" -> (10, 10)
 
 Vol units
 ---------
@@ -34,6 +34,7 @@ Output: Figures/Pricing/vol_comparison/
     vol_timeseries.png
 """
 
+import math
 import os
 import sys
 import warnings
@@ -43,7 +44,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import torch
 
-# â”€â”€ Path setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Path setup ---------------------------------------------------------------
 CODE_ROOT    = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CODE_ROOT, ".."))
 THESIS_ROOT  = os.path.abspath(os.path.join(CODE_ROOT, "..", ".."))
@@ -52,9 +53,10 @@ for _p in [CODE_ROOT, PROJECT_ROOT]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# â”€â”€ Config + imports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Config + imports ---------------------------------------------------------
 from Code import config
 config.VARIANT = "stable"
+config.confirm_variant()
 
 from Code.load_swapdata import my_data
 
@@ -65,9 +67,9 @@ try:
         resolve_checkpoint_path,
     )
     from price_derivatives import (
-        load_model,
         price_swaption,
         implied_normal_vol,
+        implied_black76_vol,
         forward_start_swap_and_annuity_from_discount,
         spot_swap_and_annuity_from_discount,
         discount_factors_from_short_rate_paths,
@@ -80,43 +82,52 @@ except ImportError:
         resolve_checkpoint_path,
     )
     from Code.Pricing.price_derivatives import (
-        load_model,
         price_swaption,
         implied_normal_vol,
+        implied_black76_vol,
         forward_start_swap_and_annuity_from_discount,
         spot_swap_and_annuity_from_discount,
         discount_factors_from_short_rate_paths,
     )
 
-# â”€â”€ Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Settings -----------------------------------------------------------------
 LATENT_DIM = 2
 EPOCHS     = 2500
 USE        = "bbg"
 CCY        = "EUR"      # currency to compare against vol data
 
-N_PATHS    = 1000       # MC paths per date  (â†‘ â†’ less noise, â†‘ runtime)
+N_PATHS    = 1000       # MC paths per date  (more -> less noise, more runtime)
 N_STEPS    = 120        # 10-year horizon at monthly steps
 DT         = 1 / 12
 MAX_DATES  = 30         # cap number of dates for manageable runtime
+
+# Dates where EUR rates are closest to the model long-run mean (2012-2014 window).
+# On these dates simulated paths stay near the ATM strike, giving non-degenerate prices.
+# Set to None to use the full date range with random subsampling.
+NEUTRAL_DATES = [
+    "2012-05-31", "2014-07-31", "2013-04-30", "2012-08-31",
+    "2014-06-30", "2012-07-31", "2012-12-31", "2014-05-30",
+    "2014-08-29", "2013-03-29",
+]
 
 DEVICE     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EXCEL_PATH = os.path.join(THESIS_ROOT, "SwapData", "SwapVol.xlsx")
 OUT_DIR    = os.path.join(THESIS_ROOT, "Figures", "Pricing", "vol_comparison")
 
 
-# â”€â”€ Bloomberg code parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Bloomberg code parser ----------------------------------------------------
 def _parse_bbg_code(cs: str):
     """
     Parse a Bloomberg swaption vol code into (option_maturity, swap_tenor) years.
 
     Convention (EUVE):
-      "11"   â†’ (1, 1)     len-2: single-digit option, single-digit tenor
-      "15"   â†’ (1, 5)
-      "110"  â†’ (1, 10)    len-3, NOT starting "10"
-      "510"  â†’ (5, 10)
-      "101"  â†’ (10, 1)    len-3, starts "10"
-      "105"  â†’ (10, 5)
-      "1010" â†’ (10, 10)   len-4
+      "11"   -> (1, 1)     len-2: single-digit option, single-digit tenor
+      "15"   -> (1, 5)
+      "110"  -> (1, 10)    len-3, NOT starting "10"
+      "510"  -> (5, 10)
+      "101"  -> (10, 1)    len-3, starts "10"
+      "105"  -> (10, 5)
+      "1010" -> (10, 10)   len-4
     """
     if not cs.isdigit():
         return None, None
@@ -133,25 +144,25 @@ def _parse_bbg_code(cs: str):
     return None, None
 
 
-# â”€â”€ Market vol loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Market vol loader --------------------------------------------------------
 def load_market_vols(excel_path: str) -> pd.DataFrame:
     """
     Load Bloomberg EUR swaption vol surface from Excel into tidy long-form data.
 
     Returned columns:
-        as_of_date      â€“ datetime (end-of-month)
-        option_maturity â€“ int  (years)
-        swap_tenor      â€“ int  (years)
-        vol             â€“ float (decimal normal vol, e.g. 0.002 for 20 bp)
+        as_of_date      - datetime (end-of-month)
+        option_maturity - int  (years)
+        swap_tenor      - int  (years)
+        vol             - float (decimal normal vol, e.g. 0.002 for 20 bp)
     """
     raw      = pd.read_excel(excel_path, sheet_name=0, header=None)
     code_row = raw.iloc[0]
     data     = pd.read_excel(excel_path, sheet_name=0, header=4)
 
-    # Column-1 in the raw layout is the date column
+    # Column 1 in the raw layout is the date column
     date_col = data.columns[1]   # 'Unnamed: 1'
 
-    # Build column â†’ (option_maturity, swap_tenor) mapping using code row
+    # Build column -> (option_maturity, swap_tenor) mapping using code row
     col_map = {}
     for idx, col in enumerate(data.columns):
         raw_code = code_row.iloc[idx] if idx < len(code_row) else None
@@ -163,7 +174,7 @@ def load_market_vols(excel_path: str) -> pd.DataFrame:
     data = data[keep].copy()
 
     # Melt to long form; the odd-indexed "Unnamed" cols are duplicate date cols
-    # â€” they get (None, None) in col_map and are filtered out below
+    # - they get (None, None) in col_map and are filtered out below
     melted = data.melt(id_vars=[date_col], var_name="swap_col", value_name="vol")
 
     melted["option_maturity"] = melted["swap_col"].map(
@@ -197,7 +208,7 @@ def load_market_vols(excel_path: str) -> pd.DataFrame:
     return melted[["as_of_date", "option_maturity", "swap_tenor", "vol"]].reset_index(drop=True)
 
 
-# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Helpers ------------------------------------------------------------------
 def nearest_idx(dates: pd.Series, target: pd.Timestamp) -> int:
     """Index of the row in `dates` closest to `target`."""
     return int((dates - target).abs().argmin())
@@ -211,7 +222,7 @@ def atm_forward_annuity(
     tenor: int,
 ) -> tuple:
     """
-    Decode z0 â†’ P_mkt, then compute ATM (forward swap rate, annuity) for the
+    Decode z0 -> P_mkt, then compute ATM (forward swap rate, annuity) for the
     forward-starting swaption with `expiry`-year option on a `tenor`-year swap.
     Returns Python floats.
     """
@@ -235,9 +246,9 @@ def price_date(
       2. Compute spot swap rate S(T) and annuity A(T)
       3. Payoff = max(S(T) - K, 0) * A(T)  where K = F_market = time-0 forward
       4. Discount: PV = D(0,T) * payoff
-    5. Average across all paths to get the swaption price
+      5. Average across all paths to get the swaption price
 
-    Returns: {(expiry, tenor): {F_market, mc_price, model_vol}}
+    Returns: {(expiry, tenor): {F_market, mc_price, model_vol, vol_model}}
     """
     with torch.no_grad():
         z_paths, r_paths, _, _ = simulate_latent_paths(
@@ -275,54 +286,53 @@ def price_date(
             continue
 
         for tenor in tenors:
-            # ── Time-0 market ATM strike ──────────────────────────────────────────
+            # -- Time-0 market ATM strike -----------------------------------------
             try:
                 F_market, ann_0 = atm_forward_annuity(model, z0, expiry, tenor)
             except (ValueError, RuntimeError) as exc:
                 warnings.warn(f"  [{expiry}Yx{tenor}Y] time-0 ATM failed: {exc}", RuntimeWarning)
                 continue
 
-            # ── MC: compute discounted payer payoff for each path ──────────────────
+            # -- MC: compute discounted payer payoff for each path -----------------
             try:
                 with torch.no_grad():
                     # Spot-start swap rates at time T for each path
                     swap_rate_T, ann_T = spot_swap_and_annuity_from_discount(P_mkt_T, tenor)
-                    
+
                     # Validity check: reject if too many paths have degenerate rates
                     # (negative rates or annuities < 0.5 indicate model extrapolation failure)
                     bad_paths = (swap_rate_T < 0) | (ann_T < 0.5) | ~torch.isfinite(swap_rate_T) | ~torch.isfinite(ann_T)
                     frac_bad = bad_paths.float().mean().item()
-                    
+
                     if frac_bad > 0.1:
                         warnings.warn(
                             f"  [{expiry}Yx{tenor}Y] {frac_bad*100:.1f}% of paths have degenerate rates "
-                            f"(negative or invalid) — model extrapolation failing at this maturity — skipping",
+                            f"(negative or invalid) -- model extrapolation failing at this maturity -- skipping",
                             RuntimeWarning,
                         )
                         continue
-                    
+
                     # Payer payoff: max(S(T) - K, 0) * A(T)
                     payoff = torch.clamp(swap_rate_T - F_market, min=0.0) * ann_T
-                    
+
                     # Discount each path and average
                     pv = D_exp * payoff                              # (n_paths,)
                     pv_valid = pv[torch.isfinite(pv)]
-                    
+
                     if pv_valid.numel() == 0:
                         warnings.warn(
-                            f"  [{expiry}Yx{tenor}Y] all payoffs are non-finite — skipping",
+                            f"  [{expiry}Yx{tenor}Y] all payoffs are non-finite -- skipping",
                             RuntimeWarning,
                         )
                         continue
-                    
+
                     mc_price = pv_valid.mean().item()
-                    
+
             except (ValueError, RuntimeError) as exc:
                 warnings.warn(f"  [{expiry}Yx{tenor}Y] MC pricing failed: {exc}", RuntimeWarning)
                 continue
 
-            # ── Invert to Bachelier normal vol using time-0 annuity A(0) ─────────
-            # Price formula: V = A(0) * Bachelier(F_market, F_market, sigma, T)
+            # -- Invert MC price to Bachelier (normal) implied vol -----------------
             model_vol = implied_normal_vol(
                 market_price=mc_price,
                 forward=F_market,
@@ -332,33 +342,51 @@ def price_date(
                 notional=1.0,
                 is_call=True,
             )
+            vol_model = "Bachelier"
 
             results[(expiry, tenor)] = {
                 "F_market":  F_market,
                 "mc_price":  mc_price,
                 "model_vol": model_vol,
+                "vol_model": vol_model,
             }
 
     return results
 
 
-# â”€â”€ Main comparison â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Main comparison ----------------------------------------------------------
 def run_comparison():
     os.makedirs(OUT_DIR, exist_ok=True)
 
     # 1. Market data
     print("=" * 60)
-    print("Loading EUR market vol data â€¦")
+    print("Loading EUR market vol data ...")
     mkt = load_market_vols(EXCEL_PATH)
     structures = sorted({(int(e), int(t)) for e, t in zip(mkt["option_maturity"], mkt["swap_tenor"])})
     print(f"  {len(mkt)} quotes | {mkt['as_of_date'].nunique()} dates")
     print(f"  Structures: {structures}")
-    print(f"  Date range: {mkt['as_of_date'].min().date()} â†’ {mkt['as_of_date'].max().date()}")
+    print(f"  Date range: {mkt['as_of_date'].min().date()} -> {mkt['as_of_date'].max().date()}")
 
     # 2. Model + EUR swap curves
-    print("\nLoading model and EUR swap-curve data â€¦")
-    ckpt  = resolve_checkpoint_path(CODE_ROOT, USE, LATENT_DIM, EPOCHS)
-    model = load_model(ckpt, DEVICE, latent_dim=LATENT_DIM)
+    print("\nLoading model and EUR swap-curve data ...")
+    ckpt_path = resolve_checkpoint_path(THESIS_ROOT, USE, LATENT_DIM, EPOCHS)
+    from Code.model.full_model import FullModel
+    state_dict = torch.load(ckpt_path, map_location=DEVICE)
+    model = FullModel(latent_dim=LATENT_DIM).double().to(DEVICE)
+    model.load_state_dict(state_dict, strict=False)
+    model.eval()
+    print(f"  Loaded checkpoint: {ckpt_path}")
+
+    # Diagnostic: print the learned sigma bounds from H
+    with torch.no_grad():
+        raw_offset = model.H.raw_logsigma_offset.cpu().float()
+        log_sig_min = math.log(model.H.sigma_min)
+        log_sig_range = math.log(model.H.sigma_max) - log_sig_min
+        sigma_at_zero = torch.exp(
+            torch.tensor(log_sig_min) + log_sig_range * torch.sigmoid(raw_offset)
+        )
+    print(f"  H sigma (at z=0, i.e. near training mean): {sigma_at_zero.tolist()}")
+    print(f"  H sigma_min={model.H.sigma_min:.4f}  sigma_max={model.H.sigma_max:.4f}")
 
     (_, _, meta_full, X_full_raw, _, _, _, _) = my_data(use=USE)
 
@@ -368,7 +396,7 @@ def run_comparison():
     dates_eur = pd.to_datetime(meta_eur["as_of_date"]).reset_index(drop=True)
 
     print(f"  {CCY} curves: {len(dates_eur)} rows, "
-          f"{dates_eur.min().date()} â†’ {dates_eur.max().date()}")
+          f"{dates_eur.min().date()} -> {dates_eur.max().date()}")
 
     # 3. Overlapping dates between vol file and EUR curve data
     vol_dates = pd.to_datetime(sorted(mkt["as_of_date"].unique()))
@@ -377,11 +405,18 @@ def run_comparison():
 
     if len(vol_dates) == 0:
         print("\n[ERROR] No date overlap between vol data and EUR curves.")
-        print(f"  Market vol : {mkt['as_of_date'].min().date()} â†’ {mkt['as_of_date'].max().date()}")
-        print(f"  EUR curves : {lo.date()} â†’ {hi.date()}")
+        print(f"  Market vol : {mkt['as_of_date'].min().date()} -> {mkt['as_of_date'].max().date()}")
+        print(f"  EUR curves : {lo.date()} -> {hi.date()}")
         return None
 
-    if len(vol_dates) > MAX_DATES:
+    if NEUTRAL_DATES is not None:
+        neutral = pd.to_datetime(NEUTRAL_DATES)
+        vol_dates = vol_dates[vol_dates.isin(neutral)]
+        print(f"  Filtered to {len(vol_dates)} neutral dates (rates near model long-run mean)")
+        if len(vol_dates) == 0:
+            print("[ERROR] None of the NEUTRAL_DATES appear in the vol data.")
+            return None
+    elif len(vol_dates) > MAX_DATES:
         step      = max(1, len(vol_dates) // MAX_DATES)
         vol_dates = vol_dates[::step][:MAX_DATES]
         print(f"  Subsampled to {len(vol_dates)} dates (step={step})")
@@ -389,9 +424,9 @@ def run_comparison():
         print(f"  Processing {len(vol_dates)} dates")
 
     # 4. Swaption structures that fit within simulation horizon and tau_max
-    max_h  = int(N_STEPS * DT)   # 10 years
-    tau_max = model.tau_max       # 30 years
-    pairs  = sorted({
+    max_h   = int(N_STEPS * DT)   # 10 years
+    tau_max = model.tau_max        # 30 years
+    pairs   = sorted({
         (int(e), int(t))
         for e, t in structures
         if int(e) <= max_h and int(e) + int(t) <= tau_max
@@ -401,9 +436,9 @@ def run_comparison():
         return None
     print(f"  Structures in scope: {pairs}")
 
-    # 5. Main loop â€“ one simulation per date, all structures priced from it
-    records   = []
-    n_total   = len(vol_dates)
+    # 5. Main loop - one simulation per date, all structures priced from it
+    records = []
+    n_total = len(vol_dates)
 
     for i, date in enumerate(vol_dates):
         print(f"\n[{i + 1}/{n_total}] {date.date()}")
@@ -413,7 +448,7 @@ def run_comparison():
         gap_days   = abs((curve_date - date).days)
 
         if gap_days > 30:
-            print(f"  SKIP â€“ nearest {CCY} curve is {gap_days}d away ({curve_date.date()})")
+            print(f"  SKIP - nearest {CCY} curve is {gap_days}d away ({curve_date.date()})")
             continue
 
         print(f"  {CCY} curve: {curve_date.date()}  (gap={gap_days}d, idx={idx})")
@@ -422,8 +457,8 @@ def run_comparison():
         with torch.no_grad():
             z0 = model.encoder(S0)
 
-        pricing  = price_date(model, z0, pairs, DEVICE)
-        day_mkt  = mkt[mkt["as_of_date"] == date]
+        pricing   = price_date(model, z0, pairs, DEVICE)
+        day_mkt   = mkt[mkt["as_of_date"] == date]
         n_matched = 0
 
         for (exp, ten), res in pricing.items():
@@ -452,6 +487,7 @@ def run_comparison():
                 "model_vol_bp":    model_vol * 10_000 if np.isfinite(model_vol) else np.nan,
                 "market_vol_bp":   mkt_vol   * 10_000 if np.isfinite(mkt_vol)   else np.nan,
                 "vol_error_bp":    err_bp,
+                "vol_model":       res.get("vol_model", "Unknown"),
             })
 
         print(f"  Priced {len(pricing)} structures | market matched: {n_matched}")
@@ -470,7 +506,7 @@ def run_comparison():
     try:
         with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Comparison")
-            
+
             # Basic formatting
             worksheet = writer.sheets["Comparison"]
             for column in worksheet.columns:
@@ -484,19 +520,20 @@ def run_comparison():
                         pass
                 adjusted_width = min(max_length + 2, 50)
                 worksheet.column_dimensions[column_letter].width = adjusted_width
-            
+
             # Freeze header row
             worksheet.freeze_panes = "A2"
-        
+
         print(f"Saved comparison XLSX -> {xlsx_path}")
     except Exception as e:
         print(f"[WARNING] Could not save Excel file: {e}")
         print(f"  (openpyxl may not be installed. CSV file saved successfully.)")
+    print(f"\nSaved comparison CSV -> {csv_path}")
 
-    # â”€â”€ Summary table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # -- Summary table ------------------------------------------------------------
     df_v = df.dropna(subset=["model_vol_bp", "market_vol_bp"])
     if df_v.empty:
-        print("[WARNING] No rows with both model and market vol â€” skipping plots.")
+        print("[WARNING] No rows with both model and market vol - skipping plots.")
         return df
 
     print("\n" + "=" * 60)
@@ -515,7 +552,7 @@ def run_comparison():
     )
     print(summ.to_string(index=False))
 
-    # â”€â”€ Plots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # -- Plots --------------------------------------------------------------------
     _plot_scatter(df_v, OUT_DIR)
     _plot_error_bars(summ, OUT_DIR)
     _plot_timeseries(df_v, OUT_DIR)
@@ -523,6 +560,7 @@ def run_comparison():
     return df
 
 
+# -- Plot helpers -------------------------------------------------------------
 def _plot_scatter(df_v: pd.DataFrame, out_dir: str):
     fig, ax = plt.subplots(figsize=(7, 6))
     sc = ax.scatter(
@@ -533,16 +571,16 @@ def _plot_scatter(df_v: pd.DataFrame, out_dir: str):
     plt.colorbar(sc, ax=ax, label="Option maturity (years)")
     lo = min(df_v["market_vol_bp"].min(), df_v["model_vol_bp"].min()) - 2
     hi = max(df_v["market_vol_bp"].max(), df_v["model_vol_bp"].max()) + 2
-    ax.plot([lo, hi], [lo, hi], "r--", lw=1, label="45Â° line")
+    ax.plot([lo, hi], [lo, hi], "r--", lw=1, label="45-degree line")
     ax.set_xlabel("Market normal vol (bp)")
-    ax.set_ylabel("Model implied normal vol (bp)")
+    ax.set_ylabel("Model implied vol (bp)")
     ax.set_title(f"{CCY} ATM Swaption Vol: Model vs Market")
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     p = os.path.join(out_dir, "vol_scatter.png")
     plt.savefig(p, dpi=200)
-    print(f"Saved â†’ {p}")
+    print(f"Saved -> {p}")
     plt.show()
     plt.close()
 
@@ -557,15 +595,15 @@ def _plot_error_bars(summ: pd.DataFrame, out_dir: str):
         color="black", capsize=3, lw=1, zorder=3,
     )
     ax.axhline(0, color="black", lw=0.8)
-    ax.set_xlabel("Swaption (option expiry Ã— swap tenor)")
-    ax.set_ylabel("Mean vol error  model âˆ’ market  (bp)")
+    ax.set_xlabel("Swaption (option expiry x swap tenor)")
+    ax.set_ylabel("Mean vol error  model - market  (bp)")
     ax.set_title(f"{CCY} ATM Swaption: Average Vol Error by Structure\n(error bars = RMSE)")
     ax.tick_params(axis="x", rotation=45)
     ax.grid(True, axis="y", alpha=0.3, zorder=1)
     plt.tight_layout()
     p = os.path.join(out_dir, "vol_error_by_type.png")
     plt.savefig(p, dpi=200)
-    print(f"Saved â†’ {p}")
+    print(f"Saved -> {p}")
     plt.show()
     plt.close()
 
@@ -598,11 +636,11 @@ def _plot_timeseries(df_v: pd.DataFrame, out_dir: str):
     plt.tight_layout()
     p = os.path.join(out_dir, "vol_timeseries.png")
     plt.savefig(p, dpi=200, bbox_inches="tight")
-    print(f"Saved’ {p}")
+    print(f"Saved -> {p}")
     plt.show()
     plt.close()
 
 
+# -- Entry point --------------------------------------------------------------
 if __name__ == "__main__":
     run_comparison()
-
