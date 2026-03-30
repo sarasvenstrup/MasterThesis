@@ -236,19 +236,16 @@ To evaluate generalization and identify which latent dimension yields the best o
 
 
 
-The results of the rolling window scheme is summed up in \ref{fig:Q2b} and this
+The results of the rolling window scheme is summed up in \ref{fig:Q2b} and we clearly see that the in-sample RMSE is consistently lower than the OOS RMSE across all model dimensions. Interestingly the autoencoder with four latent factors to describe the swap rate curve, has not only the worst perfomance relative to the in sample RMSE, but also overall the worst model OOS. From these it seems that our model with three latent factor performs best OOS.
+
+An average for the whole model is not so telling when wanting to understand the basis of this errors. IF we look on how the models perform on a currency level, we see that the model with 4 dimensions actually performs better in some case but much worse in other cases.
+
+For $\ell = 2$ and $\ell = 3$, the IS--OOS gap is modest (12.11 vs.\ 15.57 bps and 9.96 vs.\ 12.44 bps, respectively), indicating that both models generalise well to unseen data. In contrast, $\ell = 4$ achieves the lowest IS RMSE of 4.33 bps but degrades sharply out-of-sample to 17.38 bps --- nearly four times its training error --- with a particularly large EUR OOS deviation of 70.53 bps. This pattern is characteristic of overfitting: the additional latent factor captures noise in the training data rather than genuine curve structure. Together, these results suggest that $\ell = 2$ or $\ell = 3$ offers the best balance between reconstruction accuracy and generalisation.
 
 
 
 
-% ── Q2b ──────────────────────────────────────────────────────
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
-    \caption{Rolling out-of-sample RMSE (bps) by latent dimension $\ell$,
-    averaged across 34 rolling windows (3-year train, 3-month test).}
-    \label{fig:Q2b}
-\end{figure}
+\textcolor{red}{HERE INSERT FIGURE:we need to make another figure, and move this down to the benchmarks ection, where we in this case must compare the OOS Autoencoder to the InSample.}
 
 
 
@@ -284,7 +281,8 @@ IS: 2004--2020, OOS: 2021--2022.}
 \label{tab:q2a_is_oos_rmse}
 \end{table}
 
-SO HERE WE MUST CMPARE THE OSSROLL ESTIMATERS WITH THE INSAMPLE TRAINING.
+\textcolor{red}{Cant we colour the OOS and IS rows so it is easier to comapre the differnt cases viusally}
+
 
 
 
@@ -300,6 +298,8 @@ SO HERE WE MUST CMPARE THE OSSROLL ESTIMATERS WITH THE INSAMPLE TRAINING.
 
 
 This figure is intended to see how the out-of sample RMSE varies across time and not only as a an average. where we see that the model struggles indeed around the rate hikes and the euro struggles in the covid period. 
+
+We also cmust comment on the model explosions. These have been taken out of the equation for the above results. But suspecting that these model explosions are due to the H and K, we move to the next section where we test for robustness across different seeds if these is. This insight is motivation to the stabilzation section that comes after the evaluation of the Autoencoder performance.
 
 
 
@@ -414,6 +414,16 @@ We should compare the benchmark for the three models for the benchmark across al
 
 
 We also need to add the benchmark comparison to the Rolling OOS experiment.
+
+
+% ── Q2b ──────────────────────────────────────────────────────
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
+    \caption{Rolling out-of-sample RMSE (bps) by latent dimension $\ell$,
+    averaged across 34 rolling windows (3-year train, 3-month test).}
+    \label{fig:Q2b}
+\end{figure}
 
 
 DET NEDENSTÅENDE SKAL SKRIVES /KOMMENTERES ET ELLER ANDET STED
