@@ -187,6 +187,30 @@ In the right panel we see that the JPY, USD and EUR is one pushing up the error.
 We now want to assess how it visually reconstructs, and if it replicates the shape well, something that A metrics such as RMSE does not reveal.
 
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_zcb_swap_dim3.png}
+    \caption{Swap curves and implied zero-coupon bond (ZCB) yields for the
+    autoencoder ($\ell=3$) on 30 November 2021.
+    Left panel: observed swap rates (solid with circles) and reconstructed
+    swap rates (dashed). Right panel: ZCB yields implied by the model,
+    computed as $y(\tau) = -\log P(0,\tau)/\tau$.
+    Currencies:
+    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
+    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
+    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
+    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
+    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
+    \label{fig:Q1e_zcb}
+\end{figure}
+
+
+
+
 % ── Q1d ──────────────────────────────────────────────────────
 \begin{figure}[htbp]
     \centering
