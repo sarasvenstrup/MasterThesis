@@ -24,7 +24,8 @@ if REPO_ROOT not in sys.path:
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
-from Code.config import VARIANT
+from Code.config import VARIANT, confirm_variant
+confirm_variant()
 
 torch.set_num_threads(4)
 torch.set_num_interop_threads(2)

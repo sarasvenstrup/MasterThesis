@@ -56,6 +56,7 @@ for _p in [CODE_ROOT, PROJECT_ROOT]:
 # -- Config + imports ---------------------------------------------------------
 from Code import config
 config.VARIANT = "stable"
+config.confirm_variant()
 
 from Code.load_swapdata import my_data
 

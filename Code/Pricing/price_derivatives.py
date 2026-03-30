@@ -27,6 +27,7 @@ if PROJECT_ROOT not in sys.path:
 # ---------------------------------------------------------------------
 from Code import config
 config.VARIANT = "stable"
+config.confirm_variant()
 
 from Code.model.full_model import FullModel
 

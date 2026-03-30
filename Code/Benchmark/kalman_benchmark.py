@@ -476,7 +476,8 @@ if __name__ == "__main__":
 
     tenors = np.array(TARGET_TENORS, dtype=float)
 
-    from Code.config import VARIANT
+    from Code.config import VARIANT, confirm_variant
+    confirm_variant()
     root_dir   = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults")
     fit_stores = {}  # {n_factors: fit_store}
 
