@@ -638,6 +638,23 @@ def load_ekf_rolling_df(n_factors):
     df["test_start"] = pd.to_datetime(df["test_start"])
     return df
 
+def load_ekf_rolling_oos_per_ccy(dim):
+    """Average per-currency OOS RMSE across all valid EKF rolling windows."""
+    df = load_ekf_rolling_df(dim)
+    if df is None:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    # EKF rolling CSV uses plain currency names (AUD, CAD, ...) not rmse_bps_AUD
+    result = pd.Series({
+        ccy: float(valid[ccy].mean())
+        for ccy in CCY_ORDER
+        if ccy in valid.columns
+    })
+    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    return result
+
 # Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
 #        IS  : training log at ep5000 (globally trained model)
 #        OOS : average per-currency RMSE across all rolling windows
@@ -958,22 +975,13 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q4a: AE vs Kalman table ──")
 
-def load_kalman_rmse(dim):
-    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
-                        f"ekf_dns_{dim}f", "rmse_summary.csv")
-    if not os.path.exists(path):
-        return None
-    df = pd.read_csv(path, index_col=0)
-    oos_col = [c for c in df.columns if "OOS mean" in c][0]
-    return df[oos_col]
-
 rows_q4 = {}
 # interleave AE and EKF DNS by dimension: (AE l=2, EKF 2f), (AE l=3, EKF 3f), (AE l=4, EKF 4f)
 for dim in [2, 3, 4]:
-    _, oos_ae_dim = load_split_rmse(dim)
+    oos_ae_dim = load_rolling_oos_per_ccy(dim)
     if oos_ae_dim is not None:
         rows_q4[rf"AE $\ell$={dim}"] = oos_ae_dim
-    oos_k = load_kalman_rmse(dim)
+    oos_k = load_ekf_rolling_oos_per_ccy(dim)
     if oos_k is not None:
         rows_q4[rf"EKF DNS $\ell$={dim}"] = oos_k
 
