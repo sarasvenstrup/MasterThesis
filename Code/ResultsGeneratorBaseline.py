@@ -886,79 +886,71 @@ else:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Q3b — Plot: Rolling OOS RMSE over time (d=3, per-currency + average)
+# Q3b — Plot: Rolling OOS RMSE over time (ℓ=2,3,4 average, with explosion bars)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q3b: Rolling RMSE over time (d=3) ── ")
+print("\n── Q3b: Rolling RMSE over time (ℓ=2,3,4) ──")
 
-df_roll = load_rolling_df(LATENT_DIM)
+CLIP      = 100
+BAR_WIDTH = pd.Timedelta(days=50)
+_Q3b_COLORS  = {2: custom_palette[0], 3: custom_palette[1], 4: custom_palette[2]}
+DIM_OFFSETS = {2: pd.Timedelta(days=-35), 3: pd.Timedelta(days=0), 4: pd.Timedelta(days=35)}
 
-if df_roll is not None:
+_any_plotted = False
+fig, ax = plt.subplots(figsize=(11, 4.5))
 
-    CLIP        = 100          # bps — values above this are shown as explosion bars
-    EXPLODE_COL = "#d7191c"    # alert red, consistent with rest of file
-    BAR_WIDTH   = pd.Timedelta(days=50)
+for _dim, _col in _Q3b_COLORS.items():
+    _df = load_rolling_df(_dim)
+    if _df is None:
+        print(f"  SKIPPED dim={_dim} — no rolling CSV found")
+        continue
+    _any_plotted = True
 
-    fig, ax = plt.subplots(figsize=(11, 4.5))
-
-    # --- per-currency lines (clipped) ----------------------------------------
-    for ccy in CCY_ORDER:
-        col = f"rmse_bps_{ccy}"
-        if col not in df_roll.columns:
-            continue
-        clipped = df_roll[col].where(df_roll[col] <= CLIP)   # NaN where exploded
-        valid   = clipped.notna()
-        ax.plot(df_roll.loc[valid, "test_start"], clipped[valid],
-                linewidth=1.0, alpha=0.55, color=currency_color_map[ccy], label=ccy)
-
-    # --- AE average line (clipped) -------------------------------------------
-    avg_clipped = df_roll["avg_rmse_bps"].where(df_roll["avg_rmse_bps"] <= CLIP)
+    # average line (clipped)
+    avg_clipped = _df["avg_rmse_bps"].where(_df["avg_rmse_bps"] <= CLIP)
     valid_avg   = avg_clipped.notna()
-    ax.plot(df_roll.loc[valid_avg, "test_start"], avg_clipped[valid_avg],
-            linewidth=1.2, color="black", linestyle="--",
-            label=f"AE $\\ell={LATENT_DIM}$ avg", zorder=5)
+    ax.plot(_df.loc[valid_avg, "test_start"], avg_clipped[valid_avg],
+            linewidth=1.8, color=_col, label=f"$\\ell={_dim}$", zorder=5)
 
-    # --- EKF DNS average line (clipped) --------------------------------------
-    _ekf_df3 = load_ekf_rolling_df(LATENT_DIM)
-    if _ekf_df3 is not None:
-        ekf_clipped = _ekf_df3["avg_rmse_bps"].where(_ekf_df3["avg_rmse_bps"] <= CLIP)
-        valid_ekf   = ekf_clipped.notna()
-        ax.plot(_ekf_df3.loc[valid_ekf, "test_start"], ekf_clipped[valid_ekf],
-                linewidth=1.2, color="dimgray", linestyle=":",
-                label=f"EKF DNS {LATENT_DIM}f avg", zorder=5)
-
-    # --- explosion bars: one bar per date where any currency exceeds CLIP -----
-    ccy_cols    = [f"rmse_bps_{c}" for c in CCY_ORDER if f"rmse_bps_{c}" in df_roll.columns]
-    explode_max = df_roll[ccy_cols].max(axis=1)            # max RMSE across currencies per date
+    # explosion bars colored to match this model's line
+    ccy_cols     = [f"rmse_bps_{c}" for c in CCY_ORDER if f"rmse_bps_{c}" in _df.columns]
+    explode_max  = _df[ccy_cols].max(axis=1)
     explode_mask = explode_max > CLIP
+    _bar_added   = False
+    for _, row in _df[explode_mask].iterrows():
+        max_val  = explode_max[row.name]
+        bar_date = row["test_start"] + DIM_OFFSETS[_dim]
+        ax.bar(bar_date, CLIP, width=BAR_WIDTH,
+               color=_col, alpha=0.30, zorder=3,
+               label=f"$\\ell={_dim}$ exploded" if not _bar_added else "_nolegend_")
+        ax.text(bar_date, CLIP * 0.97,
+                f"{max_val:.0f}", fontsize=7, ha="center", va="top",
+                rotation=90, color=_col, fontweight="bold", zorder=4)
+        _bar_added = True
 
-    _legend_bar_added = False
-    for _, row in df_roll[explode_mask].iterrows():
-        max_val = explode_max[row.name]
-        ax.bar(row["test_start"], CLIP, width=BAR_WIDTH,
-               color=EXPLODE_COL, alpha=0.35, zorder=3,
-               label="Model exploded" if not _legend_bar_added else "_nolegend_")
-        ax.text(row["test_start"], CLIP * 0.97,
-                f"{max_val:.0f} bps",
-                fontsize=8, ha="center", va="top",
-                rotation=90, color=EXPLODE_COL, fontweight="bold", zorder=4)
-        _legend_bar_added = True
-
-    # --- event markers -------------------------------------------------------
+if not _any_plotted:
+    print("  Q3b SKIPPED — no rolling CSVs found for any dim")
+else:
+    # event markers
     ax.set_ylim(0, CLIP)
+    _x_min = min(
+        load_rolling_df(d)["test_start"].min()
+        for d in _Q3b_COLORS if load_rolling_df(d) is not None
+    )
+    _x_max = max(
+        load_rolling_df(d)["test_start"].max()
+        for d in _Q3b_COLORS if load_rolling_df(d) is not None
+    )
     for label, date_str in EVENTS.items():
         d = pd.Timestamp(date_str)
-        if df_roll["test_start"].min() <= d <= df_roll["test_start"].max():
+        if _x_min <= d <= _x_max:
             ax.axvline(d, color="0.5", linewidth=1.0, linestyle="--")
-            ax.text(d, CLIP, label, fontsize=10, ha="center", va="bottom",
-                    color="0.4", rotation=0)
+            ax.text(d, CLIP, label, fontsize=10, ha="center", va="bottom", color="0.4")
 
     ax.set_ylabel("OOS RMSE (bps)")
     ax.legend(fontsize=8)
     fig.autofmt_xdate()
     fig.tight_layout()
     save_fig(fig, "Q3b_rolling_rmse_over_time")
-else:
-    print(f"  SKIPPED — no rolling CSV found for dim={LATENT_DIM}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1406,14 +1398,8 @@ else:
     monthly_avg   = meta_eval_z.groupby("ym")["rmse_bps"].mean()
     monthly_dates = monthly_avg.index.to_timestamp()
 
-    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+    fig, ax = plt.subplots(1, 1, figsize=(12, 5))
 
-    ax = axes[0]
-    ax.plot(monthly_dates, monthly_avg.values, linewidth=1.2, color="black",
-            linestyle="--", label="All-ccy avg")
-    ax.set_ylabel("Avg RMSE (bps)")
-
-    ax = axes[1]
     for ccy in CCY_ORDER:
         idx_c = meta_eval_z["ccy"] == ccy
         if idx_c.sum() == 0:
@@ -1421,13 +1407,15 @@ else:
         m_ccy = meta_eval_z.loc[idx_c].groupby("ym")["rmse_bps"].mean()
         ax.plot(m_ccy.index.to_timestamp(), m_ccy.values,
                 linewidth=1.1, alpha=0.75, color=currency_color_map[ccy])
+
+    ax.plot(monthly_dates, monthly_avg.values, linewidth=2.2, color="black",
+            linestyle="--", label="All-ccy avg", zorder=5)
     ax.set_ylabel("RMSE (bps)")
 
     for ev_label, ev_date in EVENTS.items():
-        for axi in axes:
-            axi.axvline(pd.Timestamp(ev_date), color="0.55", linewidth=1.0, linestyle="--")
-        axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
-                     ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
+        ax.axvline(pd.Timestamp(ev_date), color="0.55", linewidth=1.0, linestyle="--")
+        ax.text(pd.Timestamp(ev_date), ax.get_ylim()[1],
+                ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
 
     fig.autofmt_xdate()
     fig.tight_layout()
