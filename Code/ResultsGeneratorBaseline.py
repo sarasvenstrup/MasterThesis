@@ -998,8 +998,8 @@ print(table_q4a.to_string())
 print("\n── Q4b: Per-currency bar chart (one plot per dim) ──")
 
 for _dim in [2, 3, 4]:
-    _, oos_ae  = load_split_rmse(_dim)
-    oos_k      = load_kalman_rmse(_dim)
+    oos_ae = load_rolling_oos_per_ccy(_dim)
+    oos_k  = load_ekf_rolling_oos_per_ccy(_dim)
 
     if oos_ae is None or oos_k is None:
         print(f"  SKIPPED dim={_dim} — missing AE or Kalman OOS data.")
@@ -1011,15 +1011,18 @@ for _dim in [2, 3, 4]:
 
     fig, ax = plt.subplots(figsize=(11, 5))
 
+    _ae_col = DIM_COLORS[_dim]
+    _ekf_col = custom_palette[8]   # olive/brown — distinct from AE colours
+
     ax.bar(x - width / 2,
            [oos_ae.get(c, np.nan) for c in labels],
            width, label=rf"AE ($\ell$={_dim})",
-           color=custom_palette[_dim - 1], edgecolor="none")
+           color=_ae_col, edgecolor="none")
 
     ax.bar(x + width / 2,
            [oos_k.get(c, np.nan) for c in labels],
            width, label=rf"EKF DNS ($\ell$={_dim})",
-           color=custom_palette[0], edgecolor="none")
+           color=_ekf_col, edgecolor="none")
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
@@ -1027,9 +1030,9 @@ for _dim in [2, 3, 4]:
     ax.legend(frameon=False, fontsize=9)
 
     avg_ae = oos_ae.drop("Average", errors="ignore").mean()
-    ax.axhline(avg_ae, color=custom_palette[_dim - 1], linewidth=1.0, linestyle="--", alpha=0.7)
+    ax.axhline(avg_ae, color=_ae_col, linewidth=1.0, linestyle="--", alpha=0.7)
     avg_k = oos_k.drop("Average", errors="ignore").mean()
-    ax.axhline(avg_k, color=custom_palette[0], linewidth=1.0, linestyle="--", alpha=0.7)
+    ax.axhline(avg_k, color=_ekf_col, linewidth=1.0, linestyle="--", alpha=0.7)
 
     fig.tight_layout()
     save_fig(fig, f"Q4b_per_currency_bar_chart_dim{_dim}")
@@ -1359,7 +1362,7 @@ else:
         rmse_by_dim[_dim] = np.sqrt(
             np.mean((_X_oos[_finite] - _S_oos[_finite])**2, axis=0)) * 10000
 
-    _oos_k3_q6d = load_kalman_rmse(3)
+    _oos_k3_q6d = load_ekf_rolling_oos_per_ccy(3)
     n_tenors = len(TENOR_COLS)
     n_dims   = len(DIMS_PLOT)
     width    = 0.22
