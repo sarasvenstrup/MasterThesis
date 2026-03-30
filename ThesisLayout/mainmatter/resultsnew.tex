@@ -260,33 +260,33 @@ experiments without meaningful loss of accuracy to decrease computation time.
 
 
 % ── Q2a ──────────────────────────────────────────────────────
-\begin{table}[h!]
-\centering
-{\small
-\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q2a_IS_vs_OOS_all_dims.csv}\datqtwoa
-\resizebox{\textwidth}{!}{%
-\pgfplotstabletypeset[
-  columns={Split, Model, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
-  columns/Split/.style={string type, column type=l},
-  columns/Model/.style={string type, column type=l},
-  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={after row=\bottomrule},
-]{\datqtwoa}}
-}
-\caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
-IS: 2004--2020, OOS: 2021--2022.}
-\label{tab:q2a_is_oos_rmse}
-\end{table}
+%\begin{table}[h!]
+%\centering
+%{\small
+%\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q2a_IS_vs_OOS_all_dims.csv}\datqtwoa
+%\resizebox{\textwidth}{!}{%
+%\pgfplotstabletypeset[
+%%  columns={Split, Model, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
+ % columns/Split/.style={string type, column type=l},
+ % columns/Model/.style={string type, column type=l},
+ % columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
+ % columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+ % every head row/.style={before row=\toprule, after row=\midrule},
+ % every last row/.style={after row=\bottomrule},
+%]{\datqtwoa}}
+%}
+%\caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
+%IS: 2004--2020, OOS: 2021--2022.}
+%\label{tab:q2a_is_oos_rmse}
+%\end{table}
 
 % ── Q2b ──────────────────────────────────────────────────────
 \begin{figure}[H]
@@ -400,13 +400,7 @@ grouped by number of latent factors $\ell$ (2021--2022 test period).}
 
 % ── Q4c ──────────────────────────────────────────────────────
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_per_currency_bar_chart_all_dims.png}
-    \caption{Out-of-sample RMSE (bps) per currency for autoencoder
-    dimensions $\ell=2,3,4$ and EKF DNS 3-factor benchmark.}
-    \label{fig:Q4c}
-\end{figure}
+
 
 
 We should compare the benchmark for the three models for the benchmark across all models to give a fair comparison.
