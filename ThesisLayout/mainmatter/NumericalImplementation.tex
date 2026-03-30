@@ -111,11 +111,7 @@ and
 \rho(z)\in(-\rho_{\max},\rho_{\max}),
 \qquad \rho_{\max}<1.
 \end{equation}
-Hence, the volatilities remain strictly positive and uniformly bounded, while the
-correlation is kept strictly away from the singular values $\pm 1$. In particular, the
-term $\sqrt{1-\rho(z)^2}$ in \eqref{eq:h_diffusion_combined} remains real and bounded
-away from zero, which improves the conditioning of the diffusion matrix during both
-training and simulation.
+Hence, the volatilities remain strictly positive and uniformly bounded, while the correlation is kept strictly away from the singular values $\pm 1$. In particular, the term $\sqrt{1-\rho(z)^2}$ in \eqref{eq:h_diffusion_combined} remains real and bounded away from zero, which improves the conditioning of the diffusion matrix during both training and simulation.
 
 \paragraph{Stabilization of the short-rate network $R$.}
 In the baseline model, the short rate is represented by a feedforward network
@@ -123,19 +119,14 @@ In the baseline model, the short rate is represented by a feedforward network
 \tilde r(z)=R_\theta(z),
 \label{eq:r_baseline_combined}
 \end{equation}
-with unconstrained scalar output. While flexible, this form allows the network to produce
-implausibly large positive or negative short rates when evaluated outside the region well
-covered by the training data. Since $\tilde r(z)$ enters directly into the no-arbitrage
-ODE system and the bank-account process, such values may create numerical instability.
+with unconstrained scalar output. While flexible, this form allows the network to produce implausibly large positive or negative short rates when evaluated outside the region well covered by the training data. Since $\tilde r(z)$ enters directly into the no-arbitrage ODE system and the bank-account process, such values may create numerical instability.
 
 We therefore replace the unconstrained output layer by the bounded parameterization
 \begin{equation}
 \tilde r(z)=r_{\mathrm{center}} + r_{\mathrm{scale}}\tanh\!\bigl(f_\theta(z)\bigr),
 \label{eq:r_stable_combined}
 \end{equation}
-where $f_\theta:\mathbb{R}^d\to\mathbb{R}$ has the same hidden architecture as the
-original network, $r_{\mathrm{center}}\in\mathbb{R}$ is a learnable center, and
-$r_{\mathrm{scale}}>0$ is a learnable scale. To enforce positivity of the scale, we write
+where $f_\theta:\mathbb{R}^d\to\mathbb{R}$ has the same hidden architecture as the original network, $r_{\mathrm{center}}\in\mathbb{R}$ is a learnable center, and $r_{\mathrm{scale}}>0$ is a learnable scale. To enforce positivity of the scale, we write
 \begin{equation}
 r_{\mathrm{scale}}=\operatorname{softplus}(a)+\varepsilon_r,
 \label{eq:r_scale_combined}
@@ -150,9 +141,7 @@ r_{\mathrm{center}}-r_{\mathrm{scale}},
 r_{\mathrm{center}}+r_{\mathrm{scale}}
 \right).
 \end{equation}
-Thus, the short rate remains in a learnable but controlled interval. This is a smooth
-reparameterization rather than a hard clipping rule, and it therefore preserves
-differentiability while preventing extreme outputs.
+Thus, the short rate remains in a learnable but controlled interval. This is a smooth reparameterization rather than a hard clipping rule, and it therefore preserves differentiability while preventing extreme outputs.
 
 \paragraph{Summary.}
 The three modifications above target different sources of instability. The stabilized
