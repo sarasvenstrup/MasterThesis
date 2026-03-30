@@ -36,7 +36,7 @@ print("Using device:", device)
 
 # ============================= Config ===============================
 USE = "bbg"
-LATENT_DIM = 3
+LATENT_DIM = 2
 
 # Recommended rolling window setup (baseline OOS)
 TRAIN_YEARS = 5

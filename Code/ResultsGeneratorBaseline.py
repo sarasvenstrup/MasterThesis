@@ -36,6 +36,8 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS, set_paper_theme
+from Code import config
+config.VARIANT = "baseline"   # always baseline — must be set before FullModel is imported
 from Code.model.full_model import FullModel
 
 torch.set_num_threads(4)
@@ -492,7 +494,7 @@ _rep_dates = {
 }
 _show_ccys_alldim = ["EUR", "USD", "JPY"]
 _dim_colors = {d: DIM_COLORS[d] for d in [2, 3, 4]}
-_dim_styles = {2: "-", 3: "--", 4: ":"}
+_dim_styles = {2: "-", 3: "-", 4: "-"}
 
 _scale = 100.0 if SCALE_IS_PERCENT else 1.0
 _n_rows = len(_show_ccys_alldim)
@@ -654,6 +656,26 @@ def load_ekf_rolling_oos_per_ccy(dim):
     })
     result["Average"] = float(valid["avg_rmse_bps"].mean())
     return result
+
+def load_rolling_train_time_min(dim):
+    """Average training time (minutes) per rolling window for the AE model."""
+    df = load_rolling_df(dim)
+    if df is None or "time_train_sec" not in df.columns:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    return float(valid["time_train_sec"].mean()) / 60.0
+
+def load_ekf_rolling_train_time_min(dim):
+    """Average training time (minutes) per rolling window for the EKF DNS model."""
+    df = load_ekf_rolling_df(dim)
+    if df is None or "time_train_sec" not in df.columns:
+        return None
+    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
+    if len(valid) == 0:
+        return None
+    return float(valid["time_train_sec"].mean()) / 60.0
 
 # Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
 #        IS  : training log at ep5000 (globally trained model)
@@ -980,13 +1002,15 @@ rows_q4 = {}
 for dim in [2, 3, 4]:
     oos_ae_dim = load_rolling_oos_per_ccy(dim)
     if oos_ae_dim is not None:
+        oos_ae_dim["Time (min)"] = load_rolling_train_time_min(dim)
         rows_q4[rf"AE $\ell$={dim}"] = oos_ae_dim
     oos_k = load_ekf_rolling_oos_per_ccy(dim)
     if oos_k is not None:
+        oos_k["Time (min)"] = load_ekf_rolling_train_time_min(dim)
         rows_q4[rf"EKF DNS $\ell$={dim}"] = oos_k
 
 table_q4a = pd.DataFrame(rows_q4).T
-table_q4a = table_q4a[[c for c in CCY_ORDER + ["Average"] if c in table_q4a.columns]]
+table_q4a = table_q4a[[c for c in CCY_ORDER + ["Average", "Time (min)"] if c in table_q4a.columns]]
 table_q4a = table_q4a.round(2)
 save_table(table_q4a, "Q4a_AE_vs_Kalman_OOS")
 print(table_q4a.to_string())
