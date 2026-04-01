@@ -1,0 +1,2 @@
+time,max_mahal_dist,mean_mahal_dist,frac_mahal_gt_threshold,decoder_min_G_abs0,decoder_max_short_rate_err,decoder_short_rate_tau_used,decoder_P_min,decoder_P_max
+0.0,1.0018255377403713,1.0018255377403715,0.0,0.046702181408424,1.6681215459840235e-05,0.019230769230769232,0.4246090575443473,0.9997471758904465

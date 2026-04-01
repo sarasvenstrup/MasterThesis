@@ -19,19 +19,16 @@ except NameError:
     REPO_ROOT = os.getcwd()
 
 PROJECT_ROOT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
-THESIS_ROOT  = os.path.abspath(os.path.join(REPO_ROOT, "..", ".."))
+THESIS_ROOT = os.path.abspath(os.path.join(REPO_ROOT, "..", ".."))
 
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# THIS IS A TEST COMMENT
-
 # IMPORTANT:
 # config.py is the single source of truth for the active variant.
 from Code import config
-config.confirm_variant()
 from Code.load_swapdata import my_data
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (
@@ -54,7 +51,8 @@ def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     # Safer deterministic behavior for research/debugging
     torch.backends.cudnn.deterministic = True
@@ -66,10 +64,10 @@ def set_seed(seed: int):
 # ==========================================================
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="Simulate swap curves from trained FullModel")
+    parser = argparse.ArgumentParser(description="Simulate latent Q-paths and decode arbitrage-free curves")
 
     parser.add_argument("--latent_dim", type=int, default=2, help="Latent dimension (must be 2)")
-    parser.add_argument("--epochs", type=int, default=2500, help="Training epochs")
+    parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
     parser.add_argument("--use", type=str, default="bbg", help="Data source")
     parser.add_argument("--n_paths", type=int, default=100, help="Number of simulation paths")
     parser.add_argument(
@@ -79,7 +77,12 @@ def build_parser():
         help="Number of time steps (e.g. 24 for 2 years monthly, 120 for 10 years monthly)",
     )
     parser.add_argument("--dt", type=float, default=1 / 12, help="Time step size")
-    parser.add_argument("--idx_choice", type=int, default=1390, help="Index of initial curve (-1 for latest, 1390 = USD Nov 2016, most central USD curve)")
+    parser.add_argument(
+        "--idx_choice",
+        type=int,
+        default=1390,
+        help="Index of initial curve (-1 for latest, 1390 = USD Nov 2016, most central USD curve)",
+    )
     parser.add_argument(
         "--discretization",
         type=str,
@@ -106,6 +109,30 @@ def build_parser():
         default=0.90,
         help="Stop decoding if this fraction of paths leaves training region",
     )
+    parser.add_argument(
+        "--tau_fine_step",
+        type=float,
+        default=1 / 52,
+        help="Fine maturity step near tau=0 for decoder diagnostics (years)",
+    )
+    parser.add_argument(
+        "--tau_fine_horizon",
+        type=float,
+        default=1.0,
+        help="Use fine tau spacing on [0, tau_fine_horizon] before switching to annual grid",
+    )
+    parser.add_argument(
+        "--martingale_dates",
+        type=str,
+        default="5,10,20,30",
+        help="Comma-separated fixed maturity dates U (years from today) for discounted-bond martingale diagnostics",
+    )
+    parser.add_argument(
+        "--martingale_tol",
+        type=float,
+        default=0.02,
+        help="Relative tolerance for martingale-diagnostic warning",
+    )
     return parser
 
 
@@ -119,8 +146,12 @@ def resolve_checkpoint_path(repo_root: str, use: str, latent_dim: int, epochs: i
     # New canonical location: Figures/TrainingResults/dim{d}_{variant}/ep{epochs}/checkpoint_dim{d}_ep{epochs}.pt
     new_filename = f"checkpoint_dim{latent_dim}_ep{epochs}.pt"
     new_path = os.path.join(
-        THESIS_ROOT, "Figures", "TrainingResults",
-        f"dim{latent_dim}_{variant}", f"ep{epochs}", new_filename,
+        THESIS_ROOT,
+        "Figures",
+        "TrainingResults",
+        f"dim{latent_dim}_{variant}",
+        f"ep{epochs}",
+        new_filename,
     )
 
     # Legacy locations kept as fallbacks
@@ -142,6 +173,7 @@ def resolve_checkpoint_path(repo_root: str, use: str, latent_dim: int, epochs: i
     tr_root = os.path.join(THESIS_ROOT, "Figures", "TrainingResults")
     if os.path.isdir(tr_root):
         import glob
+
         found = []
         for pt in glob.glob(os.path.join(tr_root, "*", "*", "checkpoint_*.pt")):
             found.append(f"  - {pt}")
@@ -223,8 +255,21 @@ def get_mu(model, z):
 
 @torch.no_grad()
 def get_L(model, z):
-    sigmas, rhos = model.H(z)
-    return L_from_sigmas_rhos(sigmas, rhos)
+    H_out = model.H(z)
+
+    # old H API: returns (sigmas, rhos)
+    if isinstance(H_out, tuple) and len(H_out) == 2:
+        sigmas, rhos = H_out
+        return L_from_sigmas_rhos(sigmas, rhos)
+
+    # new H API: returns lower-triangular matrix L directly
+    if torch.is_tensor(H_out) and H_out.ndim == 3:
+        return H_out
+
+    raise TypeError(
+        "Unsupported model.H(z) output. Expected either "
+        "(sigmas, rhos) or a tensor L of shape (B,d,d)."
+    )
 
 
 @torch.no_grad()
@@ -251,6 +296,57 @@ def normalize_discretization_name(name: str) -> str:
     return name
 
 
+def parse_float_list(text: str):
+    if text is None or str(text).strip() == "":
+        return []
+    vals = []
+    for chunk in str(text).split(","):
+        s = chunk.strip()
+        if s == "":
+            continue
+        vals.append(float(s))
+    return vals
+
+
+def build_decoder_tau_grid(model, device, dtype, fine_step=1 / 52, fine_horizon=1.0):
+    if fine_step <= 0:
+        raise ValueError("tau_fine_step must be positive")
+    if fine_horizon < 0:
+        raise ValueError("tau_fine_horizon must be non-negative")
+
+    tau_max = float(model.tau_max)
+    fine_horizon = min(float(fine_horizon), tau_max)
+
+    fine_tau = torch.arange(
+        0.0,
+        fine_horizon + 0.5 * fine_step,
+        fine_step,
+        device=device,
+        dtype=dtype,
+    )
+    annual_tau = torch.arange(1.0, tau_max + 1.0, 1.0, device=device, dtype=dtype)
+    tau_grid = torch.unique(torch.cat([fine_tau, annual_tau]), sorted=True)
+
+    if tau_grid[0].item() != 0.0:
+        tau_grid = torch.cat([torch.zeros(1, device=device, dtype=dtype), tau_grid])
+        tau_grid = torch.unique(tau_grid, sorted=True)
+
+    return tau_grid
+
+
+def get_grid_indices_for_values(grid: torch.Tensor, values: torch.Tensor, tol: float = 1e-10):
+    idx_list = []
+    for v in values:
+        diffs = torch.abs(grid - v)
+        idx = torch.argmin(diffs)
+        if diffs[idx].item() > tol:
+            raise RuntimeError(
+                f"Requested tau={float(v):.12f} not found on decoder grid within tolerance {tol:.1e}."
+            )
+        idx_list.append(int(idx.item()))
+    return idx_list
+
+
 def load_data_and_initial_curve(use, idx_choice, device):
     meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=use)
     X_tensor = X_tensor.double()
@@ -261,7 +357,7 @@ def load_data_and_initial_curve(use, idx_choice, device):
     if idx_choice < 0 or idx_choice >= X_tensor.shape[0]:
         raise IndexError(f"idx_choice={idx_choice} out of bounds for X_tensor of length {X_tensor.shape[0]}")
 
-    S0 = X_tensor[idx_choice:idx_choice + 1].to(device)
+    S0 = X_tensor[idx_choice : idx_choice + 1].to(device)
     meta_row = meta.iloc[idx_choice] if hasattr(meta, "iloc") else None
 
     return {
@@ -290,7 +386,7 @@ def compute_latent_statistics(model, X_tensor, device, latent_dim):
     z_train_list = []
     with torch.no_grad():
         for i in range(0, X_tensor.shape[0], 256):
-            batch = X_tensor[i:min(i + 256, X_tensor.shape[0])].to(device)
+            batch = X_tensor[i : min(i + 256, X_tensor.shape[0])].to(device)
             z_batch = model.encoder(batch)
             z_train_list.append(z_batch)
 
@@ -344,7 +440,7 @@ def _milstein_correction(B, jac_B, dW, dt):
         0.5 * sum_j (B_.j · grad B_ij) * (dW_j^2 - dt)
     """
     directional_deriv = torch.einsum("nkj,nijk->nij", B, jac_B)
-    return 0.5 * torch.sum(directional_deriv * ((dW ** 2 - dt).unsqueeze(1)), dim=2)
+    return 0.5 * torch.sum(directional_deriv * ((dW**2 - dt).unsqueeze(1)), dim=2)
 
 
 def _stable_drift_step(model, z: torch.Tensor, shock: torch.Tensor, dt: float) -> torch.Tensor:
@@ -457,15 +553,47 @@ def simulate_latent_paths(
 
 
 # ==========================================================
+# Discounting Helpers
+# ==========================================================
+
+def compute_discount_paths(r_paths: torch.Tensor, dt: float, method: str = "trapezoid") -> torch.Tensor:
+    if dt <= 0:
+        raise ValueError("dt must be positive")
+    if r_paths.ndim != 2:
+        raise ValueError(f"Expected r_paths to have shape (n_paths, n_steps+1), got {tuple(r_paths.shape)}")
+
+    n_paths, n_times = r_paths.shape
+    if n_times < 2:
+        return torch.ones_like(r_paths)
+
+    if method == "left":
+        increments = r_paths[:, :-1] * dt
+    elif method == "trapezoid":
+        increments = 0.5 * (r_paths[:, :-1] + r_paths[:, 1:]) * dt
+    else:
+        raise ValueError("method must be 'left' or 'trapezoid'")
+
+    int_r = torch.cumsum(increments, dim=1)
+    disc = torch.ones((n_paths, n_times), device=r_paths.device, dtype=r_paths.dtype)
+    disc[:, 1:] = torch.exp(-int_r)
+    return disc
+
+
+# ==========================================================
 # Decoder / Arbitrage-Free Reconstruction
 # ==========================================================
 
-def decode_from_latent_script(model, z, G_floor=1e-5):
+def decode_from_latent_script(model, z, tau, G_floor=1e-5, check_short_rate=True):
     """
-    Decode latent states to discount-factor curves with numerical checks.
+    Decode latent states to discount-factor curves on an arbitrary tau grid.
+
+    Args:
+        model: trained FullModel
+        z:     (B,d) or (d,)
+        tau:   strictly increasing 1D tensor including 0 if decoder invariants are to be checked
 
     Returns:
-        P_mkt: market discount factors excluding tau=0, shape (B, tau_max)
+        P_full: discount factors on tau-grid, shape (B, len(tau))
         A_vals, B_vals, G_vals, mu, sigma, r_tilde, diagnostics
     """
     if z.dim() == 1:
@@ -473,13 +601,14 @@ def decode_from_latent_script(model, z, G_floor=1e-5):
 
     device = z.device
     dtype = z.dtype
-
-    tau = torch.arange(0, model.tau_max + 1, device=device, dtype=dtype)
+    tau = tau.to(device=device, dtype=dtype)
 
     if tau.ndim != 1 or tau.numel() < 2:
         raise RuntimeError("tau grid must be 1D and contain at least two points")
     if not torch.all(tau[1:] > tau[:-1]):
         raise RuntimeError("tau grid must be strictly increasing")
+    if abs(float(tau[0].item())) > 1e-12:
+        raise RuntimeError("tau grid must start at 0 to enforce decoder boundary conditions")
 
     G_vals = model.G(z, tau)
     if G_vals.dim() == 1:
@@ -499,8 +628,7 @@ def decode_from_latent_script(model, z, G_floor=1e-5):
 
     mu = model.K(z)
 
-    sigmas, rhos = model.H(z)
-    sigma = L_from_sigmas_rhos(sigmas, rhos)
+    sigma = get_L(model, z)
 
     r_tilde = model.R(z)
     if r_tilde.ndim == 2 and r_tilde.shape[-1] == 1:
@@ -558,23 +686,26 @@ def decode_from_latent_script(model, z, G_floor=1e-5):
     if not torch.allclose(P_full[:, 0], torch.ones_like(P_full[:, 0]), atol=1e-8, rtol=0.0):
         raise RuntimeError("Decoder invariant violated: P(z,0) != 1")
 
-    # Approximate short-rate identity f(0) = r_tilde using forward difference
-    # f(0) = -d/dtau log P(0)
-    dtau0 = tau[1] - tau[0]
-    f0_approx = -(torch.log(P_full[:, 1]) - torch.log(P_full[:, 0])) / dtau0
-    short_rate_err = (f0_approx - r_tilde).abs()
-
-
-    P_mkt = P_full[:, 1:]
+    short_rate_tau_used = None
+    max_short_rate_err = float("nan")
+    if check_short_rate and tau.numel() >= 2:
+        tau1 = tau[1] - tau[0]
+        short_rate_tau_used = float(tau1.item())
+        f0_approx = -(torch.log(P_full[:, 1]) - torch.log(P_full[:, 0])) / tau1
+        short_rate_err = (f0_approx - r_tilde).abs()
+        max_short_rate_err = short_rate_err.max().item()
+    else:
+        short_rate_err = torch.zeros_like(r_tilde)
 
     diagnostics = {
         "G_range": (G_vals.min().item(), G_vals.max().item()),
-        "P_range": (P_mkt.min().item(), P_mkt.max().item()),
+        "P_range": (P_full[:, 1:].min().item(), P_full[:, 1:].max().item()),
         "min_abs_G0": min_abs_G0,
-        "max_short_rate_err": short_rate_err.max().item(),
+        "short_rate_tau_used": short_rate_tau_used,
+        "max_short_rate_err": max_short_rate_err,
     }
 
-    return P_mkt, A_vals, B_vals, G_vals, mu, sigma, r_tilde, diagnostics
+    return P_full, A_vals, B_vals, G_vals, mu, sigma, r_tilde, diagnostics
 
 
 # ==========================================================
@@ -599,7 +730,9 @@ def analyze_paths(z_paths, r_paths, mu_paths, L_paths, latent_dim):
     for i in range(latent_dim):
         for j in range(latent_dim):
             L_ij = L_np[:, :, i, j]
-            print(f"L[{i},{j}]: mean={L_ij.mean():.6f}, std={L_ij.std():.6f}, min={L_ij.min():.6f}, max={L_ij.max():.6f}")
+            print(
+                f"L[{i},{j}]: mean={L_ij.mean():.6f}, std={L_ij.std():.6f}, min={L_ij.min():.6f}, max={L_ij.max():.6f}"
+            )
 
     print("\n--- MU Variance Analysis ---")
     mu_var_time = mu_np.var(axis=0)
@@ -651,6 +784,8 @@ def decode_and_save_results(
     r_paths,
     z_train_mean,
     z_train_cov,
+    decoder_tau_grid,
+    annual_indices,
     device,
     n_steps,
     n_paths,
@@ -672,6 +807,7 @@ def decode_and_save_results(
     swap_df_list = []
     latent_df_list = []
     mahal_df_list = []
+    decoder_diag_df_list = []
 
     early_stop_time = None
 
@@ -704,8 +840,28 @@ def decode_and_save_results(
             early_stop_time = t
             break
 
-        P_mkt, _, _, _, _, _, _, dec_diag = decode_from_latent_script(model, z_t)
-        S_sim = par_swap_from_discount(P_mkt, tenors)
+        P_full, _, _, _, _, _, _, dec_diag = decode_from_latent_script(
+            model,
+            z_t,
+            decoder_tau_grid,
+            check_short_rate=True,
+        )
+        P_annual = P_full[:, annual_indices]
+        S_sim = par_swap_from_discount(P_annual, tenors)
+
+        decoder_diag_df_list.append(
+            {
+                "time": times[t],
+                "max_mahal_dist": float(mahal_dist.max().item()),
+                "mean_mahal_dist": float(mahal_dist.mean().item()),
+                "frac_mahal_gt_threshold": float(out_of_region_frac),
+                "decoder_min_G_abs0": float(dec_diag["min_abs_G0"]),
+                "decoder_max_short_rate_err": float(dec_diag["max_short_rate_err"]),
+                "decoder_short_rate_tau_used": dec_diag["short_rate_tau_used"],
+                "decoder_P_min": float(dec_diag["P_range"][0]),
+                "decoder_P_max": float(dec_diag["P_range"][1]),
+            }
+        )
 
         for p in range(n_paths):
             swap_row = {"time": times[t], "path_id": p}
@@ -727,9 +883,12 @@ def decode_and_save_results(
             )
 
         if t == 0 or t == n_steps or t % max(1, n_steps // 10) == 0:
+            tau_used = dec_diag["short_rate_tau_used"]
+            tau_str = f"{tau_used:.6f}" if tau_used is not None else "NA"
             print(
                 f"  t={times[t]:.3f} | "
                 f"max Mahalanobis={mahal_dist.max().item():.3f} | "
+                f"short-rate tau={tau_str} | "
                 f"max short-rate err={dec_diag['max_short_rate_err']:.3e}"
             )
 
@@ -742,27 +901,23 @@ def decode_and_save_results(
     swap_df = pd.DataFrame(swap_df_list)
     latent_df = pd.DataFrame(latent_df_list)
     mahal_df = pd.DataFrame(mahal_df_list)
+    decoder_diag_df = pd.DataFrame(decoder_diag_df_list)
 
-    swap_csv_path = os.path.join(
-        out_dir,
-        f"simulated_swap_curves_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.csv",
-    )
-    latent_csv_path = os.path.join(
-        out_dir,
-        f"simulated_latent_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.csv",
-    )
-    mahal_csv_path = os.path.join(
-        out_dir,
-        f"simulated_mahal_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.csv",
-    )
+    suffix = f"{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}"
+    swap_csv_path = os.path.join(out_dir, f"simulated_swap_curves_{suffix}.csv")
+    latent_csv_path = os.path.join(out_dir, f"simulated_latent_{suffix}.csv")
+    mahal_csv_path = os.path.join(out_dir, f"simulated_mahal_{suffix}.csv")
+    decoder_diag_csv_path = os.path.join(out_dir, f"decoder_diagnostics_{suffix}.csv")
 
     swap_df.to_csv(swap_csv_path, index=False)
     latent_df.to_csv(latent_csv_path, index=False)
     mahal_df.to_csv(mahal_csv_path, index=False)
+    decoder_diag_df.to_csv(decoder_diag_csv_path, index=False)
 
     print(f"Saved simulated swap curves to {swap_csv_path}")
     print(f"Saved simulated latent paths to {latent_csv_path}")
     print(f"Saved Mahalanobis diagnostics to {mahal_csv_path}")
+    print(f"Saved decoder diagnostics to {decoder_diag_csv_path}")
 
     if early_stop_time is not None:
         print(
@@ -773,7 +928,131 @@ def decode_and_save_results(
 
     print("Simulation and saving completed successfully.")
 
-    return swap_df, latent_df, mahal_df, out_dir, times, early_stop_time
+    return swap_df, latent_df, mahal_df, decoder_diag_df, out_dir, times, early_stop_time
+
+
+# ==========================================================
+# Martingale Diagnostics for Discounted Bond Prices
+# ==========================================================
+
+def martingale_diagnostics(
+    model,
+    z_paths,
+    discount_paths,
+    times,
+    maturity_dates,
+    out_dir,
+    use,
+    latent_dim,
+    epochs,
+    n_paths,
+    n_steps,
+    martingale_tol=0.02,
+):
+    if len(maturity_dates) == 0:
+        print("No martingale dates requested; skipping discounted-bond martingale diagnostics.")
+        return pd.DataFrame()
+
+    maturity_dates = sorted(float(u) for u in maturity_dates)
+    max_time = float(times[-1])
+    if all(u <= 0 for u in maturity_dates):
+        print("All martingale dates are non-positive; skipping diagnostics.")
+        return pd.DataFrame()
+
+    print("\n" + "=" * 60)
+    print("DIAGNOSTIC: Discounted-bond martingale check")
+    print("=" * 60)
+
+    device = z_paths.device
+    dtype = z_paths.dtype
+    out_rows = []
+    rel_err_tracker = {u: [] for u in maturity_dates}
+
+    for t_idx, t_now in enumerate(times):
+        valid_U = [u for u in maturity_dates if u > float(t_now) + 1e-12]
+        if len(valid_U) == 0:
+            continue
+
+        tau_remaining = torch.tensor([u - float(t_now) for u in valid_U], device=device, dtype=dtype)
+        tau_grid = torch.cat([torch.zeros(1, device=device, dtype=dtype), tau_remaining])
+        tau_grid = torch.unique(tau_grid, sorted=True)
+
+        P_full, _, _, _, _, _, _, _ = decode_from_latent_script(
+            model,
+            z_paths[:, t_idx, :],
+            tau_grid,
+            check_short_rate=False,
+        )
+
+        for u in valid_U:
+            tau_u = torch.tensor(float(u - float(t_now)), device=device, dtype=dtype)
+            idx = torch.argmin(torch.abs(tau_grid - tau_u))
+            if torch.abs(tau_grid[idx] - tau_u).item() > 1e-10:
+                raise RuntimeError(f"Could not locate tau={float(tau_u):.12f} on diagnostic grid")
+
+            discounted_bond = discount_paths[:, t_idx] * P_full[:, idx]
+            mean_val = discounted_bond.mean().item()
+            std_val = discounted_bond.std(unbiased=False).item()
+            sem_val = std_val / math.sqrt(discounted_bond.shape[0])
+
+            # At t=0, D_0 = 1 and all paths are identical, so this is the reference value
+            initial_tau_grid = torch.tensor([0.0, u], device=device, dtype=dtype)
+            if t_idx == 0:
+                P0_full, _, _, _, _, _, _, _ = decode_from_latent_script(
+                    model,
+                    z_paths[:1, 0, :],
+                    initial_tau_grid,
+                    check_short_rate=False,
+                )
+                initial_val = P0_full[0, 1].item()
+            else:
+                # Read back initial value consistently from the same model+z0
+                P0_full, _, _, _, _, _, _, _ = decode_from_latent_script(
+                    model,
+                    z_paths[:1, 0, :],
+                    initial_tau_grid,
+                    check_short_rate=False,
+                )
+                initial_val = P0_full[0, 1].item()
+
+            rel_err = abs(mean_val - initial_val) / max(abs(initial_val), 1e-12)
+            rel_err_tracker[u].append(rel_err)
+
+            out_rows.append(
+                {
+                    "time": float(t_now),
+                    "U": float(u),
+                    "tau_remaining": float(u - float(t_now)),
+                    "disc_bond_mean": float(mean_val),
+                    "disc_bond_std": float(std_val),
+                    "disc_bond_sem": float(sem_val),
+                    "initial_disc_bond_value": float(initial_val),
+                    "relative_mean_error": float(rel_err),
+                }
+            )
+
+    mart_df = pd.DataFrame(out_rows)
+    suffix = f"{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}"
+    mart_csv_path = os.path.join(out_dir, f"martingale_diagnostics_{suffix}.csv")
+    mart_df.to_csv(mart_csv_path, index=False)
+    print(f"Saved martingale diagnostics to {mart_csv_path}")
+
+    for u in maturity_dates:
+        errs = rel_err_tracker.get(u, [])
+        if len(errs) == 0:
+            print(f"  U={u:.2f}: no valid times in simulation window")
+            continue
+        max_err = max(errs)
+        print(f"  U={u:.2f}: max relative mean error = {max_err:.3%}")
+        if max_err > martingale_tol:
+            warnings.warn(
+                f"Discounted-bond martingale diagnostic exceeded tolerance for U={u:.2f}: "
+                f"max relative mean error {max_err:.3%} > tol {martingale_tol:.3%}",
+                RuntimeWarning,
+            )
+
+    print("=" * 60 + "\n")
+    return mart_df
 
 
 # ==========================================================
@@ -786,7 +1065,9 @@ def generate_plots(
     r_paths,
     mu_paths,
     L_paths,
+    discount_paths,
     swap_df,
+    mart_df,
     tenors,
     out_dir,
     times,
@@ -801,7 +1082,9 @@ def generate_plots(
 
     n_plot = min(5, n_paths)
 
+    # ----------------------------------------------------------
     # Drift plot
+    # ----------------------------------------------------------
     fig_mu, axes_mu = plt.subplots(latent_dim, 1, figsize=(10, 6), sharex=True)
     axes_mu = np.atleast_1d(axes_mu)
 
@@ -826,7 +1109,9 @@ def generate_plots(
         plt.show()
     plt.close(fig_mu)
 
-    # Diffusion plot
+    # ----------------------------------------------------------
+    # Diffusion factor L(z) element plot
+    # ----------------------------------------------------------
     fig_L, axes_L = plt.subplots(latent_dim, latent_dim, figsize=(12, 8), sharex=True)
     if latent_dim == 1:
         axes_L = np.atleast_2d(axes_L)
@@ -842,7 +1127,7 @@ def generate_plots(
     for ax in axes_L[-1, :]:
         ax.set_xlabel("Time (years)")
 
-    fig_L.suptitle("Diffusion matrix elements along simulated paths")
+    fig_L.suptitle("Diffusion-factor elements along simulated paths")
     plt.tight_layout()
 
     L_plot_path = os.path.join(
@@ -855,65 +1140,85 @@ def generate_plots(
         plt.show()
     plt.close(fig_L)
 
-    # Sigma and rho plot
-    n_corr = latent_dim * (latent_dim - 1) // 2
-    n_sigma_rho_rows = latent_dim + (1 if n_corr > 0 else 0)
-    fig_sr, axes_sr = plt.subplots(n_sigma_rho_rows, 1, figsize=(10, 3 * n_sigma_rho_rows), sharex=True)
-    axes_sr = np.atleast_1d(axes_sr)
+    # ----------------------------------------------------------
+    # Diagonal/off-diagonal decomposition of L(z)
+    # ----------------------------------------------------------
+    n_off = latent_dim * (latent_dim - 1) // 2
+    n_rows = latent_dim + (n_off if n_off > 0 else 0)
 
-    # collect sigma and rho over time for the first n_plot paths
-    T = z_paths.shape[1]
-    sigma_over_time = [[] for _ in range(latent_dim)]
-    rho_over_time   = [[] for _ in range(n_corr)]
+    fig_ld, axes_ld = plt.subplots(n_rows, 1, figsize=(10, 3 * n_rows), sharex=True)
+    axes_ld = np.atleast_1d(axes_ld)
 
-    with torch.no_grad():
-        for t in range(T):
-            z_t = z_paths[:n_plot, t, :]
-            sigmas_t, rhos_t = model.H(z_t)          # (n_plot, d), (n_plot, n_corr)
-            for i in range(latent_dim):
-                sigma_over_time[i].append(sigmas_t[:, i].cpu().numpy())
-            for k in range(n_corr):
-                rho_over_time[k].append(rhos_t[:, k].cpu().numpy())
-
-    # sigma subplots
+    # diagonal entries
     for i in range(latent_dim):
-        ax = axes_sr[i]
-        sigma_arr = np.array(sigma_over_time[i])      # (T, n_plot)
+        ax = axes_ld[i]
         for p in range(n_plot):
-            ax.plot(times, sigma_arr[:, p], alpha=0.7)
-        ax.set_ylabel(f"$\\sigma_{i+1}(z_t)$")
+            ax.plot(times, L_paths[p, :, i, i].detach().cpu().numpy(), alpha=0.7)
+        ax.set_ylabel(f"L[{i},{i}]")
         ax.grid(True, alpha=0.3)
 
-    # rho subplots
-    corr_idx = 0
-    for i in range(latent_dim):
-        for j in range(i + 1, latent_dim):
-            ax = axes_sr[latent_dim + corr_idx]
-            rho_arr = np.array(rho_over_time[corr_idx])   # (T, n_plot)
+    # strict lower-triangular entries
+    row_idx = latent_dim
+    for i in range(1, latent_dim):
+        for j in range(i):
+            ax = axes_ld[row_idx]
             for p in range(n_plot):
-                ax.plot(times, rho_arr[:, p], alpha=0.7)
-            ax.set_ylabel(f"$\\rho_{{{i+1}{j+1}}}(z_t)$")
-            ax.set_ylim(-1, 1)
-            ax.axhline(0, color="black", linewidth=0.5, linestyle="--")
+                ax.plot(times, L_paths[p, :, i, j].detach().cpu().numpy(), alpha=0.7)
+            ax.set_ylabel(f"L[{i},{j}]")
             ax.grid(True, alpha=0.3)
-            corr_idx += 1
+            row_idx += 1
 
-    axes_sr[-1].set_xlabel("Time (years)")
-    fig_sr.suptitle("Volatilities and correlations along simulated paths")
+    axes_ld[-1].set_xlabel("Time (years)")
+    fig_ld.suptitle("Diagonal and lower-triangular diffusion-factor entries")
     plt.tight_layout()
 
-    sr_plot_path = os.path.join(
+    ld_plot_path = os.path.join(
         out_dir,
-        f"simulated_sigma_rho_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.png",
+        f"simulated_L_diag_offdiag_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.png",
     )
-    fig_sr.savefig(sr_plot_path, dpi=300)
-    print(f"Saved sigma/rho plot to {sr_plot_path}")
+    fig_ld.savefig(ld_plot_path, dpi=300)
+    print(f"Saved L diag/offdiag plot to {ld_plot_path}")
     if show_plots:
         plt.show()
-    plt.close(fig_sr)
+    plt.close(fig_ld)
 
-    # Latent paths + short rate
-    fig_lat, axes = plt.subplots(latent_dim + 1, 1, figsize=(10, 6), sharex=True)
+    # ----------------------------------------------------------
+    # Instantaneous covariance Sigma = L L^T
+    # ----------------------------------------------------------
+    sigma_paths = torch.matmul(L_paths, L_paths.transpose(-1, -2))
+
+    fig_S, axes_S = plt.subplots(latent_dim, latent_dim, figsize=(12, 8), sharex=True)
+    if latent_dim == 1:
+        axes_S = np.atleast_2d(axes_S)
+
+    for i in range(latent_dim):
+        for j in range(latent_dim):
+            ax = axes_S[i, j]
+            for p in range(n_plot):
+                ax.plot(times, sigma_paths[p, :, i, j].detach().cpu().numpy(), alpha=0.7)
+            ax.set_ylabel(f"Sigma[{i},{j}]")
+            ax.grid(True, alpha=0.3)
+
+    for ax in axes_S[-1, :]:
+        ax.set_xlabel("Time (years)")
+
+    fig_S.suptitle("Instantaneous covariance elements along simulated paths")
+    plt.tight_layout()
+
+    S_plot_path = os.path.join(
+        out_dir,
+        f"simulated_Sigma_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.png",
+    )
+    fig_S.savefig(S_plot_path, dpi=300)
+    print(f"Saved Sigma plot to {S_plot_path}")
+    if show_plots:
+        plt.show()
+    plt.close(fig_S)
+
+    # ----------------------------------------------------------
+    # Latent paths + short rate + discount factor
+    # ----------------------------------------------------------
+    fig_lat, axes = plt.subplots(latent_dim + 2, 1, figsize=(10, 8), sharex=True)
     axes = np.atleast_1d(axes)
 
     for d in range(latent_dim):
@@ -923,12 +1228,20 @@ def generate_plots(
         ax.set_ylabel(f"z{d}")
         ax.grid(True, alpha=0.3)
 
-    ax = axes[-1]
+    ax_r = axes[latent_dim]
     for p in range(min(10, n_paths)):
-        ax.plot(times, r_paths[p, :].detach().cpu().numpy(), alpha=0.7)
-    ax.set_ylabel("r")
-    ax.set_xlabel("Time (years)")
-    fig_lat.suptitle("Simulated latent paths and short rate")
+        ax_r.plot(times, r_paths[p, :].detach().cpu().numpy(), alpha=0.7)
+    ax_r.set_ylabel("r")
+    ax_r.grid(True, alpha=0.3)
+
+    ax_d = axes[latent_dim + 1]
+    for p in range(min(10, n_paths)):
+        ax_d.plot(times, discount_paths[p, :].detach().cpu().numpy(), alpha=0.7)
+    ax_d.set_ylabel("D_t")
+    ax_d.set_xlabel("Time (years)")
+    ax_d.grid(True, alpha=0.3)
+
+    fig_lat.suptitle("Simulated latent paths, short rate, and discount factor")
     plt.tight_layout()
 
     latent_plot_path = os.path.join(
@@ -941,7 +1254,9 @@ def generate_plots(
         plt.show()
     plt.close(fig_lat)
 
+    # ----------------------------------------------------------
     # Mean swap rates
+    # ----------------------------------------------------------
     if not swap_df.empty:
         fig_swap, ax = plt.subplots(figsize=(10, 6))
         tenors_to_plot = [1.0, 5.0, 10.0, 30.0]
@@ -971,8 +1286,53 @@ def generate_plots(
     else:
         print("No decoded swap curves available to plot.")
 
-    print("Plotting completed.")
+    # ----------------------------------------------------------
+    # Martingale diagnostic plot
+    # ----------------------------------------------------------
+    if mart_df is not None and not mart_df.empty:
+        fig_m, ax = plt.subplots(figsize=(10, 6))
+        for U in sorted(mart_df["U"].unique()):
+            sub = mart_df[mart_df["U"] == U].sort_values("time")
+            ax.plot(sub["time"], sub["disc_bond_mean"], linewidth=2, label=f"U={U:g}")
+            ax.axhline(sub["initial_disc_bond_value"].iloc[0], linewidth=1, linestyle="--", alpha=0.6)
 
+        ax.set_xlabel("Time (years)")
+        ax.set_ylabel(r"Mean of $D_t P(t,U)$")
+        ax.set_title("Discounted-bond martingale diagnostic")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        mart_plot_path = os.path.join(
+            out_dir,
+            f"martingale_diagnostics_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.png",
+        )
+        fig_m.savefig(mart_plot_path, dpi=300)
+        print(f"Saved martingale plot to {mart_plot_path}")
+        if show_plots:
+            plt.show()
+        plt.close(fig_m)
+
+        fig_merr, ax = plt.subplots(figsize=(10, 6))
+        for U in sorted(mart_df["U"].unique()):
+            sub = mart_df[mart_df["U"] == U].sort_values("time")
+            ax.plot(sub["time"], sub["relative_mean_error"], linewidth=2, label=f"U={U:g}")
+        ax.set_xlabel("Time (years)")
+        ax.set_ylabel("Relative mean error")
+        ax.set_title("Discounted-bond martingale relative error")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        merr_plot_path = os.path.join(
+            out_dir,
+            f"martingale_relative_error_{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}.png",
+        )
+        fig_merr.savefig(merr_plot_path, dpi=300)
+        print(f"Saved martingale relative-error plot to {merr_plot_path}")
+        if show_plots:
+            plt.show()
+        plt.close(fig_merr)
+
+    print("Plotting completed.")
 
 # ==========================================================
 # Main
@@ -994,7 +1354,7 @@ def main(argv=None):
     IDX_CHOICE = args.idx_choice
     DISCRETIZATION = args.discretization
     SEED = args.seed
-    SHOW_PLOTS = not args.no_plots  # show by default; suppress with --no_plots
+    SHOW_PLOTS = bool(args.show_plots and not args.no_plots)
 
     set_seed(SEED)
 
@@ -1027,6 +1387,22 @@ def main(argv=None):
     # ========== Load model ==========
     model = load_and_setup_model(device, USE, LATENT_DIM, EPOCHS)
 
+    # ========== Decoder grid ==========
+    decoder_tau_grid = build_decoder_tau_grid(
+        model,
+        device=device,
+        dtype=torch.float64,
+        fine_step=args.tau_fine_step,
+        fine_horizon=args.tau_fine_horizon,
+    )
+    annual_tau = torch.arange(1.0, float(model.tau_max) + 1.0, 1.0, device=device, dtype=torch.float64)
+    annual_indices = get_grid_indices_for_values(decoder_tau_grid, annual_tau)
+    print(
+        "Decoder tau grid built with "
+        f"{decoder_tau_grid.numel()} points; first positive tau = {decoder_tau_grid[1].item():.6f}, "
+        f"tau_max = {decoder_tau_grid[-1].item():.6f}"
+    )
+
     # ========== Training latent statistics ==========
     z_train_mean, z_train_cov, z_train_std = compute_latent_statistics(model, X_tensor, device, LATENT_DIM)
 
@@ -1048,16 +1424,25 @@ def main(argv=None):
     )
     print("Simulation completed.")
 
-    # ========== Analyze ==========
+    # ========== Discount factors along paths ==========
+    discount_paths = compute_discount_paths(r_paths, dt=DT, method="trapezoid")
+    print(
+        f"Built path discount factors: D_t range = "
+        f"[{discount_paths.min().item():.6f}, {discount_paths.max().item():.6f}]"
+    )
+
+    # ========== Analyze latent dynamics ==========
     analyze_paths(z_paths, r_paths, mu_paths, L_paths, LATENT_DIM)
 
     # ========== Decode and save ==========
-    swap_df, latent_df, mahal_df, out_dir, times, early_stop_time = decode_and_save_results(
+    swap_df, latent_df, mahal_df, decoder_diag_df, out_dir, times, early_stop_time = decode_and_save_results(
         model=model,
         z_paths=z_paths,
         r_paths=r_paths,
         z_train_mean=z_train_mean,
         z_train_cov=z_train_cov,
+        decoder_tau_grid=decoder_tau_grid,
+        annual_indices=annual_indices,
         device=device,
         n_steps=N_STEPS,
         n_paths=N_PATHS,
@@ -1070,6 +1455,23 @@ def main(argv=None):
         early_stop_fraction=args.early_stop_fraction,
     )
 
+    # ========== Martingale diagnostics ==========
+    maturity_dates = parse_float_list(args.martingale_dates)
+    mart_df = martingale_diagnostics(
+        model=model,
+        z_paths=z_paths,
+        discount_paths=discount_paths,
+        times=times,
+        maturity_dates=maturity_dates,
+        out_dir=out_dir,
+        use=USE,
+        latent_dim=LATENT_DIM,
+        epochs=EPOCHS,
+        n_paths=N_PATHS,
+        n_steps=N_STEPS,
+        martingale_tol=args.martingale_tol,
+    )
+
     # ========== Plot ==========
     if not args.no_plots:
         generate_plots(
@@ -1078,7 +1480,9 @@ def main(argv=None):
             r_paths=r_paths,
             mu_paths=mu_paths,
             L_paths=L_paths,
+            discount_paths=discount_paths,
             swap_df=swap_df,
+            mart_df=mart_df,
             tenors=tenors,
             out_dir=out_dir,
             times=times,
