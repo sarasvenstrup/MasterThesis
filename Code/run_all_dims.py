@@ -1,8 +1,8 @@
 """
-Runner script: runs Training.py sequentially for multiple dims and variants.
+Runner script: runs OutOfSampleSplit.py sequentially for multiple dims and variants.
 
-  Training.py (baseline): LATENT_DIM = 2, 3, 4
-  Training.py (stable):   LATENT_DIM = 1, 2, 3, 4
+  OutOfSampleSplit.py (baseline): LATENT_DIM = 2, 3, 4  ep=2500
+  OutOfSampleSplit.py (stable):   LATENT_DIM = 2, 3, 4  ep=2500
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -18,21 +18,23 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
-CONFIG_PATH   = os.path.join(REPO_ROOT, "Code", "config.py")
-TRAINING_PATH = os.path.join(REPO_ROOT, "Code", "Training.py")
+CONFIG_PATH    = os.path.join(REPO_ROOT, "Code", "config.py")
+OOS_SPLIT_PATH = os.path.join(REPO_ROOT, "Code", "OutOfSampleSplit.py")
 
 STAGES = [
     {
-        "name":    "Training (baseline)",
-        "script":  TRAINING_PATH,
+        "name":    "OOS Split (baseline)",
+        "script":  OOS_SPLIT_PATH,
         "variant": "baseline",
-        "dims":    [1, 2, 3, 4],
+        "dims":    [2, 3, 4],
+        "epochs":  2500,
     },
     {
-        "name":    "Training (stable)",
-        "script":  TRAINING_PATH,
+        "name":    "OOS Split (stable)",
+        "script":  OOS_SPLIT_PATH,
         "variant": "stable",
-        "dims":    [1, 2, 3, 4],
+        "dims":    [2, 3, 4],
+        "epochs":  2500,
     },
 ]
 
@@ -55,6 +57,15 @@ def patch_variant(variant: str) -> str:
         f.write(patched)
     return original
 
+def patch_epochs(script_path: str, epochs: int) -> str:
+    """Replace EPOCHS = <any int> in script. Returns original source."""
+    with open(script_path, "r") as f:
+        original = f.read()
+    patched = re.sub(r"^(EPOCHS\s*=\s*)\d+", rf"\g<1>{epochs}", original, flags=re.MULTILINE)
+    with open(script_path, "w") as f:
+        f.write(patched)
+    return original
+
 def restore_source(script_path: str, original: str):
     with open(script_path, "w") as f:
         f.write(original)
@@ -70,8 +81,11 @@ for stage in STAGES:
         print(f"  [{run_num}/{total_runs}] {stage['name']}  LATENT_DIM={dim}")
         print(f"{'='*60}\n")
 
-        original_training = patch_latent_dim(stage["script"], dim)
-        original_config   = patch_variant(stage["variant"])
+        original_script = patch_latent_dim(stage["script"], dim)
+        original_config = patch_variant(stage["variant"])
+        original_epochs = None
+        if "epochs" in stage:
+            original_epochs = patch_epochs(stage["script"], stage["epochs"])
 
         env = os.environ.copy()
         env["PYTHONPATH"] = REPO_ROOT
@@ -81,10 +95,14 @@ for stage in STAGES:
                 [sys.executable, stage["script"]],
                 cwd=REPO_ROOT,
                 env=env,
+                input="y\n",
+                text=True,
             )
         finally:
-            restore_source(stage["script"], original_training)
+            restore_source(stage["script"], original_script)
             restore_source(CONFIG_PATH,     original_config)
+            if original_epochs is not None:
+                restore_source(stage["script"], original_epochs)
 
         if result.returncode != 0:
             print(f"\n[ERROR] {stage['name']} failed for LATENT_DIM={dim} "

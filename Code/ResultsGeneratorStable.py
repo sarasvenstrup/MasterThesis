@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import torch
 
 # ── path setup ─────────────────────────────────────────────────────────────────
 try:
@@ -28,7 +29,8 @@ except NameError:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from Code.load_swapdata import custom_palette, set_paper_theme
+from Code.load_swapdata import custom_palette, set_paper_theme, my_data, TARGET_TENORS
+from Code.model.full_model import FullModel
 from Code import config
 config.VARIANT = "stable"
 
@@ -40,6 +42,15 @@ os.makedirs(FIGURES_OUT, exist_ok=True)
 CCY_ORDER  = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 DIM_COLORS = {1: custom_palette[8], 2: custom_palette[4],
               3: custom_palette[0], 4: custom_palette[6]}
+
+# dim=2 stable ep2500 checkpoint
+STABLE_DIM       = 2
+STABLE_EP        = 2500
+TRAIN_START      = "2010-01-01"
+TRAIN_END        = "2020-12-31"
+
+PARAMS_DIR = os.path.join(FIGURES_OUT, "parameters_dim2")
+os.makedirs(PARAMS_DIR, exist_ok=True)
 
 ROLL_SUBDIR            = "train5Y_test6M_step6M"
 ROLL_DIVERGE_THRESHOLD = 100.0
@@ -337,5 +348,151 @@ if rows_q4:
     print(table_q4a.to_string())
 else:
     print("  SKIPPED — no rolling OOS data found for stable variant.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Load stable dim=2 ep2500 model + training data
+# ─────────────────────────────────────────────────────────────────────────────
+def load_stable_dim2_model():
+    ckpt = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                        f"dim{STABLE_DIM}_stable", f"ep{STABLE_EP}",
+                        f"checkpoint_dim{STABLE_DIM}_ep{STABLE_EP}.pt")
+    if not os.path.exists(ckpt):
+        print(f"  ⚠️  Checkpoint not found: {ckpt}")
+        return None
+    state = torch.load(ckpt, map_location="cpu")
+    model = FullModel(latent_dim=STABLE_DIM)
+    sd = state["model_state_dict"] if isinstance(state, dict) and "model_state_dict" in state else state
+    model.load_state_dict(sd)
+    model.eval()
+    print(f"  Loaded stable dim={STABLE_DIM} ep={STABLE_EP} checkpoint.")
+    return model
+
+def _param_label(name):
+    if name.startswith("mu_"):
+        k = name.split("_")[1]; return r"$\mu_{" + k + r"}$"
+    if name.startswith("sigma_"):
+        k = name.split("_")[1]; return r"$\sigma_{" + k + r"}$"
+    if name.startswith("rho_"):
+        ij = name.split("_")[1]; return r"$\rho_{" + ",".join(ij) + r"}$"
+    if name == "r_tilde":
+        return r"$\tilde{r}$"
+    return name
+
+def finite_mask(X, S):
+    return torch.isfinite(X).all(1) & torch.isfinite(S).all(1)
+
+def extract_parameters(model, X_data, meta_df, mask):
+    model.eval()
+    with torch.no_grad():
+        X_m   = X_data[mask]
+        z     = model.encoder(X_m)
+        mu    = model.K(z)
+        sigmas, rhos = model.H(z)
+        r_til = model.R(z).squeeze(-1)
+    d      = model.latent_dim
+    rec    = meta_df.loc[mask.numpy()].copy().reset_index(drop=True)
+    rec["as_of_date"] = pd.to_datetime(rec["as_of_date"])
+    for k in range(d):
+        rec[f"mu_{k+1}"]    = mu[:, k].cpu().numpy()
+        rec[f"sigma_{k+1}"] = sigmas[:, k].cpu().numpy()
+    idx = 0
+    for i in range(d):
+        for j in range(i + 1, d):
+            rec[f"rho_{i+1}{j+1}"] = rhos[:, idx].cpu().numpy()
+            idx += 1
+    rec["r_tilde"] = r_til.cpu().numpy()
+    return rec
+
+@torch.no_grad()
+def extract_sharpe(model, X, batch=256):
+    sr_list = []
+    for i in range(0, len(X), batch):
+        xb = X[i:i+batch]
+        _, aux = model(xb, return_aux=True, do_arb_checks=True)
+        sr_list.append(aux["arb"]["SR_tau"].cpu())
+    return torch.cat(sr_list, dim=0)
+
+_ccy_colors = {ccy: custom_palette[i]
+               for i, ccy in enumerate(CCY_ORDER)}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Load data + model
+# ─────────────────────────────────────────────────────────────────────────────
+print("\nLoading data for stable dim=2 parameter / Sharpe plots...")
+meta_train, X_train, *_ = my_data()
+
+_stable_model = load_stable_dim2_model()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parameters — stable dim=2
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Parameters: stable ℓ=2 ──")
+if _stable_model is None:
+    print("  ⚠️  Skipped — no checkpoint.")
+else:
+    with torch.no_grad():
+        _S_tmp = _stable_model(X_train)
+    _mask = finite_mask(X_train, _S_tmp)
+    df_p  = extract_parameters(_stable_model, X_train, meta_train, _mask)
+
+    d = STABLE_DIM
+    mu_cols  = [f"mu_{k+1}"    for k in range(d)]
+    sig_cols = [f"sigma_{k+1}" for k in range(d)]
+    rho_cols = [f"rho_{i+1}{j+1}"
+                for i in range(d) for j in range(i + 1, d)]
+    param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
+
+    for col in param_cols:
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+        for ccy in CCY_ORDER:
+            sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
+            if sub.empty:
+                continue
+            ax.plot(sub["as_of_date"], sub[col],
+                    color=_ccy_colors[ccy], linewidth=0.8, alpha=0.75)
+        ax.set_title(_param_label(col), fontsize=11)
+        ax.tick_params(axis="x", rotation=30, labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        fig.tight_layout()
+        out_path = os.path.join(PARAMS_DIR, f"param_{col}_stable_dim2.png")
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+    print(f"  Saved {len(param_cols)} parameter plots → {PARAMS_DIR}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q7_sharpe_stable — IS Sharpe ratio by tenor, stable dim=2
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q7_sharpe_stable: IS Sharpe ratio (stable ℓ=2) ──")
+TAU_GRID = np.arange(1, 31)
+
+if _stable_model is None:
+    print("  ⚠️  Skipped — no checkpoint.")
+else:
+    SR_all = extract_sharpe(_stable_model, X_train)   # (N, 30)
+    x_fin  = torch.isfinite(X_train).all(1)
+    SR_np  = SR_all[x_fin].numpy()
+    meta_fin = meta_train[x_fin.numpy()].reset_index(drop=True)
+
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+    for ccy in CCY_ORDER:
+        ccy_mask = (meta_fin["ccy"] == ccy).values
+        if ccy_mask.sum() == 0:
+            continue
+        sr_ccy = np.nanmedian(SR_np[ccy_mask], axis=0)   # (30,) median over dates
+        ax.plot(TAU_GRID, sr_ccy, color=_ccy_colors[ccy],
+                linewidth=1.0, alpha=0.85, label=ccy)
+    ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
+    ax.set_xlabel("Tenor (years)")
+    ax.set_ylabel("Sharpe ratio")
+    ax.set_title(rf"IS Sharpe ratio by tenor and currency — stable $\ell={STABLE_DIM}$", fontsize=11)
+    ax.set_xticks(TAU_GRID[::2])
+    ax.legend(fontsize=7, ncol=3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    save_fig(fig, "Q7_sharpe_ratio_IS_stable_dim2")
+    print("  done")
 
 print("\nResultsGeneratorStable complete.")
