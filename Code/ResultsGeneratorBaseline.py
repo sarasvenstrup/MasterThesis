@@ -264,7 +264,7 @@ for dim in [1, 2, 3, 4]:
                 label=f"$\\ell={dim}$")
 
 for ax in (ax_full, ax_zoom):
-    ax.axvline(2500, color="black", linewidth=1.0, linestyle="--")
+    ax.axvline(3500, color="black", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Epoch", fontsize=10)
 ax_full.set_ylabel("Average Training RMSE (bps)", fontsize=10)
 
@@ -474,25 +474,24 @@ save_fig(fig, "Q1d_residual_histograms_all_dims")
 print("\n── Q1d: Fitted vs actual — all dims overlaid (EUR, USD, JPY) ──")
 
 _rep_dates = {
-    "Normal (2016-08-31)": "2016-08-31",
-    "Crisis (2020-03-31)":  "2020-03-31",
-    "Low-rate (2019-06-30)": "2019-06-30",
+    "Normal (2014-08-29)": "2014-08-29",
+    "Crisis (2020-03-31)": "2020-03-31",
 }
 _show_ccys_alldim = ["EUR", "USD", "JPY"]
 _dim_colors = {d: DIM_COLORS[d] for d in [2, 3, 4]}
 _dim_styles = {2: "-", 3: "-", 4: "-"}
 
 _scale = 100.0 if SCALE_IS_PERCENT else 1.0
-_n_rows = len(_show_ccys_alldim)
-_n_cols = len(_rep_dates)
+_n_rows = len(_rep_dates)
+_n_cols = len(_show_ccys_alldim)
 
 fig, axes = plt.subplots(_n_rows, _n_cols,
                          figsize=(5 * _n_cols, 3.5 * _n_rows),
                          sharey=False)
 
-for col_i, (label, date_str) in enumerate(_rep_dates.items()):
+for row_i, (label, date_str) in enumerate(_rep_dates.items()):
     target_date = pd.Timestamp(date_str)
-    for row_i, ccy in enumerate(_show_ccys_alldim):
+    for col_i, ccy in enumerate(_show_ccys_alldim):
         ax = axes[row_i][col_i]
         mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
         if mask_ccy.sum() == 0:
@@ -516,9 +515,9 @@ for col_i, (label, date_str) in enumerate(_rep_dates.items()):
                     label=DIM_LABELS[_dim])
 
         if row_i == 0:
-            ax.set_title(label, fontsize=10, fontweight="bold")
+            ax.set_title(ccy, fontsize=10, fontweight="bold")
         if col_i == 0:
-            ax.set_ylabel(f"{ccy} ({'%' if SCALE_IS_PERCENT else 'dec.'})",
+            ax.set_ylabel(f"{label}\n({'%' if SCALE_IS_PERCENT else 'dec.'})",
                           fontsize=9)
         if row_i == _n_rows - 1:
             ax.set_xlabel("Maturity", fontsize=9)
