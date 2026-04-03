@@ -40,7 +40,7 @@ nine currencies, the error falls substantially from $\ell=2$ to
 $\ell=3$ on average, with more modest gains from $\ell=3$ to $\ell=4$, suggesting
 diminishing returns to increasing model complexity. Across all models the currency that is hardest to reconstruct for , 3 and 4 is EUR and JPY closely following.
 
-So we see clearly that if we train over more epochs, we get a better RMSE, but there is a computation time tradeoff. ADD COMPUTATION TIME FOR ALL MODELS OR BRAINSTORM ON HOW TO INCPORATE TIME INTO EITHER THE FIGURES OR THE LOSS GRAPH ABOVE. 
+So we see clearly that if we train over more epochs, we get a better RMSE, but there is a computation time tradeoff. 
 
 
 
@@ -51,13 +51,12 @@ So we see clearly that if we train over more epochs, we get a better RMSE, but t
 % ── Q1e ──────────────────────────────────────────────────────
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_training_loss_curves.png}
+    \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_training_loss_curves.png}
     \caption{Average training RMSE (bps) over 5\,000 epochs for latent dimensions
     $\ell \in \{1, 2, 3, 4\}$, averaged across all currencies and in-sample observations.
     The dashed vertical line marks epoch 2\,500. The right panel zooms in on epochs
-    1\,000--5\,000 with a fixed $y$-axis of 0--50 bps to highlight convergence behaviour
+    1\,000--5\,000 with a fixed $y$-axis of 0--20 bps to highlight convergence behaviour
     across dimensions.}
-
     \label{fig:training_loss}
 \end{figure}
 
