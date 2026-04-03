@@ -2,11 +2,9 @@ import os
 import sys
 import math
 import random
-import argparse
 import warnings
 
 import numpy as np
-import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 from scipy.stats import norm
@@ -38,31 +36,47 @@ print(f"Active model variant from config.py: {config.VARIANT}")
 # Import shared helpers from simulation script
 # ---------------------------------------------------------------------
 try:
-    from simulate_model import (
-        load_data_and_initial_curve,
+    from simulate_model_naive import (
+        load_data,
         simulate_latent_paths,
         decode_from_latent_script,
         resolve_checkpoint_path,
-        safe_load_state_dict,
         build_decoder_tau_grid,
         compute_discount_paths,
         get_grid_indices_for_values,
-        parse_float_list,
         normalize_discretization_name,
     )
 except ImportError:
-    from Code.Pricing.simulate_model import (
-        load_data_and_initial_curve,
-        simulate_latent_paths,
-        decode_from_latent_script,
-        resolve_checkpoint_path,
-        safe_load_state_dict,
-        build_decoder_tau_grid,
-        compute_discount_paths,
-        get_grid_indices_for_values,
-        parse_float_list,
-        normalize_discretization_name,
-    )
+    try:
+        from Code.Pricing.simulate_model_naive import (
+            load_data,
+            simulate_latent_paths,
+            decode_from_latent_script,
+            resolve_checkpoint_path,
+            build_decoder_tau_grid,
+            compute_discount_paths,
+            get_grid_indices_for_values,
+            normalize_discretization_name,
+        )
+    except ImportError:
+        from simulate_model import (
+            load_data_and_initial_curve,
+            simulate_latent_paths,
+            decode_from_latent_script,
+            resolve_checkpoint_path,
+            build_decoder_tau_grid,
+            compute_discount_paths,
+            get_grid_indices_for_values,
+            normalize_discretization_name,
+        )
+
+        def load_data(use="bbg", ccy_filter="", idx_choice=1390, device=None):
+            data = load_data_and_initial_curve(use, idx_choice, device)
+            if ccy_filter:
+                raise NotImplementedError(
+                    "ccy_filter requires simulate_model_naive.py or an equivalent load_data helper."
+                )
+            return data
 
 
 # ---------------------------------------------------------------------
@@ -77,6 +91,90 @@ def set_seed(seed: int):
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+
+def maybe_upgrade_old_stable_k_state_dict(state_dict, model):
+    """
+    Convert old stable-K checkpoint:
+        mu(z) = M z + N
+    into new OU-style stable-K:
+        mu(z) = M (z - theta)
+
+    using:
+        -M theta = N  =>  theta = solve(M, -N)
+
+    and set kappa = 1, i.e. softplus(raw_kappa) = 1.
+    """
+    if config.VARIANT != "stable":
+        return state_dict
+
+    has_old = ("K.N" in state_dict) and ("K.B" in state_dict) and ("K.L" in state_dict)
+    has_new_model = hasattr(model.K, "theta") and hasattr(model.K, "raw_kappa")
+
+    if not (has_old and has_new_model):
+        return state_dict
+
+    print("[compat] Converting old stable-K checkpoint to new OU-style K...")
+
+    new_state = dict(state_dict)
+
+    B = new_state["K.B"]
+    L = new_state["K.L"]
+    N = new_state["K.N"]
+
+    d = B.shape[0]
+    device = B.device
+    dtype = B.dtype
+
+    eps = float(getattr(model.K, "epsilon", 1e-3))
+    I = torch.eye(d, device=device, dtype=dtype)
+
+    # Old M = S - A
+    S = B - B.t()
+    A = L @ L.t() + eps * I
+    M = S - A
+
+    # Solve M theta = -N
+    theta = torch.linalg.solve(M, (-N).unsqueeze(-1)).squeeze(-1)
+
+    # Set kappa = 1  => raw_kappa = softplus^{-1}(1) = log(expm1(1))
+    one = torch.tensor(1.0, device=device, dtype=dtype)
+    raw_kappa = torch.log(torch.expm1(one))
+
+    new_state["K.theta"] = theta
+    new_state["K.raw_kappa"] = raw_kappa
+
+    del new_state["K.N"]
+
+    print(f"[compat] Created K.theta = {theta.detach().cpu().numpy()}")
+    print("[compat] Set K.raw_kappa so that softplus(raw_kappa) = 1")
+
+    return new_state
+
+
+def safe_load_state_dict_compat(model, state_dict):
+    incompat = model.load_state_dict(state_dict, strict=False)
+
+    missing = list(incompat.missing_keys)
+    unexpected = list(incompat.unexpected_keys)
+
+    allowed_missing = set()
+    allowed_unexpected = set()
+
+    real_missing = [k for k in missing if k not in allowed_missing]
+    real_unexpected = [k for k in unexpected if k not in allowed_unexpected]
+
+    if missing:
+        print(f"[load_state_dict] Missing keys: {missing}")
+    if unexpected:
+        print(f"[load_state_dict] Unexpected keys: {unexpected}")
+
+    if real_missing or real_unexpected:
+        raise RuntimeError(
+            "Non-benign checkpoint/model mismatch detected.\n"
+            f"Real missing keys: {real_missing}\n"
+            f"Real unexpected keys: {real_unexpected}"
+        )
 
 
 def load_model(checkpoint_path: str, device: torch.device, latent_dim: int = 2) -> FullModel:
@@ -97,7 +195,8 @@ def load_model(checkpoint_path: str, device: torch.device, latent_dim: int = 2) 
         state_dict = raw
 
     model = FullModel(latent_dim=latent_dim)
-    safe_load_state_dict(model, state_dict)
+    state_dict = maybe_upgrade_old_stable_k_state_dict(state_dict, model)
+    safe_load_state_dict_compat(model, state_dict)
     model = model.to(device).double()
     model.eval()
 
@@ -105,6 +204,18 @@ def load_model(checkpoint_path: str, device: torch.device, latent_dim: int = 2) 
     print(f"  Active config variant: {config.VARIANT}")
     print(f"  Model dtype: {next(model.parameters()).dtype}")
     return model
+
+
+def parse_float_list(text: str):
+    if text is None or str(text).strip() == "":
+        return []
+    vals = []
+    for chunk in str(text).split(","):
+        s = chunk.strip()
+        if s == "":
+            continue
+        vals.append(float(s))
+    return vals
 
 
 def build_tau_grid_with_points(base_grid: torch.Tensor, extra_points, device, dtype):
@@ -555,14 +666,289 @@ def implied_bachelier_vol(
 
 
 # ---------------------------------------------------------------------
-# Vol surface grid
+# Convenience runners
 # ---------------------------------------------------------------------
+def prepare_pricing_context(
+    use="bbg",
+    latent_dim=2,
+    epochs=3500,
+    idx_choice=-1,
+    ccy_filter="",
+    seed=1234,
+    tau_fine_step=1 / 52,
+    tau_fine_horizon=1.0,
+    device=None,
+):
+    set_seed(seed)
+
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    print(f"Seed: {seed}")
+
+    checkpoint_path = resolve_checkpoint_path(CODE_ROOT, use, latent_dim, epochs)
+    model = load_model(checkpoint_path, device=device, latent_dim=latent_dim)
+
+    data = load_data(use=use, ccy_filter=ccy_filter, idx_choice=idx_choice, device=device)
+    S0 = data["S0"]
+    meta_row = data["meta_row"]
+    print(f"Initial curve metadata row:\n{meta_row}")
+
+    with torch.no_grad():
+        z0 = model.encoder(S0)
+    print(f"Initial latent state z0: {z0.detach().cpu().numpy().flatten()}")
+
+    decoder_tau_grid_base = build_decoder_tau_grid(
+        model=model,
+        device=device,
+        dtype=torch.float64,
+        fine_step=tau_fine_step,
+        fine_horizon=tau_fine_horizon,
+    )
+    print(
+        "Decoder tau grid built with "
+        f"{decoder_tau_grid_base.numel()} points; first positive tau = "
+        f"{decoder_tau_grid_base[1].item():.6f}, "
+        f"tau_max = {decoder_tau_grid_base[-1].item():.6f}"
+    )
+
+    return {
+        "model": model,
+        "device": device,
+        "data": data,
+        "S0": S0,
+        "z0": z0,
+        "meta_row": meta_row,
+        "decoder_tau_grid_base": decoder_tau_grid_base,
+        "checkpoint_path": checkpoint_path,
+        "use": use,
+        "latent_dim": latent_dim,
+        "epochs": epochs,
+        "seed": seed,
+        "tau_fine_step": tau_fine_step,
+        "tau_fine_horizon": tau_fine_horizon,
+    }
+
+
+def quote_swaption_time0(
+    ctx: dict,
+    expiry: float,
+    tenor: int,
+    strike: float = 0.03,
+    strike_atm: bool = False,
+    notional: float = 1.0,
+    payer: bool = True,
+    g0_floor: float = 1e-5,
+    accrual: float = 1.0,
+):
+    t0_quote = time0_forward_swap_and_annuity_from_z(
+        model=ctx["model"],
+        z0=ctx["z0"],
+        decoder_tau_grid_base=ctx["decoder_tau_grid_base"],
+        expiry=expiry,
+        tenor=tenor,
+        g0_floor=g0_floor,
+        accrual=accrual,
+    )
+
+    if strike_atm:
+        strike = t0_quote["forward_swap"]
+
+    intrinsic_lb = notional * t0_quote["annuity"] * (
+        max(t0_quote["forward_swap"] - strike, 0.0)
+        if payer else max(strike - t0_quote["forward_swap"], 0.0)
+    )
+
+    out = {
+        "forward_swap_t0": t0_quote["forward_swap"],
+        "annuity_t0": t0_quote["annuity"],
+        "strike": strike,
+        "intrinsic_lower_bound": intrinsic_lb,
+        "expiry": expiry,
+        "tenor": tenor,
+        "payer": payer,
+    }
+
+    print("\nTime-0 swaption quote inputs")
+    print(f"  Forward swap rate F0 : {out['forward_swap_t0']:.10f}")
+    print(f"  Annuity A0           : {out['annuity_t0']:.10f}")
+    print(f"  Strike K             : {out['strike']:.10f}")
+    print(f"  Intrinsic lower bound: {out['intrinsic_lower_bound']:.10f}")
+
+    return out
+
+
+def price_from_bachelier_quote(
+    quote: dict,
+    normal_vol: float,
+    notional: float = 1.0,
+):
+    price = bachelier_price(
+        forward=quote["forward_swap_t0"],
+        strike=quote["strike"],
+        normal_vol=normal_vol,
+        expiry=quote["expiry"],
+        annuity=quote["annuity_t0"],
+        notional=notional,
+        payer=quote["payer"],
+    )
+
+    print("\nSwaption price from Bachelier quote")
+    print(f"  Price           : {price:.10f}")
+    print(f"  Input norm vol  : {normal_vol:.10f} ({normal_vol * 10000:.2f} bp)")
+
+    return {
+        "price": price,
+        "normal_vol": normal_vol,
+    }
+
+
+def simulate_for_pricing(
+    ctx: dict,
+    n_paths: int = 2000,
+    n_steps: int = 120,
+    dt: float = 1 / 12,
+    discretization: str = "euler",
+    sim_mode: str = "full",
+    diffusion_scale: float = 1.0,
+):
+    discretization = normalize_discretization_name(discretization)
+
+    print(
+        f"Simulating {n_paths} paths with {n_steps} steps "
+        f"(dt={dt}, scheme={discretization}, sim_mode={sim_mode}, diffusion_scale={diffusion_scale})..."
+    )
+    with torch.no_grad():
+        z_paths, r_paths, mu_paths, L_paths = simulate_latent_paths(
+            model=ctx["model"],
+            z0=ctx["z0"],
+            n_paths=n_paths,
+            n_steps=n_steps,
+            dt=dt,
+            device=ctx["device"],
+            discretization=discretization,
+            sim_mode=sim_mode,
+            diffusion_scale=diffusion_scale,
+        )
+    print("Simulation completed.")
+
+    discount_paths = compute_discount_paths(r_paths, dt=dt, method="trapezoid")
+
+    return {
+        "z_paths": z_paths,
+        "r_paths": r_paths,
+        "mu_paths": mu_paths,
+        "L_paths": L_paths,
+        "discount_paths": discount_paths,
+        "dt": dt,
+        "n_paths": n_paths,
+        "n_steps": n_steps,
+        "discretization": discretization,
+        "sim_mode": sim_mode,
+        "diffusion_scale": diffusion_scale,
+    }
+
+
+def price_swaption_from_simulation(
+    ctx: dict,
+    sim: dict,
+    expiry: float,
+    tenor: int,
+    strike: float,
+    notional: float = 1.0,
+    payer: bool = True,
+    g0_floor: float = 1e-5,
+    accrual: float = 1.0,
+    output_bachelier_vol: bool = True,
+):
+    mc = price_swaption_mc(
+        model=ctx["model"],
+        z_paths=sim["z_paths"],
+        r_paths=sim["r_paths"],
+        decoder_tau_grid_base=ctx["decoder_tau_grid_base"],
+        dt=sim["dt"],
+        strike=strike,
+        expiry=expiry,
+        tenor=tenor,
+        notional=notional,
+        payer=payer,
+        g0_floor=g0_floor,
+        accrual=accrual,
+        discount_paths=sim["discount_paths"],
+    )
+
+    t0_quote = time0_forward_swap_and_annuity_from_z(
+        model=ctx["model"],
+        z0=ctx["z0"],
+        decoder_tau_grid_base=ctx["decoder_tau_grid_base"],
+        expiry=expiry,
+        tenor=tenor,
+        g0_floor=g0_floor,
+        accrual=accrual,
+    )
+
+    print("\nSwaption Monte Carlo result")
+    print(f"  Price                 : {mc['price']:.10f}")
+    print(f"  MC std. error         : {mc['stderr']:.10f}")
+    print(f"  Valid decode fraction : {mc['frac_valid_paths']:.4f}")
+    print(f"  Used expiry time      : {mc['actual_expiry']:.6f}")
+    print(f"  Mean swap rate @ exp  : {mc['mc_mean_swap_rate_at_expiry']:.10f}")
+    print(f"  Mean annuity @ exp    : {mc['mc_mean_annuity_at_expiry']:.10f}")
+    print(f"  Strike used           : {strike:.10f}")
+
+    implied_vol = np.nan
+    if output_bachelier_vol:
+        implied_vol = implied_bachelier_vol(
+            market_price=mc["price"],
+            forward=t0_quote["forward_swap"],
+            strike=strike,
+            expiry=expiry,
+            annuity=t0_quote["annuity"],
+            notional=notional,
+            payer=payer,
+        )
+        if np.isfinite(implied_vol):
+            print("\nImplied Bachelier normal vol from model price")
+            print(f"  Normal vol      : {implied_vol:.10f} ({implied_vol * 10000:.2f} bp)")
+        else:
+            print("\nCould not infer Bachelier vol from model price.")
+
+    w = mc["discount_to_expiry"] * mc["annuity"]
+    mc_A0 = w.mean().item()
+    mc_F0 = (w * mc["swap_rate"]).mean().item() / max(w.mean().item(), 1e-16)
+    prob_itm = (mc["swap_rate"] > strike).double().mean().item() if payer else (mc["swap_rate"] < strike).double().mean().item()
+
+    q_levels = torch.tensor([0.01, 0.05, 0.50, 0.95, 0.99], device=mc["swap_rate"].device, dtype=mc["swap_rate"].dtype)
+    q_vals = torch.quantile(mc["swap_rate"], q_levels).detach().cpu().numpy()
+
+    print("\nMonte Carlo consistency diagnostics")
+    print(f"  A0 from time-0 curve     : {t0_quote['annuity']:.10f}")
+    print(f"  E[D_T A_T] from MC       : {mc_A0:.10f}")
+    print(f"  F0 from time-0 curve     : {t0_quote['forward_swap']:.10f}")
+    print(f"  E[D_T A_T S_T]/E[D_T A_T]: {mc_F0:.10f}")
+    print(f"  Prob(option ITM)         : {prob_itm:.10f}")
+    print("  Swap-rate quantiles @ expiry:")
+    print(f"    1%  : {q_vals[0]:.10f}")
+    print(f"    5%  : {q_vals[1]:.10f}")
+    print(f"    50% : {q_vals[2]:.10f}")
+    print(f"    95% : {q_vals[3]:.10f}")
+    print(f"    99% : {q_vals[4]:.10f}")
+
+    return {
+        "mc": mc,
+        "time0_quote": t0_quote,
+        "implied_bachelier_vol": implied_vol,
+        "mc_A0": mc_A0,
+        "mc_F0": mc_F0,
+        "prob_itm": prob_itm,
+        "swap_rate_quantiles": q_vals,
+    }
+
+
 def run_vol_surface_grid(
-    model,
-    z0: torch.Tensor,
+    ctx: dict,
     dt: float,
     notional: float,
-    device,
     out_dir: str,
     strikes,
     expiries,
@@ -570,29 +956,26 @@ def run_vol_surface_grid(
     n_paths: int,
     n_steps: int,
     discretization: str,
-    decoder_tau_grid_base: torch.Tensor,
     g0_floor: float,
     payer: bool = True,
     accrual: float = 1.0,
+    sim_mode: str = "full",
+    diffusion_scale: float = 1.0,
     plot_dpi: int = 200,
     show_plots: bool = False,
 ):
     os.makedirs(out_dir, exist_ok=True)
 
-    print("Simulating paths once for the full swaption surface...")
-    with torch.no_grad():
-        z_paths, r_paths, _, _ = simulate_latent_paths(
-            model=model,
-            z0=z0,
-            n_paths=n_paths,
-            n_steps=n_steps,
-            dt=dt,
-            device=device,
-            discretization=discretization,
-        )
-    print("Simulation completed.")
+    sim = simulate_for_pricing(
+        ctx=ctx,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        dt=dt,
+        discretization=discretization,
+        sim_mode=sim_mode,
+        diffusion_scale=diffusion_scale,
+    )
 
-    discount_paths = compute_discount_paths(r_paths, dt=dt, method="trapezoid")
     results = []
 
     for expiry in expiries:
@@ -604,16 +987,16 @@ def run_vol_surface_grid(
 
             try:
                 underlying = swaption_underlying_at_expiry(
-                    model=model,
-                    z_paths=z_paths,
-                    r_paths=r_paths,
-                    decoder_tau_grid_base=decoder_tau_grid_base,
+                    model=ctx["model"],
+                    z_paths=sim["z_paths"],
+                    r_paths=sim["r_paths"],
+                    decoder_tau_grid_base=ctx["decoder_tau_grid_base"],
                     dt=dt,
                     expiry=float(expiry),
                     tenor=int(tenor),
                     g0_floor=g0_floor,
                     accrual=accrual,
-                    discount_paths=discount_paths,
+                    discount_paths=sim["discount_paths"],
                 )
                 row["n_valid_paths"] = underlying["n_valid_paths"]
                 row["frac_valid_paths"] = underlying["frac_valid_paths"]
@@ -628,9 +1011,9 @@ def run_vol_surface_grid(
 
             try:
                 t0_params = time0_forward_swap_and_annuity_from_z(
-                    model=model,
-                    z0=z0,
-                    decoder_tau_grid_base=decoder_tau_grid_base,
+                    model=ctx["model"],
+                    z0=ctx["z0"],
+                    decoder_tau_grid_base=ctx["decoder_tau_grid_base"],
                     expiry=float(expiry),
                     tenor=int(tenor),
                     g0_floor=g0_floor,
@@ -674,7 +1057,7 @@ def run_vol_surface_grid(
 
             results.append(row)
 
-    df = pd.DataFrame(results)
+    df = __import__("pandas").DataFrame(results)
     csv_path = os.path.join(out_dir, "swaption_bachelier_surface.csv")
     df.to_csv(csv_path, index=False)
     print(f"Saved swaption surface CSV to {csv_path}")
@@ -708,292 +1091,62 @@ def run_vol_surface_grid(
 
 
 # ---------------------------------------------------------------------
-# Main
+# Example lines to run one by one
 # ---------------------------------------------------------------------
-def main():
-    parser = argparse.ArgumentParser(description="Monte Carlo pricing of European swaptions + Bachelier vols")
-
-    parser.add_argument("--latent_dim", type=int, default=2)
-    parser.add_argument("--epochs", type=int, default=2500)
-    parser.add_argument("--use", type=str, default="bbg")
-    parser.add_argument("--idx_choice", type=int, default=-1)
-
-    parser.add_argument("--n_paths", type=int, default=2000)
-    parser.add_argument("--n_steps", type=int, default=120)
-    parser.add_argument("--dt", type=float, default=1 / 12)
-    parser.add_argument("--seed", type=int, default=1234)
-
-    parser.add_argument(
-        "--discretization",
-        type=str,
-        default="euler",
-        choices=["euler", "milstein", "milstein_pc", "second_order_milstein"],
-    )
-
-    parser.add_argument("--strike", type=float, default=0.03)
-    parser.add_argument("--strike_atm", action="store_true")
-    parser.add_argument("--expiry", type=float, default=1.0)
-    parser.add_argument("--tenor", type=int, default=5)
-    parser.add_argument("--notional", type=float, default=1.0)
-    parser.add_argument("--is_receiver", action="store_true")
-
-    parser.add_argument(
-        "--pricing_mode",
-        type=str,
-        default="monte_carlo",
-        choices=["monte_carlo", "bachelier_quote"],
-    )
-    parser.add_argument(
-        "--bachelier_vol",
-        type=float,
-        default=None,
-        help="Input normal vol in decimal form, e.g. 0.005 = 50 bp",
-    )
-    parser.add_argument(
-        "--output_bachelier_vol",
-        action="store_true",
-        help="After Monte Carlo pricing, invert to implied normal vol",
-    )
-
-    parser.add_argument("--g0_floor", type=float, default=1e-5)
-    parser.add_argument("--tau_fine_step", type=float, default=1 / 52)
-    parser.add_argument("--tau_fine_horizon", type=float, default=1.0)
-
-    parser.add_argument("--run_surface", action="store_true")
-    parser.add_argument("--strikes", type=str, default="0.01,0.02,0.03,0.04,0.05")
-    parser.add_argument("--expiries", type=str, default="0.5,1.0,2.0,5.0")
-    parser.add_argument("--tenors", type=str, default="1,2,5,10")
-    parser.add_argument("--grid_n_paths", type=int, default=1000)
-    parser.add_argument("--grid_n_steps", type=int, default=120)
-
-    parser.add_argument("--plot_dpi", type=int, default=200)
-    parser.add_argument("--show_plots", action="store_true")
-
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default=os.path.join(THESIS_ROOT, "Figures", "Pricing"),
-    )
-
-    args, unknown = parser.parse_known_args()
-    if unknown:
-        print(f"Ignoring unknown args: {unknown}")
-
-    if args.show_plots:
-        plt.switch_backend("TkAgg")
-    else:
-        plt.switch_backend("Agg")
-
-    set_seed(args.seed)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-    print(f"Seed: {args.seed}")
-
-    discretization = normalize_discretization_name(args.discretization)
-    payer = not args.is_receiver
-
-    checkpoint_path = resolve_checkpoint_path(CODE_ROOT, args.use, args.latent_dim, args.epochs)
-    model = load_model(checkpoint_path, device=device, latent_dim=args.latent_dim)
-
-    data = load_data_and_initial_curve(args.use, args.idx_choice, device)
-    S0 = data["S0"]
-    meta_row = data["meta_row"]
-    print(f"Initial curve metadata row:\n{meta_row}")
-
-    with torch.no_grad():
-        z0 = model.encoder(S0)
-    print(f"Initial latent state z0: {z0.detach().cpu().numpy().flatten()}")
-
-    decoder_tau_grid_base = build_decoder_tau_grid(
-        model=model,
-        device=device,
-        dtype=torch.float64,
-        fine_step=args.tau_fine_step,
-        fine_horizon=args.tau_fine_horizon,
-    )
-    print(
-        "Decoder tau grid built with "
-        f"{decoder_tau_grid_base.numel()} points; first positive tau = "
-        f"{decoder_tau_grid_base[1].item():.6f}, "
-        f"tau_max = {decoder_tau_grid_base[-1].item():.6f}"
-    )
-
-    # -------------------------------------------------------------
-    # Time-0 quote inputs
-    # -------------------------------------------------------------
-    t0_quote = time0_forward_swap_and_annuity_from_z(
-        model=model,
-        z0=z0,
-        decoder_tau_grid_base=decoder_tau_grid_base,
-        expiry=args.expiry,
-        tenor=args.tenor,
-        g0_floor=args.g0_floor,
-        accrual=1.0,
-    )
-
-    strike = args.strike
-    if args.strike_atm:
-        strike = t0_quote["forward_swap"]
-
-    intrinsic_lb = args.notional * t0_quote["annuity"] * max(t0_quote["forward_swap"] - strike, 0.0) \
-        if payer else args.notional * t0_quote["annuity"] * max(strike - t0_quote["forward_swap"], 0.0)
-
-    print("\nTime-0 swaption quote inputs")
-    print(f"  Forward swap rate F0 : {t0_quote['forward_swap']:.10f}")
-    print(f"  Annuity A0           : {t0_quote['annuity']:.10f}")
-    if args.strike_atm:
-        print(f"  Strike K             : {strike:.10f} (ATM = F0)")
-    else:
-        print(f"  Strike K             : {strike:.10f}")
-    print(f"  Intrinsic lower bound: {intrinsic_lb:.10f}")
-
-    # -------------------------------------------------------------
-    # Quote-style pricing from Bachelier vol
-    # -------------------------------------------------------------
-    if args.pricing_mode == "bachelier_quote":
-        if args.bachelier_vol is None:
-            raise ValueError("--bachelier_vol is required when pricing_mode=bachelier_quote")
-
-        price = bachelier_price(
-            forward=t0_quote["forward_swap"],
-            strike=strike,
-            normal_vol=args.bachelier_vol,
-            expiry=args.expiry,
-            annuity=t0_quote["annuity"],
-            notional=args.notional,
-            payer=payer,
-        )
-
-        swaption_type = "Receiver" if args.is_receiver else "Payer"
-        print(f"\n{swaption_type} swaption price from Bachelier quote")
-        print(f"  Price           : {price:.10f}")
-        print(f"  Forward swap t0 : {t0_quote['forward_swap']:.10f}")
-        print(f"  Annuity t0      : {t0_quote['annuity']:.10f}")
-        print(f"  Strike          : {strike:.10f}")
-        print(f"  Input norm vol  : {args.bachelier_vol:.10f} ({args.bachelier_vol * 10000:.2f} bp)")
-
-    # -------------------------------------------------------------
-    # Monte Carlo pricing from your simulated model
-    # -------------------------------------------------------------
-    else:
-        print(
-            f"Simulating {args.n_paths} paths with {args.n_steps} steps "
-            f"(dt={args.dt}, scheme={discretization})..."
-        )
-        with torch.no_grad():
-            z_paths, r_paths, _, _ = simulate_latent_paths(
-                model=model,
-                z0=z0,
-                n_paths=args.n_paths,
-                n_steps=args.n_steps,
-                dt=args.dt,
-                device=device,
-                discretization=discretization,
-            )
-        print("Simulation completed.")
-
-        discount_paths = compute_discount_paths(r_paths, dt=args.dt, method="trapezoid")
-
-        mc = price_swaption_mc(
-            model=model,
-            z_paths=z_paths,
-            r_paths=r_paths,
-            decoder_tau_grid_base=decoder_tau_grid_base,
-            dt=args.dt,
-            strike=strike,
-            expiry=args.expiry,
-            tenor=args.tenor,
-            notional=args.notional,
-            payer=payer,
-            g0_floor=args.g0_floor,
-            accrual=1.0,
-            discount_paths=discount_paths,
-        )
-
-        swaption_type = "Receiver" if args.is_receiver else "Payer"
-        print(f"\n{swaption_type} swaption Monte Carlo result")
-        print(f"  Price                 : {mc['price']:.10f}")
-        print(f"  MC std. error         : {mc['stderr']:.10f}")
-        print(f"  Valid decode fraction : {mc['frac_valid_paths']:.4f}")
-        print(f"  Used expiry time      : {mc['actual_expiry']:.6f}")
-        print(f"  Mean swap rate @ exp  : {mc['mc_mean_swap_rate_at_expiry']:.10f}")
-        print(f"  Mean annuity @ exp    : {mc['mc_mean_annuity_at_expiry']:.10f}")
-        print(f"  Strike used           : {strike:.10f}")
-
-        if args.output_bachelier_vol:
-            norm_vol = implied_bachelier_vol(
-                market_price=mc["price"],
-                forward=t0_quote["forward_swap"],
-                strike=strike,
-                expiry=args.expiry,
-                annuity=t0_quote["annuity"],
-                notional=args.notional,
-                payer=payer,
-            )
-
-            if np.isfinite(norm_vol):
-                print("\nImplied Bachelier normal vol from model price")
-                print(f"  Forward swap t0 : {t0_quote['forward_swap']:.10f}")
-                print(f"  Annuity t0      : {t0_quote['annuity']:.10f}")
-                print(f"  Strike          : {strike:.10f}")
-                print(f"  Normal vol      : {norm_vol:.10f} ({norm_vol * 10000:.2f} bp)")
-            else:
-                print("\nCould not infer Bachelier vol from model price.")
-
-    w = mc["discount_to_expiry"] * mc["annuity"]
-    mc_A0 = w.mean().item()
-    mc_F0 = (w * mc["swap_rate"]).mean().item() / max(w.mean().item(), 1e-16)
-    prob_itm = (mc["swap_rate"] > strike).double().mean().item()
-
-    q_levels = torch.tensor([0.01, 0.05, 0.50, 0.95, 0.99], device=mc["swap_rate"].device, dtype=mc["swap_rate"].dtype)
-    q_vals = torch.quantile(mc["swap_rate"], q_levels).detach().cpu().numpy()
-
-    print("\nMonte Carlo consistency diagnostics")
-    print(f"  A0 from time-0 curve     : {t0_quote['annuity']:.10f}")
-    print(f"  E[D_T A_T] from MC       : {mc_A0:.10f}")
-    print(f"  F0 from time-0 curve     : {t0_quote['forward_swap']:.10f}")
-    print(f"  E[D_T A_T S_T]/E[D_T A_T]: {mc_F0:.10f}")
-    print(f"  Prob(S_T > K)            : {prob_itm:.10f}")
-    print("  Swap-rate quantiles @ expiry:")
-    print(f"    1%  : {q_vals[0]:.10f}")
-    print(f"    5%  : {q_vals[1]:.10f}")
-    print(f"    50% : {q_vals[2]:.10f}")
-    print(f"    95% : {q_vals[3]:.10f}")
-    print(f"    99% : {q_vals[4]:.10f}")
-
-    # -------------------------------------------------------------
-    # Surface
-    # -------------------------------------------------------------
-    if args.run_surface:
-        strikes = parse_float_list(args.strikes)
-        expiries = parse_float_list(args.expiries)
-        tenors = [int(round(x)) for x in parse_float_list(args.tenors)]
-
-        print("\nRunning swaption surface...")
-        run_vol_surface_grid(
-            model=model,
-            z0=z0,
-            dt=args.dt,
-            notional=args.notional,
-            device=device,
-            out_dir=args.output_dir,
-            strikes=strikes,
-            expiries=expiries,
-            tenors=tenors,
-            n_paths=args.grid_n_paths,
-            n_steps=args.grid_n_steps,
-            discretization=discretization,
-            decoder_tau_grid_base=decoder_tau_grid_base,
-            g0_floor=args.g0_floor,
-            payer=payer,
-            accrual=1.0,
-            plot_dpi=args.plot_dpi,
-            show_plots=args.show_plots,
-        )
-
-    print("\nDone.")
-
-
-if __name__ == "__main__":
-    main()
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# ctx = prepare_pricing_context(
+#     use="bbg",
+#     latent_dim=2,
+#     epochs=3500,
+#     idx_choice=0,
+#     ccy_filter="EUR",
+#     seed=1234,
+#     device=device,
+# )
+#
+# quote = quote_swaption_time0(
+#     ctx=ctx,
+#     expiry=1.0,
+#     tenor=5,
+#     strike_atm=True,
+#     payer=True,
+# )
+#
+# sim = simulate_for_pricing(
+#     ctx=ctx,
+#     n_paths=2000,
+#     n_steps=120,
+#     dt=1/12,
+#     discretization="euler",
+#     sim_mode="full",
+#     diffusion_scale=1.0,
+# )
+#
+# pricing = price_swaption_from_simulation(
+#     ctx=ctx,
+#     sim=sim,
+#     expiry=1.0,
+#     tenor=5,
+#     strike=quote["strike"],
+#     payer=True,
+#     output_bachelier_vol=True,
+# )
+#
+# surface_df = run_vol_surface_grid(
+#     ctx=ctx,
+#     dt=1/12,
+#     notional=1.0,
+#     out_dir=os.path.join(THESIS_ROOT, "Figures", "Pricing"),
+#     strikes=parse_float_list("0.01,0.02,0.03,0.04,0.05"),
+#     expiries=parse_float_list("0.5,1.0,2.0,5.0"),
+#     tenors=[int(round(x)) for x in parse_float_list("1,2,5,10")],
+#     n_paths=1000,
+#     n_steps=120,
+#     discretization="euler",
+#     g0_floor=1e-5,
+#     payer=True,
+#     sim_mode="full",
+#     diffusion_scale=1.0,
+#     plot_dpi=200,
+#     show_plots=False,
+# )

@@ -39,6 +39,127 @@ def _load_base_module():
 base = _load_base_module()
 
 
+def maybe_upgrade_old_stable_k_state_dict(state_dict, model):
+    """
+    Convert old stable-K checkpoint:
+        mu(z) = M z + N
+    into new OU-style stable-K:
+        mu(z) = M (z - theta)
+
+    using:
+        -M theta = N  =>  theta = solve(M, -N)
+
+    and set kappa = 1, i.e. softplus(raw_kappa) = 1.
+    """
+    if getattr(base.config, "VARIANT", None) != "stable":
+        return state_dict
+
+    has_old = ("K.N" in state_dict) and ("K.B" in state_dict) and ("K.L" in state_dict)
+    has_new_model = hasattr(model.K, "theta") and hasattr(model.K, "raw_kappa")
+
+    if not (has_old and has_new_model):
+        return state_dict
+
+    print("[compat] Converting old stable-K checkpoint to new OU-style K...")
+
+    new_state = dict(state_dict)
+
+    B = new_state["K.B"]
+    L = new_state["K.L"]
+    N = new_state["K.N"]
+
+    d = B.shape[0]
+    device = B.device
+    dtype = B.dtype
+
+    eps = float(getattr(model.K, "epsilon", 1e-3))
+    I = torch.eye(d, device=device, dtype=dtype)
+
+    # Old M = S - A
+    S = B - B.t()
+    A = L @ L.t() + eps * I
+    M = S - A
+
+    # Solve M theta = -N
+    theta = torch.linalg.solve(M, (-N).unsqueeze(-1)).squeeze(-1)
+
+    # Set kappa = 1  => raw_kappa = softplus^{-1}(1) = log(expm1(1))
+    one = torch.tensor(1.0, device=device, dtype=dtype)
+    raw_kappa = torch.log(torch.expm1(one))
+
+    new_state["K.theta"] = theta
+    new_state["K.raw_kappa"] = raw_kappa
+
+    del new_state["K.N"]
+
+    print(f"[compat] Created K.theta = {theta.detach().cpu().numpy()}")
+    print("[compat] Set K.raw_kappa so that softplus(raw_kappa) = 1")
+
+    return new_state
+
+
+def safe_load_state_dict_compat(model, state_dict):
+    incompat = model.load_state_dict(state_dict, strict=False)
+
+    missing = list(incompat.missing_keys)
+    unexpected = list(incompat.unexpected_keys)
+
+    allowed_missing = set()
+    allowed_unexpected = set()
+
+    real_missing = [k for k in missing if k not in allowed_missing]
+    real_unexpected = [k for k in unexpected if k not in allowed_unexpected]
+
+    if missing:
+        print(f"[load_state_dict] Missing keys: {missing}")
+    if unexpected:
+        print(f"[load_state_dict] Unexpected keys: {unexpected}")
+
+    if real_missing or real_unexpected:
+        raise RuntimeError(
+            "Non-benign checkpoint/model mismatch detected.\n"
+            f"Real missing keys: {real_missing}\n"
+            f"Real unexpected keys: {real_unexpected}"
+        )
+
+
+def load_and_setup_model_compat(device, use, latent_dim, epochs):
+    if latent_dim != 2:
+        raise ValueError("This script currently supports only the 2-factor model (latent_dim=2).")
+
+    checkpoint_path = base.resolve_checkpoint_path(str(THIS_DIR), use, latent_dim, epochs)
+    raw = torch.load(checkpoint_path, map_location=device)
+
+    from Code.model.full_model import FullModel
+
+    if "model_state_dict" in raw:
+        state_dict = raw["model_state_dict"]
+        saved_variant = raw.get("variant", "unknown")
+        if saved_variant != "unknown" and saved_variant != base.config.VARIANT:
+            raise ValueError(
+                f"Checkpoint variant '{saved_variant}' does not match active "
+                f"config.VARIANT '{base.config.VARIANT}'. Update Code/config.py."
+            )
+    else:
+        state_dict = raw
+
+    model = FullModel(latent_dim=latent_dim)
+
+    # Backward compatibility: old stable-K checkpoint -> new OU-style K
+    state_dict = maybe_upgrade_old_stable_k_state_dict(state_dict, model)
+
+    safe_load_state_dict_compat(model, state_dict)
+
+    model.to(device).double()
+    model.eval()
+
+    print(f"Loaded model from {checkpoint_path}")
+    print(f"  Active config variant: {base.config.VARIANT}")
+    print(f"  Model dtype: {next(model.parameters()).dtype}")
+
+    return model
+
+
 def parse_int_list(text: str):
     if text is None or str(text).strip() == "":
         return []
@@ -229,8 +350,43 @@ def _existing_option_strings(parser):
 
 
 def _apply_drift_step(model, z, shock, dt):
-    if hasattr(base, "_stable_drift_step"):
-        return base._stable_drift_step(model, z, shock, dt)
+    """
+    Supports both old and new stable K variants.
+
+    Old:
+        mu(z) = M z + N
+
+    New:
+        mu(z) = M (z - theta)
+    """
+    d = z.shape[1]
+    I = torch.eye(d, device=z.device, dtype=z.dtype)
+
+    # New OU-style stable K
+    if hasattr(model.K, "drift_matrix") and hasattr(model.K, "theta"):
+        M = model.K.drift_matrix().to(device=z.device, dtype=z.dtype)
+        theta = model.K.theta.to(device=z.device, dtype=z.dtype)
+
+        A = I - dt * M
+        rhs = z + shock - dt * (theta.unsqueeze(0) @ M.t())
+
+        A_batch = A.unsqueeze(0).expand(rhs.shape[0], -1, -1)
+        return torch.linalg.solve(A_batch, rhs.unsqueeze(-1)).squeeze(-1)
+
+    # Old stable K
+    if hasattr(model.K, "stable_matrix"):
+        M = model.K.stable_matrix().to(device=z.device, dtype=z.dtype)
+        N = getattr(model.K, "N", None)
+
+        A = I - dt * M
+        rhs = z + shock
+        if N is not None:
+            rhs = rhs + dt * N.to(device=z.device, dtype=z.dtype).unsqueeze(0)
+
+        A_batch = A.unsqueeze(0).expand(rhs.shape[0], -1, -1)
+        return torch.linalg.solve(A_batch, rhs.unsqueeze(-1)).squeeze(-1)
+
+    # Fallback: explicit Euler
     return z + base.get_mu(model, z) * dt + shock
 
 
@@ -610,7 +766,7 @@ def main():
         ccy_filter=getattr(args, "ccy_filter", ""),
     )
 
-    model = base.load_and_setup_model(device, use, latent_dim, epochs)
+    model = load_and_setup_model_compat(device, use, latent_dim, epochs)
 
     run_multi_start_diagnostic(
         model=model,
