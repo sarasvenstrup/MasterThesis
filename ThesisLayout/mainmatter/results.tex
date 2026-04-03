@@ -25,31 +25,9 @@ In-sample evaluation serves as the first checkpoint toward establishing whether 
 %5. Disaggregated fit - RMSE by tenor and RMSE over time, where does the model struggle?
 
 
-We will be using the reconstructrion error, to assess the models reconstruction accuracy in various ways. The model is trained on the in-sample period 2010--\textcolor{red}{different for different currencies? which we should write in the data section.} over 5\,000
-epochs. We begin by examining in-sample reconstruction accuracy as a function of the number of latent factors $\ell \in \{1, 2, 3, 4\}$ and assess convergence through training loss curves. 
+%The hyperparameters should be shown in a table in the numerical implementation part.
 
-
-
-%Firsly in order to assess the loss of the different models and where they converge if they do. Thereafter we will be assessing the fit in with other metrics. we will be looking at the resiudal distriution, together with the visual fit of the model of different currencies. Further it is also interesting to evaluate the model not only on a currency basis but also across tenors. We also look at where the model struggles the most over time. And lastly finish with checking if the model exhibits no-arbitrage objects. 
-
-
-
-
-
-% ── Q1e ──────────────────────────────────────────────────────
-\begin{figure}[ht]
-    \centering
-    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_training_loss_curves.png}
-    \caption{Average training RMSE (bps) over 5\,000 epochs for latent dimensions
-    $\ell \in \{2, 3, 4\}$, averaged across all currencies and
-    in-sample observations. The dashed vertical line marks epoch 2\,500,
-    confirming that all models have converged well before this point.}
-    \label{fig:training_loss}
-\end{figure}
-
-
-
-Figure~\ref{fig:training_loss} shows the average training RMSE
+We begin by examining how reconstruction error evolves over 5,000 training epochs. Figure~\ref{fig:training_loss} shows the average training RMSE
 across all currencies for $\ell \in \{1,2,3,4\}$. All four models
 converge well before epoch 2\,500, after which the loss curves flatten
 with no meaningful further improvement. $\ell=1$ converges
@@ -63,6 +41,29 @@ $\ell=3$ on average, with more modest gains from $\ell=3$ to $\ell=4$, suggestin
 diminishing returns to increasing model complexity. Across all models the currency that is hardest to reconstruct for , 3 and 4 is EUR and JPY closely following.
 
 So we see clearly that if we train over more epochs, we get a better RMSE, but there is a computation time tradeoff. ADD COMPUTATION TIME FOR ALL MODELS OR BRAINSTORM ON HOW TO INCPORATE TIME INTO EITHER THE FIGURES OR THE LOSS GRAPH ABOVE. 
+
+
+
+
+
+
+
+% ── Q1e ──────────────────────────────────────────────────────
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_training_loss_curves.png}
+    \caption{Average training RMSE (bps) over 5\,000 epochs for latent dimensions
+    $\ell \in \{1, 2, 3, 4\}$, averaged across all currencies and in-sample observations.
+    The dashed vertical line marks epoch 2\,500. The right panel zooms in on epochs
+    1\,000--5\,000 with a fixed $y$-axis of 0--50 bps to highlight convergence behaviour
+    across dimensions.}
+
+    \label{fig:training_loss}
+\end{figure}
+
+
+
+
 
 
 % ── Q1a ──────────────────────────────────────────────────────
