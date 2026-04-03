@@ -1570,7 +1570,7 @@ _m, _src = load_ep5000_model(_dim)
 if _m is not None:
     SR_all   = extract_sharpe(_m, X_train)          # (N, 30)
     x_finite = torch.isfinite(X_train).all(1)
-    SR_all   = SR_all[x_finite].numpy()             # (N_valid, 30)
+    SR_all   = SR_all[x_finite].numpy()
     _meta_q7 = meta_train[x_finite.numpy()].reset_index(drop=True)
 
     fig, ax = plt.subplots(figsize=(9, 4))
@@ -1582,6 +1582,7 @@ if _m is not None:
         ax.plot(TAU_GRID, _sr_ccy,
                 color=currency_color_map[ccy], linewidth=1.4, label=ccy)
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
+    ax.set_xlim(0, 30)
     ax.set_xlabel("Maturity", fontsize=10)
     ax.set_ylabel("Approx. Sharpe ratio", fontsize=10)
     ax.legend().set_visible(False)
