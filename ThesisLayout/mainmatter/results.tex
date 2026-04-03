@@ -25,14 +25,16 @@ In-sample evaluation serves as the first checkpoint toward establishing whether 
 %5. Disaggregated fit - RMSE by tenor and RMSE over time, where does the model struggle?
 
 
+We will be using the reconstructrion error, to assess the models reconstruction accuracy in various ways. The model is trained on the in-sample period 2010--\textcolor{red}{different for different currencies? which we should write in the data section.} over 5\,000
+epochs. We begin by examining in-sample reconstruction accuracy as a function of the number of latent factors $\ell \in \{1, 2, 3, 4\}$ and assess convergence through training loss curves. 
 
 
-We will be using the reconsrtuction error, to assess the model in various ways. Firsly in order to assess the loss of the different models and where they converge if they do. Thereafter we will be assessing the fit in with other metrics. we will be looking at the resiudal distriution, together with the visual fit of the model of different currencies. Further it is also interesting to evaluate the model not only on a currency basis but also across tenors. We also look at where the model struggles the most over time. And lastly finish with checking if the model exhibits no-arbitrage objects. 
 
-We begin by examining in-sample reconstruction accuracy as a function of the number of latent factors $\ell \in \{1, 2, 3, 4\}$, using models trained for 5\,000 epochs, and assess convergence through training loss curves. 
+%Firsly in order to assess the loss of the different models and where they converge if they do. Thereafter we will be assessing the fit in with other metrics. we will be looking at the resiudal distriution, together with the visual fit of the model of different currencies. Further it is also interesting to evaluate the model not only on a currency basis but also across tenors. We also look at where the model struggles the most over time. And lastly finish with checking if the model exhibits no-arbitrage objects. 
 
-The model is trained on the in-sample period 2010--\textcolor{red}{different for different currencies? which we should write in the data section.} over 5\,000
-epochs. 
+
+
+
 
 % ── Q1e ──────────────────────────────────────────────────────
 \begin{figure}[ht]
@@ -53,14 +55,14 @@ converge well before epoch 2\,500, after which the loss curves flatten
 with no meaningful further improvement. $\ell=1$ converges
 to a substantially higher error of approximately 30 bps, indicating as one would expect that a single latent factor is insufficient to capture the variation in
 the swap rate curve, and the remaining analysis therefore focuses on
-$\ell \in \{2, 3, 4\}$. Which is further supported by Table~\ref{tab:q1a_is_rmse} which breaks the RMSE down by currency. Here the model with 1 latent factor has in general very high RMSEs ranging beteen 23.44 and 50 where the other models have a far less range on 9.79 to 16.61 for mode 2 and 8.33 to 15.30 for l=3.
-
+$\ell \in \{2, 3, 4\}$. Which is further supported by Table~\ref{tab:q1a_is_rmse} which breaks the 5000-epoch RMSE result down by currency. Here the model with 1 latent factor has in general very high RMSEs ranging beteen 23.44 and 50 where the other models have a far less range on 9.79 to 16.61 for mode 2 and 8.33 to 15.30 for l=3.
 
 Across all
 nine currencies, the error falls substantially from $\ell=2$ to
 $\ell=3$ on average, with more modest gains from $\ell=3$ to $\ell=4$, suggesting
 diminishing returns to increasing model complexity. Across all models the currency that is hardest to reconstruct for , 3 and 4 is EUR and JPY closely following.
 
+So we see clearly that if we train over more epochs, we get a better RMSE, but there is a computation time tradeoff. ADD COMPUTATION TIME FOR ALL MODELS OR BRAINSTORM ON HOW TO INCPORATE TIME INTO EITHER THE FIGURES OR THE LOSS GRAPH ABOVE. 
 
 
 % ── Q1a ──────────────────────────────────────────────────────
@@ -70,7 +72,7 @@ diminishing returns to increasing model complexity. Across all models the curren
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q1a_IS_rmse_all_dims.csv}\datqonea
 \resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
-  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
+  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
   columns/index/.style={column name={Model}, string type, column type=c},
   columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
@@ -82,6 +84,7 @@ diminishing returns to increasing model complexity. Across all models the curren
   columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+  columns/Time (min)/.style={column name={\textbf{Time (min)}}, column type=r, fixed, precision=1, fixed zerofill},
   every head row/.style={before row=\toprule, after row=\midrule},
   every last row/.style={after row=\bottomrule},
 ]{\datqonea}}
@@ -91,10 +94,13 @@ diminishing returns to increasing model complexity. Across all models the curren
 \end{table}
 
 
-REMEMBER THAT IF WR TRAIN OVER A LONGER PERIOD - WE GET A BETTER RMSE!
+\newpage
 
 
 and then how the in sample residuals actually are distributed. 
+Figure~\ref{fig:q1d_residual_histograms} shows the distribution of
+in-sample residuals pooled across all currencies and dates for
+$\ell \in \{2, 3, 4\}$. \textcolor{red}{[Comment when results are updated]} We what to see if the errors are well-behaved.
 
 % ── Q1c ──────────────────────────────────────────────────────
 \begin{figure}[H]
@@ -111,9 +117,7 @@ and then how the in sample residuals actually are distributed.
 \end{figure}
 
 
-Figure~\ref{fig:q1d_residual_histograms} shows the distribution of
-in-sample residuals pooled across all currencies and dates for
-$\ell \in \{2, 3, 4\}$. \textcolor{red}{[Comment when results are updated]}
+
 
 
 
