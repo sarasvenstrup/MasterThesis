@@ -67,7 +67,7 @@ def build_parser():
     parser = argparse.ArgumentParser(description="Simulate latent Q-paths and decode arbitrage-free curves")
 
     parser.add_argument("--latent_dim", type=int, default=2, help="Latent dimension (must be 2)")
-    parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
+    parser.add_argument("--epochs", type=int, default=2500, help="Training epochs")
     parser.add_argument("--use", type=str, default="bbg", help="Data source")
     parser.add_argument("--n_paths", type=int, default=100, help="Number of simulation paths")
     parser.add_argument(
@@ -405,6 +405,112 @@ def compute_latent_statistics(model, X_tensor, device, latent_dim):
     return z_train_mean, z_train_cov, z_train_std
 
 
+def diagnose_G0_on_training_cloud(model, X_tensor, device, batch_size=256):
+    """
+    Check how close G(z,0) gets to zero on the encoded training latent cloud.
+    This is the first diagnostic to run before any latent simulation.
+    """
+    print("\n" + "=" * 60)
+    print("DIAGNOSTIC: Checking G(z,0) on training latent cloud")
+    print("=" * 60)
+
+    g0_list = []
+
+    with torch.no_grad():
+        for i in range(0, X_tensor.shape[0], batch_size):
+            batch = X_tensor[i : min(i + batch_size, X_tensor.shape[0])].to(device)
+            z_batch = model.encoder(batch)
+
+            tau0 = torch.zeros(1, device=device, dtype=z_batch.dtype)
+            G0_batch = model.G(z_batch, tau0)
+
+            if G0_batch.ndim == 2:
+                G0_batch = G0_batch[:, 0]
+            elif G0_batch.ndim == 1:
+                pass
+            else:
+                raise RuntimeError(f"Unexpected shape for G(z,0): {tuple(G0_batch.shape)}")
+
+            g0_list.append(G0_batch)
+
+    G0 = torch.cat(g0_list, dim=0)
+    absG0 = G0.abs()
+
+    print(f"G(z,0) raw min        : {G0.min().item():.6e}")
+    print(f"G(z,0) raw max        : {G0.max().item():.6e}")
+    print(f"|G(z,0)| min          : {absG0.min().item():.6e}")
+    print(f"|G(z,0)| mean         : {absG0.mean().item():.6e}")
+    print(f"|G(z,0)| median       : {absG0.median().item():.6e}")
+    print(f"|G(z,0)| 1% quantile  : {torch.quantile(absG0, 0.01).item():.6e}")
+    print(f"|G(z,0)| 5% quantile  : {torch.quantile(absG0, 0.05).item():.6e}")
+    print(f"count(|G0| < 1e-2)    : {(absG0 < 1e-2).sum().item()}")
+    print(f"count(|G0| < 1e-3)    : {(absG0 < 1e-3).sum().item()}")
+    print(f"count(|G0| < 1e-4)    : {(absG0 < 1e-4).sum().item()}")
+    print("=" * 60 + "\n")
+
+    return G0
+
+
+def diagnose_G0_on_simulated_paths(model, z_paths):
+    """
+    Evaluate G(z_t,0) directly on simulated latent paths, without decoding.
+    Helps isolate whether decoder failure is caused by off-manifold latent states.
+    """
+    print("\n" + "=" * 60)
+    print("DIAGNOSTIC: Checking G(z_t,0) on simulated latent paths")
+    print("=" * 60)
+
+    n_paths, n_times, d = z_paths.shape
+    device = z_paths.device
+    dtype = z_paths.dtype
+
+    rows = []
+
+    with torch.no_grad():
+        tau0 = torch.zeros(1, device=device, dtype=dtype)
+
+        for t in range(n_times):
+            z_t = z_paths[:, t, :]
+            G0_t = model.G(z_t, tau0)
+
+            if G0_t.ndim == 2:
+                G0_t = G0_t[:, 0]
+            elif G0_t.ndim == 1:
+                pass
+            else:
+                raise RuntimeError(f"Unexpected shape for G(z_t,0): {tuple(G0_t.shape)}")
+
+            absG0_t = G0_t.abs()
+
+            row = {
+                "time_index": t,
+                "G0_min": G0_t.min().item(),
+                "G0_max": G0_t.max().item(),
+                "absG0_min": absG0_t.min().item(),
+                "absG0_mean": absG0_t.mean().item(),
+                "absG0_median": absG0_t.median().item(),
+                "absG0_1pct": torch.quantile(absG0_t, 0.01).item(),
+                "absG0_5pct": torch.quantile(absG0_t, 0.05).item(),
+                "count_absG0_lt_1e_2": (absG0_t < 1e-2).sum().item(),
+                "count_absG0_lt_1e_3": (absG0_t < 1e-3).sum().item(),
+                "count_absG0_lt_1e_4": (absG0_t < 1e-4).sum().item(),
+                "count_absG0_lt_1e_5": (absG0_t < 1e-5).sum().item(),
+            }
+            rows.append(row)
+
+            print(
+                f"t_idx={t:2d} | "
+                f"min |G0|={row['absG0_min']:.3e} | "
+                f"1%={row['absG0_1pct']:.3e} | "
+                f"5%={row['absG0_5pct']:.3e} | "
+                f"<1e-3: {row['count_absG0_lt_1e_3']:3d} | "
+                f"<1e-4: {row['count_absG0_lt_1e_4']:3d}"
+            )
+
+    print("=" * 60 + "\n")
+    return pd.DataFrame(rows)
+
+
 # ==========================================================
 # SDE Discretization Helpers
 # ==========================================================
@@ -627,7 +733,6 @@ def decode_from_latent_script(model, z, tau, G_floor=1e-5, check_short_rate=True
         )
 
     mu = model.K(z)
-
     sigma = get_L(model, z)
 
     r_tilde = model.R(z)
@@ -840,12 +945,21 @@ def decode_and_save_results(
             early_stop_time = t
             break
 
-        P_full, _, _, _, _, _, _, dec_diag = decode_from_latent_script(
-            model,
-            z_t,
-            decoder_tau_grid,
-            check_short_rate=True,
-        )
+        try:
+            P_full, _, _, _, _, _, _, dec_diag = decode_from_latent_script(
+                model,
+                z_t,
+                decoder_tau_grid,
+                check_short_rate=True,
+            )
+        except RuntimeError as e:
+            warnings.warn(
+                f"Decoding failed at time t={times[t]:.3f}: {e}",
+                RuntimeWarning,
+            )
+            early_stop_time = t
+            break
+
         P_annual = P_full[:, annual_indices]
         S_sim = par_swap_from_discount(P_annual, tenors)
 
@@ -922,7 +1036,7 @@ def decode_and_save_results(
     if early_stop_time is not None:
         print(
             f"\n[WARNING] Simulation stopped early at t={times[early_stop_time]:.3f} "
-            f"due to excessive latent-region violation."
+            f"due to excessive latent-region violation or decoder failure."
         )
         print(f"Data saved contains {len(swap_df_list) // n_paths} time steps instead of {n_steps + 1}.")
 
@@ -995,25 +1109,14 @@ def martingale_diagnostics(
             std_val = discounted_bond.std(unbiased=False).item()
             sem_val = std_val / math.sqrt(discounted_bond.shape[0])
 
-            # At t=0, D_0 = 1 and all paths are identical, so this is the reference value
             initial_tau_grid = torch.tensor([0.0, u], device=device, dtype=dtype)
-            if t_idx == 0:
-                P0_full, _, _, _, _, _, _, _ = decode_from_latent_script(
-                    model,
-                    z_paths[:1, 0, :],
-                    initial_tau_grid,
-                    check_short_rate=False,
-                )
-                initial_val = P0_full[0, 1].item()
-            else:
-                # Read back initial value consistently from the same model+z0
-                P0_full, _, _, _, _, _, _, _ = decode_from_latent_script(
-                    model,
-                    z_paths[:1, 0, :],
-                    initial_tau_grid,
-                    check_short_rate=False,
-                )
-                initial_val = P0_full[0, 1].item()
+            P0_full, _, _, _, _, _, _, _ = decode_from_latent_script(
+                model,
+                z_paths[:1, 0, :],
+                initial_tau_grid,
+                check_short_rate=False,
+            )
+            initial_val = P0_full[0, 1].item()
 
             rel_err = abs(mean_val - initial_val) / max(abs(initial_val), 1e-12)
             rel_err_tracker[u].append(rel_err)
@@ -1149,7 +1252,6 @@ def generate_plots(
     fig_ld, axes_ld = plt.subplots(n_rows, 1, figsize=(10, 3 * n_rows), sharex=True)
     axes_ld = np.atleast_1d(axes_ld)
 
-    # diagonal entries
     for i in range(latent_dim):
         ax = axes_ld[i]
         for p in range(n_plot):
@@ -1157,7 +1259,6 @@ def generate_plots(
         ax.set_ylabel(f"L[{i},{i}]")
         ax.grid(True, alpha=0.3)
 
-    # strict lower-triangular entries
     row_idx = latent_dim
     for i in range(1, latent_dim):
         for j in range(i):
@@ -1334,6 +1435,7 @@ def generate_plots(
 
     print("Plotting completed.")
 
+
 # ==========================================================
 # Main
 # ==========================================================
@@ -1406,6 +1508,9 @@ def main(argv=None):
     # ========== Training latent statistics ==========
     z_train_mean, z_train_cov, z_train_std = compute_latent_statistics(model, X_tensor, device, LATENT_DIM)
 
+    # ========== First decoder-fragility diagnostic ==========
+    G0_train = diagnose_G0_on_training_cloud(model, X_tensor, device)
+
     # ========== Initial latent state ==========
     with torch.no_grad():
         z0 = model.encoder(S0)
@@ -1434,6 +1539,10 @@ def main(argv=None):
     # ========== Analyze latent dynamics ==========
     analyze_paths(z_paths, r_paths, mu_paths, L_paths, LATENT_DIM)
 
+    # ========== Check G(z_t,0) on simulated latent paths ==========
+    g0_sim_df = diagnose_G0_on_simulated_paths(model, z_paths)
+    print(g0_sim_df)
+
     # ========== Decode and save ==========
     swap_df, latent_df, mahal_df, decoder_diag_df, out_dir, times, early_stop_time = decode_and_save_results(
         model=model,
@@ -1454,6 +1563,14 @@ def main(argv=None):
         max_mahal=args.max_mahal,
         early_stop_fraction=args.early_stop_fraction,
     )
+
+    # Save simulated G0 diagnostic too
+    suffix = f"{USE}_dim{LATENT_DIM}_ep{EPOCHS}_paths{N_PATHS}_steps{N_STEPS}"
+    out_dir_g0 = os.path.join(THESIS_ROOT, "Figures", "Pricing", "simulations")
+    os.makedirs(out_dir_g0, exist_ok=True)
+    g0_sim_csv_path = os.path.join(out_dir_g0, f"simulated_G0_diagnostics_{suffix}.csv")
+    g0_sim_df.to_csv(g0_sim_csv_path, index=False)
+    print(f"Saved simulated G0 diagnostics to {g0_sim_csv_path}")
 
     # ========== Martingale diagnostics ==========
     maturity_dates = parse_float_list(args.martingale_dates)

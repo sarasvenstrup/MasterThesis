@@ -1,0 +1,2 @@
+time,path_id,reason,mahal_dist,absG0
+0.8333333330000001,44,"G(z,0) too close to zero: min |G(z,0)| = 9.009e-06. Decoder ODE becomes ill-conditioned.",5.3544627579102615,9.009112115987428e-06

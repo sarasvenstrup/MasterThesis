@@ -89,6 +89,8 @@ class KMuStable(nn.Module):
         # unconstrained matrix used to build positive definite part
         self.L = nn.Parameter(torch.empty(latent_dim, latent_dim))
         nn.init.orthogonal_(self.L)
+        with torch.no_grad():
+            self.L.mul_(0.20)
 
         if bias:
             self.N = nn.Parameter(torch.zeros(latent_dim))

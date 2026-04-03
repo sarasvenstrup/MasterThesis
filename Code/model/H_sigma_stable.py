@@ -115,26 +115,15 @@ class HSigmaStable_old(nn.Module):
 
 
 class HSigmaStable(nn.Module):
-    """
-    Generic stable diffusion network.
-
-    Outputs a lower-triangular matrix L(z) such that
-        Sigma(z) = L(z) L(z)^T
-    is automatically SPD for every z.
-
-    Diagonal entries are smoothly bounded in (sigma_min, sigma_max).
-    Off-diagonal entries are smoothly bounded in (-offdiag_max, offdiag_max).
-    """
-
     def __init__(
         self,
         latent_dim: int,
         hidden_dim: int,
         bias: bool = False,
-        sigma_init: float = 0.015,
+        sigma_init: float = 0.010,
         sigma_min: float = 1e-4,
-        sigma_max: float = 0.20,
-        offdiag_max: float = 0.20,
+        sigma_max: float = 0.05,
+        offdiag_max: float = 0.02,
     ):
         super().__init__()
 
