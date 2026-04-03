@@ -306,7 +306,7 @@ z_\ell(t)
 +
 \mathbf{N}
 \]
-where $\mathbf{M}\in\mathbb{R}^{\ell\times \ell}$ and $\mathbf{N}\in\mathbb{R}^\ell$. This affine structure allows the drift to capture mean-reverting dynamics in the latent factors.
+where $\mathbf{M}\in\mathbb{R}^{\ell\times \ell}$ and $\mathbf{N}\in\mathbb{R}^\ell$. \textcolor{red}{This affine structure allows the drift to capture mean-reverting dynamics in the latent factors. (Or does it? rewrite this depending on the results we see after implemeting the stable versions)}
 
 
 \paragraph{Volatility network}
@@ -353,14 +353,13 @@ z_\ell(t)
 \tilde{r}
 \]
 
-Here we must come with a disclaimer. Since we in \textcolor{red}{Reference to term structure model in the theory section} must have that Condition \textcolor{red}{name} must be fulfilled, when training the model with the above models of the drift, voltaility and short-rate are not necessarily fulfilled with the models focus of reconstruction error. THerefore we also introduce this neural networks with further constraints in order for these conditions to be satisfied.
 
 
 
 \subsection{Full Decoding Pipeline}
 
 
-To summarize, the decoder operates by firsy mapping the latent state $z_t$, through the four neural networks $\mathcal{G},\mathcal{K},\mathcal{H}$ and $\mathcal{R}$. The outpus determine the coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system, which is solved numerically for each realized $z_t$ to yield $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$. Zero-coupon bond prices are then obtained via \eqref{affineinspiredzcbprices} and converted into model-implied swap rates using \eqref{estimatedswaprates}, with arbitrage-freeness holding by construction throughout.
+To summarize, the decoder operates by first mapping the latent state $z_t$, through the four neural networks $\mathcal{G},\mathcal{K},\mathcal{H}$ and $\mathcal{R}$. The outputs determine the coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system, which is solved numerically for each realized $z_t$ to yield $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$. Zero-coupon bond prices are then obtained via \eqref{affineinspiredzcbprices} and converted into model-implied swap rates using \eqref{estimatedswaprates}, with arbitrage-freeness holding by construction throughout.
 
 
 
