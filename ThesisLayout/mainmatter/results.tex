@@ -12,7 +12,7 @@ This section evaluates the arbitrage-free autoencoder model described in Section
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-In-sample evaluation serves as the first checkpoint toward establishing whether the model is practically useful. Before assessing out-of-sample reconstruction, the model must demonstrate that it can accurately reconstruct the swap rate curves it was trained on, and that the implied zero-coupon bond prices satisfy the no-arbitrage constraint. Following \citet{MatinWanPoulsen2025}, the precision of the reconstruction is measured by the RMSE in basis points, and the compliance with no-arbitrage is assessed through \textcolor{red}{the approximate Sharpe ratio (REFERENCE)} of the implied zero-coupon bond prices, which should be negligible if the constraint is satisfied by construction.
+In-sample evaluation serves as the first checkpoint toward establishing whether the model is practically useful. Before assessing out-of-sample reconstruction, the model must demonstrate that it can accurately reconstruct the swap rate curves it was trained on, and that the implied zero-coupon bond prices satisfy the no-arbitrage constraint. Following \citet{MatinWanPoulsen2025}, the reconstruction accuracy is measured by the RMSE in basis points, and the compliance with no-arbitrage is assessed through \textcolor{red}{the approximate Sharpe ratio (REFERENCE)} of the implied zero-coupon bond prices, which should be negligible if the constraint is satisfied by construction.
 
 
 \subsection{Reconstruction Accuracy}
@@ -21,48 +21,26 @@ In-sample evaluation serves as the first checkpoint toward establishing whether 
 % 1. Convergence
 % 2. RMSE by currency and factor
 % 3. Residual Distribution - are the errors well behaved?
-% 4. Visual fit - fitted vs actual curves across representative dates and currencies - maybe we should visualize with the curve in the same graphs or something like that.
-%5. Disaggregated fit - RMSE by tenor and RMSE over time, where does the model struggle?
+% 4. Disaggregated fit - RMSE by tenor and RMSE over time, where does the model struggle?
+% 5. Visual fit - fitted vs actual curves across representative dates and currencies - maybe we should visualize with the curve in the same graphs or something like that.
 
 
 %The hyperparameters should be shown in a table in the numerical implementation part.
 
-We begin by examining how reconstruction error evolves over 5,000 training epochs. Figure~\ref{fig:training_loss} shows the average training RMSE
-across all currencies for $\ell \in \{1,2,3,4\}$. All four models
-converge well before epoch 2\,500, after which the loss curves flatten
-with no meaningful further improvement. $\ell=1$ converges
-to a substantially higher error of approximately 30 bps, indicating as one would expect that a single latent factor is insufficient to capture the variation in
-the swap rate curve, and the remaining analysis therefore focuses on
-$\ell \in \{2, 3, 4\}$. Which is further supported by Table~\ref{tab:q1a_is_rmse} which breaks the 5000-epoch RMSE result down by currency. Here the model with 1 latent factor has in general very high RMSEs ranging beteen 23.44 and 50 where the other models have a far less range on 9.79 to 16.61 for mode 2 and 8.33 to 15.30 for l=3.
+We begin by examining how reconstruction error evolves over 5,000 training epochs. Figure~\ref{fig:training_loss} shows the average RMSE of training in
+ all currencies for $\ell \in \{1,2,3,4\}$. Both $\ell=3$ and $\ell=4$ exhibit notable spikes around 2 \,500 epochs, possibly reflecting a transition in the optimization trajectory, after which the training becomes more stable. By epoch 3\,500 all models have settled into a stable training regime with considerably reduced fluctuations, confirming that all models have fully converged. However, it should be noted that these loss curves reflect a single random initialization, and convergence behavior may vary between seeds, as explored further in Section~\textcolor{red}{INSERT REFERENCE}. 
 
-Across all
-nine currencies, the error falls substantially from $\ell=2$ to
-$\ell=3$ on average, with more modest gains from $\ell=3$ to $\ell=4$, suggesting
-diminishing returns to increasing model complexity. Across all models the currency that is hardest to reconstruct for , 3 and 4 is EUR and JPY closely following.
-
-So we see clearly that if we train over more epochs, we get a better RMSE, but there is a computation time tradeoff. 
-
-
-
-
-
-
-
-% ── Q1e ──────────────────────────────────────────────────────
+% ── Q1e ─────────────────────────────────────────────────────
 \begin{figure}[ht]
     \centering
     \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_training_loss_curves.png}
-    \caption{Average training RMSE (bps) over 5\,000 epochs for latent dimensions
-    $\ell \in \{1, 2, 3, 4\}$, averaged across all currencies and in-sample observations.
-    The dashed vertical line marks epoch 2\,500. The right panel zooms in on epochs
-    1\,000--5\,000 with a fixed $y$-axis of 0--20 bps to highlight convergence behaviour
-    across dimensions.}
+    \caption{Average in-sample RMSE (bps) over 5\,000 epochs for
+    $\ell \in \{1, 2, 3, 4\}$, averaged across all currencies. The right panel zooms in on the post-convergence region.}
     \label{fig:training_loss}
 \end{figure}
 
 
-
-
+The $\ell=1$ model converges to a substantially higher error of approximately 40 bps, indicating that a single latent factor is insufficient to capture the variation in the swap rate curve. This is further supported by Table~\ref{tab:q1a_is_rmse}, which breaks the RMSE down by currency, where the $\ell=1$ model yields a range of over 25 bps across currencies, compared to approximately 8 for both $\ell=2$ and $\ell=3$ and 5 for $\ell=4$. Among $\ell \in \{2, 3, 4\}$, EUR is consistently the hardest currency to reconstruct, followed by JPY. 
 
 
 % ── Q1a ──────────────────────────────────────────────────────
@@ -84,50 +62,31 @@ So we see clearly that if we train over more epochs, we get a better RMSE, but t
   columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/Time (min)/.style={column name={\textbf{Time (min)}}, column type=r, fixed, precision=1, fixed zerofill},
+  columns/Time (min)/.style={column name={\textbf{Time}}, column type=r, fixed, precision=1, fixed zerofill},
   every head row/.style={before row=\toprule, after row=\midrule},
   every last row/.style={after row=\bottomrule},
 ]{\datqonea}}
 }
-\caption{In-sample RMSE (bps) per currency and latent dimension, evaluated on the full training set after 5\,000 epochs.}
+\caption{In-sample RMSE (bps) and training time (min) over 5\,000 epochs for $\ell \in \{1, 2, 3, 4\}$ per currency.}
 \label{tab:q1a_is_rmse}
 \end{table}
 
 
-\newpage
+Across all nine currencies, error decreases dramatically from $\ell=1$ to $\ell=2$, substantially from $\ell=2$ to $\ell=3$, with more modest gains from $\ell=3$ to $\ell=4$, suggesting diminishing returns to increasing model complexity. In general, training time increases, with the number of latent factors, as the autoencoder must optimize a larger set of parameters. The $\ell=4$ model is an exception, requiring less time than $\ell=3$ at $126.1$ vs $153.6$ minutes, possibly due to \textcolor{red}{mangler ML insight her}. Based on the substantially higher reconstruction error of the $\ell=1$ specification relative to all other models, it is excluded from the remaining analysis, which focuses on $\ell \in \{2, 3, 4\}$.
 
-
-and then how the in sample residuals actually are distributed. 
-Figure~\ref{fig:q1d_residual_histograms} shows the distribution of
-in-sample residuals pooled across all currencies and dates for
-$\ell \in \{2, 3, 4\}$. \textcolor{red}{[Comment when results are updated]} We what to see if the errors are well-behaved.
 
 % ── Q1c ──────────────────────────────────────────────────────
-\begin{figure}[H]
+\begin{figure}[h]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_residual_histograms_all_dims.png}
-    \caption{Distribution of in-sample residuals (actual minus fitted) in
-    basis points for $\ell \in \{2, 3, 4\}$ latent factors, pooled across
-    all currencies and observation dates. Each panel corresponds to one
-    latent dimension. The vertical dashed black line marks zero; the
-    dashed red line marks the sample mean; the grey dotted lines mark the
-    5th and 95th percentiles. Sample size, standard deviation, and excess
-    kurtosis are reported in the upper-right corner of each panel.}
+    \caption{In-sample residual distributions for $\ell\in\{2,3,4\}$, pooled across $N=9,304$ observations across all currencies and dates. The black and red dashed lines mark zero and the sample mean respecitvely, and the grey dotted lines marke the 5th and 95th percentiles. Standard deviation and exces kurtosis are reported in the upper-right corner of each panel.}
     \label{fig:q1d_residual_histograms}
 \end{figure}
 
+To complement the RMSE results, Figure~\ref{fig:q1d_residual_histograms} examines the distribution of the in-sample residuals. All three distributions are centered close to zero, suggesting no systematic bias in the reconstruction. The distributions narrow with additional latent factors, consistent with the RMSE results in Table~\ref{tab:q1a_is_rmse}. 
+All three exhibit excess kurtosis, suggesting that large reconstruction errors occur more frequently than a normal distribution would predict. Figure \ref{fig:q1d_residual_histograms} shows the in-sample RMSE over time for $\ell=3$, shedding light on \textit{when} these larger errors tend to occur.
 
 
-
-
-
-
-
-
-
-
-
-Further we want to look at \underline{when} the model struggles to reconstruct the swap rates well.
 
 % ── Q6b ──────────────────────────────────────────────────────
 \begin{figure}[H]
@@ -144,15 +103,12 @@ Further we want to look at \underline{when} the model struggles to reconstruct t
     NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
     SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
     GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
-    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).
-    Dashed vertical lines mark key macro events.}
+    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
     \label{fig:Q6b}
 \end{figure}
 
 
-
-We see that the model struggles to reconstruct swap rates, especially the EUR and the pegged DKK, in the period around the corona virus.
-
+Outside of major macro events the cross-currency average remains relatively stable, but reconstruction error spikes sharply around the COVID shock in March 2020, particularly for EUR and the DKK, which is pegged to the EUR. As seen in Figure \textcolor{red}{(please visualize the swaprates in the data and reference to this figure here)} in Section \ref{chap:datadescription}, swap rates had been declining globally since 2010, and the sharp reversal of this trend beginning around 2020 represents a structural shift in the swap rate environment that the model, having been trained on an overall declining rate environment, finds more difficult to reconstruct.
 
 % ── Q6a ──────────────────────────────────────────────────────
 \begin{figure}[H]
@@ -173,11 +129,16 @@ We see that the model struggles to reconstruct swap rates, especially the EUR an
     \label{fig:Q6a}
 \end{figure}
 
-Figure~\ref{fig:Q6a} further disaggregates the error across tenors for
-$\ell=3$. The model fits mid-range tenors most accurately, with highest errors
-at the short end of the curve and mid high errors at the long end.
+Beyond the currency-level results, Figure~\ref{fig:Q6a} disaggregates reconstruction error across tenors. The left panel shows that all three models fit mid-range tenors most accurately, with errors reaching a minimum around the 15Y tenor, while the short end of the curve proves most challenging across all specifications. The right panel shows this pattern for $\ell=3$ per currency, where JPY and EUR exhibit the largest errors at the short and long end of the curve, consistent with the aggregate currency-level results in Table~\ref{tab:q1a_is_rmse}. Overall, the tenor-level analysis reveals a consistent pattern across all model specifications and currencies, where mid-range tenors are reconstructed most accurately, while the short and long ends of the curve prove more challenging.
 
-In the right panel we see that the JPY, USD and EUR is one pushing up the error.
+
+
+To assess the quality of the fit beyond aggregate error metrics,
+Figure~\ref{fig:q1d_fitted_vs_actual_all_dims} shows the reconstructed
+versus observed swap curves for EUR, USD, and JPY across three
+representative dates: a normal market environment (August 2016), the
+Covid-19 stress episode (March 2020), and a low-rate regime (June
+2019).
 
 
 
@@ -191,29 +152,24 @@ In the right panel we see that the JPY, USD and EUR is one pushing up the error.
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.png}
     \caption{In-sample fitted versus actual swap curves for latent dimensions
-    $\ell \in \{2, 3, 4\}$ across three representative dates: a normal market
-    environment (2016-08-31), the Covid-19 stress episode (2020-03-31), and a low-rate
-    regime (2019-06-30). Rows correspond to EUR, USD, and JPY.
-    The solid line with circles ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}~$\circ$})
+    $\ell \in \{2, 3, 4\}$ across two representative dates: a normal market
+    environment (2014-08-29) and the Covid-19 stress episode (2020-03-31).
+    Rows correspond to market regimes; columns to EUR, USD, and JPY.
+    The solid line with circles
+    ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}~$\circ$})
     denotes the observed swap rate.
     Reconstructions are shown for
-    $\ell=2$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}, solid),
-    $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{0.2em}{1pt} \rule[0.5ex]{0.2em}{1pt} \rule[0.5ex]{0.2em}{1pt}}, dashed), and
-    $\ell=4$ ({\color[HTML]{9C9EDE}$\cdots$}, dotted).
-    The x-axis shows tenor in years.}
-
+    $\ell=2$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}), and
+    $\ell=4$ ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}).
+    The $x$-axis shows tenor in years.}
     \label{fig:q1d_fitted_vs_actual_all_dims}
 \end{figure}
 
 
 
 
-To assess the quality of the fit beyond aggregate error metrics,
-Figure~\ref{fig:q1d_fitted_vs_actual_all_dims} shows the reconstructed
-versus observed swap curves for EUR, USD, and JPY across three
-representative dates: a normal market environment (August 2016), the
-Covid-19 stress episode (March 2020), and a low-rate regime (June
-2019).
+
 
 
 
