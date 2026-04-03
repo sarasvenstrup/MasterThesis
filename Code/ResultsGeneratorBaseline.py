@@ -249,7 +249,7 @@ print(table_q1a.to_string())
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q1e: Training loss curves  ──")
 
-fig, ax = plt.subplots(figsize=(8, 4))
+fig, (ax_full, ax_zoom) = plt.subplots(1, 2, figsize=(14, 4))
 for dim in [1, 2, 3, 4]:
     _log_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
                              f"ep{TRAIN_LOG_EPOCHS}",
@@ -258,14 +258,20 @@ for dim in [1, 2, 3, 4]:
         warnings.warn(f"Missing training log for dim{dim}: {_log_path}")
         continue
     _log_df = pd.read_csv(_log_path)
-    ax.plot(_log_df["epoch"], _log_df["avg_rmse_bps"],
-            linewidth=1.2, color=DIM_COLORS[dim],
-            label=f"$\\ell={dim}$")
+    for ax in (ax_full, ax_zoom):
+        ax.plot(_log_df["epoch"], _log_df["avg_rmse_bps"],
+                linewidth=1.2, color=DIM_COLORS[dim],
+                label=f"$\\ell={dim}$")
 
-ax.axvline(2500, color="black", linewidth=1.0, linestyle="--", label="Epoch 2500")
-ax.set_xlabel("Epoch", fontsize=10)
-ax.set_ylabel("Average Training RMSE (bps)", fontsize=10)
-ax.legend(fontsize=10, frameon=False)
+for ax in (ax_full, ax_zoom):
+    ax.axvline(2500, color="black", linewidth=1.0, linestyle="--")
+    ax.set_xlabel("Epoch", fontsize=10)
+    ax.set_ylabel("Average Training RMSE (bps)", fontsize=10)
+
+ax_zoom.set_xlim(1000, TRAIN_LOG_EPOCHS)
+ax_zoom.set_ylim(0, 50)
+ax_zoom.legend(fontsize=10, frameon=False)
+
 fig.tight_layout()
 save_fig(fig, "Q1e_training_loss_curves")
 
