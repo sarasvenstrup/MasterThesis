@@ -135,10 +135,17 @@ Beyond the currency-level results, Figure~\ref{fig:Q6a} disaggregates reconstruc
 
 To assess the quality of the fit beyond aggregate error metrics,
 Figure~\ref{fig:q1d_fitted_vs_actual_all_dims} shows the reconstructed
-versus observed swap curves for EUR, USD, and JPY across three
-representative dates: a normal market environment (August 2016), the
-Covid-19 stress episode (March 2020), and a low-rate regime (June
-2019).
+versus observed swap curves for EUR, USD, and JPY across two
+representative dates: a \textcolor{red}{normal} market environment (August 2014) and the Covid-19 \textcolor{red}{shock} (March 2020). 
+
+In the normal environment, all models track the observed curves well,
+though $\ell=2$ captures slightly less curvature in the term structure
+compared to $\ell=3$ and $\ell=4$. EUR and JPY are visually the hardest currencies to reconstruct, consistent with
+their higher RMSE reported in Table~\ref{tab:q1a_is_rmse}. During the Covid-19
+shock, both currencies exhibit sharp curve movements that all models struggle to
+capture, whereas USD, despite also being affected by the stress period, is
+reconstructed with relatively higher accuracy.
+
 
 
 
@@ -151,19 +158,17 @@ Covid-19 stress episode (March 2020), and a low-rate regime (June
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.png}
-    \caption{In-sample fitted versus actual swap curves for latent dimensions
-    $\ell \in \{2, 3, 4\}$ across two representative dates: a normal market
-    environment (2014-08-29) and the Covid-19 stress episode (2020-03-31).
+    \caption{In-sample fitted versus actual swap curves for
+    $\ell \in \{2, 3, 4\}$ across two representative dates: a \textcolor{red}{normal} market
+    environment (2014-08-29) and the Covid-19 shock (2020-03-31).
     Rows correspond to market regimes; columns to EUR, USD, and JPY.
     The solid line with circles
     ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}~$\circ$})
     denotes the observed swap rate.
     Reconstructions are shown for
-    $\ell=2$ ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
-    $\ell=3$ ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}), and
-    $\ell=4$ ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}).
-    The $x$-axis shows tenor in years.}
-    \label{fig:q1d_fitted_vs_actual_all_dims}
+    $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}), and
+    $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).}
 \end{figure}
 
 
