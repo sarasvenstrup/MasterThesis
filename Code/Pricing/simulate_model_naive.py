@@ -66,7 +66,7 @@ def build_parser():
     parser.add_argument("--bundle_path", type=str, default="", help="Path to saved simulation bundle .pt")
 
     parser.add_argument("--latent_dim", type=int, default=2, help="Latent dimension (must be 2)")
-    parser.add_argument("--epochs", type=int, default=2500, help="Training epochs")
+    parser.add_argument("--epochs", type=int, default=3500, help="Training epochs")
     parser.add_argument("--use", type=str, default="bbg", help="Data source")
     parser.add_argument("--n_paths", type=int, default=100, help="Number of simulation paths")
     parser.add_argument(
