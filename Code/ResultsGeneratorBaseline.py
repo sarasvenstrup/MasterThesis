@@ -225,6 +225,7 @@ def load_training_log_rmse(dim, epochs=TRAIN_LOG_EPOCHS):
         return None
     result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
     result["Average"] = float(last["avg_rmse_bps"])
+    result["Time (min)"] = round(float(last["time_total_sec"]) / 60, 1)
     return result
 
 rows_is = {}
@@ -232,10 +233,11 @@ for dim in [1, 2, 3, 4]:
     is_rmse = load_training_log_rmse(dim)
     if is_rmse is not None:
         rows_is[f"$\\ell={dim}$"] = is_rmse
-        print(f"  ell={dim}: avg IS RMSE = {is_rmse['Average']:.2f} bps")
+        print(f"  ell={dim}: avg IS RMSE = {is_rmse['Average']:.2f} bps  "
+              f"  time = {is_rmse['Time (min)']:.1f} min")
 
-table_q1a = pd.DataFrame(rows_is).T          # rows=dims, cols=currencies
-table_q1a = table_q1a[[c for c in CCY_ORDER + ["Average"] if c in table_q1a.columns]]
+table_q1a = pd.DataFrame(rows_is).T
+table_q1a = table_q1a[[c for c in CCY_ORDER + ["Average", "Time (min)"] if c in table_q1a.columns]]
 table_q1a = table_q1a.round(2)
 save_table(table_q1a, "Q1a_IS_rmse_all_dims")
 print(table_q1a.to_string())
