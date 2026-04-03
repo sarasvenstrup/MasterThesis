@@ -1556,35 +1556,37 @@ TAU_GRID = np.arange(1, 31)   # tenors 1..30
 
 @torch.no_grad()
 def extract_sharpe(model, X, batch=256):
-    """Run forward pass on X and return SR_tau (N, 30)."""
-    sr_list = []
+    """Run forward pass on X and return R_tau and SR_tau (N, 30)."""
+    r_list, sr_list = [], []
     for i in range(0, X.shape[0], batch):
         xb = X[i:i+batch].to(device)
         _, aux = model(xb, do_arb_checks=True, return_aux=True)
+        r_list.append(aux["arb"]["R_tau"].cpu())
         sr_list.append(aux["arb"]["SR_tau"].cpu())
-    return torch.cat(sr_list)   # (N, 30)
+    return torch.cat(r_list), torch.cat(sr_list)   # (N, 30)
 
 _dim = 3
 print(f"  ℓ={_dim} ...", end=" ")
 _m, _src = load_ep5000_model(_dim)
 if _m is not None:
-    SR_all   = extract_sharpe(_m, X_train)          # (N, 30)
+    R_all, SR_all = extract_sharpe(_m, X_train)
     x_finite = torch.isfinite(X_train).all(1)
+    R_all    = R_all[x_finite].numpy()
     SR_all   = SR_all[x_finite].numpy()
     _meta_q7 = meta_train[x_finite.numpy()].reset_index(drop=True)
 
-    fig, ax = plt.subplots(figsize=(9, 4))
+    fig, ax = plt.subplots(figsize=(6, 4))
     for ccy in CCY_ORDER:
         _idx = (_meta_q7["ccy"].values == ccy)
         if _idx.sum() == 0:
             continue
-        _sr_ccy = SR_all[_idx].mean(axis=0)         # (30,)
-        ax.plot(TAU_GRID, _sr_ccy,
+        _r_ccy = R_all[_idx].mean(axis=0)           # (30,)
+        ax.plot(TAU_GRID, _r_ccy,
                 color=currency_color_map[ccy], linewidth=1.4, label=ccy)
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
     ax.set_xlim(0, 30)
     ax.set_xlabel("Maturity", fontsize=10)
-    ax.set_ylabel("Approx. Sharpe ratio", fontsize=10)
+    ax.set_ylabel("PDE Residual", fontsize=10)
     ax.legend().set_visible(False)
     fig.tight_layout()
     save_fig(fig, "Q7_sharpe_ratio_IS_dim3")
