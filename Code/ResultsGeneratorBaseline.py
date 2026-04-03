@@ -266,10 +266,10 @@ for dim in [1, 2, 3, 4]:
 for ax in (ax_full, ax_zoom):
     ax.axvline(2500, color="black", linewidth=1.0, linestyle="--")
     ax.set_xlabel("Epoch", fontsize=10)
-    ax.set_ylabel("Average Training RMSE (bps)", fontsize=10)
+ax_full.set_ylabel("Average Training RMSE (bps)", fontsize=10)
 
 ax_zoom.set_xlim(1000, TRAIN_LOG_EPOCHS)
-ax_zoom.set_ylim(0, 50)
+ax_zoom.set_ylim(0, 20)
 ax_zoom.legend(fontsize=10, frameon=False)
 
 fig.tight_layout()
