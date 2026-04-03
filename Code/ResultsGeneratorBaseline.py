@@ -477,7 +477,7 @@ _rep_dates = {
     "Normal (2014-08-29)": "2014-08-29",
     "Crisis (2020-03-31)": "2020-03-31",
 }
-_show_ccys_alldim = ["EUR", "USD", "JPY"]
+_show_ccys_alldim = ["EUR", "USD", "JPY", "CAD"]
 _dim_colors = {d: DIM_COLORS[d] for d in [2, 3, 4]}
 _dim_styles = {2: "-", 3: "-", 4: "-"}
 
@@ -486,7 +486,7 @@ _n_rows = len(_rep_dates)
 _n_cols = len(_show_ccys_alldim)
 
 fig, axes = plt.subplots(_n_rows, _n_cols,
-                         figsize=(5 * _n_cols, 3.5 * _n_rows),
+                         figsize=(4 * _n_cols, 3.5 * _n_rows),
                          sharey=False)
 
 for row_i, (label, date_str) in enumerate(_rep_dates.items()):
@@ -522,7 +522,10 @@ for row_i, (label, date_str) in enumerate(_rep_dates.items()):
         if row_i == _n_rows - 1:
             ax.set_xlabel("Maturity", fontsize=9)
         ax.set_xticks(tenors)
-        ax.set_xticklabels([str(int(t)) for t in tenors], fontsize=7)
+        if row_i == _n_rows - 1:
+            ax.set_xticklabels([str(int(t)) for t in tenors], fontsize=7)
+        else:
+            ax.set_xticklabels([])
         ax.tick_params(axis="y", labelsize=8)
         ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
                 transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
