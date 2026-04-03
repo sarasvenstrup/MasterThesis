@@ -225,6 +225,7 @@ def load_training_log_rmse(dim, epochs=TRAIN_LOG_EPOCHS):
         return None
     result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
     result["Average"] = float(last["avg_rmse_bps"])
+    result["Time (min)"] = round(float(last["time_total_sec"]) / 60, 1)
     return result
 
 rows_is = {}
@@ -232,10 +233,11 @@ for dim in [1, 2, 3, 4]:
     is_rmse = load_training_log_rmse(dim)
     if is_rmse is not None:
         rows_is[f"$\\ell={dim}$"] = is_rmse
-        print(f"  ell={dim}: avg IS RMSE = {is_rmse['Average']:.2f} bps")
+        print(f"  ell={dim}: avg IS RMSE = {is_rmse['Average']:.2f} bps  "
+              f"  time = {is_rmse['Time (min)']:.1f} min")
 
-table_q1a = pd.DataFrame(rows_is).T          # rows=dims, cols=currencies
-table_q1a = table_q1a[[c for c in CCY_ORDER + ["Average"] if c in table_q1a.columns]]
+table_q1a = pd.DataFrame(rows_is).T
+table_q1a = table_q1a[[c for c in CCY_ORDER + ["Average", "Time (min)"] if c in table_q1a.columns]]
 table_q1a = table_q1a.round(2)
 save_table(table_q1a, "Q1a_IS_rmse_all_dims")
 print(table_q1a.to_string())
@@ -247,7 +249,7 @@ print(table_q1a.to_string())
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q1e: Training loss curves  ──")
 
-fig, ax = plt.subplots(figsize=(8, 4))
+fig, (ax_full, ax_zoom) = plt.subplots(1, 2, figsize=(14, 4))
 for dim in [1, 2, 3, 4]:
     _log_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
                              f"ep{TRAIN_LOG_EPOCHS}",
@@ -256,14 +258,20 @@ for dim in [1, 2, 3, 4]:
         warnings.warn(f"Missing training log for dim{dim}: {_log_path}")
         continue
     _log_df = pd.read_csv(_log_path)
-    ax.plot(_log_df["epoch"], _log_df["avg_rmse_bps"],
-            linewidth=1.2, color=DIM_COLORS[dim],
-            label=f"$\\ell={dim}$")
+    for ax in (ax_full, ax_zoom):
+        ax.plot(_log_df["epoch"], _log_df["avg_rmse_bps"],
+                linewidth=1.2, color=DIM_COLORS[dim],
+                label=f"$\\ell={dim}$")
 
-ax.axvline(2500, color="black", linewidth=1.0, linestyle="--", label="Epoch 2500")
-ax.set_xlabel("Epoch", fontsize=10)
-ax.set_ylabel("Average Training RMSE (bps)", fontsize=10)
-ax.legend(fontsize=10, frameon=False)
+for ax in (ax_full, ax_zoom):
+    ax.axvline(2500, color="black", linewidth=1.0, linestyle="--")
+    ax.set_xlabel("Epoch", fontsize=10)
+ax_full.set_ylabel("Average Training RMSE (bps)", fontsize=10)
+
+ax_zoom.set_xlim(1000, TRAIN_LOG_EPOCHS)
+ax_zoom.set_ylim(0, 20)
+ax_zoom.legend(fontsize=10, frameon=False)
+
 fig.tight_layout()
 save_fig(fig, "Q1e_training_loss_curves")
 
