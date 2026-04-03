@@ -6,7 +6,6 @@ import random
 import warnings
 
 import numpy as np
-import pandas as pd
 import torch
 
 try:
@@ -159,20 +158,34 @@ def get_r(model, z):
     return r
 
 
-def normalize_discretization_name(name: str) -> str:
-    name = name.lower()
-    if name == "second_order_milstein":
-        warnings.warn(
-            "'second_order_milstein' is deprecated and renamed to 'milstein_pc'.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return "milstein_pc"
-    return name
+def _finite_diff_diffusion_jacobian(model, z, eps=1e-4):
+    """Compute Jacobian of diffusion matrix L via finite differences."""
+    B0 = get_L(model, z)
+    n, d, m = B0.shape
+    jac_B = torch.empty((n, d, m, d), device=z.device, dtype=z.dtype)
+
+    for k in range(d):
+        perturb = torch.zeros_like(z)
+        step = eps * torch.maximum(torch.ones_like(z[:, k]), z[:, k].abs())
+        perturb[:, k] = step
+
+        B_plus = get_L(model, z + perturb)
+        B_minus = get_L(model, z - perturb)
+
+        denom = (2.0 * step).view(-1, 1, 1)
+        jac_B[:, :, :, k] = (B_plus - B_minus) / denom
+
+    return B0, jac_B
+
+
+def _milstein_correction(B, jac_B, dW, dt):
+    """Compute first-order Milstein correction term."""
+    directional_deriv = torch.einsum("nkj,nijk->nij", B, jac_B)
+    return 0.5 * torch.sum(directional_deriv * ((dW**2 - dt).unsqueeze(1)), dim=2)
 
 
 def make_experiment_suffix(use, latent_dim, epochs, n_paths, n_steps, seed, discretization, sim_mode="full", diffusion_scale=1.0):
-    disc = normalize_discretization_name(discretization)
+    disc = discretization.lower()
     diff_tag = f"{diffusion_scale:g}".replace(".", "p")
     return (
         f"{use}_dim{latent_dim}_ep{epochs}_paths{n_paths}_steps{n_steps}_seed{seed}_{disc}"
@@ -301,57 +314,6 @@ def compute_latent_statistics(model, X_tensor, device, latent_dim):
     return z_train_mean, z_train_cov, z_train_std
 
 
-def _finite_diff_diffusion_jacobian(model, z, eps=1e-4):
-    B0 = get_L(model, z)
-    n, d, m = B0.shape
-    jac_B = torch.empty((n, d, m, d), device=z.device, dtype=z.dtype)
-
-    for k in range(d):
-        perturb = torch.zeros_like(z)
-        step = eps * torch.maximum(torch.ones_like(z[:, k]), z[:, k].abs())
-        perturb[:, k] = step
-
-        B_plus = get_L(model, z + perturb)
-        B_minus = get_L(model, z - perturb)
-
-        denom = (2.0 * step).view(-1, 1, 1)
-        jac_B[:, :, :, k] = (B_plus - B_minus) / denom
-
-    return B0, jac_B
-
-
-def _milstein_correction(B, jac_B, dW, dt):
-    directional_deriv = torch.einsum("nkj,nijk->nij", B, jac_B)
-    return 0.5 * torch.sum(directional_deriv * ((dW**2 - dt).unsqueeze(1)), dim=2)
-
-
-def _stable_drift_step(model, z: torch.Tensor, shock: torch.Tensor, dt: float) -> torch.Tensor:
-    d = z.shape[1]
-    I = torch.eye(d, device=z.device, dtype=z.dtype)
-
-    if hasattr(model.K, "drift_matrix") and hasattr(model.K, "theta"):
-        M = model.K.drift_matrix().to(device=z.device, dtype=z.dtype)
-        theta = model.K.theta.to(device=z.device, dtype=z.dtype)
-
-        A = I - dt * M
-        rhs = z + shock - dt * (theta.unsqueeze(0) @ M.t())
-
-        A_batch = A.unsqueeze(0).expand(rhs.shape[0], -1, -1)
-        return torch.linalg.solve(A_batch, rhs.unsqueeze(-1)).squeeze(-1)
-
-    if hasattr(model.K, "stable_matrix"):
-        M = model.K.stable_matrix().to(device=z.device, dtype=z.dtype)
-        N = getattr(model.K, "N", None)
-
-        A = I - dt * M
-        rhs = z + shock
-        if N is not None:
-            rhs = rhs + dt * N.to(device=z.device, dtype=z.dtype).unsqueeze(0)
-
-        A_batch = A.unsqueeze(0).expand(rhs.shape[0], -1, -1)
-        return torch.linalg.solve(A_batch, rhs.unsqueeze(-1)).squeeze(-1)
-
-    return z + model.K(z) * dt + shock
 
 
 def simulate_latent_paths(
@@ -368,8 +330,8 @@ def simulate_latent_paths(
     if z0.dim() != 2 or z0.shape[0] != 1:
         raise ValueError(f"Expected z0 shape (1,d), got {tuple(z0.shape)}")
 
-    discretization = normalize_discretization_name(discretization)
-    valid_discretizations = {"euler", "milstein", "milstein_pc"}
+    discretization = discretization.lower()
+    valid_discretizations = {"euler", "milstein"}
     if discretization not in valid_discretizations:
         raise ValueError(f"Unknown discretization='{discretization}'. Choose from {sorted(valid_discretizations)}")
 
@@ -383,9 +345,9 @@ def simulate_latent_paths(
     d = z0.shape[1]
     sqrt_dt = math.sqrt(dt)
 
-    if discretization in {"milstein", "milstein_pc"} and d > 1:
+    if discretization == "milstein" and d > 1:
         warnings.warn(
-            "Milstein-style updates use a commutative-noise approximation and ignore Lévy-area terms "
+            "Milstein scheme uses a commutative-noise approximation and ignores Lévy-area terms "
             "for multidimensional latent diffusion.",
             RuntimeWarning,
             stacklevel=2,
@@ -408,48 +370,29 @@ def simulate_latent_paths(
             B = get_L(model, z)
             dW = torch.randn(n_paths, B.shape[-1], device=device, dtype=z.dtype) * sqrt_dt
             shock = diffusion_scale * torch.bmm(B, dW.unsqueeze(-1)).squeeze(-1)
+            drift = get_mu(model, z) * dt
 
             if sim_mode == "full":
-                z = _stable_drift_step(model, z, shock, dt)
+                z = z + drift + shock
             elif sim_mode == "drift_only":
-                z = _stable_drift_step(model, z, torch.zeros_like(z), dt)
-            else:
+                z = z + drift
+            else:  # diffusion_only
                 z = z + shock
 
-        elif discretization == "milstein":
+        else:  # milstein
             B, jac_B = _finite_diff_diffusion_jacobian(model, z)
             dW = torch.randn(n_paths, B.shape[-1], device=device, dtype=z.dtype) * sqrt_dt
             shock = diffusion_scale * torch.bmm(B, dW.unsqueeze(-1)).squeeze(-1)
             corr = diffusion_scale * _milstein_correction(B, jac_B, dW, dt)
+            drift = get_mu(model, z) * dt
 
             if sim_mode == "full":
-                z = _stable_drift_step(model, z, shock + corr, dt)
+                z = z + drift + shock + corr
             elif sim_mode == "drift_only":
-                z = _stable_drift_step(model, z, torch.zeros_like(z), dt)
-            else:
+                z = z + drift
+            else:  # diffusion_only
                 z = z + shock + corr
 
-        else:
-            B0, jac_B0 = _finite_diff_diffusion_jacobian(model, z)
-            dW = torch.randn(n_paths, B0.shape[-1], device=device, dtype=z.dtype) * sqrt_dt
-            shock0 = diffusion_scale * torch.bmm(B0, dW.unsqueeze(-1)).squeeze(-1)
-            corr0 = diffusion_scale * _milstein_correction(B0, jac_B0, dW, dt)
-
-            if sim_mode == "drift_only":
-                z = _stable_drift_step(model, z, torch.zeros_like(z), dt)
-            else:
-                z_pred = _stable_drift_step(model, z, shock0 + corr0, dt)
-                B1, jac_B1 = _finite_diff_diffusion_jacobian(model, z_pred)
-                shock1 = diffusion_scale * torch.bmm(B1, dW.unsqueeze(-1)).squeeze(-1)
-                corr1 = diffusion_scale * _milstein_correction(B1, jac_B1, dW, dt)
-
-                avg_shock = 0.5 * (shock0 + shock1)
-                avg_corr = 0.5 * (corr0 + corr1)
-
-                if sim_mode == "full":
-                    z = _stable_drift_step(model, z, avg_shock + avg_corr, dt)
-                else:
-                    z = z + avg_shock + avg_corr
 
         if not torch.isfinite(z).all():
             raise RuntimeError(f"Non-finite latent state encountered at step {t + 1}")
