@@ -46,6 +46,12 @@ class FullModel(nn.Module):
         g_bias: bool = True,
         hr_bias: bool = False,
         sigma_init: float = 0.015,
+
+        # New stable-K controls
+        k_z_center_init=None,
+        k_epsilon: float = 1e-3,
+        k_drift_scale_init: float = 0.10,
+        k_learn_center: bool = True,
     ):
         super().__init__()
 
@@ -63,15 +69,28 @@ class FullModel(nn.Module):
 
         self.encoder = Encoder(input_dim, latent_dim)
         self.G = DecoderG(latent_dim, g_hidden, g_bias)
-        
+
         # Conditional initialization based on VARIANT
         if VARIANT == "stable":
-            # Stable versions: different signatures
-            self.K = KMu(latent_dim=latent_dim, bias=True)
-            self.H = HSigma(latent_dim=latent_dim, hidden_dim=h_hidden, bias=hr_bias, sigma_init=sigma_init)
-            self.R = RShort(latent_dim=latent_dim, hidden_dim=r_hidden, bias=hr_bias)
+            self.K = KMu(
+                latent_dim=latent_dim,
+                z_center_init=k_z_center_init,
+                epsilon=k_epsilon,
+                drift_scale_init=k_drift_scale_init,
+                learn_center=k_learn_center,
+            )
+            self.H = HSigma(
+                latent_dim=latent_dim,
+                hidden_dim=h_hidden,
+                bias=hr_bias,
+                sigma_init=sigma_init,
+            )
+            self.R = RShort(
+                latent_dim=latent_dim,
+                hidden_dim=r_hidden,
+                bias=hr_bias,
+            )
         else:
-            # Baseline versions: original signatures
             self.K = KMu(latent_dim=latent_dim, bias=True)
             self.H = HSigma(latent_dim=latent_dim, hidden_dim=h_hidden, bias=hr_bias)
             self.R = RShort(latent_dim=latent_dim, hidden_dim=r_hidden, bias=hr_bias)
@@ -178,7 +197,7 @@ class FullModel(nn.Module):
         mu = self.K(z)                                # (B,d)
 
         if VARIANT == "stable":
-            sigma = self.H(z)  # (B,d,d), already Cholesky / diffusion matrix
+            sigma = self.H(z)  # (B,d,d), already diffusion / Cholesky factor
         else:
             sigmas, rhos = self.H(z)
             sigma = L_from_sigmas_rhos(sigmas, rhos)
@@ -187,16 +206,14 @@ class FullModel(nn.Module):
         if r_tilde.ndim == 2 and r_tilde.shape[-1] == 1:
             r_tilde = r_tilde.squeeze(-1)             # (B,)
 
-
         # 4) Derivatives of G wrt tau and z
         def G_single(z_single: torch.Tensor) -> torch.Tensor:
-            # returns (N,)
-            return self.G(z_single.unsqueeze(0), tau).squeeze(0)
+            return self.G(z_single.unsqueeze(0), tau).squeeze(0)  # (N,)
 
-        dG_dtau = d_tau_autograd_nodewise(self.G, z, tau)              # (B,N)
+        dG_dtau = d_tau_autograd_nodewise(self.G, z, tau)  # (B,N)
         grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(
             G_single, z, sigma
-        )                                                              # (B,N,2), (B,N)
+        )  # (B,N,d), (B,N)
 
         # 5) ODE coefficients alpha, beta, gamma
         alpha, beta, gamma = paper_alpha_beta_gamma_trace(
@@ -210,7 +227,7 @@ class FullModel(nn.Module):
         )  # all (B,N)
 
         # 6) Solve coupled ODE for A and B
-        A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)             # (B,N), (B,N)
+        A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)  # (B,N), (B,N)
 
         # 7) Hard sanity checks at tau=0
         assert A_vals.shape == G_vals.shape, f"A_vals {A_vals.shape} != G_vals {G_vals.shape}"
@@ -220,15 +237,13 @@ class FullModel(nn.Module):
         assert torch.allclose(B_vals[:, 0], torch.zeros_like(B_vals[:, 0]), atol=1e-6)
 
         # 8) Bond prices on full grid 0..tau_max
-        P_full = torch.exp(A_vals - B_vals * G_vals)                   # (B,N)
-        # Note: For untrained models, P_full may contain NaN/Inf due to unstable ODE coefficients.
-        # This is expected and resolves after training starts.
+        P_full = torch.exp(A_vals - B_vals * G_vals)  # (B,N)
 
         # Market grid starts at 1Y, not 0Y
-        P_mkt = P_full[:, 1:]                                          # (B,tau_max)
+        P_mkt = P_full[:, 1:]  # (B,tau_max)
 
         # 9) Convert annual discount factors to par swap rates at chosen tenors
-        S_hat = par_swap_from_discount(P_mkt, self.tenors)             # (B,len(tenors))
+        S_hat = par_swap_from_discount(P_mkt, self.tenors)  # (B,len(tenors))
 
         arb = None
         if do_arb_checks:
