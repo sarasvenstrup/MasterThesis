@@ -1,6 +1,6 @@
+import math
 import torch
 import torch.nn as nn
-import math
 import torch.nn.functional as F
 
 
@@ -125,7 +125,7 @@ class KMuStable_old2(nn.Module):
         return mu
 
 
-class KMuStable(nn.Module):
+class KMuStable_old3(nn.Module):
     """
     Stable OU-style linear drift:
 
@@ -203,6 +203,77 @@ class KMuStable(nn.Module):
 
         # Hurwitz matrix
         M = kappa * (S - A)
+        return M
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
+
+        M = self.drift_matrix()
+        centered = z - self.theta.unsqueeze(0)
+        mu = centered @ M.t()
+        return mu
+
+class KMuStable(nn.Module):
+    """
+    Very simple OU-style stable drift for diagnostics:
+
+        mu(z) = M (z - theta)
+
+    with
+        M = -kappa * A
+        A = C C^T + eps I
+
+    So M is symmetric negative definite.
+    This removes the skew-symmetric part completely.
+
+    Purpose:
+      - isolate whether the skew/rotation part is causing simulated paths
+        to leave the training cloud too quickly.
+    """
+
+    def __init__(
+        self,
+        latent_dim: int,
+        z_center_init=None,
+        epsilon: float = 1e-3,
+        drift_scale_init: float = 0.02,
+        learn_center: bool = False,
+    ):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.epsilon = float(epsilon)
+
+        self.C = nn.Parameter(torch.empty(latent_dim, latent_dim))
+        nn.init.orthogonal_(self.C)
+        with torch.no_grad():
+            self.C.mul_(0.05)   # very gentle initial drift
+
+        if z_center_init is None:
+            theta0 = torch.zeros(latent_dim, dtype=torch.float32)
+        else:
+            theta0 = torch.as_tensor(z_center_init, dtype=torch.float32)
+            if theta0.numel() != latent_dim:
+                raise ValueError(
+                    f"z_center_init must have length {latent_dim}, got {theta0.numel()}"
+                )
+
+        if learn_center:
+            self.theta = nn.Parameter(theta0.clone())
+        else:
+            self.register_buffer("theta", theta0.clone())
+
+        if drift_scale_init <= 0.0:
+            raise ValueError("drift_scale_init must be positive.")
+
+        raw_init = math.log(math.exp(drift_scale_init) - 1.0)
+        self.raw_kappa = nn.Parameter(torch.tensor(raw_init, dtype=torch.float32))
+
+    def drift_matrix(self) -> torch.Tensor:
+        I = torch.eye(self.latent_dim, device=self.C.device, dtype=self.C.dtype)
+        A = self.C @ self.C.t() + self.epsilon * I
+        kappa = F.softplus(self.raw_kappa)
+        M = -kappa * A
         return M
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:

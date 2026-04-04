@@ -1145,18 +1145,18 @@ def run_all_diagnostics(
 
 
 # Example lines to run one by one
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# bundle_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\Pricing\simulations\simulation_bundle_bbg_dim2_ep3500_paths500_steps24_seed1234_euler_full_diff1.pt"
-# diag_out = run_all_diagnostics(
-#     bundle_path=bundle_path,
-#     device=device,
-#     use_saved_metadata=True,
-#     max_mahal=4.0,
-#     g0_floor=1e-5,
-#     martingale_dates=(5, 10, 20, 30),
-#     martingale_tol=0.02,
-#     plot_curve_times=(0, 0.5, 1.0, 2.0),
-#     plot_tenors=(1, 5, 10, 30),
-#     plot_dpi=200,
-#     show_plots=False,
-# )
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+bundle_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\Pricing\simulations\simulation_bundle_bbg_dim2_ep3500_paths500_steps24_seed1234_euler_full_diff1.pt"
+diag_out = run_all_diagnostics(
+     bundle_path=bundle_path,
+     device=device,
+     use_saved_metadata=True,
+     max_mahal=4.0,
+     g0_floor=1e-5,
+     martingale_dates=(5, 10, 20, 30),
+     martingale_tol=0.02,
+     plot_curve_times=(0, 0.5, 1.0, 2.0),
+     plot_tenors=(1, 5, 10, 30),
+     plot_dpi=200,
+     show_plots=False,
+ )
