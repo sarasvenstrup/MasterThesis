@@ -158,7 +158,7 @@ for ccy in CCY_ORDER:
     for row in [ccy_df.iloc[0], ccy_df.iloc[-1]]:
         ax_10y.plot(row["as_of_date"], row[_tenor_10y] * _scale,
                     marker="o", markersize=5, color=currency_color_map[ccy],
-                    markeredgecolor="black", markeredgewidth=0.6,
+                    markeredgecolor="white", markeredgewidth=0.6,
                     linestyle="none", zorder=5)
 
 # event lines
