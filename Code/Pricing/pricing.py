@@ -5,15 +5,64 @@ import random
 import warnings
 
 import numpy as np
+import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from scipy.optimize import brentq
 
 # ---------------------------------------------------------------------
+# User setup
+# ---------------------------------------------------------------------
+USE_PRICING_CHECKPOINT = True
+PRICING_RUN_NAME = "pricing_ep200"
+
+USE = "bbg"
+LATENT_DIM = 2
+EPOCHS = 200
+IDX_CHOICE = 0
+CCY_FILTER = "EUR"
+SEED = 1234
+
+# Simulation defaults
+N_PATHS = 2000
+N_STEPS = 120
+DT = 1 / 12
+DISCRETIZATION = "euler"
+SIM_MODE = "full"
+DIFFUSION_SCALE = 1.0
+
+# Swaption defaults
+EXPIRY = 1.0
+TENOR = 5
+STRIKE = 0.03
+STRIKE_ATM = True
+NOTIONAL = 1.0
+PAYER = True
+G0_FLOOR = 1e-5
+ACCRUAL = 1.0
+
+# What to run when the file is executed directly
+RUN_T0_QUOTE = True
+RUN_MC_PRICE = True
+RUN_SURFACE = False
+
+# Surface settings
+SURFACE_STRIKES = "0.01,0.02,0.03,0.04,0.05"
+SURFACE_EXPIRIES = "0.5,1.0,2.0,5.0"
+SURFACE_TENORS = "1,2,5,10"
+SURFACE_OUT_DIR = None
+PLOT_DPI = 200
+SHOW_PLOTS = False
+
+# ---------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------
-CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
+try:
+    CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    CODE_ROOT = os.getcwd()
+
 PROJECT_ROOT = os.path.abspath(os.path.join(CODE_ROOT, ".."))
 THESIS_ROOT = os.path.abspath(os.path.join(CODE_ROOT, "..", ".."))
 
@@ -30,53 +79,24 @@ if THESIS_ROOT not in sys.path:
 from Code import config
 from Code.model.full_model import FullModel
 
-print(f"Active model variant from config.py: {config.VARIANT}")
-
 # ---------------------------------------------------------------------
-# Import shared helpers from simulation script
+# Import helpers strictly from simulate_model_naive
 # ---------------------------------------------------------------------
-try:
-    from simulate_model_naive import (
-        load_data,
-        simulate_latent_paths,
-        decode_from_latent_script,
-        resolve_checkpoint_path,
-        build_decoder_tau_grid,
-        compute_discount_paths,
-        get_grid_indices_for_values,
-        normalize_discretization_name,
-    )
-except ImportError:
-    try:
-        from Code.Pricing.simulate_model_naive import (
-            load_data,
-            simulate_latent_paths,
-            decode_from_latent_script,
-            resolve_checkpoint_path,
-            build_decoder_tau_grid,
-            compute_discount_paths,
-            get_grid_indices_for_values,
-            normalize_discretization_name,
-        )
-    except ImportError:
-        from simulate_model import (
-            load_data_and_initial_curve,
-            simulate_latent_paths,
-            decode_from_latent_script,
-            resolve_checkpoint_path,
-            build_decoder_tau_grid,
-            compute_discount_paths,
-            get_grid_indices_for_values,
-            normalize_discretization_name,
-        )
+from Code.Pricing.simulate_model_naive import (
+    load_data,
+    simulate_latent_paths,
+    decode_from_latent_script,
+    build_decoder_tau_grid,
+    compute_discount_paths,
+    get_grid_indices_for_values,
+)
 
-        def load_data(use="bbg", ccy_filter="", idx_choice=1390, device=None):
-            data = load_data_and_initial_curve(use, idx_choice, device)
-            if ccy_filter:
-                raise NotImplementedError(
-                    "ccy_filter requires simulate_model_naive.py or an equivalent load_data helper."
-                )
-            return data
+
+def normalize_discretization_name(name: str) -> str:
+    name = str(name).strip().lower()
+    if name not in {"euler", "milstein"}:
+        raise ValueError("discretization must be 'euler' or 'milstein'")
+    return name
 
 
 # ---------------------------------------------------------------------
@@ -91,6 +111,49 @@ def set_seed(seed: int):
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+
+def resolve_checkpoint_path_current(
+    thesis_root: str,
+    use: str,
+    latent_dim: int,
+    epochs: int,
+    use_pricing_checkpoint: bool = False,
+    pricing_run_name: str = "pricing_ep200",
+    explicit_checkpoint_path: str = None,
+) -> str:
+    if explicit_checkpoint_path:
+        if os.path.exists(explicit_checkpoint_path):
+            return os.path.abspath(explicit_checkpoint_path)
+        raise FileNotFoundError(f"Explicit checkpoint path does not exist: {explicit_checkpoint_path}")
+
+    variant = config.VARIANT
+    base_dir = os.path.join(
+        thesis_root,
+        "Figures",
+        "TrainingResults",
+        f"dim{latent_dim}_{variant}",
+    )
+
+    if use_pricing_checkpoint:
+        candidates = [
+            os.path.join(base_dir, pricing_run_name, "full_checkpoint.pt"),
+            os.path.join(base_dir, pricing_run_name, f"checkpoint_dim{latent_dim}_{pricing_run_name}.pt"),
+            os.path.join(base_dir, pricing_run_name, f"best_checkpoint_dim{latent_dim}.pt"),
+        ]
+    else:
+        candidates = [
+            os.path.join(base_dir, f"ep{epochs}", f"checkpoint_dim{latent_dim}_ep{epochs}.pt"),
+            os.path.join(base_dir, f"ep{epochs}", f"best_checkpoint_dim{latent_dim}.pt"),
+            os.path.join(thesis_root, "..", "checkpoints", f"fullmodel_{use}_dim{latent_dim}_ep{epochs}.pt"),
+        ]
+
+    for path in candidates:
+        if os.path.exists(path):
+            return os.path.abspath(path)
+
+    searched = "\n".join(f"  - {os.path.abspath(p)}" for p in candidates)
+    raise FileNotFoundError(f"Checkpoint not found. Searched:\n{searched}")
 
 
 def maybe_upgrade_old_stable_k_state_dict(state_dict, model):
@@ -129,21 +192,17 @@ def maybe_upgrade_old_stable_k_state_dict(state_dict, model):
     eps = float(getattr(model.K, "epsilon", 1e-3))
     I = torch.eye(d, device=device, dtype=dtype)
 
-    # Old M = S - A
     S = B - B.t()
     A = L @ L.t() + eps * I
     M = S - A
 
-    # Solve M theta = -N
     theta = torch.linalg.solve(M, (-N).unsqueeze(-1)).squeeze(-1)
 
-    # Set kappa = 1  => raw_kappa = softplus^{-1}(1) = log(expm1(1))
     one = torch.tensor(1.0, device=device, dtype=dtype)
     raw_kappa = torch.log(torch.expm1(one))
 
     new_state["K.theta"] = theta
     new_state["K.raw_kappa"] = raw_kappa
-
     del new_state["K.N"]
 
     print(f"[compat] Created K.theta = {theta.detach().cpu().numpy()}")
@@ -177,13 +236,41 @@ def safe_load_state_dict_compat(model, state_dict):
         )
 
 
-def load_model(checkpoint_path: str, device: torch.device, latent_dim: int = 2) -> FullModel:
+def build_model_init_kwargs(raw_checkpoint, latent_dim: int):
+    model_kwargs = {"latent_dim": int(latent_dim)}
+
+    if isinstance(raw_checkpoint, dict) and "model_config" in raw_checkpoint:
+        cfg = raw_checkpoint["model_config"]
+        model_kwargs["latent_dim"] = int(cfg.get("latent_dim", model_kwargs["latent_dim"]))
+
+        if cfg.get("sigma_init", None) is not None:
+            model_kwargs["sigma_init"] = float(cfg["sigma_init"])
+
+        if cfg.get("k_drift_scale_init", None) is not None:
+            model_kwargs["k_drift_scale_init"] = float(cfg["k_drift_scale_init"])
+
+        if cfg.get("k_z_center_init", None) is not None:
+            model_kwargs["k_z_center_init"] = np.asarray(cfg["k_z_center_init"], dtype=np.float32)
+
+        if cfg.get("k_learn_center", None) is not None:
+            model_kwargs["k_learn_center"] = bool(cfg["k_learn_center"])
+
+    return model_kwargs
+
+
+def load_model(
+    checkpoint_path: str,
+    device: torch.device,
+    latent_dim: int = 2,
+    use_pricing_checkpoint: bool = False,
+    pricing_run_name: str = "pricing_ep200",
+) -> FullModel:
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    raw = torch.load(checkpoint_path, map_location=device)
+    raw = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
-    if "model_state_dict" in raw:
+    if isinstance(raw, dict) and "model_state_dict" in raw:
         state_dict = raw["model_state_dict"]
         saved_variant = raw.get("variant", "unknown")
         if saved_variant != "unknown" and saved_variant != config.VARIANT:
@@ -194,7 +281,11 @@ def load_model(checkpoint_path: str, device: torch.device, latent_dim: int = 2) 
     else:
         state_dict = raw
 
-    model = FullModel(latent_dim=latent_dim)
+    model_kwargs = build_model_init_kwargs(raw, latent_dim=latent_dim)
+    print("Model init kwargs:")
+    print(model_kwargs)
+
+    model = FullModel(**model_kwargs)
     state_dict = maybe_upgrade_old_stable_k_state_dict(state_dict, model)
     safe_load_state_dict_compat(model, state_dict)
     model = model.to(device).double()
@@ -202,6 +293,9 @@ def load_model(checkpoint_path: str, device: torch.device, latent_dim: int = 2) 
 
     print(f"Loaded model from {checkpoint_path}")
     print(f"  Active config variant: {config.VARIANT}")
+    print(f"  Using pricing checkpoint: {use_pricing_checkpoint}")
+    if use_pricing_checkpoint:
+        print(f"  Pricing run name: {pricing_run_name}")
     print(f"  Model dtype: {next(model.parameters()).dtype}")
     return model
 
@@ -279,17 +373,17 @@ def decode_discount_curve_batch_safe(model, z_batch, tau_grid, g0_floor=1e-5):
     if z_batch.dim() != 2:
         raise ValueError(f"Expected z_batch shape (B,d), got {tuple(z_batch.shape)}")
 
-    B = z_batch.shape[0]
+    batch_size = z_batch.shape[0]
     device = z_batch.device
     dtype = z_batch.dtype
 
     P_full_out = torch.full(
-        (B, tau_grid.numel()),
+        (batch_size, tau_grid.numel()),
         float("nan"),
         device=device,
         dtype=dtype,
     )
-    valid = torch.zeros(B, device=device, dtype=torch.bool)
+    valid = torch.zeros(batch_size, device=device, dtype=torch.bool)
 
     try:
         P_full, _, _, _, _, _, _, _ = decode_from_latent_script(
@@ -309,11 +403,11 @@ def decode_discount_curve_batch_safe(model, z_batch, tau_grid, g0_floor=1e-5):
             RuntimeWarning,
         )
 
-    for i in range(B):
+    for i in range(batch_size):
         try:
             P_i, _, _, _, _, _, _, _ = decode_from_latent_script(
                 model,
-                z_batch[i : i + 1],
+                z_batch[i: i + 1],
                 tau_grid,
                 G_floor=g0_floor,
                 check_short_rate=False,
@@ -330,18 +424,6 @@ def decode_discount_curve_batch_safe(model, z_batch, tau_grid, g0_floor=1e-5):
 # Swap helpers
 # ---------------------------------------------------------------------
 def spot_start_swap_rate_and_annuity_from_discount(P_payments: torch.Tensor, accrual: float = 1.0):
-    """
-    Spot-start swap at a given date t.
-
-    Args:
-        P_payments: (B, n_payments) with
-            P(t,t+alpha), P(t,t+2alpha), ..., P(t,t+n*alpha)
-        accrual: fixed-leg accrual fraction
-
-    Returns:
-        swap_rate: (B,)
-        annuity:   (B,)
-    """
     if P_payments.ndim != 2:
         raise ValueError(f"Expected P_payments shape (B,n), got {tuple(P_payments.shape)}")
 
@@ -371,10 +453,6 @@ def time0_forward_swap_and_annuity_from_z(
     g0_floor: float = 1e-5,
     accrual: float = 1.0,
 ):
-    """
-    Extract the time-0 forward swap rate and annuity for a swaption expiring
-    at `expiry` into a `tenor`-year underlying swap.
-    """
     if tenor <= 0:
         raise ValueError(f"tenor must be positive, got {tenor}")
     if expiry < 0:
@@ -445,10 +523,6 @@ def swaption_underlying_at_expiry(
     accrual: float = 1.0,
     discount_paths: torch.Tensor = None,
 ):
-    """
-    Prepare pathwise quantities needed for a European swaption payoff:
-      PV = D(0,T_exp) * A(T_exp) * max(S(T_exp) - K, 0)  [payer]
-    """
     if tenor <= 0:
         raise ValueError(f"tenor must be positive, got {tenor}")
     if z_paths.ndim != 3:
@@ -671,23 +745,44 @@ def implied_bachelier_vol(
 def prepare_pricing_context(
     use="bbg",
     latent_dim=2,
-    epochs=3500,
-    idx_choice=-1,
-    ccy_filter="",
+    epochs=200,
+    idx_choice=0,
+    ccy_filter="EUR",
     seed=1234,
     tau_fine_step=1 / 52,
     tau_fine_horizon=1.0,
     device=None,
+    use_pricing_checkpoint=False,
+    pricing_run_name="pricing_ep200",
+    explicit_checkpoint_path=None,
 ):
     set_seed(seed)
 
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"Repo root: {THESIS_ROOT}")
+    print(f"Code root: {CODE_ROOT}")
+    print(f"Active model variant from config.py: {config.VARIANT}")
     print(f"Using device: {device}")
     print(f"Seed: {seed}")
 
-    checkpoint_path = resolve_checkpoint_path(CODE_ROOT, use, latent_dim, epochs)
-    model = load_model(checkpoint_path, device=device, latent_dim=latent_dim)
+    checkpoint_path = resolve_checkpoint_path_current(
+        thesis_root=THESIS_ROOT,
+        use=use,
+        latent_dim=latent_dim,
+        epochs=epochs,
+        use_pricing_checkpoint=use_pricing_checkpoint,
+        pricing_run_name=pricing_run_name,
+        explicit_checkpoint_path=explicit_checkpoint_path,
+    )
+    model = load_model(
+        checkpoint_path,
+        device=device,
+        latent_dim=latent_dim,
+        use_pricing_checkpoint=use_pricing_checkpoint,
+        pricing_run_name=pricing_run_name,
+    )
 
     data = load_data(use=use, ccy_filter=ccy_filter, idx_choice=idx_choice, device=device)
     S0 = data["S0"]
@@ -727,6 +822,8 @@ def prepare_pricing_context(
         "seed": seed,
         "tau_fine_step": tau_fine_step,
         "tau_fine_horizon": tau_fine_horizon,
+        "use_pricing_checkpoint": use_pricing_checkpoint,
+        "pricing_run_name": pricing_run_name,
     }
 
 
@@ -1057,7 +1154,7 @@ def run_vol_surface_grid(
 
             results.append(row)
 
-    df = __import__("pandas").DataFrame(results)
+    df = pd.DataFrame(results)
     csv_path = os.path.join(out_dir, "swaption_bachelier_surface.csv")
     df.to_csv(csv_path, index=False)
     print(f"Saved swaption surface CSV to {csv_path}")
@@ -1068,7 +1165,7 @@ def run_vol_surface_grid(
             if sub.empty:
                 continue
 
-            vols = [sub.iloc[0][f"bachelier_vol_{strike}"] for strike in strikes]
+            vols = [sub.iloc[0].get(f"bachelier_vol_{strike}", np.nan) for strike in strikes]
 
             fig, ax = plt.subplots(figsize=(7, 4.5))
             ax.plot(strikes, vols, marker="o")
@@ -1090,63 +1187,84 @@ def run_vol_surface_grid(
     return df
 
 
-# ---------------------------------------------------------------------
-# Example lines to run one by one
-# ---------------------------------------------------------------------
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# ctx = prepare_pricing_context(
-#     use="bbg",
-#     latent_dim=2,
-#     epochs=3500,
-#     idx_choice=0,
-#     ccy_filter="EUR",
-#     seed=1234,
-#     device=device,
-# )
-#
-# quote = quote_swaption_time0(
-#     ctx=ctx,
-#     expiry=1.0,
-#     tenor=5,
-#     strike_atm=True,
-#     payer=True,
-# )
-#
-# sim = simulate_for_pricing(
-#     ctx=ctx,
-#     n_paths=2000,
-#     n_steps=120,
-#     dt=1/12,
-#     discretization="euler",
-#     sim_mode="full",
-#     diffusion_scale=1.0,
-# )
-#
-# pricing = price_swaption_from_simulation(
-#     ctx=ctx,
-#     sim=sim,
-#     expiry=1.0,
-#     tenor=5,
-#     strike=quote["strike"],
-#     payer=True,
-#     output_bachelier_vol=True,
-# )
-#
-# surface_df = run_vol_surface_grid(
-#     ctx=ctx,
-#     dt=1/12,
-#     notional=1.0,
-#     out_dir=os.path.join(THESIS_ROOT, "Figures", "Pricing"),
-#     strikes=parse_float_list("0.01,0.02,0.03,0.04,0.05"),
-#     expiries=parse_float_list("0.5,1.0,2.0,5.0"),
-#     tenors=[int(round(x)) for x in parse_float_list("1,2,5,10")],
-#     n_paths=1000,
-#     n_steps=120,
-#     discretization="euler",
-#     g0_floor=1e-5,
-#     payer=True,
-#     sim_mode="full",
-#     diffusion_scale=1.0,
-#     plot_dpi=200,
-#     show_plots=False,
-# )
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    surface_out_dir = SURFACE_OUT_DIR
+    if surface_out_dir is None:
+        surface_out_dir = os.path.join(THESIS_ROOT, "Figures", "Pricing", "pricing_outputs")
+
+    ctx = prepare_pricing_context(
+        use=USE,
+        latent_dim=LATENT_DIM,
+        epochs=EPOCHS,
+        idx_choice=IDX_CHOICE,
+        ccy_filter=CCY_FILTER,
+        seed=SEED,
+        device=device,
+        use_pricing_checkpoint=USE_PRICING_CHECKPOINT,
+        pricing_run_name=PRICING_RUN_NAME,
+    )
+
+    quote = None
+    if RUN_T0_QUOTE or RUN_MC_PRICE:
+        quote = quote_swaption_time0(
+            ctx=ctx,
+            expiry=EXPIRY,
+            tenor=TENOR,
+            strike=STRIKE,
+            strike_atm=STRIKE_ATM,
+            notional=NOTIONAL,
+            payer=PAYER,
+            g0_floor=G0_FLOOR,
+            accrual=ACCRUAL,
+        )
+
+    if RUN_MC_PRICE:
+        sim = simulate_for_pricing(
+            ctx=ctx,
+            n_paths=N_PATHS,
+            n_steps=N_STEPS,
+            dt=DT,
+            discretization=DISCRETIZATION,
+            sim_mode=SIM_MODE,
+            diffusion_scale=DIFFUSION_SCALE,
+        )
+
+        _ = price_swaption_from_simulation(
+            ctx=ctx,
+            sim=sim,
+            expiry=EXPIRY,
+            tenor=TENOR,
+            strike=quote["strike"],
+            notional=NOTIONAL,
+            payer=PAYER,
+            g0_floor=G0_FLOOR,
+            accrual=ACCRUAL,
+            output_bachelier_vol=True,
+        )
+
+    if RUN_SURFACE:
+        _ = run_vol_surface_grid(
+            ctx=ctx,
+            dt=DT,
+            notional=NOTIONAL,
+            out_dir=surface_out_dir,
+            strikes=parse_float_list(SURFACE_STRIKES),
+            expiries=parse_float_list(SURFACE_EXPIRIES),
+            tenors=[int(round(x)) for x in parse_float_list(SURFACE_TENORS)],
+            n_paths=N_PATHS,
+            n_steps=N_STEPS,
+            discretization=DISCRETIZATION,
+            g0_floor=G0_FLOOR,
+            payer=PAYER,
+            accrual=ACCRUAL,
+            sim_mode=SIM_MODE,
+            diffusion_scale=DIFFUSION_SCALE,
+            plot_dpi=PLOT_DPI,
+            show_plots=SHOW_PLOTS,
+        )
+
+
+if __name__ == "__main__":
+    main()

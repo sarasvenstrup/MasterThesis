@@ -40,11 +40,42 @@ print(f"Repo root: {REPO_ROOT}")
 print(f"Active model variant from config.py: {config.VARIANT}")
 
 # ==========================================================
-# Defaults for reconstructing model when checkpoint is a raw
-# plain state_dict (e.g. best_checkpoint_dim2.pt)
+# USER SETTINGS
 # ==========================================================
-DEFAULT_SIGMA_INIT = 0.0075
-DEFAULT_K_DRIFT_SCALE_INIT = 0.25
+SHOW_PLOTS = False
+USE_SAVED_METADATA = True
+
+# Toggle between ordinary stable checkpoint folder and pricing checkpoint folder
+USE_PRICING_CHECKPOINT = True
+PRICING_RUN_NAME = "pricing_dyn_ep200"   # used only if checkpoint_path is not already inside bundle metadata
+
+# This is just fallback metadata if not found in the bundle
+USE = "bbg"
+LATENT_DIM = 2
+EPOCHS = 200
+
+# Bundle to diagnose
+BUNDLE_PATH = (
+    r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\Pricing\simulations"
+    r"\simulation_bundle_bbg_dim2_ep200_paths500_steps24_seed1234_euler_full_diff1_pricing_dyn_ep200.pt"
+)
+
+# Diagnostics settings
+MAX_MAHAL = 4.0
+G0_FLOOR = 1e-5
+MARTINGALE_DATES = (5, 10, 20, 30)
+MARTINGALE_TOL = 0.02
+PLOT_CURVE_TIMES = (0, 0.5, 1.0, 2.0)
+PLOT_TENORS = (1, 5, 10, 30)
+PLOT_DPI = 200
+
+# Logging controls
+MARTINGALE_LOG_EVERY_COMBO = 1
+MARTINGALE_LOG_EVERY_PATHS = 100
+
+# Fallback defaults only used if checkpoint is a raw state_dict
+DEFAULT_SIGMA_INIT = 0.015
+DEFAULT_K_DRIFT_SCALE_INIT = 0.10
 DEFAULT_K_LEARN_CENTER = True
 DEFAULT_K_Z_CENTER_INIT = None
 
@@ -69,24 +100,33 @@ def safe_switch_backend(show_plots: bool):
         plt.switch_backend("Agg")
 
 
-def resolve_checkpoint_path(repo_root: str, use: str, latent_dim: int, epochs: int) -> str:
+def resolve_checkpoint_path(
+    thesis_root: str,
+    latent_dim: int,
+    epochs: int,
+    use_pricing_checkpoint: bool = False,
+    pricing_run_name: str | None = None,
+) -> str:
     variant = config.VARIANT
-
-    new_filename = f"checkpoint_dim{latent_dim}_ep{epochs}.pt"
-    new_path = os.path.join(
-        THESIS_ROOT,
+    dim_dir = os.path.join(
+        thesis_root,
         "Figures",
         "TrainingResults",
         f"dim{latent_dim}_{variant}",
-        f"ep{epochs}",
-        new_filename,
     )
 
-    old_filename = f"fullmodel_{use}_dim{latent_dim}_ep{epochs}.pt"
+    if use_pricing_checkpoint:
+        if pricing_run_name is None:
+            raise ValueError("pricing_run_name must be provided when use_pricing_checkpoint=True")
+        run_dir = os.path.join(dim_dir, pricing_run_name)
+    else:
+        run_dir = os.path.join(dim_dir, f"ep{epochs}")
+
     candidates = [
-        new_path,
-        os.path.join(repo_root, "..", "checkpoints", old_filename),
-        os.path.join(repo_root, "checkpoints", old_filename),
+        os.path.join(run_dir, "full_checkpoint.pt"),
+        os.path.join(run_dir, f"best_checkpoint_dim{latent_dim}.pt"),
+        os.path.join(run_dir, f"checkpoint_dim{latent_dim}.pt"),
+        os.path.join(run_dir, f"checkpoint_dim{latent_dim}_ep{epochs}.pt"),
     ]
 
     for path in candidates:
@@ -138,14 +178,20 @@ def build_model_init_kwargs(
         "k_learn_center": k_learn_center,
     }
 
-    state_dict = raw_checkpoint["model_state_dict"] if isinstance(raw_checkpoint, dict) and "model_state_dict" in raw_checkpoint else raw_checkpoint
+    state_dict = (
+        raw_checkpoint["model_state_dict"]
+        if isinstance(raw_checkpoint, dict) and "model_state_dict" in raw_checkpoint
+        else raw_checkpoint
+    )
 
     if isinstance(raw_checkpoint, dict) and "model_config" in raw_checkpoint:
         cfg = raw_checkpoint["model_config"]
 
         model_kwargs["latent_dim"] = int(cfg.get("latent_dim", model_kwargs["latent_dim"]))
         model_kwargs["sigma_init"] = float(cfg.get("sigma_init", model_kwargs["sigma_init"]))
-        model_kwargs["k_drift_scale_init"] = float(cfg.get("k_drift_scale_init", model_kwargs["k_drift_scale_init"]))
+        model_kwargs["k_drift_scale_init"] = float(
+            cfg.get("k_drift_scale_init", model_kwargs["k_drift_scale_init"])
+        )
 
         if cfg.get("k_z_center_init", None) is not None:
             model_kwargs["k_z_center_init"] = np.asarray(cfg["k_z_center_init"], dtype=np.float32)
@@ -167,20 +213,27 @@ def build_model_init_kwargs(
 
 def load_and_setup_model(
     device,
-    use,
     latent_dim,
     epochs,
     checkpoint_path=None,
+    use_pricing_checkpoint=False,
+    pricing_run_name=None,
     sigma_init=DEFAULT_SIGMA_INIT,
     k_drift_scale_init=DEFAULT_K_DRIFT_SCALE_INIT,
     k_z_center_init=DEFAULT_K_Z_CENTER_INIT,
     k_learn_center=DEFAULT_K_LEARN_CENTER,
 ):
     if latent_dim != 2:
-        raise ValueError("This script currently supports only the 2-factor model (latent_dim=2).")
+        raise ValueError("This script currently supports only latent_dim=2.")
 
     if checkpoint_path is None:
-        checkpoint_path = resolve_checkpoint_path(REPO_ROOT, use, latent_dim, epochs)
+        checkpoint_path = resolve_checkpoint_path(
+            thesis_root=THESIS_ROOT,
+            latent_dim=latent_dim,
+            epochs=epochs,
+            use_pricing_checkpoint=use_pricing_checkpoint,
+            pricing_run_name=pricing_run_name,
+        )
 
     raw = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
@@ -192,7 +245,7 @@ def load_and_setup_model(
         if saved_variant != "unknown" and saved_variant != config.VARIANT:
             raise ValueError(
                 f"Checkpoint variant '{saved_variant}' does not match active "
-                f"config.VARIANT '{config.VARIANT}'. Update Code/config.py."
+                f"config.VARIANT '{config.VARIANT}'."
             )
     else:
         state_dict = raw
@@ -217,6 +270,9 @@ def load_and_setup_model(
 
     print(f"Loaded model from {checkpoint_path}")
     print(f"  Active config variant: {config.VARIANT}")
+    print(f"  Using pricing checkpoint: {use_pricing_checkpoint}")
+    if use_pricing_checkpoint:
+        print(f"  Pricing run name: {pricing_run_name}")
     print(f"  Model dtype: {next(model.parameters()).dtype}")
 
     return model, checkpoint_path
@@ -233,6 +289,7 @@ def load_simulation_bundle(bundle_path, device):
     bundle["z_train_mean"] = bundle["z_train_mean"].to(device)
     bundle["z_train_cov"] = bundle["z_train_cov"].to(device)
     bundle["decoder_tau_grid"] = bundle["decoder_tau_grid"].to(device)
+
     return bundle
 
 
@@ -266,7 +323,7 @@ def get_L(model, z):
 
     raise TypeError(
         "Unsupported model.H(z) output. Expected either "
-        "(sigmas, rhos) or a tensor L of shape (B,d,d)."
+        "(sigmas, rhos) or tensor L with shape (B,d,d)."
     )
 
 
@@ -292,7 +349,7 @@ def compute_latent_statistics(model, X_tensor, device, latent_dim):
     z_train_list = []
     with torch.no_grad():
         for i in range(0, X_tensor.shape[0], 256):
-            batch = X_tensor[i: min(i + 256, X_tensor.shape[0])].to(device)
+            batch = X_tensor[i:min(i + 256, X_tensor.shape[0])].to(device)
             z_batch = model.encoder(batch)
             z_train_list.append(z_batch)
 
@@ -320,7 +377,7 @@ def diagnose_G0_on_training_cloud(model, X_tensor, device, batch_size=256):
 
     with torch.no_grad():
         for i in range(0, X_tensor.shape[0], batch_size):
-            batch = X_tensor[i: min(i + batch_size, X_tensor.shape[0])].to(device)
+            batch = X_tensor[i:min(i + batch_size, X_tensor.shape[0])].to(device)
             z_batch = model.encoder(batch)
 
             tau0 = torch.zeros(1, device=device, dtype=z_batch.dtype)
@@ -356,7 +413,7 @@ def diagnose_G0_on_simulated_paths(model, z_paths):
     print("DIAGNOSTIC: Checking G(z_t,0) on simulated latent paths")
     print("=" * 60)
 
-    n_paths, n_times, _ = z_paths.shape
+    _, n_times, _ = z_paths.shape
     device = z_paths.device
     dtype = z_paths.dtype
 
@@ -484,7 +541,6 @@ def decode_from_latent_script(model, z, tau, G_floor=1e-5, check_short_rate=True
     device = z.device
     dtype = z.dtype
 
-    # Critical fix: diagnostics below need autograd
     z = z.to(device=device, dtype=dtype).detach().clone().requires_grad_(True)
     tau = tau.to(device=device, dtype=dtype).detach().clone().requires_grad_(True)
 
@@ -493,7 +549,7 @@ def decode_from_latent_script(model, z, tau, G_floor=1e-5, check_short_rate=True
     if not torch.all(tau[1:] > tau[:-1]):
         raise RuntimeError("tau grid must be strictly increasing")
     if abs(float(tau[0].item())) > 1e-12:
-        raise RuntimeError("tau grid must start at 0 to enforce decoder boundary conditions")
+        raise RuntimeError("tau grid must start at 0")
 
     G_vals = model.G(z, tau)
     if G_vals.dim() == 1:
@@ -563,7 +619,6 @@ def decode_from_latent_script(model, z, tau, G_floor=1e-5, check_short_rate=True
         raise RuntimeError("Non-finite discount factors encountered")
     if (P_full <= 0).any():
         raise RuntimeError("Non-positive discount factors encountered")
-
     if not torch.allclose(P_full[:, 0], torch.ones_like(P_full[:, 0]), atol=1e-8, rtol=0.0):
         raise RuntimeError("Decoder invariant violated: P(z,0) != 1")
 
@@ -688,7 +743,7 @@ def decode_and_save_results_naive(
                 try:
                     P_full_p, _, _, _, _, _, _, dec_diag_p = decode_from_latent_script(
                         model,
-                        z_t[p: p + 1],
+                        z_t[p:p + 1],
                         decoder_tau_grid,
                         G_floor=g0_floor,
                         check_short_rate=True,
@@ -844,6 +899,7 @@ def get_grid_indices_for_values(grid: torch.Tensor, values: torch.Tensor, tol: f
         idx_list.append(int(idx.item()))
     return idx_list
 
+
 def martingale_diagnostics_naive(
     model,
     z_paths,
@@ -877,9 +933,6 @@ def martingale_diagnostics_naive(
 
     n_paths_local, n_times, _ = z_paths.shape
 
-    # ------------------------------------------------------
-    # Build all valid jobs first: (t_idx, t_now, U)
-    # ------------------------------------------------------
     valid_jobs = []
     for t_idx, t_now in enumerate(times):
         t_now = float(t_now)
@@ -895,10 +948,6 @@ def martingale_diagnostics_naive(
     )
 
     t_mart0 = time.time()
-
-    # ------------------------------------------------------
-    # Precompute initial values once per maturity U
-    # ------------------------------------------------------
     initial_value_by_U = {}
     print("[MART] Precomputing initial discounted bond values at t=0 ...")
 
@@ -934,9 +983,6 @@ def martingale_diagnostics_naive(
         initial_value_by_U[u] = initial_val
         print(f"[MART] U={u:.2f} initial discounted bond value = {initial_val:.8f}")
 
-    # ------------------------------------------------------
-    # Main loop over (time, maturity) combinations
-    # ------------------------------------------------------
     for job_idx, (t_idx, t_now, u) in enumerate(valid_jobs, start=1):
         tau_remaining = float(u - t_now)
         combo_start = time.time()
@@ -974,7 +1020,7 @@ def martingale_diagnostics_naive(
                 ((p + 1) % martingale_log_every_paths == 0)
             ):
                 print(
-                    f"[MART]   path {p+1:4d}/{n_paths_local} | "
+                    f"[MART]   path {p + 1:4d}/{n_paths_local} | "
                     f"t={t_now:.3f} | U={u:.2f} | "
                     f"valid_so_far={len(vals)} | failed_so_far={n_fail}"
                 )
@@ -982,7 +1028,7 @@ def martingale_diagnostics_naive(
             try:
                 P_full, _, _, _, _, _, _, _ = decode_from_latent_script(
                     model,
-                    z_paths[p: p + 1, t_idx, :],
+                    z_paths[p:p + 1, t_idx, :],
                     tau_grid,
                     G_floor=g0_floor,
                     check_short_rate=False,
@@ -1065,6 +1111,7 @@ def martingale_diagnostics_naive(
     print(f"[MART] Finished martingale diagnostics in {total_time:.1f}s")
     print("=" * 60 + "\n")
     return mart_df
+
 
 # ==========================================================
 # Plot helpers
@@ -1266,6 +1313,8 @@ def run_all_diagnostics(
     k_learn_center=DEFAULT_K_LEARN_CENTER,
     martingale_log_every_combo=1,
     martingale_log_every_paths=100,
+    use_pricing_checkpoint=False,
+    pricing_run_name=None,
 ):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1283,6 +1332,8 @@ def run_all_diagnostics(
         latent_dim = int(metadata.get("latent_dim", latent_dim))
         ccy_filter = metadata.get("ccy_filter", ccy_filter)
         checkpoint_path = metadata.get("checkpoint_path", None)
+        use_pricing_checkpoint = bool(metadata.get("use_pricing_checkpoint", use_pricing_checkpoint))
+        pricing_run_name = metadata.get("pricing_run_name", pricing_run_name)
 
     print("\nLoaded simulation bundle metadata:")
     for k, v in metadata.items():
@@ -1290,10 +1341,11 @@ def run_all_diagnostics(
 
     model, resolved_checkpoint_path = load_and_setup_model(
         device=device,
-        use=use,
         latent_dim=latent_dim,
         epochs=epochs,
         checkpoint_path=checkpoint_path,
+        use_pricing_checkpoint=use_pricing_checkpoint,
+        pricing_run_name=pricing_run_name,
         sigma_init=sigma_init,
         k_drift_scale_init=k_drift_scale_init,
         k_z_center_init=k_z_center_init,
@@ -1413,31 +1465,27 @@ def run_all_diagnostics(
 
 
 # ==========================================================
-# Example lines to run
+# Run
 # ==========================================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-bundle_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\Pricing\simulations\simulation_bundle_bbg_dim2_ep200_paths500_steps24_seed1234_euler_full_diff1.pt"
-
 diag_out = run_all_diagnostics(
-    bundle_path=bundle_path,
+    bundle_path=BUNDLE_PATH,
     device=device,
-    use_saved_metadata=True,
-    max_mahal=4.0,
-    g0_floor=1e-5,
-    martingale_dates=(5, 10, 20, 30),
-    martingale_tol=0.02,
-    plot_curve_times=(0, 0.5, 1.0, 2.0),
-    plot_tenors=(1, 5, 10, 30),
-    plot_dpi=200,
-    show_plots=False,
-
-    sigma_init=0.0075,
-    k_drift_scale_init=0.25,
-    k_z_center_init=np.array([-0.04631, 0.04223], dtype=np.float32),
-    k_learn_center=False,
-
-    # logging controls
-    martingale_log_every_combo=1,     # print every (t,U) job
-    martingale_log_every_paths=100,   # print every 100 paths inside each job
+    use_saved_metadata=USE_SAVED_METADATA,
+    use=USE,
+    epochs=EPOCHS,
+    latent_dim=LATENT_DIM,
+    max_mahal=MAX_MAHAL,
+    g0_floor=G0_FLOOR,
+    martingale_dates=MARTINGALE_DATES,
+    martingale_tol=MARTINGALE_TOL,
+    plot_curve_times=PLOT_CURVE_TIMES,
+    plot_tenors=PLOT_TENORS,
+    plot_dpi=PLOT_DPI,
+    show_plots=SHOW_PLOTS,
+    martingale_log_every_combo=MARTINGALE_LOG_EVERY_COMBO,
+    martingale_log_every_paths=MARTINGALE_LOG_EVERY_PATHS,
+    use_pricing_checkpoint=USE_PRICING_CHECKPOINT,
+    pricing_run_name=PRICING_RUN_NAME,
 )
