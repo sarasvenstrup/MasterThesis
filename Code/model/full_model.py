@@ -196,11 +196,8 @@ class FullModel(nn.Module):
         # 3) Risk-neutral parameter networks
         mu = self.K(z)                                # (B,d)
 
-        if VARIANT == "stable":
-            sigma = self.H(z)  # (B,d,d), already diffusion / Cholesky factor
-        else:
-            sigmas, rhos = self.H(z)
-            sigma = L_from_sigmas_rhos(sigmas, rhos)
+        sigmas, rhos = self.H(z)
+        sigma = L_from_sigmas_rhos(sigmas, rhos)
 
         r_tilde = self.R(z)                           # (B,1) or (B,)
         if r_tilde.ndim == 2 and r_tilde.shape[-1] == 1:

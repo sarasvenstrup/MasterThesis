@@ -94,12 +94,13 @@ def safe_load_state_dict(model, state_dict):
             f"Real unexpected keys: {real_unexpected}"
         )
 
-
-def load_and_setup_model(device, use, latent_dim, epochs):
+def load_and_setup_model(device, use, latent_dim, epochs, checkpoint_path=None):
     if latent_dim != 2:
         raise ValueError("This script currently supports only the 2-factor model (latent_dim=2).")
 
-    checkpoint_path = resolve_checkpoint_path(REPO_ROOT, use, latent_dim, epochs)
+    if checkpoint_path is None:
+        checkpoint_path = resolve_checkpoint_path(REPO_ROOT, use, latent_dim, epochs)
+
     raw = torch.load(checkpoint_path, map_location=device)
 
     from Code.model.full_model import FullModel
@@ -467,7 +468,8 @@ def save_simulation_bundle(
 def run_simulation(
     use="bbg",
     latent_dim=2,
-    epochs=3500,
+    epochs=20,
+    checkpoint_path=None,
     n_paths=100,
     n_steps=24,
     dt=1/12,
@@ -489,7 +491,13 @@ def run_simulation(
     print(f"Using device: {device}")
     print(f"Seed: {seed}")
 
-    model, checkpoint_path = load_and_setup_model(device, use, latent_dim, epochs)
+    model, checkpoint_path = load_and_setup_model(
+        device=device,
+        use=use,
+        latent_dim=latent_dim,
+        epochs=epochs,
+        checkpoint_path=checkpoint_path,
+    )
 
     data = load_data(use=use, ccy_filter=ccy_filter, idx_choice=idx_choice, device=device)
     X_tensor = data["X_tensor"]
@@ -620,19 +628,20 @@ def run_simulation(
 
 # Example lines to run one by one
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-sim_out = run_simulation(
-     use="bbg",
-     latent_dim=2,
-     epochs=3500,
-     n_paths=500,
-     n_steps=24,
-     dt=1/12,
-     idx_choice=0,
-     ccy_filter="EUR",
-     discretization="euler",
-     sim_mode="full",
-     diffusion_scale=1.0,
-     seed=1234,
-     device=device,
- )
-bundle_path = sim_out["bundle_path"]
+sim_out_cont = run_simulation(
+    use="bbg",
+    latent_dim=2,
+    epochs=200,  # only metadata now, actual file is controlled by checkpoint_path
+    checkpoint_path=r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\cont_from_ep200_fixedcenter\best_checkpoint_dim2.pt",
+    n_paths=500,
+    n_steps=24,
+    dt=1/12,
+    idx_choice=0,
+    ccy_filter="EUR",
+    discretization="euler",
+    sim_mode="full",
+    diffusion_scale=1.0,
+    seed=1234,
+    device=device,
+)
+bundle_path = sim_out_cont["bundle_path"]

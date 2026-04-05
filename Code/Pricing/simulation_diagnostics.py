@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import sys
 import time
 import warnings
@@ -37,6 +38,35 @@ from Code.utils.rates import par_swap_from_discount
 
 print(f"Repo root: {REPO_ROOT}")
 print(f"Active model variant from config.py: {config.VARIANT}")
+
+# ==========================================================
+# Defaults for reconstructing model when checkpoint is a raw
+# plain state_dict (e.g. best_checkpoint_dim2.pt)
+# ==========================================================
+DEFAULT_SIGMA_INIT = 0.0075
+DEFAULT_K_DRIFT_SCALE_INIT = 0.25
+DEFAULT_K_LEARN_CENTER = True
+DEFAULT_K_Z_CENTER_INIT = None
+
+
+# ==========================================================
+# General helpers
+# ==========================================================
+def sanitize_tag(s: str) -> str:
+    s = str(s)
+    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", s)
+    return s.strip("_")
+
+
+def safe_switch_backend(show_plots: bool):
+    if show_plots:
+        try:
+            plt.switch_backend("TkAgg")
+        except Exception as e:
+            print(f"[WARN] Could not switch to TkAgg ({e}). Falling back to Agg.")
+            plt.switch_backend("Agg")
+    else:
+        plt.switch_backend("Agg")
 
 
 def resolve_checkpoint_path(repo_root: str, use: str, latent_dim: int, epochs: int) -> str:
@@ -92,16 +122,71 @@ def safe_load_state_dict(model, state_dict):
         )
 
 
-def load_and_setup_model(device, use, latent_dim, epochs):
+def build_model_init_kwargs(
+    raw_checkpoint,
+    latent_dim,
+    sigma_init=DEFAULT_SIGMA_INIT,
+    k_drift_scale_init=DEFAULT_K_DRIFT_SCALE_INIT,
+    k_z_center_init=DEFAULT_K_Z_CENTER_INIT,
+    k_learn_center=DEFAULT_K_LEARN_CENTER,
+):
+    model_kwargs = {
+        "latent_dim": latent_dim,
+        "sigma_init": sigma_init,
+        "k_drift_scale_init": k_drift_scale_init,
+        "k_z_center_init": k_z_center_init,
+        "k_learn_center": k_learn_center,
+    }
+
+    state_dict = raw_checkpoint["model_state_dict"] if isinstance(raw_checkpoint, dict) and "model_state_dict" in raw_checkpoint else raw_checkpoint
+
+    if isinstance(raw_checkpoint, dict) and "model_config" in raw_checkpoint:
+        cfg = raw_checkpoint["model_config"]
+
+        model_kwargs["latent_dim"] = int(cfg.get("latent_dim", model_kwargs["latent_dim"]))
+        model_kwargs["sigma_init"] = float(cfg.get("sigma_init", model_kwargs["sigma_init"]))
+        model_kwargs["k_drift_scale_init"] = float(cfg.get("k_drift_scale_init", model_kwargs["k_drift_scale_init"]))
+
+        if cfg.get("k_z_center_init", None) is not None:
+            model_kwargs["k_z_center_init"] = np.asarray(cfg["k_z_center_init"], dtype=np.float32)
+
+        if "k_learn_center" in cfg and cfg["k_learn_center"] is not None:
+            model_kwargs["k_learn_center"] = bool(cfg["k_learn_center"])
+
+    if model_kwargs["k_z_center_init"] is None and isinstance(state_dict, dict) and "K.theta" in state_dict:
+        try:
+            theta = state_dict["K.theta"].detach().cpu().numpy().astype(np.float32)
+            model_kwargs["k_z_center_init"] = theta
+            model_kwargs["k_learn_center"] = False
+            print("Inferred fixed center from state_dict K.theta:", theta)
+        except Exception as e:
+            print(f"[WARN] Could not infer K.theta from state_dict: {e}")
+
+    return model_kwargs
+
+
+def load_and_setup_model(
+    device,
+    use,
+    latent_dim,
+    epochs,
+    checkpoint_path=None,
+    sigma_init=DEFAULT_SIGMA_INIT,
+    k_drift_scale_init=DEFAULT_K_DRIFT_SCALE_INIT,
+    k_z_center_init=DEFAULT_K_Z_CENTER_INIT,
+    k_learn_center=DEFAULT_K_LEARN_CENTER,
+):
     if latent_dim != 2:
         raise ValueError("This script currently supports only the 2-factor model (latent_dim=2).")
 
-    checkpoint_path = resolve_checkpoint_path(REPO_ROOT, use, latent_dim, epochs)
-    raw = torch.load(checkpoint_path, map_location=device)
+    if checkpoint_path is None:
+        checkpoint_path = resolve_checkpoint_path(REPO_ROOT, use, latent_dim, epochs)
+
+    raw = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     from Code.model.full_model import FullModel
 
-    if "model_state_dict" in raw:
+    if isinstance(raw, dict) and "model_state_dict" in raw:
         state_dict = raw["model_state_dict"]
         saved_variant = raw.get("variant", "unknown")
         if saved_variant != "unknown" and saved_variant != config.VARIANT:
@@ -112,7 +197,19 @@ def load_and_setup_model(device, use, latent_dim, epochs):
     else:
         state_dict = raw
 
-    model = FullModel(latent_dim=latent_dim)
+    model_kwargs = build_model_init_kwargs(
+        raw_checkpoint=raw,
+        latent_dim=latent_dim,
+        sigma_init=sigma_init,
+        k_drift_scale_init=k_drift_scale_init,
+        k_z_center_init=k_z_center_init,
+        k_learn_center=k_learn_center,
+    )
+
+    print("Model init kwargs used for diagnostics loading:")
+    print(model_kwargs)
+
+    model = FullModel(**model_kwargs)
     safe_load_state_dict(model, state_dict)
 
     model.to(device).double()
@@ -122,7 +219,7 @@ def load_and_setup_model(device, use, latent_dim, epochs):
     print(f"  Active config variant: {config.VARIANT}")
     print(f"  Model dtype: {next(model.parameters()).dtype}")
 
-    return model
+    return model, checkpoint_path
 
 
 def load_simulation_bundle(bundle_path, device):
@@ -139,6 +236,23 @@ def load_simulation_bundle(bundle_path, device):
     return bundle
 
 
+def make_output_suffix(bundle_path, metadata):
+    base = os.path.splitext(os.path.basename(bundle_path))[0].replace("simulation_bundle_", "")
+
+    checkpoint_path = metadata.get("checkpoint_path", "")
+    if checkpoint_path:
+        parent = sanitize_tag(os.path.basename(os.path.dirname(checkpoint_path)))
+        ckpt = sanitize_tag(os.path.splitext(os.path.basename(checkpoint_path))[0])
+        tag = sanitize_tag(f"{parent}__{ckpt}")
+        if tag:
+            base = f"{base}__{tag}"
+
+    return base
+
+
+# ==========================================================
+# Model/data helpers
+# ==========================================================
 @torch.no_grad()
 def get_L(model, z):
     H_out = model.H(z)
@@ -178,7 +292,7 @@ def compute_latent_statistics(model, X_tensor, device, latent_dim):
     z_train_list = []
     with torch.no_grad():
         for i in range(0, X_tensor.shape[0], 256):
-            batch = X_tensor[i : min(i + 256, X_tensor.shape[0])].to(device)
+            batch = X_tensor[i: min(i + 256, X_tensor.shape[0])].to(device)
             z_batch = model.encoder(batch)
             z_train_list.append(z_batch)
 
@@ -206,7 +320,7 @@ def diagnose_G0_on_training_cloud(model, X_tensor, device, batch_size=256):
 
     with torch.no_grad():
         for i in range(0, X_tensor.shape[0], batch_size):
-            batch = X_tensor[i : min(i + batch_size, X_tensor.shape[0])].to(device)
+            batch = X_tensor[i: min(i + batch_size, X_tensor.shape[0])].to(device)
             z_batch = model.encoder(batch)
 
             tau0 = torch.zeros(1, device=device, dtype=z_batch.dtype)
@@ -298,6 +412,10 @@ def analyze_paths(z_paths, r_paths, mu_paths, L_paths, latent_dim):
     mu_np = mu_paths.detach().cpu().numpy()
     L_np = L_paths.detach().cpu().numpy()
     z_np = z_paths.detach().cpu().numpy()
+    r_np = r_paths.detach().cpu().numpy()
+
+    print("\n--- r_t Statistics ---")
+    print(f"r: mean={r_np.mean():.6f}, std={r_np.std():.6f}, min={r_np.min():.6f}, max={r_np.max():.6f}")
 
     print("\n--- MU (Drift) Statistics ---")
     for d in range(latent_dim):
@@ -356,13 +474,19 @@ def tenor_label(tenor_value):
     return f"{int(float(tenor_value))}Y"
 
 
+# ==========================================================
+# Decoder diagnostics
+# ==========================================================
 def decode_from_latent_script(model, z, tau, G_floor=1e-5, check_short_rate=True):
     if z.dim() == 1:
         z = z.unsqueeze(0)
 
     device = z.device
     dtype = z.dtype
-    tau = tau.to(device=device, dtype=dtype)
+
+    # Critical fix: diagnostics below need autograd
+    z = z.to(device=device, dtype=dtype).detach().clone().requires_grad_(True)
+    tau = tau.to(device=device, dtype=dtype).detach().clone().requires_grad_(True)
 
     if tau.ndim != 1 or tau.numel() < 2:
         raise RuntimeError("tau grid must be 1D and contain at least two points")
@@ -460,7 +584,16 @@ def decode_from_latent_script(model, z, tau, G_floor=1e-5, check_short_rate=True
         "max_short_rate_err": max_short_rate_err,
     }
 
-    return P_full, A_vals, B_vals, G_vals, mu, sigma, r_tilde, diagnostics
+    return (
+        P_full.detach(),
+        A_vals.detach(),
+        B_vals.detach(),
+        G_vals.detach(),
+        mu.detach(),
+        sigma.detach(),
+        r_tilde.detach(),
+        diagnostics,
+    )
 
 
 def decode_and_save_results_naive(
@@ -555,7 +688,7 @@ def decode_and_save_results_naive(
                 try:
                     P_full_p, _, _, _, _, _, _, dec_diag_p = decode_from_latent_script(
                         model,
-                        z_t[p : p + 1],
+                        z_t[p: p + 1],
                         decoder_tau_grid,
                         G_floor=g0_floor,
                         check_short_rate=True,
@@ -711,7 +844,6 @@ def get_grid_indices_for_values(grid: torch.Tensor, values: torch.Tensor, tol: f
         idx_list.append(int(idx.item()))
     return idx_list
 
-
 def martingale_diagnostics_naive(
     model,
     z_paths,
@@ -723,6 +855,8 @@ def martingale_diagnostics_naive(
     g0_floor,
     decoder_tau_grid,
     martingale_tol=0.02,
+    martingale_log_every_combo=1,
+    martingale_log_every_paths=100,
 ):
     if len(maturity_dates) == 0:
         print("No martingale dates requested; skipping discounted-bond martingale diagnostics.")
@@ -743,96 +877,166 @@ def martingale_diagnostics_naive(
 
     n_paths_local, n_times, _ = z_paths.shape
 
+    # ------------------------------------------------------
+    # Build all valid jobs first: (t_idx, t_now, U)
+    # ------------------------------------------------------
+    valid_jobs = []
     for t_idx, t_now in enumerate(times):
         t_now = float(t_now)
-        valid_U = [u for u in maturity_dates if u > t_now + 1e-12]
-        if len(valid_U) == 0:
+        for u in maturity_dates:
+            if u > t_now + 1e-12:
+                valid_jobs.append((t_idx, t_now, float(u)))
+
+    total_jobs = len(valid_jobs)
+    print(
+        f"[MART] Starting martingale diagnostics with "
+        f"{n_times} time points, {len(maturity_dates)} requested maturities, "
+        f"{n_paths_local} paths, total jobs={total_jobs}"
+    )
+
+    t_mart0 = time.time()
+
+    # ------------------------------------------------------
+    # Precompute initial values once per maturity U
+    # ------------------------------------------------------
+    initial_value_by_U = {}
+    print("[MART] Precomputing initial discounted bond values at t=0 ...")
+
+    for u in maturity_dates:
+        if u <= 0:
+            initial_value_by_U[u] = np.nan
             continue
 
-        for u in valid_U:
-            tau_remaining = float(u - t_now)
-
-            tau_grid = build_tau_grid_to_maturity(
+        try:
+            tau_grid_init = build_tau_grid_to_maturity(
                 decoder_tau_grid=decoder_tau_grid,
-                tau_end=tau_remaining,
+                tau_end=float(u),
                 device=device,
                 dtype=dtype,
             )
-            tau_idx = get_grid_indices_for_values(
-                tau_grid,
-                torch.tensor([tau_remaining], device=device, dtype=dtype),
+            tau_idx_init = get_grid_indices_for_values(
+                tau_grid_init,
+                torch.tensor([float(u)], device=device, dtype=dtype),
             )[0]
 
-            vals = []
-            for p in range(n_paths_local):
-                try:
-                    P_full, _, _, _, _, _, _, _ = decode_from_latent_script(
-                        model,
-                        z_paths[p : p + 1, t_idx, :],
-                        tau_grid,
-                        G_floor=g0_floor,
-                        check_short_rate=False,
-                    )
-                    disc_val = discount_paths[p, t_idx] * P_full[0, tau_idx]
-                    vals.append(float(disc_val.item()))
-                except RuntimeError:
-                    pass
+            P0_full, _, _, _, _, _, _, _ = decode_from_latent_script(
+                model,
+                z_paths[:1, 0, :],
+                tau_grid_init,
+                G_floor=g0_floor,
+                check_short_rate=False,
+            )
+            initial_val = float(P0_full[0, tau_idx_init].item())
+        except RuntimeError as e:
+            print(f"[MART][WARN] Initial value failed for U={u:.2f}: {e}")
+            initial_val = np.nan
+
+        initial_value_by_U[u] = initial_val
+        print(f"[MART] U={u:.2f} initial discounted bond value = {initial_val:.8f}")
+
+    # ------------------------------------------------------
+    # Main loop over (time, maturity) combinations
+    # ------------------------------------------------------
+    for job_idx, (t_idx, t_now, u) in enumerate(valid_jobs, start=1):
+        tau_remaining = float(u - t_now)
+        combo_start = time.time()
+
+        if martingale_log_every_combo > 0 and (
+            job_idx == 1 or
+            job_idx == total_jobs or
+            (job_idx % martingale_log_every_combo == 0)
+        ):
+            elapsed = time.time() - t_mart0
+            print(
+                f"[MART] job {job_idx}/{total_jobs} | "
+                f"t={t_now:.3f} | U={u:.2f} | tau={tau_remaining:.3f} | "
+                f"elapsed={elapsed:.1f}s"
+            )
+
+        tau_grid = build_tau_grid_to_maturity(
+            decoder_tau_grid=decoder_tau_grid,
+            tau_end=tau_remaining,
+            device=device,
+            dtype=dtype,
+        )
+        tau_idx = get_grid_indices_for_values(
+            tau_grid,
+            torch.tensor([tau_remaining], device=device, dtype=dtype),
+        )[0]
+
+        vals = []
+        n_fail = 0
+
+        for p in range(n_paths_local):
+            if martingale_log_every_paths and (
+                (p + 1) == 1 or
+                (p + 1) == n_paths_local or
+                ((p + 1) % martingale_log_every_paths == 0)
+            ):
+                print(
+                    f"[MART]   path {p+1:4d}/{n_paths_local} | "
+                    f"t={t_now:.3f} | U={u:.2f} | "
+                    f"valid_so_far={len(vals)} | failed_so_far={n_fail}"
+                )
 
             try:
-                tau_grid_init = build_tau_grid_to_maturity(
-                    decoder_tau_grid=decoder_tau_grid,
-                    tau_end=float(u),
-                    device=device,
-                    dtype=dtype,
-                )
-                tau_idx_init = get_grid_indices_for_values(
-                    tau_grid_init,
-                    torch.tensor([float(u)], device=device, dtype=dtype),
-                )[0]
-
-                P0_full, _, _, _, _, _, _, _ = decode_from_latent_script(
+                P_full, _, _, _, _, _, _, _ = decode_from_latent_script(
                     model,
-                    z_paths[:1, 0, :],
-                    tau_grid_init,
+                    z_paths[p: p + 1, t_idx, :],
+                    tau_grid,
                     G_floor=g0_floor,
                     check_short_rate=False,
                 )
-                initial_val = float(P0_full[0, tau_idx_init].item())
+                disc_val = discount_paths[p, t_idx] * P_full[0, tau_idx]
+                vals.append(float(disc_val.item()))
             except RuntimeError:
-                initial_val = np.nan
+                n_fail += 1
 
-            if len(vals) == 0:
-                mean_val = np.nan
-                std_val = np.nan
-                sem_val = np.nan
-                rel_err = np.nan
-                n_valid = 0
-            else:
-                arr = np.asarray(vals, dtype=float)
-                mean_val = float(arr.mean())
-                std_val = float(arr.std(ddof=0))
-                sem_val = float(std_val / math.sqrt(len(arr)))
-                rel_err = (
-                    abs(mean_val - initial_val) / max(abs(initial_val), 1e-12)
-                    if np.isfinite(initial_val)
-                    else np.nan
-                )
-                n_valid = len(vals)
+        initial_val = initial_value_by_U.get(u, np.nan)
 
-            out_rows.append(
-                {
-                    "time": t_now,
-                    "U": float(u),
-                    "tau_remaining": tau_remaining,
-                    "disc_bond_mean": mean_val,
-                    "disc_bond_std": std_val,
-                    "disc_bond_sem": sem_val,
-                    "initial_disc_bond_value": initial_val,
-                    "relative_mean_error": rel_err,
-                    "n_valid_paths": n_valid,
-                    "frac_valid_paths": n_valid / n_paths_local,
-                }
+        if len(vals) == 0:
+            mean_val = np.nan
+            std_val = np.nan
+            sem_val = np.nan
+            rel_err = np.nan
+            n_valid = 0
+        else:
+            arr = np.asarray(vals, dtype=float)
+            mean_val = float(arr.mean())
+            std_val = float(arr.std(ddof=0))
+            sem_val = float(std_val / math.sqrt(len(arr)))
+            rel_err = (
+                abs(mean_val - initial_val) / max(abs(initial_val), 1e-12)
+                if np.isfinite(initial_val)
+                else np.nan
             )
+            n_valid = len(vals)
+
+        out_rows.append(
+            {
+                "time": t_now,
+                "U": float(u),
+                "tau_remaining": tau_remaining,
+                "disc_bond_mean": mean_val,
+                "disc_bond_std": std_val,
+                "disc_bond_sem": sem_val,
+                "initial_disc_bond_value": initial_val,
+                "relative_mean_error": rel_err,
+                "n_valid_paths": n_valid,
+                "frac_valid_paths": n_valid / n_paths_local,
+                "n_failed_paths": n_fail,
+            }
+        )
+
+        combo_elapsed = time.time() - combo_start
+        total_elapsed = time.time() - t_mart0
+        print(
+            f"[MART] done job {job_idx}/{total_jobs} | "
+            f"t={t_now:.3f} | U={u:.2f} | "
+            f"valid={n_valid}/{n_paths_local} | failed={n_fail} | "
+            f"rel_err={rel_err:.3%} | "
+            f"combo_time={combo_elapsed:.1f}s | total_elapsed={total_elapsed:.1f}s"
+        )
 
     mart_df = pd.DataFrame(out_rows)
     mart_csv_path = os.path.join(out_dir, f"martingale_diagnostics_{suffix}.csv")
@@ -840,6 +1044,7 @@ def martingale_diagnostics_naive(
     print(f"Saved martingale diagnostics to {mart_csv_path}")
 
     if not mart_df.empty:
+        print("\n[MART] Summary by maturity:")
         for u in sorted(mart_df["U"].unique()):
             sub = mart_df[mart_df["U"] == u]
             finite_errs = sub["relative_mean_error"].replace([np.inf, -np.inf], np.nan).dropna()
@@ -847,7 +1052,8 @@ def martingale_diagnostics_naive(
                 print(f"  U={u:.2f}: no valid diagnostic points")
                 continue
             max_err = float(finite_errs.max())
-            print(f"  U={u:.2f}: max relative mean error = {max_err:.3%}")
+            mean_err = float(finite_errs.mean())
+            print(f"  U={u:.2f}: mean relative error = {mean_err:.3%}, max relative error = {max_err:.3%}")
             if max_err > martingale_tol:
                 warnings.warn(
                     f"Discounted-bond martingale diagnostic exceeded tolerance for U={u:.2f}: "
@@ -855,10 +1061,14 @@ def martingale_diagnostics_naive(
                     RuntimeWarning,
                 )
 
+    total_time = time.time() - t_mart0
+    print(f"[MART] Finished martingale diagnostics in {total_time:.1f}s")
     print("=" * 60 + "\n")
     return mart_df
 
-
+# ==========================================================
+# Plot helpers
+# ==========================================================
 def _save_close(fig, path, dpi=200, show=False):
     fig.tight_layout()
     fig.savefig(path, dpi=dpi, bbox_inches="tight")
@@ -1031,12 +1241,15 @@ def plot_martingale_diagnostics(mart_df, out_dir, suffix, dpi=200, show=False):
     _save_close(fig, os.path.join(out_dir, f"plot_martingale_levels_{suffix}.png"), dpi=dpi, show=show)
 
 
+# ==========================================================
+# Main entry point
+# ==========================================================
 def run_all_diagnostics(
     bundle_path,
     device=None,
     use_saved_metadata=True,
     use="bbg",
-    epochs=3500,
+    epochs=20,
     latent_dim=2,
     ccy_filter="",
     max_mahal=4.0,
@@ -1047,25 +1260,45 @@ def run_all_diagnostics(
     plot_tenors=(1, 5, 10, 30),
     plot_dpi=200,
     show_plots=False,
+    sigma_init=DEFAULT_SIGMA_INIT,
+    k_drift_scale_init=DEFAULT_K_DRIFT_SCALE_INIT,
+    k_z_center_init=DEFAULT_K_Z_CENTER_INIT,
+    k_learn_center=DEFAULT_K_LEARN_CENTER,
+    martingale_log_every_combo=1,
+    martingale_log_every_paths=100,
 ):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if show_plots:
-        plt.switch_backend("TkAgg")
-    else:
-        plt.switch_backend("Agg")
+    safe_switch_backend(show_plots)
 
     bundle = load_simulation_bundle(bundle_path, device=device)
     metadata = bundle.get("metadata", {})
+
+    checkpoint_path = None
 
     if use_saved_metadata and metadata:
         use = metadata.get("use", use)
         epochs = int(metadata.get("epochs", epochs))
         latent_dim = int(metadata.get("latent_dim", latent_dim))
         ccy_filter = metadata.get("ccy_filter", ccy_filter)
+        checkpoint_path = metadata.get("checkpoint_path", None)
 
-    model = load_and_setup_model(device, use, latent_dim, epochs)
+    print("\nLoaded simulation bundle metadata:")
+    for k, v in metadata.items():
+        print(f"  {k}: {v}")
+
+    model, resolved_checkpoint_path = load_and_setup_model(
+        device=device,
+        use=use,
+        latent_dim=latent_dim,
+        epochs=epochs,
+        checkpoint_path=checkpoint_path,
+        sigma_init=sigma_init,
+        k_drift_scale_init=k_drift_scale_init,
+        k_z_center_init=k_z_center_init,
+        k_learn_center=k_learn_center,
+    )
 
     z_paths = bundle["z_paths"]
     r_paths = bundle["r_paths"]
@@ -1080,7 +1313,7 @@ def run_all_diagnostics(
     annual_indices = bundle["annual_indices"]
 
     out_dir = os.path.dirname(bundle_path)
-    suffix = os.path.splitext(os.path.basename(bundle_path))[0].replace("simulation_bundle_", "")
+    suffix = make_output_suffix(bundle_path, {**metadata, "checkpoint_path": resolved_checkpoint_path})
 
     _, X_tensor, _, _ = load_data_for_training_cloud(use=use, ccy_filter=ccy_filter)
     compute_latent_statistics(model, X_tensor, device, latent_dim)
@@ -1121,13 +1354,46 @@ def run_all_diagnostics(
         g0_floor=g0_floor,
         decoder_tau_grid=decoder_tau_grid,
         martingale_tol=martingale_tol,
+        martingale_log_every_combo=martingale_log_every_combo,
+        martingale_log_every_paths=martingale_log_every_paths,
     )
 
     plot_g0_diagnostics(g0_sim_df, times, out_dir, suffix, dpi=plot_dpi, show=show_plots)
     plot_decoder_diagnostics(decoder_diag_df, out_dir, suffix, dpi=plot_dpi, show=show_plots)
-    plot_swap_curve_snapshots(swap_df, tenors, requested_times=list(plot_curve_times), out_dir=out_dir, suffix=suffix, dpi=plot_dpi, show=show_plots)
-    plot_selected_tenor_timeseries(swap_df, selected_tenors=list(plot_tenors), out_dir=out_dir, suffix=suffix, dpi=plot_dpi, show=show_plots)
+    plot_swap_curve_snapshots(
+        swap_df,
+        tenors,
+        requested_times=list(plot_curve_times),
+        out_dir=out_dir,
+        suffix=suffix,
+        dpi=plot_dpi,
+        show=show_plots,
+    )
+    plot_selected_tenor_timeseries(
+        swap_df,
+        selected_tenors=list(plot_tenors),
+        out_dir=out_dir,
+        suffix=suffix,
+        dpi=plot_dpi,
+        show=show_plots,
+    )
     plot_martingale_diagnostics(mart_df, out_dir, suffix, dpi=plot_dpi, show=show_plots)
+
+    summary = {
+        "resolved_checkpoint_path": resolved_checkpoint_path,
+        "bundle_path": bundle_path,
+        "suffix": suffix,
+        "n_paths": int(z_paths.shape[0]),
+        "n_times": int(z_paths.shape[1]),
+        "latent_dim": int(z_paths.shape[2]),
+        "max_mahal_overall": float(mahal_df["mahal_dist"].max()) if not mahal_df.empty else np.nan,
+        "min_absG0_overall": float(mahal_df["absG0"].min()) if not mahal_df.empty else np.nan,
+        "mean_frac_valid_decode": float(decoder_diag_df["frac_valid_decode"].mean()) if not decoder_diag_df.empty else np.nan,
+    }
+    summary_df = pd.DataFrame([summary])
+    summary_csv_path = os.path.join(out_dir, f"diagnostic_summary_{suffix}.csv")
+    summary_df.to_csv(summary_csv_path, index=False)
+    print(f"Saved diagnostic summary to {summary_csv_path}")
 
     return {
         "bundle": bundle,
@@ -1141,22 +1407,37 @@ def run_all_diagnostics(
         "mart_df": mart_df,
         "out_dir": out_dir,
         "suffix": suffix,
+        "resolved_checkpoint_path": resolved_checkpoint_path,
+        "summary_df": summary_df,
     }
 
 
-# Example lines to run one by one
+# ==========================================================
+# Example lines to run
+# ==========================================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-bundle_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\Pricing\simulations\simulation_bundle_bbg_dim2_ep3500_paths500_steps24_seed1234_euler_full_diff1.pt"
+
+bundle_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\Pricing\simulations\simulation_bundle_bbg_dim2_ep200_paths500_steps24_seed1234_euler_full_diff1.pt"
+
 diag_out = run_all_diagnostics(
-     bundle_path=bundle_path,
-     device=device,
-     use_saved_metadata=True,
-     max_mahal=4.0,
-     g0_floor=1e-5,
-     martingale_dates=(5, 10, 20, 30),
-     martingale_tol=0.02,
-     plot_curve_times=(0, 0.5, 1.0, 2.0),
-     plot_tenors=(1, 5, 10, 30),
-     plot_dpi=200,
-     show_plots=False,
- )
+    bundle_path=bundle_path,
+    device=device,
+    use_saved_metadata=True,
+    max_mahal=4.0,
+    g0_floor=1e-5,
+    martingale_dates=(5, 10, 20, 30),
+    martingale_tol=0.02,
+    plot_curve_times=(0, 0.5, 1.0, 2.0),
+    plot_tenors=(1, 5, 10, 30),
+    plot_dpi=200,
+    show_plots=False,
+
+    sigma_init=0.0075,
+    k_drift_scale_init=0.25,
+    k_z_center_init=np.array([-0.04631, 0.04223], dtype=np.float32),
+    k_learn_center=False,
+
+    # logging controls
+    martingale_log_every_combo=1,     # print every (t,U) job
+    martingale_log_every_paths=100,   # print every 100 paths inside each job
+)
