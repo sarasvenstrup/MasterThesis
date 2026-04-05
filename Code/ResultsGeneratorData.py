@@ -110,14 +110,14 @@ print(table_missing.to_string())
 # ─────────────────────────────────────────────────────────────────────────────
 # Figure: Swap curves on 2016-08-31 (left) + 10Y time series (right)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── D2: Swap curves + 10Y time series ──")
-
 _target_date = pd.Timestamp("2016-08-31")
 _scale = 0.01 if SCALE_IS_PERCENT else 1.0  # convert to decimal
 
-fig, (ax_curves, ax_10y) = plt.subplots(1, 2, figsize=(14, 5))
+# ── D2a: Swap curves on 2016-08-31 ───────────────────────────────────────────
+print("\n── D2a: Swap curves ──")
 
-# ── left: swap curves on 2016-08-31 ──────────────────────────────────────────
+fig, ax_curves = plt.subplots(figsize=(7, 4))
+
 for ccy in CCY_ORDER:
     ccy_df = df_wide_all[df_wide_all["ccy"] == ccy].copy()
     ccy_df["as_of_date"] = pd.to_datetime(ccy_df["as_of_date"])
@@ -135,8 +135,15 @@ ax_curves.set_ylabel("Swap rate", fontsize=10)
 ax_curves.set_xticks(tenors)
 ax_curves.set_xticklabels([str(int(t)) for t in tenors], fontsize=8)
 
-# ── right: 10Y swap rate time series ─────────────────────────────────────────
+fig.tight_layout()
+save_fig(fig, "D2a_swap_curves")
+
+# ── D2b: 10Y swap rate time series ───────────────────────────────────────────
+print("\n── D2b: 10Y time series ──")
+
 _tenor_10y = 10
+fig, ax_10y = plt.subplots(figsize=(9, 4))
+
 for ccy in CCY_ORDER:
     ccy_df = df_wide_all[df_wide_all["ccy"] == ccy].copy()
     ccy_df["as_of_date"] = pd.to_datetime(ccy_df["as_of_date"])
@@ -164,6 +171,6 @@ for label, date_str in EVENTS.items():
 ax_10y.set_ylabel("10Y swap rate", fontsize=10)
 
 fig.tight_layout()
-save_fig(fig, "D2_swap_curves_and_10y_timeseries")
+save_fig(fig, "D2b_10y_timeseries")
 
 print("\nAll data figures saved.")
