@@ -648,17 +648,18 @@ else:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ── rolling helper constants and functions (used by Q2a, Q2b, Q3b, Q4a) ──────
-ROLL_SUBDIR           = "train5Y_test6M_step6M"
+ROLL_SUBDIR            = "train5Y_test6M_step6M"
+ROLL_EPOCHS            = 2500   # epoch count used for rolling OOS runs
 ROLL_DIVERGE_THRESHOLD = 100.0
 _ROLL_FALLBACK_SUBDIR  = "train3Y_test3M_step6M"
 
 def load_rolling_avg(dim):
     """Return average OOS RMSE across all rolling windows for a given dim."""
     path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                        ROLL_SUBDIR, f"ep{ROLL_EPOCHS}",
                         f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
-        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline — SKIPPING.\n"
+        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline ep{ROLL_EPOCHS} — SKIPPING.\n"
                       f"  Expected: {path}")
         return None
     df = pd.read_csv(path)
@@ -667,10 +668,10 @@ def load_rolling_avg(dim):
 def load_rolling_df(dim):
     """Return full rolling CSV DataFrame for a given dim."""
     path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                        ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                        ROLL_SUBDIR, f"ep{ROLL_EPOCHS}",
                         f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     if not os.path.exists(path):
-        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline — SKIPPING.\n"
+        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline ep{ROLL_EPOCHS} — SKIPPING.\n"
                       f"  Expected: {path}")
         return None
     df = pd.read_csv(path)
@@ -733,21 +734,20 @@ def load_ekf_rolling_train_time_min(dim):
 print("\n── Q2a: IS vs OOS RMSE table (all dims, rolling-based) ──")
 
 def load_is_rmse_for_rolling(dim):
-    """Load IS RMSE from training log — prefers ep3500, falls back to ep2500, then ep5000."""
-    for ep in [3500, 2500, 5000]:
-        path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
-                            f"ep{ep}", f"train_rmse_log_bbg_dim{dim}_ep{ep}.csv")
-        if not os.path.exists(path):
-            continue
-        df = pd.read_csv(path)
-        last = df.iloc[-1]
-        result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
-        result["Average"] = float(last["avg_rmse_bps"])
-        result["Time (min)"] = float("nan")
-        print(f"  [dim={dim}] IS RMSE from ep{ep} training log (last epoch={int(last['epoch'])})")
-        return result
-    warnings.warn(f"No training log found for dim={dim}")
-    return None
+    """Load IS RMSE from ep3500 training log. Returns None if not found."""
+    path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        f"ep3500", f"train_rmse_log_bbg_dim{dim}_ep3500.csv")
+    if not os.path.exists(path):
+        warnings.warn(f"⚠️  ep3500 training log not found for dim={dim} — SKIPPING.\n"
+                      f"  Expected: {path}")
+        return None
+    df = pd.read_csv(path)
+    last = df.iloc[-1]
+    result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
+    result["Average"] = float(last["avg_rmse_bps"])
+    result["Time (min)"] = float("nan")
+    print(f"  [dim={dim}] IS RMSE from ep3500 training log (last epoch={int(last['epoch'])})")
+    return result
 
 def load_rolling_oos_per_ccy(dim):
     """Average per-currency OOS RMSE across all rolling windows."""
@@ -916,58 +916,69 @@ save_extra_fig(fig, "rolling_window_diagram")
 # ─────────────────────────────────────────────────────────────────────────────
 # Q2b — Plot: OOS RMSE vs latent dimension (rolling average per dim)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q2b: Rolling OOS RMSE vs dim ──")
+print("\n── Q2b: IS + Rolling OOS RMSE vs dim ──")
 
+# IS averages from ep3500 training logs
+is_avgs = {}
+for dim in [2, 3, 4]:
+    _is = load_is_rmse_for_rolling(dim)
+    if _is is not None:
+        is_avgs[dim] = float(_is["Average"])
+
+# OOS rolling averages (ep2500)
 roll_avgs = {}
 for dim in [2, 3, 4]:
     avg = load_rolling_avg(dim)
     if avg is not None:
         roll_avgs[dim] = avg
 
-# load EKF DNS rolling averages for dims 2, 3, 4
+# EKF DNS rolling averages
 ekf_roll_avgs = {}
 for _nf in [2, 3, 4]:
     _avg = load_ekf_rolling_avg(_nf)
     if _avg is not None:
         ekf_roll_avgs[_nf] = _avg
 
-if len(roll_avgs) >= 2:
-    _dims = [d for d in [2, 3, 4] if d in roll_avgs]
+if len(roll_avgs) >= 2 or len(is_avgs) >= 2:
+    _dims = [d for d in [2, 3, 4] if d in roll_avgs or d in is_avgs]
     _x    = np.arange(len(_dims))
-    _w    = 0.35
+    _w    = 0.25
 
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(8, 4))
 
-    # AE bars
-    _ae_bars = ax.bar(_x - _w/2, [roll_avgs[d] for d in _dims],
-                      width=_w, color=[DIM_COLORS[d] for d in _dims],
-                      edgecolor="none", label="Autoencoder")
+    # IS bars
+    _is_vals  = [is_avgs.get(d, np.nan) for d in _dims]
+    _is_bars  = ax.bar(_x - _w, _is_vals,
+                       width=_w, color=[DIM_COLORS[d] for d in _dims],
+                       edgecolor="none", label="AE In-Sample (ep3500)")
+
+    # OOS rolling bars
+    _oos_vals = [roll_avgs.get(d, np.nan) for d in _dims]
+    _oos_bars = ax.bar(_x, _oos_vals,
+                       width=_w, color=[DIM_COLORS[d] for d in _dims],
+                       edgecolor="none", alpha=0.5, label="AE OOS Rolling (ep2500)")
 
     # EKF DNS bars
     _ekf_vals = [ekf_roll_avgs.get(d, np.nan) for d in _dims]
-    _ekf_bars = ax.bar(_x + _w/2, _ekf_vals,
+    _ekf_bars = ax.bar(_x + _w, _ekf_vals,
                        width=_w, color="lightgray",
                        edgecolor="none", label="EKF DNS")
 
     # value labels
-    for bar, val in zip(_ae_bars, [roll_avgs[d] for d in _dims]):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
-                f"{val:.1f}", ha="center", va="bottom", fontsize=9)
-    for bar, val in zip(_ekf_bars, _ekf_vals):
-        if np.isfinite(val):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
-                    f"{val:.1f}", ha="center", va="bottom", fontsize=9)
+    for bars, vals in [(_is_bars, _is_vals), (_oos_bars, _oos_vals), (_ekf_bars, _ekf_vals)]:
+        for bar, val in zip(bars, vals):
+            if np.isfinite(val):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                        f"{val:.1f}", ha="center", va="bottom", fontsize=8)
 
     ax.set_xticks(_x)
     ax.set_xticklabels([f"$\\ell={d}$" for d in _dims], fontsize=10)
-    ax.set_ylabel("Average Rolling OOS RMSE (bps)", fontsize=10)
-    ax.legend(fontsize=9, frameon=False)
+    ax.set_ylabel("Average RMSE (bps)", fontsize=10)
     ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
     fig.tight_layout()
     save_fig(fig, "Q2b_rolling_oos_vs_dim")
 else:
-    print(f"  SKIPPED — only {len(roll_avgs)}/4 rolling results available. "
-          f"Re-run once OutOfSampleRoll.py finishes for missing dims.")
+    print(f"  SKIPPED — no IS or OOS rolling results available.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
