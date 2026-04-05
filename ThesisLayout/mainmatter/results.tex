@@ -1,34 +1,24 @@
 \chapter{Evaluation of the Arbitrage-Free Autoencoder}
 
 
-This section evaluates the arbitrage-free autoencoder model described in Section \ref{chap:encoderdecodermodel}, fitted to swap rate curves across nine currencies (Section \ref{chap:datadescription}). The evaluation proceeds in three stages. First, in-sample performance is assessed across 2, 3, and 4 factor specifications. Second, out-of-sample reconstruction is benchmarked against the EKF-DNS model using a rolling window scheme, and robustness to random initialization is assessed across multiple seeds. Finally, the model output is analyzed, including latent factors, risk-neutral parameters, and the implied yield curve.
+This section evaluates the arbitrage-free autoencoder model described in Chapter \ref{chap:encoderdecodermodel}, fitted to swap rate curves across nine currencies (Chapter \ref{chap:datadescription}). The evaluation proceeds in two stages. First, in-sample performance is assessed across 2, 3, and 4 factor specifications. Second, out-of-sample reconstruction is evaluated using a rolling window scheme and benchmarked against the Extended Kalman Filter Dynamic Nelson-Siegel model.
 
-
-% OWN NOTES
-%This section presents the results for the arbitrage-free autoencoder model described in section \ref{chap:encoderdecodermodel}, which was fitted to swap rate curves across nine currencies presented in Section \ref{chap:datadescription}. The evaluation is carried out using multiple tests. First of all we are interested in checking if the model does in fact work, and are we able to extend the model from only 2-factors as done in \cite{MatinWanPoulsen2025} and \cite{Andreasen2023}, to both 3 and 4 factors. Here the criteria for working is having reasonable reconstruction errors and arbitrage free results. After establishing this conclusion, we then want to evaluate the performance of the model out-of-sample. How well can the model reconstruct the swap rates on unseen data, and further how robust is it over different time periods. In order to do so we do this with a rolling window scheme, benchmarking against the Extended Kalman Filter Dynamic Nelson--Siegel (EKF-DNS) model. We also want to test the general robustness of the model by performing a fixed-window scheme and testing over different seeds, meaning we initialize the model parameters differently, to see how the model performs all else equal. After these assessment of the models performance, testing different aspects, we lastly want to analyze the resulting model output. Firstly, how the latent factors compare to classical PCA results, secondly the time series of the risk-neutral parameters, and lasty the zero-coupon bond price curve and the corresponding yield curve and how well this matches with what we see in the bond market. 
 
 
 % ─────────────────────────────────────────────────────────────
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-In-sample evaluation serves as the first checkpoint toward establishing whether the model is practically useful. Before assessing out-of-sample reconstruction, the model must demonstrate that it can accurately reconstruct the swap rate curves it was trained on, and that the implied zero-coupon bond prices satisfy the no-arbitrage constraint. Following \citet{MatinWanPoulsen2025}, the reconstruction accuracy is measured by the RMSE in basis points, and the compliance with no-arbitrage is assessed through \textcolor{red}{the approximate Sharpe ratio (REFERENCE)} of the implied zero-coupon bond prices, which should be negligible if the constraint is satisfied by construction.
+In-sample evaluation serves as the first checkpoint toward establishing whether the model is practically useful. Before assessing out-of-sample reconstruction, the model must demonstrate that it can accurately reconstruct the swap rate curves it was trained on, and that the implied zero-coupon bond prices satisfy the no-arbitrage constraint. Following \citet{MatinWanPoulsen2025}, the reconstruction accuracy is measured by the RMSE in basis points, and the compliance with no-arbitrage is assessed through \textcolor{red}{the approximate Sharpe ratio/residual (REFERENCE)} of the implied zero-coupon bond prices, which should be negligible if the constraint is satisfied by construction.
 
 
 \subsection{Reconstruction Accuracy}
 
 
-% 1. Convergence
-% 2. RMSE by currency and factor
-% 3. Residual Distribution - are the errors well behaved?
-% 4. Disaggregated fit - RMSE by tenor and RMSE over time, where does the model struggle?
-% 5. Visual fit - fitted vs actual curves across representative dates and currencies - maybe we should visualize with the curve in the same graphs or something like that.
-
-
 %The hyperparameters should be shown in a table in the numerical implementation part.
 
-We begin by examining how reconstruction error evolves over 5,000 training epochs. Figure~\ref{fig:training_loss} shows the average RMSE of training in
- all currencies for $\ell \in \{1,2,3,4\}$. Both $\ell=3$ and $\ell=4$ exhibit notable spikes around 2 \,500 epochs, possibly reflecting a transition in the optimization trajectory, after which the training becomes more stable. By epoch 3\,500 all models have settled into a stable training regime with considerably reduced fluctuations, confirming that all models have fully converged. However, it should be noted that these loss curves reflect a single random initialization, and convergence behavior may vary between seeds, as explored further in Section~\textcolor{red}{INSERT REFERENCE}. 
+We begin by examining how reconstruction error evolves over 5,000 training epochs. Figure~\ref{fig:training_loss} shows the average training RMSE across
+ all currencies for $\ell \in \{1,2,3,4\}$. Both $\ell=3$ and $\ell=4$ exhibit notable spikes around 2 \,500 epochs, possibly reflecting a transition in the optimization trajectory, after which the training becomes more stable. By epoch 3\,500 all models have settled into a stable training regime with considerably reduced fluctuations, confirming that all models have fully converged. However, it should be noted that these loss curves reflect a single random initialization, and convergence behavior may vary between seeds, as explored further in Section~\textcolor{red}{INSERT REFERENCE}. With convergence established, we now assess the accuracy of the final reconstruction in all model specifications.
 
 % ── Q1e ─────────────────────────────────────────────────────
 \begin{figure}[ht]
@@ -40,7 +30,10 @@ We begin by examining how reconstruction error evolves over 5,000 training epoch
 \end{figure}
 
 
-The $\ell=1$ model converges to a substantially higher error of approximately 40 bps, indicating that a single latent factor is insufficient to capture the variation in the swap rate curve. This is further supported by Table~\ref{tab:q1a_is_rmse}, which breaks the RMSE down by currency, where the $\ell=1$ model yields a range of over 25 bps across currencies, compared to approximately 8 for both $\ell=2$ and $\ell=3$ and 5 for $\ell=4$. Among $\ell \in \{2, 3, 4\}$, EUR is consistently the hardest currency to reconstruct, followed by JPY. 
+The $\ell=1$ model is a clear outlier, yielding a range of over 25 bps across currencies and converging to an average error of approximately 40 bps, far exceeding the other specifications and indicating that a single latent factor is insufficient to capture the variation in the swap rate curve, as reported in Table~\ref{tab:q1a_is_rmse}. 
+
+
+
 
 
 % ── Q1a ──────────────────────────────────────────────────────
@@ -71,8 +64,11 @@ The $\ell=1$ model converges to a substantially higher error of approximately 40
 \label{tab:q1a_is_rmse}
 \end{table}
 
-
-Across all nine currencies, error decreases dramatically from $\ell=1$ to $\ell=2$, substantially from $\ell=2$ to $\ell=3$, with more modest gains from $\ell=3$ to $\ell=4$, suggesting diminishing returns to increasing model complexity. In general, training time increases, with the number of latent factors, as the autoencoder must optimize a larger set of parameters. The $\ell=4$ model is an exception, requiring less time than $\ell=3$ at $126.1$ vs $153.6$ minutes, possibly due to \textcolor{red}{mangler ML insight her}. Based on the substantially higher reconstruction error of the $\ell=1$ specification relative to all other models, it is excluded from the remaining analysis, which focuses on $\ell \in \{2, 3, 4\}$.
+Among the remaining specifications, error decreases substantially from $\ell=2$ to $\ell=3$, with more modest gains from $\ell=3$ to $\ell=4$, suggesting diminishing returns to increasing model complexity.
+\\
+Regarding training time, the $\ell=4$ model is an exception to the general pattern of increasing cost with model complexity, requiring less time than $\ell=3$ at $126.1$ vs $153.6$ minutes.\textcolor{red}{mangler at diskutere ML insight her, på hvorfor dette kan være tilfældet}.
+\\
+Given the substantially higher reconstruction error of the $\ell=1$ specification, it is excluded from the remaining analysis, which focuses on $\ell \in \{2, 3, 4\}$.
 
 
 % ── Q1c ──────────────────────────────────────────────────────
@@ -83,9 +79,7 @@ Across all nine currencies, error decreases dramatically from $\ell=1$ to $\ell=
     \label{fig:q1d_residual_histograms}
 \end{figure}
 
-To complement the RMSE results, Figure~\ref{fig:q1d_residual_histograms} examines the distribution of the in-sample residuals. All three distributions are centered close to zero, suggesting no systematic bias in the reconstruction. The distributions narrow with additional latent factors, consistent with the RMSE results in Table~\ref{tab:q1a_is_rmse}. 
-All three exhibit excess kurtosis, suggesting that large reconstruction errors occur more frequently than a normal distribution would predict. Figure \ref{fig:q1d_residual_histograms} shows the in-sample RMSE over time for $\ell=3$, shedding light on \textit{when} these larger errors tend to occur.
-
+To complement the RMSE results, Figure~\ref{fig:q1d_residual_histograms} examines the distribution of the in-sample residuals. All three distributions are centered close to zero, suggesting that there is no systematic bias in the reconstruction across all currencies and tenors, though this does not preclude bias at the level of the individual currencies or tenors. The distributions narrow progressively with additional latent factors, consistent with the RMSE results in Table~\ref{tab:q1a_is_rmse}. However, the residual distributions exhibit heavier tails than a normal distribution would suggest, motivating a closer look at when and where the model struggles most, as examined in Figure \ref{fig:Q6b}.
 
 
 % ── Q6b ──────────────────────────────────────────────────────
@@ -107,8 +101,7 @@ All three exhibit excess kurtosis, suggesting that large reconstruction errors o
     \label{fig:Q6b}
 \end{figure}
 
-
-Outside of major macro events the cross-currency average remains relatively stable, but reconstruction error spikes sharply around the COVID shock in March 2020, particularly for EUR and the DKK, which is pegged to the EUR. As seen in Figure \textcolor{red}{(please visualize the swaprates in the data and reference to this figure here)} in Section \ref{chap:datadescription}, swap rates had been declining globally since 2010, and the sharp reversal of this trend beginning around 2020 represents a structural shift in the swap rate environment that the model, having been trained on an overall declining rate environment, finds more difficult to reconstruct.
+Reconstruction error is not uniformly distributed across time or across the curve. Around the COVID shock in march 2020 error spikes sharply for EUR and DKK, which is pegged to the EUR, as shown in Figure~\ref{fig:Q6b}. This is consistent with the sharp reversal in the global swap rate trend observed around 2020 (Figure \textcolor{red}{(visualize the swaprates in the data and reference to this figure here)}, Section \ref{chap:datadescription}), representing a structural shift that the model, having been trained on an overall declining rate environment, finds more difficult to reconstruct. Turning to the tenor dimension, Figure~\ref{fig:Q6a} shows that the short and long ends of the curve prove consistently more challenging across all specifications, while mid-range tenors are reconstructed most accurately. EUR and JPY exhibit the largest errors at these extremes, consistent with their elevated aggregate RMSE in Table~\ref{tab:q1a_is_rmse}.
 
 % ── Q6a ──────────────────────────────────────────────────────
 \begin{figure}[H]
@@ -129,23 +122,10 @@ Outside of major macro events the cross-currency average remains relatively stab
     \label{fig:Q6a}
 \end{figure}
 
-Beyond the currency-level results, Figure~\ref{fig:Q6a} disaggregates reconstruction error across tenors. The left panel shows that all three models fit mid-range tenors most accurately, with errors reaching a minimum around the 15Y tenor, while the short end of the curve proves most challenging across all specifications. The right panel shows this pattern for $\ell=3$ per currency, where JPY and EUR exhibit the largest errors at the short and long end of the curve, consistent with the aggregate currency-level results in Table~\ref{tab:q1a_is_rmse}. Overall, the tenor-level analysis reveals a consistent pattern across all model specifications and currencies, where mid-range tenors are reconstructed most accurately, while the short and long ends of the curve prove more challenging.
 
 
-
-To assess the quality of the fit beyond aggregate error metrics,
-Figure~\ref{fig:q1d_fitted_vs_actual_all_dims} shows the reconstructed
-versus observed swap curves for EUR, USD, JPY, and CAD across two
-representative dates: a \textcolor{red}{stable} market environment (August 2014) and the
-Covid-19 crisis (March 2020). In the stable environment, all models track
-the observed curves well, though $\ell=2$ captures slightly less curvature
-in the term structure compared to $\ell=3$ and $\ell=4$. EUR and JPY are
-visually the hardest currencies to reconstruct, consistent with their higher
-RMSE reported in Table~\ref{tab:q1a_is_rmse}. During the Covid-19 crisis,
-both currencies exhibit sharp curve movements that all models struggle to
-capture, whereas USD and CAD, both among the lowest-RMSE currencies, are
-reconstructed with relatively higher accuracy even under stress.
-
+Moving beyond aggregate error metrics, the visual fit in
+Figure~\ref{fig:Q1d} allows us to assess whether the model captures the shape of the swap rate curve across different market conditions. Across the \textcolor{red}{stable} market environment in August 2014, all three specifications track the observed curves closely, though $\ell=2$ captures slightly less curvature in the term structure compared to $\ell=3$ and $\ell=4$. During the Covid-19 crisis in March 2020, the model faces a more challenging reconstruction environment, where the sharp curve movements are harder to capture across all specifications, though USD and CAD are reconstructed with relatively higher accuracy even under stress, consistent with their lower aggregate RMSE in Table~\ref{tab:q1a_is_rmse}. 
 
 
 % ── Q1d ──────────────────────────────────────────────────────
@@ -163,32 +143,25 @@ reconstructed with relatively higher accuracy even under stress.
     $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
     $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}), and
     $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).}
+    \label{fig:Q1d}
 \end{figure}
 
 
 
-
-
-
-
-
-
-
-
+Having established that the model reconstructs swap rate curves reasonably well overall, while struggling at the short and long ends of the curve, during periods of structural market shifts, and particularly for EUR and JPY, we now turn to the second success criterion: whether the implied zero-coupon bond prices satisfy the no-arbitrage constraint.
 
 
 \subsection{No-Arbitrage Diagnostic}
 
 
-
+Reconstruction accuracy alone is insufficient if the implied bond prices permit arbitrage opportunities. Figure~\ref{fig:Q7_sharpe} therefore examines whether the model satisfies the no-arbitrage constraint, showing the bond pricing residual for $\ell=3$, averaged per currency across all in-sample dates and maturities. Two features of the figure confirm that the no-arbitrage constraint is satisfied. First, the scale of the y-axis is on the order of $10^{-9}$, indicating that the deviations from zero are neglible in magnitude. Second, the values fluctuate randomly around zero across all maturities and currencies, consistent with numerical noise rather than a systematic arbitrage violation. As this property holds by construction for all model specifications, the autoencoder can be considered arbitrage-free in practice.
 
 % ── Q7 ───────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim3.png}
-    \caption{In-sample approximate Sharpe ratio across maturities (1--30Y)
-    for $\ell=3$, averaged per currency. The dashed line marks zero —
-    the expected value under no-arbitrage.
+    \includegraphics[width=0.7\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim3.png}
+    \caption{In-sample bond pricing residual across maturities
+    for $\ell=3$, averaged per currency.
     Currencies: AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
     CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
     DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
@@ -212,157 +185,39 @@ reconstructed with relatively higher accuracy even under stress.
 \section{Out-of-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
+Satisfactory in-sample reconstruction is a necessary but not sufficient condition for a useful model. In particular, a model with many parameters may overfit the training period, failing to preserve its reconstruction accuracy when applied to independent observations \textcolor{red}{(Reference to RegressionbyR Introduction - 1.2)}. To assess whether the autoencoder generalizes beyond the training period, out-of-sample reconstruction is evaluated using a rolling window scheme across 16 non-overlapping test periods, benchmarked against the Extended Kalman Filter Dynamic Nelson-Siegel model (EKF DNS). The evaluation uses 3,500 training epochs, consistent with the convergence analysis in Figure~\ref{fig:training_loss}.
 
-While the in-sample results demonstrate that the autoencoder reconstructs the swap rate curve closely, and suggest that models with more latent factors achieve better reconstruction, a good in-sample fit alone does not guarantee that the model generalizes to new data. In particular, a model with many parameters may overfit the training period, failing to preserve its reconstruction accuracy when applied to independent observations. \textcolor{red}{(Reference to RegressionbyR Introduction - 1.2)} To assess generalization, two experiments are conducted. First, a rolling window evaluation tests out-of-sample reconstruction. Second, a robustness analysis repeats a fixed train/test split across multiple random seeds, assessing the sensitivity of out-of-sample performance to the random initialization of the model. All experiments in this section use 2,500 training epochs, which Figure~\ref{fig:training_loss} confirms is sufficient for convergence.
 
 \subsection{Rolling Window Evaluation}
 
-To evaluate generalization and identify which latent dimension yields the best out-of-sample reconstruction, a rolling window design is used (Figure~\ref{fig:rolling_window_diagram}), yielding 18 non-overlapping test periods spanning January 2015 to December 2023.
+Out-of-sample reconstruction is evaluated using a rolling window design, illustrated in Figure~\ref{fig:rolling_window_diagram}, yielding 16 non-overlapping test periods spanning January 2015 to December 2023. The same rolling window scheme is used to benchmark the autoencoder against the Extended Kalman Filter Dynamic Nelson Siegel model (EKF DNS). \textcolor{red}{(Find ud af hvornår vi skal introducere benchmarket, og argumentere for hvorfor det er netop denne vi har valgt)}
 
 \begin{figure}[ht]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/ExtraFigures/rolling_window_diagram.png}
-    \caption{Rolling window evaluation design: 18 windows each consisting of a five-year training period followed by a six-month test period, stepping forward six months at a time.}
+    \caption{Rolling window evaluation design: 16 windows each consisting of a five-year training period followed by a six-month test period, stepping forward six months at a time.}
     \label{fig:rolling_window_diagram}
 \end{figure}
 
+Both questions, whether the autoencoder generalizes to unseen data and how it compares to the Extended Kalman Filter Dynamic Nelson-Siegel model, are addressed in Figure~\ref{fig:Q2b}, which presents the average rolling out-of-sample RMSE for both models across all latent dimensions alongside the autoencoder in-sample RMSE for reference.
 
-
-The results of the rolling window scheme is summed up in \ref{fig:Q2b} and we clearly see that the in-sample RMSE is consistently lower than the OOS RMSE across all model dimensions. Interestingly the autoencoder with four latent factors to describe the swap rate curve, has not only the worst perfomance relative to the in sample RMSE, but also overall the worst model OOS. From these it seems that our model with three latent factor performs best OOS.
-
-An average for the whole model is not so telling when wanting to understand the basis of this errors. IF we look on how the models perform on a currency level, we see that the model with 4 dimensions actually performs better in some case but much worse in other cases.
-
-For $\ell = 2$ and $\ell = 3$, the IS--OOS gap is modest (12.11 vs.\ 15.57 bps and 9.96 vs.\ 12.44 bps, respectively), indicating that both models generalise well to unseen data. In contrast, $\ell = 4$ achieves the lowest IS RMSE of 4.33 bps but degrades sharply out-of-sample to 17.38 bps --- nearly four times its training error --- with a particularly large EUR OOS deviation of 70.53 bps. This pattern is characteristic of overfitting: the additional latent factor captures noise in the training data rather than genuine curve structure. Together, these results suggest that $\ell = 2$ or $\ell = 3$ offers the best balance between reconstruction accuracy and generalisation.
-
-
-
-
-\textcolor{red}{HERE we need to make another figure, and move this down to the benchmarks ection, where we in this case must compare the OOS Autoencoder to the InSample.}
-
-
-
-
-
-
-% ── Q2a ──────────────────────────────────────────────────────
-\begin{table}[h!]
-\centering
-{\small
-\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q2a_IS_vs_OOS_all_dims.csv}\datqtwoa
-\resizebox{\textwidth}{!}{%
-\pgfplotstabletypeset[
-  columns={Split, Model, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average},
-  columns/Split/.style={string type, column type=l},
-  columns/Model/.style={string type, column type=l},
-  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={after row=\bottomrule},
-]{\datqtwoa}}
-}
-\caption{In-sample and out-of-sample RMSE (bps) per currency across latent dimensions.
-IS: 2004--2020, OOS: 2021--2022.}
-\label{tab:q2a_is_oos_rmse}
-\end{table}
-
-\textcolor{red}{Cant we colour the OOS and IS rows so it is easier to comapre the differnt cases viusally}
-
-
-
-
-
-% ── Q3b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
-    \caption{Rolling out-of-sample RMSE (bps) over time for $\ell\in\{2,3,4\}$
-    showing the cross-currency average per rolling window. Shaded bars indicate
-    windows where at least one currency exceeds 100 bps; bar colour matches the
-    corresponding model. Dashed vertical lines mark key macro events.}
-    \label{fig:Q3b}
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
+    \caption{Average rolling out-of-sample RMSE (bps) for the autoencoder and the
+    EKF DNS benchmark across latent dimensions $\ell \in \{2, 3, 4\}$.
+    Autoencoder bars are coloured by model:
+    $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).
+    EKF DNS bars are shown in grey.
+    Values are averaged across all \textcolor{red}{valid} rolling windows.}
+    \label{fig:Q2b}
 \end{figure}
 
+%UPDATE THIS FIGURE WHEN THE TRAINING FOR 3500 EPOCHS HAS FINISHED RUNNING.
 
-This figure is intended to see how the out-of sample RMSE varies across time and not only as a an average. where we see that the model struggles indeed around the rate hikes and the euro struggles in the covid period. 
-
-We also cmust comment on the model explosions. These have been taken out of the equation for the above results. But suspecting that these model explosions are due to the H and K, we move to the next section where we test for robustness across different seeds if these is. This insight is motivation to the stabilzation section that comes after the evaluation of the Autoencoder performance. So when we look at the model but not on the explosions, we see that dim 2 is more volatiltes across the differnt windows, where it looks like 3 dimensions has captured the udnerlying swap rate dynamics better.
-
-so we see that the model with most latent factors explodes a lot compared to the model with 2 or 3. Further it seems that they seem to explode in the same regions.
-
-
-
-
-
-
-
-
-
-
-\subsection{Robustness to Random Initialisation}
- 
-First we want to assess the robustness of the different models.
-
-THIS TABLE IS INTEDED TO CHECK FOR THE ROBUSTNESS; AND THAT IS WHY WE DO IT ONLY ON A WINDOW SPLIT FOR COMPUTATIONAL PURPOSES.
-
-
-% ── Q3a ──────────────────────────────────────────────────────
-% \begin{table}[H]
-% \centering
-% {\small
-% \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q3a_OOS_seeds_table_dim3.csv}\datqthreea
-% \pgfplotstablegetelem{4}{Average}\of\datqthreea
-% \let\qthreeaSeedFourAvg\pgfplotsretval
-% \resizebox{\textwidth}{!}{%
-% {%
-% \newcommand{\qval}[2]{\pgfplotstablegetelem{#1}{#2}\of\datqthreea\pgfplotsretval}%
-% \begin{tabular}{lrrrrrrrrrrr}
-% \toprule
-%  & AUD & CAD & DKK & EUR & JPY & NOK & SEK & GBP & USD & \textbf{Avg} \\
-% \midrule
-% Seed 0 & \qval{0}{AUD} & \qval{0}{CAD} & \qval{0}{DKK} & \qval{0}{EUR} & \qval{0}{JPY} & \qval{0}{NOK} & \qval{0}{SEK} & \qval{0}{GBP} & \qval{0}{USD} & \qval{0}{Average} \\
-% Seed 1 & \qval{1}{AUD} & \qval{1}{CAD} & \qval{1}{DKK} & \qval{1}{EUR} & \qval{1}{JPY} & \qval{1}{NOK} & \qval{1}{SEK} & \qval{1}{GBP} & \qval{1}{USD} & \qval{1}{Average} \\
-% Seed 2 & \qval{2}{AUD} & \qval{2}{CAD} & \qval{2}{DKK} & \qval{2}{EUR} & \qval{2}{JPY} & \qval{2}{NOK} & \qval{2}{SEK} & \qval{2}{GBP} & \qval{2}{USD} & \qval{2}{Average} \\
-% Seed 3 & \qval{3}{AUD} & \qval{3}{CAD} & \qval{3}{DKK} & \qval{3}{EUR} & \qval{3}{JPY} & \qval{3}{NOK} & \qval{3}{SEK} & \qval{3}{GBP} & \qval{3}{USD} & \qval{3}{Average} \\
-% Seed 4 & \multicolumn{10}{c}{\textit{diverged (\qthreeaSeedFourAvg\ bps) --- excluded}} \\
-% Seed 5 & \qval{5}{AUD} & \qval{5}{CAD} & \qval{5}{DKK} & \qval{5}{EUR} & \qval{5}{JPY} & \qval{5}{NOK} & \qval{5}{SEK} & \qval{5}{GBP} & \qval{5}{USD} & \qval{5}{Average} \\
-% Seed 6 & \qval{6}{AUD} & \qval{6}{CAD} & \qval{6}{DKK} & \qval{6}{EUR} & \qval{6}{JPY} & \qval{6}{NOK} & \qval{6}{SEK} & \qval{6}{GBP} & \qval{6}{USD} & \qval{6}{Average} \\
-% Seed 7 & \multicolumn{10}{c}{\textit{diverged (NaN) --- excluded}} \\
-% Seed 8 & \qval{8}{AUD} & \qval{8}{CAD} & \qval{8}{DKK} & \qval{8}{EUR} & \qval{8}{JPY} & \qval{8}{NOK} & \qval{8}{SEK} & \qval{8}{GBP} & \qval{8}{USD} & \qval{8}{Average} \\
-% Seed 9 & \qval{9}{AUD} & \qval{9}{CAD} & \qval{9}{DKK} & \qval{9}{EUR} & \qval{9}{JPY} & \qval{9}{NOK} & \qval{9}{SEK} & \qval{9}{GBP} & \qval{9}{USD} & \qval{9}{Average} \\
-% \midrule
-% \textbf{Mean (valid)} & & & & & & & & & & \textbf{\qval{10}{Average}} \\
-% \bottomrule
-% \end{tabular}%
-% }%
-% }%
-% }
-% \caption{Out-of-sample RMSE (bps) per random seed for $\ell=3$.
-% Seeds 4 and 7 diverged and are excluded from the mean.}
-% \label{tab:Q3a}
-% \end{table}
-
-
-What is important to note here is that the model exploding mostt likelt is due to the problems with H and K being learned with no constraitn ? satistified, such that the model breaks down.
-
-
-
-\subsection{Benchmark Comparison}
-
-
-THIS IS ALSO WHERE WE WANT TO WRITE ACCORDING TO THE BOND MARKET GENERATED SWAPS.
-
-The next is to see how well the Auto encoder performs compared to a benchmark, which we have chosen to be the Dynamic Nelsion siegel, using the extended kalman filter.
-
-Remember to include computation time.
-
+The results reveal a fundamental instability in the model out-of-sample, with severity increasing with the number of latent dimensions. As shown in Figure~\ref{fig:Q2b}, while $\ell=2$ shows a modest increase from an in-sample RMSE of 12.67 bps to an out-of-sample RMSE of 22.3 bps, $\ell=3$ and $\ell=4$ produce catastrophically high average out-of-sample errors of 219.2 and 403.3 bps respectively, despite in-sample RMSEs of 10.33 and \textcolor{red}{X} bps. 
 
 
 
@@ -388,193 +243,45 @@ Remember to include computation time.
   columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
   columns/Time (min)/.style={column name={\textbf{Time (min)}}, column type=r, fixed, precision=2, fixed zerofill},
   every head row/.style={before row=\toprule, after row=\midrule},
-  every row no 2/.style={before row=\midrule},
-  every row no 4/.style={before row=\midrule},
+  every row no 3/.style={before row=\midrule},
+  every row no 6/.style={before row=\midrule},
   every last row/.style={after row=\bottomrule},
 ]{\datqfoura}}
 }
 \caption{Rolling out-of-sample RMSE (bps) per currency for the autoencoder and EKF DNS
-benchmarks, grouped by number of latent factors $\ell$.
-The final column reports average training time per rolling window in minutes.}
+benchmarks, grouped by number of latent factors $\ell$. For each $\ell$, IS shows the
+in-sample RMSE from the globally trained model and OOS shows the average rolling
+out-of-sample RMSE. The final column reports average training time per rolling window
+in minutes.}
 \label{tab:Q4a}
 \end{table}
 
 
-% ── Q4c ──────────────────────────────────────────────────────
+
+The currency-level breakdown in Table~\ref{tab:Q4a} reveals where the explosions are most severe, with $\ell=3$ reaching 321.47 bps for GBP and $\ell=4$ reaching 471.4 bps for JPY. Across all specifications and almost all currencies, the EKF DNS model substantially outperforms the autoencoder in terms of out-of-sample reconstruction accuracy, while also requiring significantly less computation time. 
+
+Figure~\ref{fig:Q3b} further reveals that the autoencoder explosions are concentrated around periods of market stress, most notably the ECB QE period in 2015 and the COVID shock in 2020, with more latent factors amplifying the instability. 
 
 
-We should compare the benchmark for the three models for the benchmark across all models to give a fair comparison. and we also have the time it takes to train the model for each. However we msut keep in mind that this is a benchmark on how well the AE reconstructs swap rates, and we mist take into account that we now it produces arbitrage free swap rates, where this is not necessarily guaranteeed for our benchmark.
 
 
+
+
+% ── Q3b ──────────────────────────────────────────────────────
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
-    \caption{Average rolling out-of-sample RMSE (bps) for the autoencoder and the
-    EKF DNS benchmark across latent dimensions $\ell \in \{2, 3, 4\}$.
-    Autoencoder bars are coloured by model:
-    $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
-    $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
-    $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).
-    EKF DNS bars are shown in grey.
-    Values are averaged across all valid rolling windows.}
-    \label{fig:Q2b}
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
+    \caption{Rolling out-of-sample RMSE (bps) over time for $\ell\in\{2,3,4\}$
+    showing the cross-currency average per rolling window. Shaded bars indicate
+    windows where at least one currency exceeds 100 bps; bar colour matches the
+    corresponding model. Dashed vertical lines mark key macro events.}
+    \label{fig:Q3b}
 \end{figure}
 
 
 
 
-
-% ─────────────────────────────────────────────────────────────
-\section{Latent Factor Interpretation}
-% ─────────────────────────────────────────────────────────────
-
-
-% ── 1. Opening ───────────────────────────────────────────────
-The swap rate curve is observed at eight maturities, but its variation may be governed by far fewer underlying factors. Principal Component Analysis (PCA) identifies these by finding the orthogonal directions of maximum variance, yielding a low-dimensional representation that retains the greatest possible proportion of total variation. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
-
-
-PCA is applied to decompose the swap rate curve into $M=8$ principal components. Figure \ref{fig:pca_pve} shows the proportion of variance explained by $PC_j$, $\mathrm{PVE}_j=\lambda_j/\sum_{k=1}^M\lambda_k$, where the first two principal components account for over $99\%$ of the total variation in the swap curve data. \textcolor{red}{The remaining components are negligible, motivating the use of a low-dimensional latent representation with $\ell = \{2,3,4\}$ factors.}
-
-\begin{figure}[ht]
-  \centering
-  % ── (a) PVE bar plot — full width on top ─────────────────────
-  \begin{subfigure}[t]{\textwidth}
-    \centering
-    \includegraphics[width=0.55\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_barplot.png}
-    \caption{Proportion of variance explained
-      $\mathrm{PVE}_j = \lambda_j / \mathrm{tr}(\boldsymbol{\Sigma})$
-      for each principal component, sorted in decreasing order.}
-    \label{fig:pca_pve}
-  \end{subfigure}
-
-  \vspace{0.5em}
-
-  % ── (b) Eigenvector loadings ──────────────────────────────────
-  \begin{subfigure}[t]{0.48\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_loadings.png}
-    \caption{Eigenvector loadings $\mathbf{v}_j$ across the eight
-      maturities for the first three principal components.}
-    \label{fig:pca_loadings}
-  \end{subfigure}
-  \hfill
-  % ── (c) PC scores over time ───────────────────────────────────
-  \begin{subfigure}[t]{0.48\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_pca_scores.png}
-    \caption{PC scores $\mathbf{v}_j^\top \mathbf{S}_t$ over time,
-      averaged across currencies per date for visualisation. \textcolor{red}{Decide if its better to just visualize this for one currency instead of averaging The same with the left plot!}}
-    \label{fig:pca_scores}
-  \end{subfigure}
-
-  \caption{Global PCA fitted on the pooled in-sample swap rate data
-  across all nine currencies (2004--2020). PC scores in
-  \subref{fig:pca_scores} are averaged across currencies per date
-  for visualization.}
-  \label{fig:pca_overview}
-\end{figure}
-
-
-
-
-
-Figure~\ref{fig:pca_loadings} shows the evolution of the principal
-component scores over time alongside their eigenvector loadings, revealing
-that the three dominant components capture the classical level, slope and
-curvature structure of the swap rate curve. Having established this structure, we now ask whether the encoder has independently learned to compress the data along the same directions.
-
-
-
-
-Let $\mathbf{a}_k\in\mathbb{R}^M$ denote the $k$-th row of the encoder weight matrix $A_1$, representing the direction along which factor $k$ compresses the input. Following \cite{MatinWanPoulsen2025}, we assess how much this direction aligns with each principal component $\mathbf{v}_j$ by decomposing $\textbf{a}_k$ in the PCA basis:
-\begin{equation}
-    w_{k,j} = \frac{(\mathbf{a}_k^\top \mathbf{v}_j)^2}{\|\mathbf{a}_k\|^2}
-    \times 100, \qquad \sum_{j=1}^{M} w_{k,j} = 100.
-    \label{eq:weight_proj}
-\end{equation}
-The projection weights for the three models across all $M=8$ principal components are presented in Table \ref{tab:weight_projection}. \textcolor{red}{Results: interpret the table here, when we have run our code}
-
-% ── 3. Weight projection: table + bar plot + results ─────────
-\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q5b_weight_projection_combined.csv}\wpCombined
-\begin{table}[ht]
-\centering
-\pgfplotstabletypeset[
-  col sep=comma,
-  columns={model,factor,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8},
-  columns/model/.style={string type, column name={Model}},
-  columns/factor/.style={string type, column name={Factor}},
-  columns/PC1/.style={string type, column name={PC1}},
-  columns/PC2/.style={string type, column name={PC2}},
-  columns/PC3/.style={string type, column name={PC3}},
-  columns/PC4/.style={string type, column name={PC4}},
-  columns/PC5/.style={string type, column name={PC5}},
-  columns/PC6/.style={string type, column name={PC6}},
-  columns/PC7/.style={string type, column name={PC7}},
-  columns/PC8/.style={string type, column name={PC8}},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={after row=\bottomrule},
-  row 2/.style={before row=\midrule},
-  row 5/.style={before row=\midrule},
-]{\wpCombined}
-\caption{Projection weights $w_{k,j}$ (in \%) of each encoder weight vector
-  $\mathbf{a}_k$ onto the eight principal component directions of the
-  in-sample swap rate curve, for latent dimensions $\ell \in \{2, 3, 4\}$.
-  Each row sums to 100\%, following \citet{MatinWanPoulsen2025}.}
-\label{tab:weight_projection}
-\end{table}
-
-The projection weights $w_{i,j}$ are purely geometric; they compare fixed directions and say nothing about whether the latent factors actually move with the PC scores through time. To assess this co-movement, we compute the Pearson correlation between factor $z_k(t)$ and the $j$-th PC score
-$\mathrm{PC}_{j,t} = \mathbf{v}_j^\top \mathbf{S}_t$ over all in-sample observations:
-\begin{equation}
-\rho_{k,j} = \frac{\sum_{t=1}^n\bigl(z_k(t)-\bar{z}_k\bigr)
-  \bigl(\mathrm{PC}_{j,t}-\overline{\mathrm{PC}}_j\bigr)}
-  {\sqrt{\sum_{t=1}^n\bigl(z_k(t)-\bar{z}_k\bigr)^2
-  \cdot\sum_{t=1}^n\bigl(\mathrm{PC}_{j,t}-\overline{\mathrm{PC}}_j\bigr)^2}}
-\label{eq:pearson}
-\end{equation}
-where $\bar{z}_k$ and $\overline{\mathrm{PC}}_j$ are the respective sample
-means, computed for all models $\ell \in \{2, 3, 4\}$.
-
-
-Figure \ref{fig:q5b_heatmap} show the Pearson correlations $\rho_{k,j}$ for each model $\ell\in\{2,3,4\}$.\textcolor{red}{[Fill in: describe which factors
-correlate strongly with which PCs, e.g. ``For $\ell=2$, factor $z_1$ correlates
-strongly with PC1 ($r \approx \ldots$) and $z_2$ with PC2 ($r \approx \ldots$),
-suggesting the model recovers a level–slope decomposition.'']} Two points of caution apply when reading the heatmap. First, the sign of each latent factor is arbitrary: any orthogonal rotation $\mathbf{R}\in O(\ell)$ applied to $z_t$ leaves the reconstruction loss unchanged, so a correlation of $-1$ is economically equivalent to $+1$. Second, a strong correlation with a PC score does not by itself confirm that the factor captures genuine market structure; it could also reflect overfitting to the training data. The out-of-sample results in Section \textcolor{red}{X} provide the complementary evidence need to distinguish between the two. \textcolor{red}{Write here a short reflection on what the correlations then represent by adding the conclusion from the OOS section.}
- 
-% ── 4. Correlation heatmap: AE ───────────────────────────────
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5b_factor_correlation_heatmap.png}
-  \caption{Pearson correlation between each autoencoder latent factor $z_k$
-    and the first $\ell$ principal component scores of the in-sample swap rate
-    curve, for latent dimensions $\ell \in \{2,3,4\}$.}
-  \label{fig:q5b_heatmap}
-\end{figure}
-
-\textcolor{red}{Having established that the latent factors align geometrically and dynamically with the principal components}, we now examine how these factors evolve through time. Inspecting their trajectories allows us to assess whether the compressed representation captures economically meaningful variation, particularly around periods of market stress.
-
-% ── 6. Latent factor dynamics ─────────────────────────────────
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q5a_latent_factors_over_time.png}
-    \caption{Latent factors $z_1, z_2, z_3$ over the training period
-    (2004--2020) for $\ell=3$, with key market events annotated.}
-    \label{fig:Q5a}
-\end{figure}
-
-The latent factor trajectories $z_1, z_2, z_3$ for the $\ell = 3$ model
-over the \textcolor{red}{full in-sample period 2004--2020} are shown in
-Figure~\ref{fig:Q5a}. The factors exhibit distinct low-frequency trends
-punctuated by sharp transitions around the major market dislocations:
-the Global Financial Crisis (2008--2009), the ECB quantitative easing
-programme (2015--2018), and the COVID-19 shock (2020).
-\textcolor{red}{[Fill in: describe which factor reacts most to which
-event, e.g.\ ``$z_1$, which aligns with the level PC, drifts steadily
-downward over the full period, whereas $z_2$ shows a sharp spike at the
-GFC onset consistent with a widening of the slope.'']}
-
-
-\textcolor{red}{Sum Up when results are updated.}
+Despite demonstrating reasonable in-sample reconstruction accuracy, the out-of-sample results paint a concerning picture, with the frequency and severity of the explosions increasing with the number of latent dimensions. The observed instability is hypothesized to stem from the absence of theoretical conditions imposed on the neural networks governing the drift and diffusion of the swap rate dynamics, which is explored further in the following chapter.
 
 
 
@@ -582,31 +289,13 @@ GFC onset consistent with a widening of the slope.'']}
 
 
 
-\subsection{Implied Yield curve}
-
-We now want to assess how it visually reconstructs, and if it replicates the shape well, something that A metrics such as RMSE does not reveal.
 
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1e_zcb_swap_dim3.png}
-    \caption{Swap curves and implied zero-coupon bond (ZCB) yields for the
-    autoencoder ($\ell=3$) on 30 November 2021.
-    Left panel: observed swap rates (solid with circles) and reconstructed
-    swap rates (dashed). Right panel: ZCB yields implied by the model,
-    computed as $y(\tau) = -\log P(0,\tau)/\tau$.
-    Currencies:
-    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
-    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
-    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
-    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
-    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
-    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
-    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
-    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
-    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
-    \label{fig:Q1e_zcb}
-\end{figure}
+
+
+
+
+
 
 
 

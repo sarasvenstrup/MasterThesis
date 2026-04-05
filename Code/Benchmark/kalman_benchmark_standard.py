@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 from Code.load_swapdata import my_data, TARGET_TENORS
 
 # ── config ─────────────────────────────────────────────────────────────────────
-TRAIN_START = "2004-01-01"
+TRAIN_START = "2010-01-01"
 TRAIN_END   = "2020-12-31"
 TEST_START  = "2021-01-01"
 TEST_END    = "2022-12-31"
