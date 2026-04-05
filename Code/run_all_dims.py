@@ -1,8 +1,7 @@
 """
-Runner script: runs OutOfSampleSplit.py sequentially for multiple dims and variants.
+Runner script: runs Training.py sequentially for multiple dims and variants.
 
-  OutOfSampleSplit.py (baseline): LATENT_DIM = 2, 3, 4  ep=2500
-  OutOfSampleSplit.py (stable):   LATENT_DIM = 2, 3, 4  ep=2500
+  Training.py (baseline): LATENT_DIM = 2, 3, 4  ep=3500
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -18,23 +17,16 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
-CONFIG_PATH    = os.path.join(REPO_ROOT, "Code", "config.py")
-OOS_SPLIT_PATH = os.path.join(REPO_ROOT, "Code", "OutOfSampleSplit.py")
+CONFIG_PATH   = os.path.join(REPO_ROOT, "Code", "config.py")
+TRAINING_PATH = os.path.join(REPO_ROOT, "Code", "Training.py")
 
 STAGES = [
     {
-        "name":    "OOS Split (baseline)",
-        "script":  OOS_SPLIT_PATH,
+        "name":    "Training (baseline)",
+        "script":  TRAINING_PATH,
         "variant": "baseline",
         "dims":    [2, 3, 4],
-        "epochs":  2500,
-    },
-    {
-        "name":    "OOS Split (stable)",
-        "script":  OOS_SPLIT_PATH,
-        "variant": "stable",
-        "dims":    [2, 3, 4],
-        "epochs":  2500,
+        "epochs":  3500,
     },
 ]
 

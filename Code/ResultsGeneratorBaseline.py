@@ -653,7 +653,7 @@ ROLL_DIVERGE_THRESHOLD = 100.0
 _ROLL_FALLBACK_SUBDIR  = "train3Y_test3M_step6M"
 
 def load_rolling_avg(dim):
-    """Return average OOS RMSE across valid rolling windows for a given dim."""
+    """Return average OOS RMSE across all rolling windows for a given dim."""
     path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
                         ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
                         f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
@@ -662,11 +662,7 @@ def load_rolling_avg(dim):
                       f"  Expected: {path}")
         return None
     df = pd.read_csv(path)
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    n_bad = len(df) - len(valid)
-    if n_bad:
-        print(f"  [dim={dim}] Excluded {n_bad}/{len(df)} diverged rolling windows")
-    return float(valid["avg_rmse_bps"].mean())
+    return float(df["avg_rmse_bps"].mean())
 
 def load_rolling_df(dim):
     """Return full rolling CSV DataFrame for a given dim."""
@@ -682,7 +678,7 @@ def load_rolling_df(dim):
     return df
 
 def load_ekf_rolling_avg(n_factors):
-    """Return average OOS RMSE across valid rolling windows for EKF DNS."""
+    """Return average OOS RMSE across all rolling windows for EKF DNS."""
     path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
                         "ekf_dns_rolling",
                         f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
@@ -703,20 +699,17 @@ def load_ekf_rolling_df(n_factors):
     return df
 
 def load_ekf_rolling_oos_per_ccy(dim):
-    """Average per-currency OOS RMSE across all valid EKF rolling windows."""
+    """Average per-currency OOS RMSE across all EKF rolling windows."""
     df = load_ekf_rolling_df(dim)
-    if df is None:
-        return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
+    if df is None or len(df) == 0:
         return None
     # EKF rolling CSV uses plain currency names (AUD, CAD, ...) not rmse_bps_AUD
     result = pd.Series({
-        ccy: float(valid[ccy].mean())
+        ccy: float(df[ccy].mean())
         for ccy in CCY_ORDER
-        if ccy in valid.columns
+        if ccy in df.columns
     })
-    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    result["Average"] = float(df["avg_rmse_bps"].mean())
     return result
 
 def load_rolling_train_time_min(dim):
@@ -724,20 +717,14 @@ def load_rolling_train_time_min(dim):
     df = load_rolling_df(dim)
     if df is None or "time_train_sec" not in df.columns:
         return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
-        return None
-    return float(valid["time_train_sec"].mean()) / 60.0
+    return float(df["time_train_sec"].mean()) / 60.0
 
 def load_ekf_rolling_train_time_min(dim):
     """Average training time (minutes) per rolling window for the EKF DNS model."""
     df = load_ekf_rolling_df(dim)
     if df is None or "time_train_sec" not in df.columns:
         return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
-        return None
-    return float(valid["time_train_sec"].mean()) / 60.0
+    return float(df["time_train_sec"].mean()) / 60.0
 
 # Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
 #        IS  : training log at ep5000 (globally trained model)
@@ -746,33 +733,33 @@ def load_ekf_rolling_train_time_min(dim):
 print("\n── Q2a: IS vs OOS RMSE table (all dims, rolling-based) ──")
 
 def load_is_rmse_for_rolling(dim):
-    """Load IS RMSE from the ep5000 training log (globally trained model)."""
-    path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
-                        "ep5000", f"train_rmse_log_bbg_dim{dim}_ep5000.csv")
-    if not os.path.exists(path):
-        warnings.warn(f"No ep5000 training log found for dim={dim}: {path}")
-        return None
-    df = pd.read_csv(path)
-    last = df.iloc[-1]
-    result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
-    result["Average"] = float(last["avg_rmse_bps"])
-    print(f"  [dim={dim}] IS RMSE from ep5000 training log (last epoch={int(last['epoch'])})")
-    return result
+    """Load IS RMSE from training log — prefers ep3500, falls back to ep2500, then ep5000."""
+    for ep in [3500, 2500, 5000]:
+        path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                            f"ep{ep}", f"train_rmse_log_bbg_dim{dim}_ep{ep}.csv")
+        if not os.path.exists(path):
+            continue
+        df = pd.read_csv(path)
+        last = df.iloc[-1]
+        result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
+        result["Average"] = float(last["avg_rmse_bps"])
+        result["Time (min)"] = float("nan")
+        print(f"  [dim={dim}] IS RMSE from ep{ep} training log (last epoch={int(last['epoch'])})")
+        return result
+    warnings.warn(f"No training log found for dim={dim}")
+    return None
 
 def load_rolling_oos_per_ccy(dim):
-    """Average per-currency OOS RMSE across all valid rolling windows."""
+    """Average per-currency OOS RMSE across all rolling windows."""
     df = load_rolling_df(dim)
-    if df is None:
-        return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
+    if df is None or len(df) == 0:
         return None
     result = pd.Series({
-        ccy: float(valid[f"rmse_bps_{ccy}"].mean())
+        ccy: float(df[f"rmse_bps_{ccy}"].mean())
         for ccy in CCY_ORDER
-        if f"rmse_bps_{ccy}" in valid.columns
+        if f"rmse_bps_{ccy}" in df.columns
     })
-    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    result["Average"] = float(df["avg_rmse_bps"].mean())
     return result
 
 rows_q2 = {}
@@ -838,10 +825,11 @@ ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
         va="center", ha="center", fontsize=9, color="dimgray")
 
 # ── rolling windows (staggered) — W1 to W5 ───────────────────────────────────
+_extra_gap = 0.8   # extra space between W2 and W3 for bracket labels
 for i, test_start in enumerate(_show):
     train_start = test_start - pd.DateOffset(years=_train_years)
     test_end    = test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
-    y = _n_show - i + 1   # top window = W1
+    y = _n_show - i + 1 - (_extra_gap if i >= 2 else 0)   # top window = W1
 
     ax.barh(y, _to_x(test_start) - _to_x(train_start),
             left=_to_x(train_start), height=_row_h,
@@ -855,7 +843,7 @@ for i, test_start in enumerate(_show):
             va="center", ha="right", fontsize=9)
 
 # ── dots row ──────────────────────────────────────────────────────────────────
-_dots_y = 1
+_dots_y = 1 - _extra_gap
 ax.text(_to_x(_data_start) - 0.15, _dots_y, "$\\vdots$",
         va="center", ha="right", fontsize=11)
 ax.text(_to_x(_data_start) + 7.5, _dots_y, "$\\vdots$",
@@ -865,7 +853,7 @@ ax.text(_to_x(_data_start) + 7.5, _dots_y, "$\\vdots$",
 _last_test_start = _w_starts[-1]
 _last_train_start = _last_test_start - pd.DateOffset(years=_train_years)
 _last_test_end    = _last_test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
-_last_y = 0
+_last_y = 0 - _extra_gap
 _n_total = len(_w_starts)
 
 ax.barh(_last_y, _to_x(_last_test_start) - _to_x(_last_train_start),
@@ -877,9 +865,42 @@ ax.barh(_last_y, _to_x(_last_test_end) - _to_x(_last_test_start),
 ax.text(_to_x(_data_start) - 0.15, _last_y, f"$W_{{{_n_total}}}$",
         va="center", ha="right", fontsize=9)
 
+# ── annotation brackets on W2 ────────────────────────────────────────────────
+_w2_i           = 1   # W2 is the second window (index 1)
+_w2_test_start  = _show[_w2_i]
+_w2_train_start = _w2_test_start - pd.DateOffset(years=_train_years)
+_w2_test_end    = _w2_test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
+_w2_y           = _n_show - _w2_i + 1   # y-position of W2 row
+_bracket_y      = _w2_y - 0.45          # just below the bar
+_text_y         = _w2_y - 0.72          # text below bracket
+
+_arrowprops = dict(arrowstyle="|-|, widthA=0.2, widthB=0.2",
+                   color="black", lw=0.8)
+
+# 6 months: data_start → train_start of W2
+ax.annotate("", xy=(_to_x(_w2_train_start), _bracket_y),
+            xytext=(_to_x(_data_start), _bracket_y),
+            arrowprops=_arrowprops)
+ax.text((_to_x(_data_start) + _to_x(_w2_train_start)) / 2, _text_y,
+        "6 months", ha="center", va="top", fontsize=7)
+
+# 5 years: train_start → test_start of W2
+ax.annotate("", xy=(_to_x(_w2_test_start), _bracket_y),
+            xytext=(_to_x(_w2_train_start), _bracket_y),
+            arrowprops=_arrowprops)
+ax.text((_to_x(_w2_train_start) + _to_x(_w2_test_start)) / 2, _text_y,
+        "5 years", ha="center", va="top", fontsize=7)
+
+# 6 months: test_start → test_end of W2
+ax.annotate("", xy=(_to_x(_w2_test_end), _bracket_y),
+            xytext=(_to_x(_w2_test_start), _bracket_y),
+            arrowprops=_arrowprops)
+ax.text((_to_x(_w2_test_start) + _to_x(_w2_test_end)) / 2, _text_y,
+        "6 months", ha="center", va="top", fontsize=7)
+
 # ── axes formatting ───────────────────────────────────────────────────────────
 ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
-ax.set_ylim(-0.5, _top_y + 0.8)
+ax.set_ylim(-1.2 - _extra_gap, _top_y + 0.8)
 ax.set_xticks(range(2010, 2023, 2))
 ax.set_xticklabels([str(y) for y in range(2010, 2023, 2)], fontsize=9)
 ax.set_yticks([])
@@ -1060,12 +1081,15 @@ else:
 print("\n── Q4a: AE vs Kalman table ──")
 
 rows_q4 = {}
-# interleave AE and EKF DNS by dimension: (AE l=2, EKF 2f), (AE l=3, EKF 3f), (AE l=4, EKF 4f)
+# interleave: (AE IS l=2, AE OOS l=2, EKF 2f), (AE IS l=3, AE OOS l=3, EKF 3f), ...
 for dim in [2, 3, 4]:
+    is_ae_dim = load_is_rmse_for_rolling(dim)
+    if is_ae_dim is not None:
+        rows_q4[rf"AE IS $\ell$={dim}"] = is_ae_dim
     oos_ae_dim = load_rolling_oos_per_ccy(dim)
     if oos_ae_dim is not None:
         oos_ae_dim["Time (min)"] = load_rolling_train_time_min(dim)
-        rows_q4[rf"AE $\ell$={dim}"] = oos_ae_dim
+        rows_q4[rf"AE OOS $\ell$={dim}"] = oos_ae_dim
     oos_k = load_ekf_rolling_oos_per_ccy(dim)
     if oos_k is not None:
         oos_k["Time (min)"] = load_ekf_rolling_train_time_min(dim)
@@ -1583,7 +1607,7 @@ if _m is not None:
         _r_ccy = R_all[_idx].mean(axis=0)           # (30,)
         ax.plot(TAU_GRID, _r_ccy,
                 color=currency_color_map[ccy], linewidth=1.4, label=ccy)
-    ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
+    ax.axhline(0, color="black", linewidth=1.8, linestyle="--")
     ax.set_xlim(0, 30)
     ax.set_xlabel("Maturity", fontsize=10)
     ax.set_ylabel("PDE Residual", fontsize=10)
