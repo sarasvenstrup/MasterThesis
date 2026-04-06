@@ -36,7 +36,7 @@ from Code.utils.ode import (
 # ==========================================================
 # Checkpoint switch
 # ==========================================================
-USE_PRICING_CHECKPOINT = True
+USE_PRICING_CHECKPOINT = False
 BASE_EPOCHS = 200
 PRICING_RUN_NAME = f"pricing_dyn_ep{BASE_EPOCHS}"
 
@@ -836,11 +836,11 @@ def main():
         use="bbg",
         latent_dim=2,
         epochs=BASE_EPOCHS,
-        checkpoint_path=None,
+        checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_dyn_ep200\full_checkpoint.pt",
         use_pricing_checkpoint=USE_PRICING_CHECKPOINT,
         pricing_run_name=PRICING_RUN_NAME,
         n_paths=500,
-        n_steps=24,
+        n_steps=120,
         dt=1 / 12,
         idx_choice=0,
         ccy_filter="EUR",

@@ -87,22 +87,23 @@ SIGMA_INIT = 0.015
 K_DRIFT_SCALE_INIT = 0.10
 
 # ---------- optimizer ----------
-MAX_LR = 2e-5
+MAX_LR_KHR = 2e-5
+MAX_LR_G = 2e-6   # smaller LR for decoder G when unfrozen
 
 # ---------- warm-start / freezing ----------
 USE_FIXED_CENTER = True
 WARMSTART_FROM_PREVIOUS = True
 FREEZE_ENCODER = True
-FREEZE_DECODER_G = True
+FREEZE_DECODER_G = False
 
 MANUAL_CENTER = np.array([0.0, 0.0], dtype=np.float32)
 
 # ---------- loss settings ----------
 # Curve MSE is in decimal rates and very small, so we rescale it to a more useful magnitude.
 CURVE_LOSS_SCALE = 1e6
-LAMBDA_CURVE = 1.0
-LAMBDA_TRANS = 50.0
-LAMBDA_CLOUD = 20.0
+LAMBDA_CURVE = 2.0
+LAMBDA_TRANS = 20.0
+LAMBDA_CLOUD = 10.0
 
 # ---------- transition / rollout ----------
 DT_MIN = 1.0 / 365.25
@@ -720,6 +721,20 @@ trainable_params = [p for p in model.parameters() if p.requires_grad]
 if len(trainable_params) == 0:
     raise RuntimeError("No trainable parameters left after freezing modules.")
 
+params_khr = []
+params_g = []
+
+for name, p in model.named_parameters():
+    if not p.requires_grad:
+        continue
+    if name.startswith("G."):
+        params_g.append(p)
+    else:
+        params_khr.append(p)
+
+if (not FREEZE_DECODER_G) and len(params_g) == 0:
+    raise RuntimeError("FREEZE_DECODER_G=False but no trainable G parameters were found.")
+
 # ==========================================================
 # Empirical latent support stats (for cloud penalty)
 # ==========================================================
@@ -736,11 +751,17 @@ print("  z cov :\n", z_support_cov.detach().cpu().numpy())
 # ==========================================================
 # Optimizer / scheduler
 # ==========================================================
-optim = torch.optim.Adam(trainable_params, lr=MAX_LR)
+optim_param_groups = []
+if len(params_khr) > 0:
+    optim_param_groups.append({"params": params_khr, "lr": MAX_LR_KHR})
+if len(params_g) > 0:
+    optim_param_groups.append({"params": params_g, "lr": MAX_LR_G})
+
+optim = torch.optim.Adam(optim_param_groups)
 
 scheduler = OneCycleLR(
     optim,
-    max_lr=MAX_LR,
+    max_lr=[group["lr"] for group in optim_param_groups],
     steps_per_epoch=len(train_loader),
     epochs=CONT_EPOCHS,
     pct_start=0.3,
@@ -803,7 +824,8 @@ print("\nLogging to:", csv_path)
 best_val_total = float("inf")
 best_checkpoint_path = os.path.join(RUN_DIR, f"best_checkpoint_dim{LATENT_DIM}.pt")
 
-lrs_per_step = []
+lrs_per_step_khr = []
+lrs_per_step_g = []
 history = []
 nan_batches_total = 0
 
@@ -889,7 +911,8 @@ for epoch in range(CONT_EPOCHS):
         sum_total += loss.item() * bs
         n_obs += bs
 
-        lrs_per_step.append(optim.param_groups[0]["lr"])
+        lrs_per_step_khr.append(optim.param_groups[0]["lr"] if len(optim.param_groups) > 0 else np.nan)
+        lrs_per_step_g.append(optim.param_groups[1]["lr"] if len(optim.param_groups) > 1 else np.nan)
 
     if n_obs == 0:
         print("[ABORT] No valid batches were processed this epoch. Stopping.")
@@ -997,10 +1020,13 @@ print("Pricing continuation training done.")
 history_df = pd.DataFrame(history)
 
 fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-ax.plot(np.arange(len(lrs_per_step)), lrs_per_step, linewidth=1.0)
+ax.plot(np.arange(len(lrs_per_step_khr)), lrs_per_step_khr, linewidth=1.0, label="K/H/R")
+if len(lrs_per_step_g) > 0 and np.isfinite(np.asarray(lrs_per_step_g)).any():
+    ax.plot(np.arange(len(lrs_per_step_g)), lrs_per_step_g, linewidth=1.0, label="G")
 ax.set_xlabel("Training step (batch)")
 ax.set_ylabel("Learning rate")
 ax.set_title(f"Pricing continuation LR schedule — OneCycleLR (dim={LATENT_DIM})")
+ax.legend()
 fig.tight_layout()
 lr_fig_path = os.path.join(RUN_DIR, "lr_schedule.png")
 fig.savefig(lr_fig_path, dpi=300)
@@ -1089,7 +1115,8 @@ model_config = {
 training_config = {
     "epochs": CONT_EPOCHS,
     "batch_size": BATCH_SIZE,
-    "max_lr": MAX_LR,
+    "max_lr_khr": MAX_LR_KHR,
+    "max_lr_g": MAX_LR_G,
     "variant": config.VARIANT,
     "use_data": USE,
     "ccy_filter": CCY_FILTER,
@@ -1098,7 +1125,7 @@ training_config = {
     "base_checkpoint_path": BASE_CHECKPOINT_PATH,
     "freeze_encoder": FREEZE_ENCODER,
     "freeze_decoder_g": FREEZE_DECODER_G,
-    "trainable_modules": ["K", "H", "R"],
+    "trainable_modules": ["K", "H", "R"] + ([] if FREEZE_DECODER_G else ["G"]),
     "run_name": RUN_NAME,
     "run_dir": RUN_DIR,
     "objective": {

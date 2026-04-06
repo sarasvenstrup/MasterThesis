@@ -10,9 +10,9 @@ import torch
 # ---------------------------------------------------------------------
 # User setup
 # ---------------------------------------------------------------------
-USE_PRICING_CHECKPOINT = True
+USE_PRICING_CHECKPOINT = False
+EXPLICIT_CHECKPOINT_PATH = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_dyn_ep200\best_checkpoint_dim2.pt"
 PRICING_RUN_NAME = "pricing_dyn_ep200"
-EXPLICIT_CHECKPOINT_PATH = None  # set to a full path to override both switches above
 
 USE = "bbg"
 LATENT_DIM = 2
@@ -337,13 +337,20 @@ def price_structure_for_date(model, decoder_tau_grid_base, z0, sim, expiry: int,
         "strike": strike,
         "forward_swap_t0": t0_quote["forward_swap"],
         "annuity_t0": t0_quote["annuity"],
+
         "mc_price": mc["price"],
         "mc_stderr": mc["stderr"],
         "valid_decode_frac": mc["frac_valid_paths"],
-        "mean_swap_rate_at_expiry": mc["mc_mean_swap_rate_at_expiry"],
-        "mean_annuity_at_expiry": mc["mc_mean_annuity_at_expiry"],
         "actual_expiry": mc["actual_expiry"],
         "model_vol": model_vol,
+
+        "mean_swap_rate_at_expiry": mc["mc_mean_swap_rate_at_expiry"],
+        "mean_annuity_at_expiry": mc["mc_mean_annuity_at_expiry"],
+
+        # pass through full pathwise expiry quantities
+        "swap_rate": mc["swap_rate"],
+        "annuity": mc["annuity"],
+        "discount_to_expiry": mc["discount_to_expiry"],
     }
 
 
@@ -395,10 +402,107 @@ def run_single_example(context):
     with torch.no_grad():
         z0 = context["model"].encoder(S0)
 
+    eps = 1e-3
+
+    def forward_swap_from_z(z, expiry, tenor):
+        out = time0_forward_swap_and_annuity_from_z(
+            model=context["model"],
+            z0=z,
+            decoder_tau_grid_base=context["decoder_tau_grid_base"],
+            expiry=float(expiry),
+            tenor=int(tenor),
+            g0_floor=G0_FLOOR,
+            accrual=ACCRUAL,
+        )
+        return float(out["forward_swap"])
+
+    z_base = z0.detach().clone()
+
+    for expiry in [1, 5]:
+        print(f"\nLATENT SENSITIVITIES AT EXPIRY {expiry}Y")
+        for tenor in [5, 10]:
+            s0 = forward_swap_from_z(z_base, expiry, tenor)
+
+            z_up_1 = z_base.clone()
+            z_dn_1 = z_base.clone()
+            z_up_1[:, 0] += eps
+            z_dn_1[:, 0] -= eps
+
+            z_up_2 = z_base.clone()
+            z_dn_2 = z_base.clone()
+            z_up_2[:, 1] += eps
+            z_dn_2[:, 1] -= eps
+
+            ds_dz1 = (forward_swap_from_z(z_up_1, expiry, tenor) - forward_swap_from_z(z_dn_1, expiry, tenor)) / (
+                        2 * eps)
+            ds_dz2 = (forward_swap_from_z(z_up_2, expiry, tenor) - forward_swap_from_z(z_dn_2, expiry, tenor)) / (
+                        2 * eps)
+
+            print(f"{expiry}Yx{tenor}Y: swap={s0:.6f}, dS/dz1={ds_dz1:.6f}, dS/dz2={ds_dz2:.6f}")
+
     sim = simulate_once_for_date(context["model"], z0)
+
+    print("\n" + "-" * 70)
+    print("LATENT PATH DIAGNOSTICS")
+    print("-" * 70)
+
+    for expiry in [1, 5]:
+        expiry_idx = int(round(expiry / DT))
+        z_exp = sim["z_paths"][:, expiry_idx, :].detach().cpu().numpy()
+
+        z1 = z_exp[:, 0]
+        z2 = z_exp[:, 1]
+
+        print(f"\nExpiry {expiry}Y")
+        print(f"  z1 mean/std : {np.mean(z1):.6f} / {np.std(z1, ddof=0):.6f}")
+        print(f"  z2 mean/std : {np.mean(z2):.6f} / {np.std(z2, ddof=0):.6f}")
+        print(f"  corr(z1,z2) : {np.corrcoef(z1, z2)[0, 1]:.6f}")
+        print(
+            f"  z1 q05/q50/q95 : "
+            f"{np.quantile(z1, 0.05):.6f} / {np.quantile(z1, 0.50):.6f} / {np.quantile(z1, 0.95):.6f}"
+        )
+        print(
+            f"  z2 q05/q50/q95 : "
+            f"{np.quantile(z2, 0.05):.6f} / {np.quantile(z2, 0.50):.6f} / {np.quantile(z2, 0.95):.6f}"
+        )
+
+    print("\n" + "-" * 70)
+    print("APPROX VARIANCE DECOMPOSITION")
+    print("-" * 70)
+
+    sens = {
+        (1, 5): (-0.267063, -0.173559),
+        (1, 10): (-0.301869, -0.049661),
+        (5, 5): (-0.330469, 0.050264),
+        (5, 10): (-0.336045, 0.073840),
+    }
+
+    latent_stats = {
+        1: {"std1": 0.013009, "std2": 0.009918, "corr": 0.108524},
+        5: {"std1": 0.028170, "std2": 0.014244, "corr": 0.503064},
+    }
+
+    for (expiry, tenor), (g1, g2) in sens.items():
+        s = latent_stats[expiry]
+        var1 = s["std1"] ** 2
+        var2 = s["std2"] ** 2
+        cov12 = s["corr"] * s["std1"] * s["std2"]
+
+        c1 = (g1 ** 2) * var1
+        c2 = (g2 ** 2) * var2
+        c12 = 2.0 * g1 * g2 * cov12
+        total = c1 + c2 + c12
+
+        print(f"\n{expiry}Yx{tenor}Y")
+        print(f"  z1 contribution   : {c1 / total:.3f}")
+        print(f"  z2 contribution   : {c2 / total:.3f}")
+        print(f"  covariance term   : {c12 / total:.3f}")
+        print(f"  approx std (bp)   : {np.sqrt(total) * 10000:.2f}")
 
     rows = []
     day_market = market_vols[market_vols["as_of_date"] == market_date].copy()
+
+    pathwise_by_structure = {}
 
     for expiry, tenor in EXAMPLE_STRUCTURES:
         label = structure_label(expiry, tenor)
@@ -416,6 +520,24 @@ def run_single_example(context):
         except Exception as exc:
             warnings.warn(f"Skipping {label}: {exc}", RuntimeWarning)
             continue
+
+        swap_rate_paths = result["swap_rate"].detach().cpu()
+        annuity_paths = result["annuity"].detach().cpu()
+
+        pathwise_by_structure[(int(expiry), int(tenor))] = {
+            "label": label,
+            "swap_rate": swap_rate_paths.numpy().reshape(-1),
+            "annuity": annuity_paths.numpy().reshape(-1),
+        }
+
+        swap_mean = float(swap_rate_paths.mean().item())
+        swap_std = float(swap_rate_paths.std(unbiased=False).item())
+        swap_q05 = float(torch.quantile(swap_rate_paths, 0.05).item())
+        swap_q50 = float(torch.quantile(swap_rate_paths, 0.50).item())
+        swap_q95 = float(torch.quantile(swap_rate_paths, 0.95).item())
+
+        ann_mean = float(annuity_paths.mean().item())
+        ann_std = float(annuity_paths.std(unbiased=False).item())
 
         market_row = day_market[
             (day_market["option_maturity"] == int(expiry))
@@ -436,6 +558,14 @@ def run_single_example(context):
         print(f"  Market vol (bp) : {market_vol * 10000:.2f}" if np.isfinite(market_vol) else "  Market vol (bp) : missing")
         print(f"  Error (bp)      : {error_bp:.2f}" if np.isfinite(error_bp) else "  Error (bp)      : nan")
 
+        print(f"  Swap@expiry mean : {swap_mean:.6f}")
+        print(f"  Swap@expiry std  : {swap_std * 10000:.2f} bp")
+        print(f"  Swap@expiry q05  : {swap_q05:.6f}")
+        print(f"  Swap@expiry q50  : {swap_q50:.6f}")
+        print(f"  Swap@expiry q95  : {swap_q95:.6f}")
+        print(f"  Annuity@expiry mean : {ann_mean:.6f}")
+        print(f"  Annuity@expiry std  : {ann_std:.6f}")
+
         rows.append({
             "requested_date": requested_date,
             "market_date": market_date,
@@ -449,13 +579,52 @@ def run_single_example(context):
             "mc_price": result["mc_price"],
             "mc_stderr": result["mc_stderr"],
             "valid_decode_frac": result["valid_decode_frac"],
-            "mean_swap_rate_at_expiry_pct": result["mean_swap_rate_at_expiry"] * 100,
-            "mean_annuity_at_expiry": result["mean_annuity_at_expiry"],
+            "mean_swap_rate_at_expiry_pct": swap_mean * 100,
+            "std_swap_rate_at_expiry_bp": swap_std * 10000,
+            "q05_swap_rate_at_expiry_pct": swap_q05 * 100,
+            "q50_swap_rate_at_expiry_pct": swap_q50 * 100,
+            "q95_swap_rate_at_expiry_pct": swap_q95 * 100,
+            "mean_annuity_at_expiry": ann_mean,
+            "std_annuity_at_expiry": ann_std,
             "actual_expiry": result["actual_expiry"],
             "model_vol_bp": result["model_vol"] * 10000 if np.isfinite(result["model_vol"]) else np.nan,
             "market_vol_bp": market_vol * 10000 if np.isfinite(market_vol) else np.nan,
             "vol_error_bp": error_bp,
         })
+
+    print("\n" + "-" * 70)
+    print("TENOR DIFFERENTIATION DIAGNOSTICS")
+    print("-" * 70)
+
+    compare_pairs = [
+        ((1, 5), (1, 10)),
+        ((5, 5), (5, 10)),
+    ]
+
+    for left_key, right_key in compare_pairs:
+        if left_key not in pathwise_by_structure or right_key not in pathwise_by_structure:
+            continue
+
+        left = pathwise_by_structure[left_key]
+        right = pathwise_by_structure[right_key]
+
+        x = left["swap_rate"]
+        y = right["swap_rate"]
+        spread = y - x  # 10Y minus 5Y
+
+        corr = float(np.corrcoef(x, y)[0, 1])
+        mean_spread_bp = float(np.mean(spread) * 10000.0)
+        std_spread_bp = float(np.std(spread, ddof=0) * 10000.0)
+        q05_spread_bp = float(np.quantile(spread, 0.05) * 10000.0)
+        q50_spread_bp = float(np.quantile(spread, 0.50) * 10000.0)
+        q95_spread_bp = float(np.quantile(spread, 0.95) * 10000.0)
+
+        print(f"\nExpiry {left_key[0]}Y: {left['label']} vs {right['label']}")
+        print(f"  Corr(swap_5Y, swap_10Y)      : {corr:.6f}")
+        print(f"  Mean spread (10Y-5Y)         : {mean_spread_bp:.2f} bp")
+        print(f"  Std spread  (10Y-5Y)         : {std_spread_bp:.2f} bp")
+        print(f"  Spread q05 / q50 / q95       : "
+              f"{q05_spread_bp:.2f} / {q50_spread_bp:.2f} / {q95_spread_bp:.2f} bp")
 
     if not rows:
         raise RuntimeError("Single example produced no successful rows.")

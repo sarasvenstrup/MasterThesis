@@ -57,7 +57,7 @@ EPOCHS = 200
 # Bundle to diagnose
 BUNDLE_PATH = (
     r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\Pricing\simulations"
-    r"\simulation_bundle_bbg_dim2_ep200_paths500_steps24_seed1234_euler_full_diff1_pricing_dyn_ep200.pt"
+    r"\simulation_bundle_bbg_dim2_ep200_paths500_steps120_seed1234_euler_full_diff1.pt"
 )
 
 # Diagnostics settings
