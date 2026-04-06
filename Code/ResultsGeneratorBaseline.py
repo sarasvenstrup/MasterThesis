@@ -649,7 +649,7 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 # ── rolling helper constants and functions (used by Q2a, Q2b, Q3b, Q4a) ──────
 ROLL_SUBDIR            = "train5Y_test6M_step6M"
-ROLL_EPOCHS            = 2500   # epoch count used for rolling OOS runs
+ROLL_EPOCHS            = 3500   # epoch count used for rolling OOS runs
 ROLL_DIVERGE_THRESHOLD = 100.0
 _ROLL_FALLBACK_SUBDIR  = "train3Y_test3M_step6M"
 
