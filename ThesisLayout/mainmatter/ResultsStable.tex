@@ -74,7 +74,7 @@ The final column reports average training time per rolling window in minutes.}
 % ─────────────────────────────────────────────────────────────
 
 \textcolor{red}{Diclaimer: 
-This section needs to be updated for the stable results, but for now we have executed the analysis on the baseline results.}
+This section needs to be updated for the stable results, but for now we have performed the analysis on the baseline results.}
 
 % ── 1. Opening ───────────────────────────────────────────────
 The swap rate curve is observed at eight maturities, but its variation may be governed by far fewer underlying factors. Principal Component Analysis (PCA) identifies these by finding the orthogonal directions of maximum variance, yielding a low-dimensional representation that retains the greatest possible proportion of total variation. Since the encoder is linear, its learned directions can be directly compared to the PCA eigenvectors, telling us whether a model trained purely on reconstruction error recovers the same structure as a method designed explicitly to capture variance.
