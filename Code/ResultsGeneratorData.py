@@ -56,9 +56,10 @@ def save_table(df, name):
 
 # ── load data ─────────────────────────────────────────────────────────────────
 print("Loading data...")
-meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data("bbg", TARGET_TENORS)
+_extended_tenors = sorted(set(list(TARGET_TENORS) + [7]))
+meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data("bbg", _extended_tenors)
 df_wide_all["as_of_date"] = pd.to_datetime(df_wide_all["as_of_date"])
-tenor_cols = list(TARGET_TENORS)
+tenor_cols = _extended_tenors
 print(f"  Loaded {len(df_wide_all)} observations (full history)")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,20 +121,19 @@ fig, ax_curves = plt.subplots(figsize=(7, 4))
 
 for ccy in CCY_ORDER:
     ccy_df = df_wide_all[df_wide_all["ccy"] == ccy].copy()
-    ccy_df["as_of_date"] = pd.to_datetime(ccy_df["as_of_date"])
     if ccy_df.empty:
         continue
     idx = (ccy_df["as_of_date"] - _target_date).abs().argmin()
     row = ccy_df.iloc[idx]
     rates = [float(row[t]) * _scale for t in tenor_cols]
-    ax_curves.plot(tenors, rates,
+    ax_curves.plot(tenor_cols, rates,
                    color=currency_color_map[ccy],
                    linewidth=1.5, label=ccy)
 
 ax_curves.set_xlabel("Maturity", fontsize=10)
 ax_curves.set_ylabel("Swap rate", fontsize=10)
-ax_curves.set_xticks(tenors)
-ax_curves.set_xticklabels([str(int(t)) for t in tenors], fontsize=8)
+ax_curves.set_xticks(tenor_cols)
+ax_curves.set_xticklabels([str(int(t)) for t in tenor_cols], fontsize=8)
 
 fig.tight_layout()
 save_fig(fig, "D2a_swap_curves")
