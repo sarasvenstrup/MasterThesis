@@ -10,13 +10,14 @@ import torch
 # ---------------------------------------------------------------------
 # User setup
 # ---------------------------------------------------------------------
-USE_PRICING_CHECKPOINT = False
-EXPLICIT_CHECKPOINT_PATH = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_dyn_ep200\best_checkpoint_dim2.pt"
-PRICING_RUN_NAME = "pricing_dyn_ep200"
+DEFAULT_PRICING_RUN_NAME = "pricing_dyn_ep200"
+USE_PRICING_CHECKPOINT = True
+EXPLICIT_CHECKPOINT_PATH = None
+PRICING_RUN_NAME = DEFAULT_PRICING_RUN_NAME
 
 USE = "bbg"
 LATENT_DIM = 2
-EPOCHS = 200                  # used only for the standard stable checkpoint path
+EPOCHS = 200                  # used only when loading a non-pricing checkpoint path
 CCY = "EUR"
 IDX_CHOICE_FALLBACK = 0       # kept for reference; not used when matching by date
 SEED = 1234
@@ -92,6 +93,25 @@ from Code.Pricing.pricing import (
 print(f"Repo root: {THESIS_ROOT}")
 print(f"Code root: {CODE_ROOT}")
 print(f"Active model variant from config.py: {config.VARIANT}")
+
+
+def normalize_compare_checkpoint_settings():
+    explicit = EXPLICIT_CHECKPOINT_PATH
+    if explicit is not None:
+        explicit = str(explicit).strip()
+        if explicit == "":
+            explicit = None
+
+    use_pricing = bool(USE_PRICING_CHECKPOINT)
+    run_name = str(PRICING_RUN_NAME).strip() if PRICING_RUN_NAME is not None else DEFAULT_PRICING_RUN_NAME
+    if run_name == "":
+        run_name = DEFAULT_PRICING_RUN_NAME
+
+    return {
+        "use_pricing_checkpoint": use_pricing,
+        "explicit_checkpoint_path": explicit,
+        "pricing_run_name": run_name,
+    }
 
 
 # ---------------------------------------------------------------------
@@ -211,22 +231,24 @@ def build_context():
     os.makedirs(OUT_DIR, exist_ok=True)
     set_seed(SEED)
 
+    ckpt_cfg = normalize_compare_checkpoint_settings()
+
     checkpoint_path = resolve_checkpoint_path_current(
         thesis_root=THESIS_ROOT,
         use=USE,
         latent_dim=LATENT_DIM,
         epochs=EPOCHS,
-        use_pricing_checkpoint=USE_PRICING_CHECKPOINT,
-        pricing_run_name=PRICING_RUN_NAME,
-        explicit_checkpoint_path=EXPLICIT_CHECKPOINT_PATH,
+        use_pricing_checkpoint=ckpt_cfg["use_pricing_checkpoint"],
+        pricing_run_name=ckpt_cfg["pricing_run_name"],
+        explicit_checkpoint_path=ckpt_cfg["explicit_checkpoint_path"],
     )
 
     model = load_model(
         checkpoint_path=checkpoint_path,
         device=DEVICE,
         latent_dim=LATENT_DIM,
-        use_pricing_checkpoint=USE_PRICING_CHECKPOINT,
-        pricing_run_name=PRICING_RUN_NAME,
+        use_pricing_checkpoint=ckpt_cfg["use_pricing_checkpoint"],
+        pricing_run_name=ckpt_cfg["pricing_run_name"],
     )
 
     _, _, meta_full, X_tensor_full, _, _, _, _ = my_data(use=USE)
@@ -250,6 +272,11 @@ def build_context():
 
     market_vols = load_market_vols(EXCEL_PATH)
 
+    print(f"Using pricing checkpoint: {ckpt_cfg['use_pricing_checkpoint']}")
+    if ckpt_cfg["explicit_checkpoint_path"] is not None:
+        print(f"Explicit checkpoint path: {ckpt_cfg['explicit_checkpoint_path']}")
+    else:
+        print(f"Pricing run name       : {ckpt_cfg['pricing_run_name']}")
     print(f"Loaded checkpoint: {checkpoint_path}")
     print(f"{CCY} curves: {len(meta_eur)} rows | {dates_eur.min().date()} -> {dates_eur.max().date()}")
     print(

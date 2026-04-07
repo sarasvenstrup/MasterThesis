@@ -36,9 +36,10 @@ from Code.utils.ode import (
 # ==========================================================
 # Checkpoint switch
 # ==========================================================
-USE_PRICING_CHECKPOINT = False
 BASE_EPOCHS = 200
-PRICING_RUN_NAME = f"pricing_dyn_ep{BASE_EPOCHS}"
+DEFAULT_PRICING_RUN_NAME = f"pricing_dyn_ep{BASE_EPOCHS}"
+USE_PRICING_CHECKPOINT = True
+PRICING_RUN_NAME = DEFAULT_PRICING_RUN_NAME
 
 
 def normalize_discretization_name(name: str) -> str:
@@ -61,11 +62,18 @@ def set_seed(seed: int):
 
 def resolve_checkpoint_path(
     thesis_root: str,
+    use: str,
     latent_dim: int,
     epochs: int,
     use_pricing_checkpoint: bool = False,
-    pricing_run_name: str | None = None,
+    pricing_run_name: str = DEFAULT_PRICING_RUN_NAME,
+    explicit_checkpoint_path: str = None,
 ) -> str:
+    if explicit_checkpoint_path:
+        if os.path.exists(explicit_checkpoint_path):
+            return os.path.abspath(explicit_checkpoint_path)
+        raise FileNotFoundError(f"Explicit checkpoint path does not exist: {explicit_checkpoint_path}")
+
     variant = config.VARIANT
     run_root = os.path.join(
         thesis_root,
@@ -75,18 +83,17 @@ def resolve_checkpoint_path(
     )
 
     if use_pricing_checkpoint:
-        if pricing_run_name is None:
-            raise ValueError("pricing_run_name must be provided when use_pricing_checkpoint=True")
-        target_dir = os.path.join(run_root, pricing_run_name)
+        candidates = [
+            os.path.join(run_root, pricing_run_name, "full_checkpoint.pt"),
+            os.path.join(run_root, pricing_run_name, f"checkpoint_dim{latent_dim}_{pricing_run_name}.pt"),
+            os.path.join(run_root, pricing_run_name, f"best_checkpoint_dim{latent_dim}.pt"),
+        ]
     else:
-        target_dir = os.path.join(run_root, f"ep{epochs}")
-
-    candidates = [
-        os.path.join(target_dir, "full_checkpoint.pt"),
-        os.path.join(target_dir, f"best_checkpoint_dim{latent_dim}.pt"),
-        os.path.join(target_dir, f"checkpoint_dim{latent_dim}.pt"),
-        os.path.join(target_dir, f"checkpoint_dim{latent_dim}_ep{epochs}.pt"),
-    ]
+        candidates = [
+            os.path.join(run_root, f"ep{epochs}", f"checkpoint_dim{latent_dim}_ep{epochs}.pt"),
+            os.path.join(run_root, f"ep{epochs}", f"best_checkpoint_dim{latent_dim}.pt"),
+            os.path.join(thesis_root, "..", "checkpoints", f"fullmodel_{use}_dim{latent_dim}_ep{epochs}.pt"),
+        ]
 
     for path in candidates:
         if os.path.exists(path):
@@ -94,6 +101,61 @@ def resolve_checkpoint_path(
 
     searched = "\n".join(f"  - {os.path.abspath(p)}" for p in candidates)
     raise FileNotFoundError(f"Checkpoint not found. Searched:\n{searched}")
+
+
+def maybe_upgrade_old_stable_k_state_dict(state_dict, model):
+    """
+    Convert old stable-K checkpoint:
+        mu(z) = M z + N
+    into new OU-style stable-K:
+        mu(z) = M (z - theta)
+
+    using:
+        -M theta = N  =>  theta = solve(M, -N)
+
+    and set kappa = 1, i.e. softplus(raw_kappa) = 1.
+    """
+    if config.VARIANT != "stable":
+        return state_dict
+
+    has_old = ("K.N" in state_dict) and ("K.B" in state_dict) and ("K.L" in state_dict)
+    has_new_model = hasattr(model.K, "theta") and hasattr(model.K, "raw_kappa")
+
+    if not (has_old and has_new_model):
+        return state_dict
+
+    print("[compat] Converting old stable-K checkpoint to new OU-style K...")
+
+    new_state = dict(state_dict)
+
+    B = new_state["K.B"]
+    L = new_state["K.L"]
+    N = new_state["K.N"]
+
+    d = B.shape[0]
+    device = B.device
+    dtype = B.dtype
+
+    eps = float(getattr(model.K, "epsilon", 1e-3))
+    I = torch.eye(d, device=device, dtype=dtype)
+
+    S = B - B.t()
+    A = L @ L.t() + eps * I
+    M = S - A
+
+    theta = torch.linalg.solve(M, (-N).unsqueeze(-1)).squeeze(-1)
+
+    one = torch.tensor(1.0, device=device, dtype=dtype)
+    raw_kappa = torch.log(torch.expm1(one))
+
+    new_state["K.theta"] = theta
+    new_state["K.raw_kappa"] = raw_kappa
+    del new_state["K.N"]
+
+    print(f"[compat] Created K.theta = {theta.detach().cpu().numpy()}")
+    print("[compat] Set K.raw_kappa so that softplus(raw_kappa) = 1")
+
+    return new_state
 
 
 def safe_load_state_dict(model, state_dict):
@@ -121,25 +183,68 @@ def safe_load_state_dict(model, state_dict):
         )
 
 
+def build_model_init_kwargs(raw_checkpoint, latent_dim: int):
+    model_kwargs = {"latent_dim": int(latent_dim)}
+
+    state_dict = (
+        raw_checkpoint["model_state_dict"]
+        if isinstance(raw_checkpoint, dict) and "model_state_dict" in raw_checkpoint
+        else raw_checkpoint
+    )
+
+    if isinstance(raw_checkpoint, dict) and "model_config" in raw_checkpoint:
+        cfg = raw_checkpoint["model_config"]
+        model_kwargs["latent_dim"] = int(cfg.get("latent_dim", model_kwargs["latent_dim"]))
+
+        if cfg.get("sigma_init", None) is not None:
+            model_kwargs["sigma_init"] = float(cfg["sigma_init"])
+
+        if cfg.get("k_drift_scale_init", None) is not None:
+            model_kwargs["k_drift_scale_init"] = float(cfg["k_drift_scale_init"])
+
+        if cfg.get("k_z_center_init", None) is not None:
+            model_kwargs["k_z_center_init"] = np.asarray(cfg["k_z_center_init"], dtype=np.float32)
+
+        if cfg.get("k_learn_center", None) is not None:
+            model_kwargs["k_learn_center"] = bool(cfg["k_learn_center"])
+
+    if (
+        "k_z_center_init" not in model_kwargs
+        and isinstance(state_dict, dict)
+        and "K.theta" in state_dict
+    ):
+        try:
+            theta = state_dict["K.theta"].detach().cpu().numpy().astype(np.float32)
+            model_kwargs["k_z_center_init"] = theta
+            model_kwargs["k_learn_center"] = False
+            print("Inferred fixed center from state_dict K.theta:", theta)
+        except Exception as e:
+            print(f"[WARN] Could not infer K.theta from state_dict: {e}")
+
+    return model_kwargs
+
+
 def load_and_setup_model(
     device,
+    use,
     latent_dim,
     epochs,
     checkpoint_path=None,
-    use_pricing_checkpoint=False,
-    pricing_run_name=None,
+    use_pricing_checkpoint=True,
+    pricing_run_name=DEFAULT_PRICING_RUN_NAME,
 ):
     if latent_dim != 2:
         raise ValueError("This script currently supports only the 2-factor model (latent_dim=2).")
 
-    if checkpoint_path is None:
-        checkpoint_path = resolve_checkpoint_path(
-            thesis_root=THESIS_ROOT,
-            latent_dim=latent_dim,
-            epochs=epochs,
-            use_pricing_checkpoint=use_pricing_checkpoint,
-            pricing_run_name=pricing_run_name,
-        )
+    checkpoint_path = resolve_checkpoint_path(
+        thesis_root=THESIS_ROOT,
+        use=use,
+        latent_dim=latent_dim,
+        epochs=epochs,
+        use_pricing_checkpoint=use_pricing_checkpoint,
+        pricing_run_name=pricing_run_name,
+        explicit_checkpoint_path=checkpoint_path,
+    )
 
     raw = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
@@ -148,7 +253,6 @@ def load_and_setup_model(
     if isinstance(raw, dict) and "model_state_dict" in raw:
         state_dict = raw["model_state_dict"]
         saved_variant = raw.get("variant", "unknown")
-        model_config = raw.get("model_config", {})
         if saved_variant != "unknown" and saved_variant != config.VARIANT:
             raise ValueError(
                 f"Checkpoint variant '{saved_variant}' does not match active "
@@ -156,22 +260,13 @@ def load_and_setup_model(
             )
     else:
         state_dict = raw
-        model_config = {}
 
-    allowed_keys = {
-        "input_dim", "latent_dim", "tau_max", "tenors",
-        "g_hidden", "h_hidden", "r_hidden",
-        "g_bias", "hr_bias", "sigma_init",
-        "k_z_center_init", "k_epsilon", "k_drift_scale_init", "k_learn_center",
-    }
-
-    init_kwargs = {"latent_dim": latent_dim}
-    if isinstance(model_config, dict):
-        for k, v in model_config.items():
-            if k in allowed_keys:
-                init_kwargs[k] = v
+    init_kwargs = build_model_init_kwargs(raw, latent_dim=latent_dim)
+    print("Model init kwargs:")
+    print(init_kwargs)
 
     model = FullModel(**init_kwargs)
+    state_dict = maybe_upgrade_old_stable_k_state_dict(state_dict, model)
     safe_load_state_dict(model, state_dict)
 
     model.to(device).double()
@@ -184,7 +279,6 @@ def load_and_setup_model(
     print(f"  Using pricing checkpoint: {use_pricing_checkpoint}")
     if use_pricing_checkpoint:
         print(f"  Pricing run name: {pricing_run_name}")
-    print(f"  Model init kwargs: {init_kwargs}")
     print(f"  Model dtype: {next(model.parameters()).dtype}")
 
     return model, checkpoint_path
@@ -381,7 +475,7 @@ def make_experiment_suffix(
     sim_mode="full",
     diffusion_scale=1.0,
     use_pricing_checkpoint=False,
-    pricing_run_name=None,
+    pricing_run_name=DEFAULT_PRICING_RUN_NAME,
 ):
     disc = discretization.lower()
     diff_tag = f"{diffusion_scale:g}".replace(".", "p")
@@ -664,8 +758,8 @@ def run_simulation(
     latent_dim=2,
     epochs=20,
     checkpoint_path=None,
-    use_pricing_checkpoint=False,
-    pricing_run_name=None,
+    use_pricing_checkpoint=True,
+    pricing_run_name=DEFAULT_PRICING_RUN_NAME,
     n_paths=100,
     n_steps=24,
     dt=1 / 12,
@@ -691,6 +785,7 @@ def run_simulation(
 
     model, checkpoint_path = load_and_setup_model(
         device=device,
+        use=use,
         latent_dim=latent_dim,
         epochs=epochs,
         checkpoint_path=checkpoint_path,
@@ -836,7 +931,7 @@ def main():
         use="bbg",
         latent_dim=2,
         epochs=BASE_EPOCHS,
-        checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_dyn_ep200\full_checkpoint.pt",
+        checkpoint_path=None,
         use_pricing_checkpoint=USE_PRICING_CHECKPOINT,
         pricing_run_name=PRICING_RUN_NAME,
         n_paths=500,
@@ -846,7 +941,7 @@ def main():
         ccy_filter="EUR",
         discretization="euler",
         sim_mode="full",
-        diffusion_scale=1.0,
+        diffusion_scale=0.5,
         seed=1234,
         device=device,
     )

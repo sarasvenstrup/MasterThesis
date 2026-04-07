@@ -46,8 +46,10 @@ SHOW_PLOTS = False
 USE_SAVED_METADATA = True
 
 # Toggle between ordinary stable checkpoint folder and pricing checkpoint folder
+BASE_EPOCHS = 200
+DEFAULT_PRICING_RUN_NAME = f"pricing_dyn_ep{BASE_EPOCHS}"
 USE_PRICING_CHECKPOINT = True
-PRICING_RUN_NAME = "pricing_dyn_ep200"   # used only if checkpoint_path is not already inside bundle metadata
+PRICING_RUN_NAME = DEFAULT_PRICING_RUN_NAME   # used only if checkpoint_path is not already inside bundle metadata
 
 # This is just fallback metadata if not found in the bundle
 USE = "bbg"
@@ -105,7 +107,7 @@ def resolve_checkpoint_path(
     latent_dim: int,
     epochs: int,
     use_pricing_checkpoint: bool = False,
-    pricing_run_name: str | None = None,
+    pricing_run_name: str = DEFAULT_PRICING_RUN_NAME,
 ) -> str:
     variant = config.VARIANT
     dim_dir = os.path.join(
@@ -116,8 +118,6 @@ def resolve_checkpoint_path(
     )
 
     if use_pricing_checkpoint:
-        if pricing_run_name is None:
-            raise ValueError("pricing_run_name must be provided when use_pricing_checkpoint=True")
         run_dir = os.path.join(dim_dir, pricing_run_name)
     else:
         run_dir = os.path.join(dim_dir, f"ep{epochs}")
@@ -135,6 +135,61 @@ def resolve_checkpoint_path(
 
     searched = "\n".join(f"  - {os.path.abspath(p)}" for p in candidates)
     raise FileNotFoundError(f"Checkpoint not found. Searched:\n{searched}")
+
+
+def maybe_upgrade_old_stable_k_state_dict(state_dict, model):
+    """
+    Convert old stable-K checkpoint:
+        mu(z) = M z + N
+    into new OU-style stable-K:
+        mu(z) = M (z - theta)
+
+    using:
+        -M theta = N  =>  theta = solve(M, -N)
+
+    and set kappa = 1, i.e. softplus(raw_kappa) = 1.
+    """
+    if config.VARIANT != "stable":
+        return state_dict
+
+    has_old = ("K.N" in state_dict) and ("K.B" in state_dict) and ("K.L" in state_dict)
+    has_new_model = hasattr(model.K, "theta") and hasattr(model.K, "raw_kappa")
+
+    if not (has_old and has_new_model):
+        return state_dict
+
+    print("[compat] Converting old stable-K checkpoint to new OU-style K...")
+
+    new_state = dict(state_dict)
+
+    B = new_state["K.B"]
+    L = new_state["K.L"]
+    N = new_state["K.N"]
+
+    d = B.shape[0]
+    device = B.device
+    dtype = B.dtype
+
+    eps = float(getattr(model.K, "epsilon", 1e-3))
+    I = torch.eye(d, device=device, dtype=dtype)
+
+    S = B - B.t()
+    A = L @ L.t() + eps * I
+    M = S - A
+
+    theta = torch.linalg.solve(M, (-N).unsqueeze(-1)).squeeze(-1)
+
+    one = torch.tensor(1.0, device=device, dtype=dtype)
+    raw_kappa = torch.log(torch.expm1(one))
+
+    new_state["K.theta"] = theta
+    new_state["K.raw_kappa"] = raw_kappa
+    del new_state["K.N"]
+
+    print(f"[compat] Created K.theta = {theta.detach().cpu().numpy()}")
+    print("[compat] Set K.raw_kappa so that softplus(raw_kappa) = 1")
+
+    return new_state
 
 
 def safe_load_state_dict(model, state_dict):
@@ -216,8 +271,8 @@ def load_and_setup_model(
     latent_dim,
     epochs,
     checkpoint_path=None,
-    use_pricing_checkpoint=False,
-    pricing_run_name=None,
+    use_pricing_checkpoint=True,
+    pricing_run_name=DEFAULT_PRICING_RUN_NAME,
     sigma_init=DEFAULT_SIGMA_INIT,
     k_drift_scale_init=DEFAULT_K_DRIFT_SCALE_INIT,
     k_z_center_init=DEFAULT_K_Z_CENTER_INIT,
@@ -263,6 +318,7 @@ def load_and_setup_model(
     print(model_kwargs)
 
     model = FullModel(**model_kwargs)
+    state_dict = maybe_upgrade_old_stable_k_state_dict(state_dict, model)
     safe_load_state_dict(model, state_dict)
 
     model.to(device).double()
@@ -1313,8 +1369,8 @@ def run_all_diagnostics(
     k_learn_center=DEFAULT_K_LEARN_CENTER,
     martingale_log_every_combo=1,
     martingale_log_every_paths=100,
-    use_pricing_checkpoint=False,
-    pricing_run_name=None,
+    use_pricing_checkpoint=True,
+    pricing_run_name=DEFAULT_PRICING_RUN_NAME,
 ):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

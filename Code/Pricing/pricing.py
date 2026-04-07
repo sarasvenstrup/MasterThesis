@@ -15,7 +15,8 @@ from scipy.optimize import brentq
 # User setup
 # ---------------------------------------------------------------------
 USE_PRICING_CHECKPOINT = True
-PRICING_RUN_NAME = "pricing_ep200"
+DEFAULT_PRICING_RUN_NAME = "pricing_dyn_ep200"
+PRICING_RUN_NAME = DEFAULT_PRICING_RUN_NAME
 
 USE = "bbg"
 LATENT_DIM = 2
@@ -119,7 +120,7 @@ def resolve_checkpoint_path_current(
     latent_dim: int,
     epochs: int,
     use_pricing_checkpoint: bool = False,
-    pricing_run_name: str = "pricing_ep200",
+    pricing_run_name: str = DEFAULT_PRICING_RUN_NAME,
     explicit_checkpoint_path: str = None,
 ) -> str:
     if explicit_checkpoint_path:
@@ -239,6 +240,12 @@ def safe_load_state_dict_compat(model, state_dict):
 def build_model_init_kwargs(raw_checkpoint, latent_dim: int):
     model_kwargs = {"latent_dim": int(latent_dim)}
 
+    state_dict = (
+        raw_checkpoint["model_state_dict"]
+        if isinstance(raw_checkpoint, dict) and "model_state_dict" in raw_checkpoint
+        else raw_checkpoint
+    )
+
     if isinstance(raw_checkpoint, dict) and "model_config" in raw_checkpoint:
         cfg = raw_checkpoint["model_config"]
         model_kwargs["latent_dim"] = int(cfg.get("latent_dim", model_kwargs["latent_dim"]))
@@ -255,6 +262,19 @@ def build_model_init_kwargs(raw_checkpoint, latent_dim: int):
         if cfg.get("k_learn_center", None) is not None:
             model_kwargs["k_learn_center"] = bool(cfg["k_learn_center"])
 
+    if (
+        "k_z_center_init" not in model_kwargs
+        and isinstance(state_dict, dict)
+        and "K.theta" in state_dict
+    ):
+        try:
+            theta = state_dict["K.theta"].detach().cpu().numpy().astype(np.float32)
+            model_kwargs["k_z_center_init"] = theta
+            model_kwargs["k_learn_center"] = False
+            print("Inferred fixed center from state_dict K.theta:", theta)
+        except Exception as e:
+            print(f"[WARN] Could not infer K.theta from state_dict: {e}")
+
     return model_kwargs
 
 
@@ -263,7 +283,7 @@ def load_model(
     device: torch.device,
     latent_dim: int = 2,
     use_pricing_checkpoint: bool = False,
-    pricing_run_name: str = "pricing_ep200",
+    pricing_run_name: str = DEFAULT_PRICING_RUN_NAME,
 ) -> FullModel:
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
