@@ -1,7 +1,7 @@
 import os
 import re
 import pandas as pd
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Optional, Union, Sequence
 import numpy as np
 try:
     from Code.utils import helpers as H
@@ -344,8 +344,42 @@ def build_all_dataframes(root: str = ROOT, target_tenors: List[int] = TARGET_TEN
         "root_used": root,
     }
 
+def filter_dataset_by_currency(meta, X_tensor, ccy_filter: Optional[Union[str, Sequence[str]]]):
+    if ccy_filter is None:
+        return meta.reset_index(drop=True), X_tensor
 
-def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
+    # Allow both "EUR" and ["EUR", "USD"]
+    if isinstance(ccy_filter, str):
+        ccy_list = [ccy_filter]
+    else:
+        ccy_list = list(ccy_filter)
+
+    ccy_list = [str(c).strip().upper() for c in ccy_list if str(c).strip() != ""]
+
+    if len(ccy_list) == 0:
+        return meta.reset_index(drop=True), X_tensor
+
+    mask = meta["ccy"].astype(str).str.upper().isin(ccy_list)
+    n_keep = int(mask.sum())
+
+    if n_keep == 0:
+        available = sorted(meta["ccy"].astype(str).str.upper().unique().tolist())
+        raise ValueError(
+            f"No rows found for ccy_filter={ccy_list}. "
+            f"Available currencies: {available}"
+        )
+
+    meta_f = meta.loc[mask].reset_index(drop=True)
+    X_tensor_f = X_tensor[mask.to_numpy()]
+
+    print(f"Filtered dataset to currencies {ccy_list}: kept {n_keep} rows")
+    return meta_f, X_tensor_f
+
+def my_data(
+    use: str = "bbg",
+    target_tenors: List[int] = TARGET_TENORS,
+    ccy_filter: Optional[Union[str, Sequence[str]]] = None,
+):
     assert use in {"test", "bbg"}, f"Unknown use='{use}'"
     assert len(target_tenors) >= 1, f"Expected at least 1 target tenor, got {len(target_tenors)}"
 
@@ -363,8 +397,35 @@ def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
 
     df_wide_complete["as_of_date"] = pd.to_datetime(df_wide_complete["as_of_date"])
 
+    # rename currencies consistently BEFORE filtering
+    df_wide_complete["ccy"] = df_wide_complete["ccy"].map(lambda x: currency_rename_map.get(x, x))
+
     # full sample before date cut
     df_wide_all = df_wide_complete[["as_of_date", "ccy"] + list(target_tenors)].copy()
+
+    # -------- apply optional currency filter to full sample --------
+    if ccy_filter is not None:
+        if isinstance(ccy_filter, str):
+            ccy_list = [ccy_filter]
+        else:
+            ccy_list = list(ccy_filter)
+
+        ccy_list = [str(c).strip().upper() for c in ccy_list if str(c).strip() != ""]
+
+        if len(ccy_list) > 0:
+            mask_full = df_wide_all["ccy"].astype(str).str.upper().isin(ccy_list)
+
+            if not mask_full.any():
+                available = sorted(df_wide_all["ccy"].astype(str).str.upper().unique().tolist())
+                raise ValueError(
+                    f"No rows found for ccy_filter={ccy_list}. "
+                    f"Available currencies: {available}"
+                )
+
+            df_wide_all = df_wide_all.loc[mask_full].reset_index(drop=True)
+            print(f"Filtered full dataset to currencies {ccy_list}: kept {len(df_wide_all)} rows")
+    # ---------------------------------------------------------------
+
     meta_full = df_wide_all[["as_of_date", "ccy"]].reset_index(drop=True)
 
     X_full = df_wide_all[list(target_tenors)].to_numpy(dtype=np.float32)
@@ -389,12 +450,6 @@ def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
         X = X / 100.0
 
     X_tensor = torch.from_numpy(X)
-
-    # rename currencies consistently
-    meta["ccy"] = meta["ccy"].map(lambda x: currency_rename_map.get(x, x))
-    meta_full["ccy"] = meta_full["ccy"].map(lambda x: currency_rename_map.get(x, x))
-    df_wide["ccy"] = df_wide["ccy"].map(lambda x: currency_rename_map.get(x, x))
-    df_wide_all["ccy"] = df_wide_all["ccy"].map(lambda x: currency_rename_map.get(x, x))
 
     return meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT
 
