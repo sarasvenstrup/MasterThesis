@@ -1,7 +1,7 @@
 """
-Runner script: runs Training.py sequentially for multiple dims and variants.
+Runner script: runs OutOfSampleRoll.py sequentially for multiple dims and variants.
 
-  Training.py (baseline): LATENT_DIM = 2, 3, 4  ep=3500
+  OutOfSampleRoll.py (baseline): LATENT_DIM = 2, 3, 4  ep=3500
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -17,13 +17,13 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
-CONFIG_PATH   = os.path.join(REPO_ROOT, "Code", "config.py")
-TRAINING_PATH = os.path.join(REPO_ROOT, "Code", "Training.py")
+CONFIG_PATH  = os.path.join(REPO_ROOT, "Code", "config.py")
+OOS_ROLL_PATH = os.path.join(REPO_ROOT, "Code", "OutOfSampleRoll.py")
 
 STAGES = [
     {
-        "name":    "Training (baseline)",
-        "script":  TRAINING_PATH,
+        "name":    "OOS Roll (baseline)",
+        "script":  OOS_ROLL_PATH,
         "variant": "baseline",
         "dims":    [2, 3, 4],
         "epochs":  3500,

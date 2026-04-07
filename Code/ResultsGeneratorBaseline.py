@@ -649,7 +649,7 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 # ── rolling helper constants and functions (used by Q2a, Q2b, Q3b, Q4a) ──────
 ROLL_SUBDIR            = "train5Y_test6M_step6M"
-ROLL_EPOCHS            = 2500   # epoch count used for rolling OOS runs
+ROLL_EPOCHS            = 3500   # epoch count used for rolling OOS runs
 ROLL_DIVERGE_THRESHOLD = 100.0
 _ROLL_FALLBACK_SUBDIR  = "train3Y_test3M_step6M"
 
@@ -790,7 +790,7 @@ _train_years  = 5
 _test_months  = 6
 _step_months  = 6
 _data_start   = pd.Timestamp("2010-01-01")
-_data_end     = pd.Timestamp("2022-12-31")
+_data_end     = pd.Timestamp("2023-12-31")
 _total_months = (_data_end.year - _data_start.year) * 12 + (_data_end.month - _data_start.month)
 
 # generate all window start dates
@@ -821,7 +821,7 @@ ax.barh(_top_y, _to_x(_data_end) - _to_x(_data_start),
         left=_to_x(_data_start), height=_row_h,
         color=_col_full, edgecolor="none", zorder=2)
 ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
-        _top_y, "Full series  (2010–2022)",
+        _top_y, "Full series  (2010–2023)",
         va="center", ha="center", fontsize=9, color="dimgray")
 
 # ── rolling windows (staggered) — W1 to W5 ───────────────────────────────────
@@ -901,8 +901,8 @@ ax.text((_to_x(_w2_test_start) + _to_x(_w2_test_end)) / 2, _text_y,
 # ── axes formatting ───────────────────────────────────────────────────────────
 ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
 ax.set_ylim(-1.2 - _extra_gap, _top_y + 0.8)
-ax.set_xticks(range(2010, 2023, 2))
-ax.set_xticklabels([str(y) for y in range(2010, 2023, 2)], fontsize=9)
+ax.set_xticks(range(2010, 2025, 2))
+ax.set_xticklabels([str(y) for y in range(2010, 2025, 2)], fontsize=9)
 ax.set_yticks([])
 ax.text(_to_x(_data_start) - 1.3,
         (_n_show + 1) / 2, "Windows",

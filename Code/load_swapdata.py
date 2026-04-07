@@ -347,7 +347,7 @@ def build_all_dataframes(root: str = ROOT, target_tenors: List[int] = TARGET_TEN
 
 def my_data(use: str = "bbg", target_tenors: List[int] = TARGET_TENORS):
     assert use in {"test", "bbg"}, f"Unknown use='{use}'"
-    assert len(target_tenors) == 8, f"Expected 8 target tenors, got {len(target_tenors)}"
+    assert len(target_tenors) >= 1, f"Expected at least 1 target tenor, got {len(target_tenors)}"
 
     data = build_all_dataframes(root=ROOT, target_tenors=target_tenors)
 

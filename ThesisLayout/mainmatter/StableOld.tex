@@ -1,0 +1,154 @@
+
+
+\subsection{Stabilization of the drift network $K$}
+
+In the baseline specification, the drift network $K$ is modeled as a linear map
+\begin{equation}
+\mu(z)=Mz+N,
+\label{eq:k_baseline}
+\end{equation}
+where $M \in \mathbb{R}^{d \times d}$ and $N \in \mathbb{R}^d$ are trainable parameters.
+This formulation is simple and expressive, but it does not guarantee stable latent
+dynamics under forward simulation. In particular, if the learned matrix $M$ has one or
+more eigenvalues with non-negative real part, the deterministic part of the state
+dynamics may fail to be mean-reverting, which can lead to unstable or explosive sample
+paths.
+
+To address this issue, we replace the unconstrained matrix $M$ by the structured
+parameterization
+\begin{equation}
+M = -\left(V^\top V + \varepsilon I_d\right),
+\label{eq:k_stable_matrix}
+\end{equation}
+where $V \in \mathbb{R}^{d \times d}$ is a trainable matrix, $I_d$ is the identity matrix
+in dimension $d$, and $\varepsilon > 0$ is a small constant. The drift network is then
+given by
+\begin{equation}
+\mu(z)= -\left(V^\top V + \varepsilon I_d\right)z + N.
+\label{eq:k_stable_drift}
+\end{equation}
+
+This reparameterization guarantees that the drift matrix is negative definite. Since
+$V^\top V$ is positive semidefinite, the matrix $V^\top V + \varepsilon I_d$ is strictly
+positive definite for every $\varepsilon > 0$. Hence, for any nonzero vector
+$x \in \mathbb{R}^d$,
+\begin{equation}
+x^\top M x
+=
+- x^\top \left(V^\top V + \varepsilon I_d\right)x
+=
+-\|Vx\|^2 - \varepsilon \|x\|^2
+< 0.
+\end{equation}
+It follows that all eigenvalues of $M$ are real and strictly negative. The linear drift
+therefore has an inherent pull toward an equilibrium level and cannot generate locally
+explosive deterministic behavior.
+
+The equilibrium point is obtained by solving $\mu(z^\ast)=0$, which yields
+\begin{equation}
+z^\ast = \left(V^\top V + \varepsilon I_d\right)^{-1}N.
+\end{equation}
+Equivalently, the drift can be written as
+\begin{equation}
+\mu(z)=-Q(z-z^\ast),
+\qquad
+Q:=V^\top V+\varepsilon I_d,
+\end{equation}
+which makes the mean-reverting structure explicit: deviations from the equilibrium state
+$z^\ast$ are pulled back at a rate governed by the positive definite matrix $Q$.
+
+The motivation for this modification was numerical instability observed when simulating
+from the original unconstrained specification in \eqref{eq:k_baseline}. In that case,
+stability depends entirely on the outcome of the optimization, since the learned matrix
+$M$ may contain positive or weakly damped eigenvalues. By contrast, the parameterization
+in \eqref{eq:k_stable_matrix} guarantees a stable linear drift for every value of the
+trainable matrix $V$. This is particularly desirable in the present setting, where the
+latent factors enter a continuous-time term-structure model and must remain well behaved
+under forward simulation.
+
+An additional advantage is that the stabilized parameterization does not increase the
+number of trainable parameters. The original formulation uses $d^2$ parameters for $M$
+and $d$ parameters for $N$, while the stabilized version uses $d^2$ parameters for $V$
+and $d$ parameters for $N$. Thus, both specifications contain $d^2+d$ trainable
+parameters. The extra matrix multiplication required to form $V^\top V$ is of the same
+asymptotic order as the original linear mapping and is negligible in the present low-
+dimensional setting.
+
+In the implementation, $V$ is initialized orthogonally and $N$ is initialized at zero.
+Orthogonal initialization provides a well-scaled starting point for optimization, while
+the constant $\varepsilon$ ensures strict negative definiteness even in directions where
+$V^\top V$ is close to singular. The resulting network preserves the linear form of the
+original drift specification, but enforces stable and mean-reverting latent dynamics by
+construction.
+
+\subsection{Stabilization of the short-rate network $R$}
+
+In the baseline specification, the short-rate network $R$ maps the latent factors $z$ to
+the instantaneous short rate through a feedforward neural network,
+\begin{equation}
+\tilde r(z) = R_\theta(z),
+\label{eq:r_baseline}
+\end{equation}
+where $R_\theta : \mathbb{R}^d \to \mathbb{R}$ is implemented as a two-layer network with
+centered soft step activation. This specification is flexible, but it leaves the network
+output unconstrained. As a result, the learned short rate may attain implausibly large
+positive or negative values outside the region well covered by the training data. Such
+behavior is undesirable in a continuous-time term-structure model, where the short rate
+enters both the discount factor and the coefficients of the no-arbitrage ODE system.
+
+To improve numerical robustness, we replace the unconstrained output layer by a bounded
+parameterization. Specifically, we write
+\begin{equation}
+\tilde r(z) = r_{\mathrm{center}} + r_{\mathrm{scale}} \tanh\!\bigl(f_\theta(z)\bigr),
+\label{eq:r_stable}
+\end{equation}
+where $f_\theta : \mathbb{R}^d \to \mathbb{R}$ is a neural network with the same hidden
+architecture as the original specification, $r_{\mathrm{center}} \in \mathbb{R}$ is a
+learnable location parameter, and $r_{\mathrm{scale}} > 0$ is a learnable scale parameter.
+To ensure positivity of the scale, we parameterize it as
+\begin{equation}
+r_{\mathrm{scale}} = \mathrm{softplus}(a) + \varepsilon_r,
+\label{eq:r_scale}
+\end{equation}
+where $a \in \mathbb{R}$ is unconstrained and $\varepsilon_r > 0$ is a small constant.
+This guarantees that the scale remains strictly positive throughout training.
+
+The representation in \eqref{eq:r_stable} implies the bound
+\begin{equation}
+\tilde r(z) \in
+\left(
+r_{\mathrm{center}} - r_{\mathrm{scale}},
+\;
+r_{\mathrm{center}} + r_{\mathrm{scale}}
+\right),
+\end{equation}
+since $\tanh(x) \in (-1,1)$ for all $x \in \mathbb{R}$. Hence, the short rate is bounded
+by construction. Unlike hard clipping, this transformation is smooth and differentiable,
+which makes it more suitable for gradient-based optimization. In particular, it preserves
+continuous gradients while still preventing the network from producing extreme outputs.
+
+The motivation for this modification was numerical instability observed when simulating
+from the unconstrained short-rate network. Because $\tilde r(z)$ enters the discount
+factor through
+\begin{equation}
+B(t) = \exp\!\left(\int_0^t \tilde r(z_u)\,du\right),
+\end{equation}
+large values of the short rate can lead to highly unstable discounting behavior and may
+also amplify errors in the ODE coefficients used in the decoder. By contrast, the bounded
+specification in \eqref{eq:r_stable} keeps the short rate within a learnable but controlled
+range, thereby improving the robustness of both training and forward simulation.
+
+An important feature of this construction is that it does not impose a fixed hard-coded
+interval for the short rate. Instead, both the center and the scale are learned from the
+data. The network can therefore adapt the admissible range to the prevailing rate
+environment. In particular, the model is still able to represent negative short rates when
+supported by the data, which is important in modern interest-rate markets. The purpose of
+the transformation is thus not to enforce non-negativity, but to avoid implausibly large
+magnitudes and to keep the model numerically well behaved.
+
+In the implementation, the hidden network retains the same structure as the original
+short-rate network, while the final output is transformed through the bounded mapping in
+\eqref{eq:r_stable}. This preserves the flexibility of the original architecture in the
+interior of the state space, but adds a structural safeguard at the output level. The
+resulting specification is therefore better suited for stable simulation and estimation in
+the arbitrage-free term-structure framework.

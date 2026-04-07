@@ -1,21 +1,20 @@
 \chapter{Data}
 \label{chap:datadescription}
 
+This chapter describes the panel of par swap rates used throughout the thesis. The data forms the empirical foundation for both model training and evaluation, and its characteristics are essential for interpreting the results in later chapters. The chapter proceeds by first presenting the data source and coverage, before outlining choices for subsequent modeling.
 
-This chapter describes the panel of par swap rates used to estimate and evaluate the affine-inspired arbitrage-free encoder--decoder framework. 
+\section{Data Description}
 
 All data are obtained from Bloomberg and consist of quoted par swap rates reported in percentage terms. Prior to use, the rates are converted to decimal form. The data covers nine currencies,
 \[
-\{\text{AUD},\text{CAD},\text{DKK},\text{EUR},\text{GBP},\text{JPY},\text{NOK},\text{SEK},\text{USD}\}.
+\{\text{AUD},\text{CAD},\text{DKK},\text{EUR},\text{GBP},\text{JPY},\text{NOK},\text{SEK},\text{USD}\},
 \]
 observed at monthly frequency over the period 2004--2024. Table \ref{tab:data_summary} summarizes the sample period and number of observations for each currency.
 
-
 \begin{table}[H]
 \centering
-{\small
+\small
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/DataVisualizations/D1_missing_data_summary.csv}\datdone
-\resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
   columns={Currency, First date, Last date, Total obs, Missing curves, Incomplete curves},
   columns/Currency/.style={column name={Currency}, string type, column type=l},
@@ -26,8 +25,7 @@ observed at monthly frequency over the period 2004--2024. Table \ref{tab:data_su
   columns/Incomplete curves/.style={column name={Incomplete curves}, column type=c},
   every head row/.style={before row=\toprule, after row=\midrule},
   every last row/.style={after row=\bottomrule},
-]{\datdone}}
-}
+]{\datdone}
 \caption{Data availability summary per currency. Obs.\ is the total number of monthly
 observations. Missing months counts calendar months with no curve within the
 currency's own sample period. Incomplete curves counts observations with at least
@@ -35,17 +33,50 @@ one missing tenor.}
 \label{tab:data_summary}
 \end{table}
 
+The panel is unbalanced across currencies, with start and end dates varying considerably. Most currencies span the full period from March 2004 to February 2024, while JPY and USD begin in 2009 and GBP covers a notably shorter period from May 2011 to November 2021, yielding only 127 observations. NOK, CAD and DKK have a small number of missing months within their respective sample periods. Missing observations are simply excluded rather than imputed, and the remaining data is considered sufficient for training and evaluation across all nine currencies.
 
 
-For each observation date, swap rates are available on the maturity grid
-\[
-\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},7\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\}.
-\]
-Although the raw data contain swap rates at nine maturities, the model is fitted to the subset
-\[
-\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
-\]
-which corresponds to the maturity grid used in the encoder-decoder framework described in Section~\ref{chap:encoderdecodermodel}. The 7-year maturity is excluded to main consistency between the observed input data and the model specification.
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/DataVisualizations/D2b_10y_timeseries.png}
+    \caption{Time series of the 10-year swap rate for each currency. Circles mark the
+        first and last observation for each currency. Vertical dashed lines indicate macro events. Currencies: AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+        CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
+        DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
+        EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
+        JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+        NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
+        SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
+        GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
+        USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
+    \label{fig:D2b_10y_timeseries}
+\end{figure}
+
+
+% Notes for self:
+%Remember that a par swap rate are directly determined by the term strucutre of zero-coupon bond prices, which are fundamentally driin by expectations of future short rates under the risk-neutral measure. So when central banks lower short rates we expect bond prices to increase and swap rates to fall. 
+%So in the global financial crisis central banks lowered interest rates to...
+%ECB QE announcement in January 2015 pushed European interest rates further toward and below zero.
+%Following the global financial crisis policy interst rates reached the zero "lower" bound, since central banks cur taes so agressively. and they could no longer cut further resulting in conventional monetary policy to be no longer effective. So the normal tool for stimulating the economy was not useful, so central banks turned to unconventional tools. Quantative easing involved the central bank creating new mony and using it to buy financial assets, this increases the deman for bonds, pushing prices up, and therefore pushes yields and swap rates down, even when the policy rate cannot go lower. 
+
+Having established the data coverage, we now turn to the key characteristics of the swap rate data across currencies and over time. The time series of the 10-year swap rate, shown in Figure~\ref{fig:D2b_10y_timeseries}, reveals a broadly declining trend across all currencies from the beginning of the sample until around 2020, marked by four key macro events. 
+
+% The economy following the GFC was still weak as demand was depressed, as households and businesses were paying down debt and saving rather than spending and investing, also resulting in less people being hired. Banks where not lending after suffering massive losses trying to rebuild capital. 
+
+\begin{itemize}
+    \item \textbf{Event 1} \textcolor{UCPHred}{\textbf{|}} \; The Global Financial Crisis in September 2008 triggered a sharp and synchronized decline in swap rates, as central banks responded by lowering interest rates to stimulate economic activity \citep{RBA2024}. 
+    \item \textbf{Event 2} \textcolor{UCPHred}{\textbf{|}} \; The ECB quantitative easing announcement in January 2015 pushed European swap rates further toward and below zero, most notably for EUR, DKK and SEK, as long-term interest rates declined following the launch of the asset purchase programme \citep{Gern2015}. 
+    \item \textbf{Event 3} \textcolor{UCPHred}{\textbf{|}} \; The COVID-19 shock in March 2020 marked the lowest point for must currencies, as central banks cut policy rates to near zero and launched large-scale asset purchase programmes \citep{Cantu2021}. 
+    \item \textbf{Event 4} \textcolor{UCPHred}{\textbf{|}} \; The global rate hike cycle beginning in 2022, driven by inflation higher than seen in several decades and amplified by Russia's invasion of Ukraine, caused a sharp and synchronized reversal upward across all currencies \citep{IMF2022}. 
+\end{itemize}
+
+These four events are particularly relevant for the model evaluation in later chapters, as they represent periods of structural change in the swap rate environment. Figure~\ref{fig:D2a_swap_curves} illustrates the cross-sectional term structure on 31st of August 2016, a date representative of the prolonged low-rate environment between the ECB QE launch and the COVID-19 shock. Most currencies display an upward sloping term structure while SEK, JPY, DKK and EUR show negative rates at the short end, reflecting the negative rate environment prevailing at the time. DKK closely tracks EUR across all maturities, consistent with its exchange rate peg to the euro.
+
+
+
+
+
+
 
 
 \begin{figure}[htbp]
@@ -65,37 +96,22 @@ which corresponds to the maturity grid used in the encoder-decoder framework des
 \end{figure}
 
 
+\section{Modeling Choices}
 
+\textcolor{red}{Having described the data, we outline two modeling choices made prior to training: the subset of maturities used as input and the training period. [skal nok opdateres, når vi har skrevet afsnittene før dette færdigt]}
 
-The dataset exhibits substantial variation both across maturities and across currencies. Figure~\ref{fig:D2a_swap_curves} shows representative swap curves on 31 August 2016. Several features are apparent. First, most curves are upward sloping over short and intermediate maturities, while also displaying visible curvature over the full maturity spectrum. This pattern is consistent with the well-known result that a small number of factors can account for a large share of yield curve variation. Second, there are clear cross-currency differences in both level and shape. The Danish and euro curves are closely aligned across maturities, while the Japanese curve is noticeably lower and flatter than the others. Relative to the remaining currencies, the Japanese term structure also exhibits less pronounced curvature at medium and long maturities on this date.
+\subsection{Maturity Grid}
 
+For each observation date, swap rates are available on the maturity grid
+\[
+\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},7\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\}.
+\]
+Although the raw data contain swap rates at nine maturities, the model is fitted to the subset
+\[
+\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
+\]
+excluding the 7-year maturity to maintain consistency with \citet{MatinWanPoulsen2025} and ensure comparability with the exisiting literature.  
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/DataVisualizations/D2b_10y_timeseries.png}
-    \caption{Time series of the 10-year swap rate for each currency. Circles mark the
-        first and last observation for each currency. Vertical dashed lines indicate
-        four key macro events: the Global Financial Crisis (15 Sep 2008),
-        ECB quantitative easing announcement (22 Jan 2015),
-        the onset of COVID-19 market stress (1 Mar 2020),
-        and the start of the global rate-hike cycle (1 Mar 2022).
-        Currencies: AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
-        CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
-        DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
-        EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
-        JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
-        NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
-        SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
-        GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
-        USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
-    \label{fig:D2b_10y_timeseries}
-\end{figure}
+\subsection{Training Period}
 
-
-
-These cross-sectional differences are complemented by substantial time-series variation. Figure~\ref{fig:D2b_10y_timeseries} plots the 10-year swap rate for each currency over the sample period and illustrates the evolution of long-term rates across different monetary environments. Long-term rates generally decline over the post-financial-crisis period and reach historically low levels around 2019--2020. From 2022 onward, however, rates rise sharply across most currencies. The sample therefore contains both prolonged low-rate regimes and periods of rapid monetary tightening, which makes it well suited for evaluating model performance across markedly different term-structure environments.
-
-
-At the same time, the data display strong cross-currency comovement. Movements in Danish and euro swap rates are particularly close throughout the sample, while the Japanese series remains at a lower level and exhibits more muted variation for much of the period. More broadly, the figure suggests that global interest rate cycles affect all currencies, but with meaningful differences in level, volatility, and adjustment speed. This combination of common global movements and persistent cross-currency heterogeneity is important for the empirical analysis, since the model must be able to capture both shared structure and idiosyncratic curve behavior.
-
-Overall, the dataset provides a demanding empirical setting for term structure modeling. It combines cross-sectional variation in curve shape, persistent differences across currencies, and substantial time-series variation across distinct interest rate regimes. These features make the sample suitable for evaluating whether the affine-inspired arbitrage-free encoder--decoder framework can fit observed swap curves consistently across currencies and over time.
+Following \citet{MatinWanPoulsen2025}, the model is trained on data from 2010 onwards. \textcolor{red}{[Argumenter for hvorfor vi vælger at gøre det samme udover blot for at være sammenlignlig]}

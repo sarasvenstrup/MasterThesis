@@ -190,12 +190,12 @@ Satisfactory in-sample reconstruction is a necessary but not sufficient conditio
 
 \subsection{Rolling Window Evaluation}
 
-Out-of-sample reconstruction is evaluated using a rolling window design, illustrated in Figure~\ref{fig:rolling_window_diagram}, yielding 16 non-overlapping test periods spanning January 2015 to December 2023. The same rolling window scheme is used to benchmark the autoencoder against the Extended Kalman Filter Dynamic Nelson Siegel model (EKF DNS). \textcolor{red}{(Find ud af hvornår vi skal introducere benchmarket, og argumentere for hvorfor det er netop denne vi har valgt)}
+Out-of-sample reconstruction is evaluated using a rolling window design, illustrated in Figure~\ref{fig:rolling_window_diagram}, yielding 18 non-overlapping test periods spanning January 2015 to December 2023. The same rolling window scheme is used to benchmark the autoencoder against the Extended Kalman Filter Dynamic Nelson Siegel model (EKF DNS). \textcolor{red}{(Find ud af hvornår vi skal introducere benchmarket, og argumentere for hvorfor det er netop denne vi har valgt)}
 
 \begin{figure}[ht]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/ExtraFigures/rolling_window_diagram.png}
-    \caption{Rolling window evaluation design: 16 windows each consisting of a five-year training period followed by a six-month test period, stepping forward six months at a time.}
+    \caption{Rolling window evaluation design: 18 windows each consisting of a five-year training period followed by a six-month test period, stepping forward six months at a time.}
     \label{fig:rolling_window_diagram}
 \end{figure}
 
@@ -211,13 +211,13 @@ Both questions, whether the autoencoder generalizes to unseen data and how it co
     $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
     $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).
     EKF DNS bars are shown in grey.
-    Values are averaged across all \textcolor{red}{valid} rolling windows.}
+    Values are averaged across all 18 rolling windows.}
     \label{fig:Q2b}
 \end{figure}
 
-%UPDATE THIS FIGURE WHEN THE TRAINING FOR 3500 EPOCHS HAS FINISHED RUNNING.
+\textcolor{red}{Disclaimer: The results for $\ell=2$ are for now not shown in the figure, but is updated soon.}
 
-The results reveal a fundamental instability in the model out-of-sample, with severity increasing with the number of latent dimensions. As shown in Figure~\ref{fig:Q2b}, while $\ell=2$ shows a modest increase from an in-sample RMSE of 12.67 bps to an out-of-sample RMSE of 22.3 bps, $\ell=3$ and $\ell=4$ produce catastrophically high average out-of-sample errors of 219.2 and 403.3 bps respectively, despite in-sample RMSEs of 10.33 and \textcolor{red}{X} bps. 
+The results reveal an instability in the model out-of-sample, with severity increasing with the number of latent dimensions. As shown in Figure~\ref{fig:Q2b}, while $\ell=2$ shows a modest increase from an in-sample RMSE of 12.67 bps to an out-of-sample RMSE of 31.40 bps, $\ell=3$ and $\ell=4$ produce catastrophically high average out-of-sample errors of 219.2 and 403.3 bps respectively, despite in-sample RMSEs of 10.33 and \textcolor{red}{X} bps. 
 
 
 
