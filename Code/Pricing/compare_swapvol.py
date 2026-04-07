@@ -147,12 +147,10 @@ def comparison_table(
     payer=True,
     accrual=1.0,
     notional=1.0,
-    max_rows=None,
     vol_in_bp=True,
 ):
     df_compare = prepare_market_table(
         ccy=ccy,
-        max_rows=max_rows,
         vol_in_bp=vol_in_bp,
     )
 
@@ -241,7 +239,6 @@ def main():
         payer=True,
         accrual=1.0,
         notional=1.0,
-        max_rows=50,
         vol_in_bp=True,
     )
 
