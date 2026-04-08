@@ -148,10 +148,12 @@ def comparison_table(
     accrual=1.0,
     notional=1.0,
     vol_in_bp=True,
+    max_rows=None,
 ):
     df_compare = prepare_market_table(
         ccy=ccy,
         vol_in_bp=vol_in_bp,
+        max_rows=max_rows
     )
 
     # add empty model columns
@@ -193,6 +195,15 @@ def comparison_table(
 
         ctx = sim_cache[model_date]
 
+        # Sanity check: print F0 for each expiry/tenor before pricing
+        from pricing import quote_swaption_time0
+        for exp in [1, 5, 10]:
+            for ten in [1, 5, 10]:
+                q = quote_swaption_time0(ctx, expiry=exp, tenor=ten,
+                                         strike_atm=True, payer=True, accrual=1.0)
+                print(f"  F0({exp}Y×{ten}Y) = {q['forward_swap'] * 10000:.1f} bp  "
+                      f"A0 = {q['annuity']:.4f}")
+
         try:
             res = pricing.atm_swaption_mc_price_from_simulation(
                 ctx=ctx,
@@ -225,20 +236,19 @@ def comparison_table(
 
 
 def main():
-    checkpoint_path = (
-        r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults"
-        r"\dim2_stable\ep200\checkpoint_dim2_ep200.pt"
-    )
+    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_continuation\final_checkpoint.pt"
+
 
     df_compare = comparison_table(
         checkpoint_path=checkpoint_path,
         ccy="EUR",
-        n_paths=1000,
+        n_paths=5000,
         n_steps=120,
         dt=1 / 12,
         payer=True,
         accrual=1.0,
         notional=1.0,
+        max_rows= 9,
         vol_in_bp=True,
     )
 

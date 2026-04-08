@@ -69,6 +69,67 @@ def get_r(model, z):
     return r
 
 
+def recalibrate_z0(model, S0, device, n_steps=400, lr=5e-3, tol=1e-10):
+    """
+    Find z* = argmin_z ||S_hat(z) - S_market||²
+
+    After pricing continuation training, the decoder G may have drifted so
+    that encoder(S_market) no longer gives back S_market when decoded.
+    This function finds the latent state that exactly reproduces the observed
+    market swap curve, warm-started from the encoder output.
+
+    This is the correct approach for a spot-starting swaption comparison:
+    the model must be calibrated to today's market curve before simulating.
+
+    Args:
+        model:    FullModel (eval mode)
+        S0:       (1, n_tenors) observed market swap rates
+        device:   torch device
+        n_steps:  max optimisation iterations
+        lr:       Adam learning rate
+        tol:      convergence tolerance on loss change
+
+    Returns:
+        z_star:   (1, latent_dim) recalibrated latent state (detached)
+    """
+    from Code.utils.rates import par_swap_from_discount
+
+    model.eval()
+    dtype = next(model.parameters()).dtype
+    S = S0.to(device=device, dtype=dtype)
+    if S.dim() == 1:
+        S = S.unsqueeze(0)
+
+    # Warm-start from encoder
+    with torch.no_grad():
+        z_init = model.encoder(S).clone()
+
+    z = z_init.clone().detach().requires_grad_(True)
+    optim = torch.optim.Adam([z], lr=lr)
+
+    prev_loss = float("inf")
+    for step in range(n_steps):
+        optim.zero_grad()
+        P_mkt = model.decode_from_z(z, tau=None)  # (1, tau_max)
+        S_hat = par_swap_from_discount(P_mkt, model.tenors)  # (1, n_tenors)
+        loss = torch.nn.functional.mse_loss(S_hat, S)
+        loss.backward()
+        optim.step()
+
+        if abs(prev_loss - loss.item()) < tol:
+            break
+        prev_loss = loss.item()
+
+    rmse_bp = float(loss.item() ** 0.5) * 10000
+    z_enc = z_init.detach().cpu().numpy().flatten()
+    z_cal = z.detach().cpu().numpy().flatten()
+    print(f"  Recalibration: {step + 1} steps  RMSE={rmse_bp:.4f} bp")
+    print(f"  z_encoder  : {z_enc}")
+    print(f"  z_calibrated: {z_cal}")
+
+    return z.detach()
+
+
 def compute_latent_statistics(model, X_tensor, device, latent_dim):
     z_train_list = []
 
@@ -92,13 +153,13 @@ def compute_latent_statistics(model, X_tensor, device, latent_dim):
 
 
 def simulate_latent_paths(
-    model,
-    z0,
-    n_paths,
-    n_steps,
-    dt,
-    device,
-    diffusion_scale=1.0,
+        model,
+        z0,
+        n_paths,
+        n_steps,
+        dt,
+        device,
+        diffusion_scale=1.0,
 ):
     if z0.dim() != 2 or z0.shape[0] != 1:
         raise ValueError(f"Expected z0 shape (1,d), got {tuple(z0.shape)}")
@@ -137,7 +198,7 @@ def simulate_latent_paths(
     return z_paths, r_paths, mu_paths, L_paths
 
 
-def compute_discount_paths(r_paths: torch.Tensor, dt: float) -> torch.Tensor:
+def compute_discount_paths(r_paths: torch.Tensor, dt: float, method: str = "trapezoid") -> torch.Tensor:
     if dt <= 0:
         raise ValueError("dt must be positive")
     if r_paths.ndim != 2:
@@ -147,17 +208,23 @@ def compute_discount_paths(r_paths: torch.Tensor, dt: float) -> torch.Tensor:
     if n_times < 2:
         return torch.ones_like(r_paths)
 
-    increments = 0.5 * (r_paths[:, :-1] + r_paths[:, 1:]) * dt
+    if method == "left":
+        increments = r_paths[:, :-1] * dt
+    elif method == "trapezoid":
+        increments = 0.5 * (r_paths[:, :-1] + r_paths[:, 1:]) * dt
+    else:
+        raise ValueError("method must be 'left' or 'trapezoid'")
 
     int_r = torch.cumsum(increments, dim=1)
     disc = torch.ones((n_paths, n_times), device=r_paths.device, dtype=r_paths.dtype)
     disc[:, 1:] = torch.exp(-int_r)
     return disc
 
+
 def plot_simulation_results(results, n_paths_to_plot=20):
     """
     Plot the simulation results including latent paths, interest rates, and discount curves.
-    
+
     Args:
         results: Dictionary returned from run_simulation
         n_paths_to_plot: Number of paths to plot (default: 20)
@@ -170,11 +237,11 @@ def plot_simulation_results(results, n_paths_to_plot=20):
     z0 = results["z0"].cpu().numpy().flatten()
     z_train_mean = results["z_train_mean"].cpu().numpy()
     z_train_std = results["z_train_std"].cpu().numpy()
-    
+
     n_paths_plot = min(n_paths_to_plot, z_paths.shape[0])
-    
+
     fig = plt.figure(figsize=(14, 10))
-    
+
     # Plot 1: Latent state paths
     n_latent = z_paths.shape[2]
     for d in range(n_latent):
@@ -196,10 +263,10 @@ def plot_simulation_results(results, n_paths_to_plot=20):
         ax.set_title(f"Latent State z[{d}]")
         ax.legend()
         ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.show()
-    
+
     # Plot 2: Short rate paths
     fig, ax = plt.subplots(figsize=(12, 6))
     for i in range(n_paths_plot):
@@ -212,7 +279,7 @@ def plot_simulation_results(results, n_paths_to_plot=20):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
-    
+
     # Plot 3: Discount factor paths
     fig, ax = plt.subplots(figsize=(12, 6))
     for i in range(n_paths_plot):
@@ -223,18 +290,18 @@ def plot_simulation_results(results, n_paths_to_plot=20):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
-    
+
     # Plot 4: Discount curve term structure at different times
     fig, ax = plt.subplots(figsize=(12, 6))
     tau_grid = results["tau_grid"].cpu().numpy()
     time_indices = np.linspace(0, P_full_paths.shape[1] - 1, min(5, P_full_paths.shape[1]), dtype=int)
-    
+
     for t_idx in time_indices:
         time_val = times[t_idx]
         paths_at_t = P_full_paths[:n_paths_plot, t_idx, :]
         mean_at_t = paths_at_t.mean(axis=0)
         std_at_t = paths_at_t.std(axis=0)
-        
+
         ax.plot(tau_grid, mean_at_t, marker='o', label=f't={time_val:.2f}', linewidth=2)
         ax.fill_between(
             tau_grid,
@@ -242,7 +309,7 @@ def plot_simulation_results(results, n_paths_to_plot=20):
             mean_at_t + std_at_t,
             alpha=0.2
         )
-    
+
     ax.set_xlabel("Maturity (years)")
     ax.set_ylabel("Discount Factor")
     ax.set_title("Term Structure of Discount Curves")
@@ -251,8 +318,9 @@ def plot_simulation_results(results, n_paths_to_plot=20):
     plt.tight_layout()
     plt.show()
 
+
 def resolve_curve_index(meta, as_of_date=0):
-    if as_of_date == 0 or as_of_date is None:
+    if as_of_date == 0:
         return 0
 
     if "as_of_date" not in meta.columns:
@@ -271,19 +339,20 @@ def resolve_curve_index(meta, as_of_date=0):
 
     return int(matches[0])
 
+
 def run_simulation(
-    use="bbg",
-    latent_dim=2,
-    checkpoint_path=None,
-    n_paths=100,
-    n_steps=24,
-    dt=1 / 12,
-    as_of_date=None,
-    ccy_filter="",
-    diffusion_scale=1.0,
-    seed=1234,
-    device=None,
-    show_plot=True,
+        use="bbg",
+        latent_dim=2,
+        checkpoint_path=None,
+        n_paths=100,
+        n_steps=24,
+        dt=1 / 12,
+        as_of_date=None,
+        ccy_filter="",
+        diffusion_scale=1.0,
+        seed=1234,
+        device=None,
+        show_plot=True,
 ):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -321,11 +390,15 @@ def run_simulation(
     # Training latent statistics
     z_train_mean, z_train_cov, z_train_std = compute_latent_statistics(model, X_tensor, device, latent_dim)
 
-    # Initial latent state
-    with torch.no_grad():
-        z0 = model.encoder(S0)
+    # Initial latent state — recalibrate z0 so that decode(z0) matches market rates.
+    # After pricing continuation training, the decoder G may have drifted, so
+    # encoder(S_market) no longer reproduces S_market when decoded.
+    # Recalibration finds z* = argmin_z ||S_hat(z) - S_market||² (warm-started
+    # from the encoder), ensuring the simulation starts on the correct market curve.
+    print("Recalibrating z0 to market curve ...")
+    z0 = recalibrate_z0(model, S0, device)
 
-    print(f"Initial latent state z0: {z0.detach().cpu().numpy().flatten()}")
+    print(f"Initial latent state z0 (calibrated): {z0.detach().cpu().numpy().flatten()}")
 
     # Decode initial curve directly from latent state using FullModel decoder
     with torch.no_grad():
@@ -336,9 +409,9 @@ def run_simulation(
             return_aux=True,
         )
 
-    P_full_0 = aux0["P_full"]   # shape (1, tau_max+1)
-    P_mkt_0 = aux0["P_mkt"]     # shape (1, tau_max)
-    S_hat_0 = aux0["S_hat"]     # shape (1, len(tenors))
+    P_full_0 = aux0["P_full"]  # shape (1, tau_max+1)
+    P_mkt_0 = aux0["P_mkt"]  # shape (1, tau_max)
+    S_hat_0 = aux0["S_hat"]  # shape (1, len(tenors))
     tau_grid = aux0["tau_grid"]
 
     print(
@@ -371,18 +444,31 @@ def run_simulation(
     n_paths, n_times, d = z_paths.shape
     z_flat = z_paths.reshape(-1, d)
 
-    with torch.no_grad():
-        _, aux = model.decode_from_z(
-            z_flat,
-            tau=None,  # <- exact same grid as FullModel.forward()
-            do_arb_checks=False,
-            return_aux=True,
-        )
+    # Decode in chunks to avoid OOM on large simulations.
+    # A single batch of n_paths*n_times rows requires ~6 GB for vmap Hessians.
+    DECODE_CHUNK = 256
+    P_full_list, P_mkt_list, S_hat_list = [], [], []
+    tau_grid = None
 
-    P_full_flat = aux["P_full"]  # shape: (n_paths*n_times, tau_max+1)
-    P_mkt_flat = aux["P_mkt"]  # shape: (n_paths*n_times, tau_max)
-    S_hat_flat = aux["S_hat"]  # shape: (n_paths*n_times, len(tenors)) or None
-    tau_grid = aux["tau_grid"]
+    with torch.no_grad():
+        for i in range(0, z_flat.shape[0], DECODE_CHUNK):
+            z_chunk = z_flat[i:i + DECODE_CHUNK]
+            _, aux_chunk = model.decode_from_z(
+                z_chunk,
+                tau=None,
+                do_arb_checks=False,
+                return_aux=True,
+            )
+            P_full_list.append(aux_chunk["P_full"])
+            P_mkt_list.append(aux_chunk["P_mkt"])
+            if aux_chunk["S_hat"] is not None:
+                S_hat_list.append(aux_chunk["S_hat"])
+            if tau_grid is None:
+                tau_grid = aux_chunk["tau_grid"]
+
+    P_full_flat = torch.cat(P_full_list, dim=0)
+    P_mkt_flat = torch.cat(P_mkt_list, dim=0)
+    S_hat_flat = torch.cat(S_hat_list, dim=0) if S_hat_list else None
 
     P_full_paths = P_full_flat.reshape(n_paths, n_times, -1)
     P_mkt_paths = P_mkt_flat.reshape(n_paths, n_times, -1)
@@ -433,6 +519,7 @@ def run_simulation(
         plot_simulation_results(results_dict)
 
     return results_dict
+
 
 if __name__ == "__main__":
     run_simulation(checkpoint_path=checkpoint_path, ccy_filter="EUR", show_plot=False)

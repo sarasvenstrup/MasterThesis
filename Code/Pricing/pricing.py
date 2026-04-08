@@ -114,7 +114,7 @@ def quote_swaption_time0(ctx, expiry, tenor, strike=None, strike_atm=False, paye
     print("\nTime-0 swaption quote")
     print(f"  Expiry            : {expiry}Y")
     print(f"  Tenor             : {tenor}Y")
-    print(f"  Forward swap F0   : {out['forward_swap']:.10f}")
+    print(f"  Forward swap F0   : {out['forward_swap']:.6f}  ({out['forward_swap']*10000:.1f} bp)")
     print(f"  Annuity A0        : {out['annuity']:.10f}")
     print(f"  Strike K          : {out['strike']:.10f}")
     print(f"  Intrinsic lb      : {out['intrinsic_lower_bound']:.10f}")
