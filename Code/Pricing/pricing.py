@@ -432,7 +432,6 @@ def main():
     ctx = run_simulation(
         checkpoint_path=checkpoint_path,
         ccy_filter="EUR",
-        idx_choice=0,
         n_paths=500,
         n_steps=24,
         dt=1 / 12,

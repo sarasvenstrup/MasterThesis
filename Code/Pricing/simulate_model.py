@@ -362,7 +362,7 @@ def run_simulation(
     )
     print(f"Simulation completed in {time.time() - t0:.2f}s.")
 
-    discount_paths = compute_discount_paths(r_paths, dt=dt, method="trapezoid")
+    discount_paths = compute_discount_paths(r_paths, dt=dt)
     print(
         f"Built path discount factors: D_t range = "
         f"[{discount_paths.min().item():.6f}, {discount_paths.max().item():.6f}]"

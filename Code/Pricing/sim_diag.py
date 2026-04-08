@@ -1,661 +1,551 @@
+# =============================================================================
+# pricing_monitor.py
+# =============================================================================
+# Snapshot diagnostics for documenting model quality before, during, and after
+# pricing continuation training. Run this script at any checkpoint to get a
+# clean, printable summary of the key quantities.
+#
+# Captures:
+#   1. Drift parameters  — kappa, eigenvalues, half-lives, theta
+#   2. Diffusion         — sigma mean/std across EUR latent cloud
+#   3. Short rate        — r0 and distribution across EUR cloud
+#   4. Martingale check  — E[F_T] vs K for all 9 (expiry, tenor) pairs
+#                          (the key diagnostic: should be ~0 after training)
+#   5. Implied vol table — MC-implied normal vol vs market for a single date
+#   6. Curve RMSE        — encoder-decoder reconstruction quality (bp)
+#
+# Usage:
+#   python pricing_monitor.py                          # uses defaults below
+#   python pricing_monitor.py --checkpoint path.pt --date 2015-06-30 --tag "ep50"
+#   python pricing_monitor.py --no-mc                  # skip MC (fast mode)
+#
+# Output: prints a clean table and appends a row to pricing_monitor_log.csv
+# =============================================================================
+
+import argparse
+import math
 import os
 import sys
+import csv
+from datetime import datetime
+
 import numpy as np
-import matplotlib.pyplot as plt
+import torch
+import torch.nn.functional as F
 
 try:
-    import torch
-    import torch.nn.functional as F
-except ImportError:
-    torch = None
-
-# ---------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------
-try:
-    CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    CODE_ROOT = os.getcwd()
+    SCRIPT_DIR = os.getcwd()
 
-PROJECT_ROOT = os.path.abspath(os.path.join(CODE_ROOT, ".."))
-THESIS_ROOT = os.path.abspath(os.path.join(CODE_ROOT, "..", ".."))
+CODE_ROOT   = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+THESIS_ROOT = os.path.abspath(os.path.join(CODE_ROOT,  ".."))
+for p in [THESIS_ROOT, CODE_ROOT, SCRIPT_DIR]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-if CODE_ROOT not in sys.path:
-    sys.path.insert(0, CODE_ROOT)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-if THESIS_ROOT not in sys.path:
-    sys.path.insert(0, THESIS_ROOT)
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+DEFAULT_CHECKPOINT = (
+    r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_simple_v3\final_checkpoint.pt"
+)
+DEFAULT_CCY      = "EUR"
+DEFAULT_DATE     = "2010-10-29"
+DEFAULT_TAG      = "ep200_pricing"
+MC_N_PATHS       = 2000
+MC_N_STEPS       = 120       # 10 years at monthly dt
+MC_DT            = 1 / 12
+EXPIRIES         = [1, 5, 10]
+TENORS           = [1, 5, 10]
 
-# ---------------------------------------------------------------------
-# Local imports
-# ---------------------------------------------------------------------
-import pricing
+LOG_FILE = os.path.join(SCRIPT_DIR, "pricing_monitor_log.csv")
 
+# ---------------------------------------------------------------------------
+# Market vols for 2010-10-29 (hardcoded reference for the baseline date)
+# Add more dates here if needed
+# ---------------------------------------------------------------------------
+MARKET_VOLS_BP = {
+    "2010-10-29": {
+        (1, 1): 44.0, (1, 5): 32.7, (1, 10): 28.4,
+        (5, 1): 26.9, (5, 5): 22.7, (5, 10): 21.6,
+        (10, 1): 18.6, (10, 5): 18.3, (10, 10): 19.6,
+    }
+}
 
-def to_numpy(x):
-    if x is None:
-        return None
-    if torch is not None and isinstance(x, torch.Tensor):
-        return x.detach().cpu().numpy()
-    return np.asarray(x)
-
-
-def get_from_ctx(ctx, candidates, name):
-    if isinstance(ctx, dict):
-        for k in candidates:
-            if k in ctx:
-                return ctx[k]
-
-    for k in candidates:
-        if hasattr(ctx, k):
-            return getattr(ctx, k)
-
-    available = list(ctx.keys()) if isinstance(ctx, dict) else dir(ctx)
-    raise KeyError(
-        f"Could not find {name}. Tried {candidates}.\n"
-        f"Available keys/attrs start with:\n{available[:50]}"
-    )
-
-
-def get_ctx_or_attr(ctx, candidates):
-    if isinstance(ctx, dict):
-        for k in candidates:
-            if k in ctx:
-                return ctx[k]
-
-    for k in candidates:
-        if hasattr(ctx, k):
-            return getattr(ctx, k)
-
-    return None
+from Code import config
+from Code.model.full_model import FullModel
+from Code.model.sigma_matrix import L_from_sigmas_rhos
+from Code.load_swapdata import my_data
+from Code.Pricing.simulate_model import (
+    simulate_latent_paths, compute_discount_paths, resolve_curve_index
+)
+from Code.Pricing.pricing import (
+    time0_forward_swap_and_annuity,
+    swap_from_discount_curve_at_expiry,
+    implied_bachelier_vol,
+)
 
 
-def normalize_D(D_raw, n_paths=None, n_steps=None):
-    D = to_numpy(D_raw)
-    D = np.squeeze(D)
+# =============================================================================
+# Helpers
+# =============================================================================
 
-    if D.ndim != 2:
-        raise ValueError(f"D must be 2D after squeeze, got shape {D.shape}")
-
-    n_times_target = None if n_steps is None else (n_steps + 1)
-
-    if n_paths is not None and n_times_target is not None:
-        if D.shape == (n_paths, n_times_target):
-            return D
-        if D.shape == (n_times_target, n_paths):
-            return D.T
-
-    if n_times_target is not None:
-        if D.shape[0] == n_times_target:
-            return D.T
-        if D.shape[1] == n_times_target:
-            return D
-
-    return D
+def load_model(checkpoint_path, device):
+    raw   = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    state = raw["model_state_dict"] if (isinstance(raw, dict) and "model_state_dict" in raw) else raw
+    model = FullModel(latent_dim=2).to(device).double()
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    if missing:
+        print(f"  [WARN] missing keys: {missing}")
+    model.eval()
+    return model
 
 
-def normalize_P(P_raw, n_paths=None, n_steps=None):
-    P = to_numpy(P_raw)
-    P = np.squeeze(P)
-
-    if P.ndim != 3:
-        raise ValueError(f"P must be 3D after squeeze, got shape {P.shape}")
-
-    n_times_target = None if n_steps is None else (n_steps + 1)
-
-    if n_paths is not None and n_times_target is not None:
-        if P.shape[0] == n_paths and P.shape[1] == n_times_target:
-            return P
-        if P.shape[0] == n_times_target and P.shape[1] == n_paths:
-            return np.transpose(P, (1, 0, 2))
-
-    if n_times_target is not None:
-        if P.shape[0] == n_times_target:
-            return np.transpose(P, (1, 0, 2))
-        if P.shape[1] == n_times_target:
-            return P
-
-    return P
+def encode_all(model, X_tensor, device):
+    dtype = next(model.parameters()).dtype
+    zs = []
+    with torch.no_grad():
+        for i in range(0, X_tensor.shape[0], 256):
+            zs.append(model.encoder(X_tensor[i:i+256].to(device=device, dtype=dtype)).detach())
+    return torch.cat(zs, dim=0)
 
 
-def nearest_index(grid, target):
-    grid = np.asarray(grid, dtype=float)
-    return int(np.argmin(np.abs(grid - target)))
+def sep(char="-", width=70):
+    print(char * width)
 
 
-def summarize_bad_curves(P):
-    P = np.asarray(P)
+# =============================================================================
+# 1. Drift parameters
+# =============================================================================
 
-    dP_dtau = np.diff(P, axis=2)
-    mono_viol = dP_dtau > 1e-10
-    bad_P = (
-        np.any(mono_viol, axis=2)
-        | np.any(P > 1.0, axis=2)
-        | np.any(P <= 0.0, axis=2)
-    )
+def check_drift(model):
+    K = model.K
+    kappa  = F.softplus(K.raw_kappa).item()
+    M      = K.drift_matrix().detach().cpu()
+    eigs   = torch.linalg.eigvals(M).real.numpy()
+    eigs_s = np.sort(eigs)          # most negative last
+    theta  = K.theta.detach().cpu().numpy()
+    hls    = [math.log(2) / abs(e) if abs(e) > 0 else float("inf") for e in eigs_s]
+
+    sep()
+    print("1. DRIFT  (K network — KMuStable)")
+    sep()
+    print(f"  kappa           = {kappa:.6f}")
+    print(f"  eigenvalues(M)  = {np.round(eigs_s, 6)}")
+    print(f"  half-lives      = {[f'{h:.2f}y' for h in hls]}")
+    print(f"  theta           = {np.round(theta, 6)}")
+
+    verdict = []
+    if min(hls) < 1.5:
+        verdict.append(f"WARN: fast mode hl={min(hls):.2f}y — paths decay before 5Y expiry")
+    if max(hls) > 50:
+        verdict.append(f"INFO: slow mode hl={max(hls):.2f}y — good for long-expiry vol")
+    for v in verdict:
+        print(f"  >> {v}")
 
     return {
-        "P_min": float(np.nanmin(P)),
-        "P_max": float(np.nanmax(P)),
-        "share_P_gt_1": float((P > 1.0).mean()),
-        "share_P_le_0": float((P <= 0.0).mean()),
-        "share_mono_viol": float(mono_viol.mean()),
-        "share_bad_path_time": float(bad_P.mean()),
-        "bad_mask": bad_P,
+        "kappa": kappa,
+        "eig_fast": float(eigs_s[0]),
+        "eig_slow": float(eigs_s[-1]),
+        "hl_fast": float(min(hls)),
+        "hl_slow": float(max(hls)),
+        "theta_0": float(theta[0]),
+        "theta_1": float(theta[1]),
     }
 
 
-def try_decode_clipped_paths(ctx, Z_clip):
-    if torch is None:
-        raise RuntimeError("Torch is required for clipped-latent decoding.")
+# =============================================================================
+# 2. Diffusion parameters
+# =============================================================================
 
-    for key in ["decode_latent_paths", "decode_z_paths", "decode_paths", "decoder_fn"]:
-        fn = get_ctx_or_attr(ctx, [key])
-        if callable(fn):
-            out = fn(Z_clip)
-            return to_numpy(out)
+def check_diffusion(model, X_ccy, device):
+    dtype = next(model.parameters()).dtype
+    with torch.no_grad():
+        z = model.encoder(X_ccy[:64].to(device=device, dtype=dtype))
+        sigmas, rhos = model.H(z)
+        s = sigmas.detach().cpu().numpy()
+        r = rhos.detach().cpu().numpy()
 
-    model = get_ctx_or_attr(ctx, ["model", "net", "full_model"])
-    if model is None:
-        raise RuntimeError("Could not find model in ctx.")
+    sigma_mean = float(s.mean())
+    sigma_std  = float(s.std())
 
-    model.eval()
+    sep()
+    print("2. DIFFUSION  (H network — sigma)")
+    sep()
+    print(f"  sigma mean (both dims) = {sigma_mean:.6f}")
+    print(f"  sigma std              = {sigma_std:.6f}")
+    print(f"  sigma per dim mean     = {s.mean(axis=0).round(6)}")
+    print(f"  rho mean               = {r.mean(axis=0).round(6)}")
 
-    try:
-        param0 = next(model.parameters())
-        model_dtype = param0.dtype
-        model_device = param0.device
-    except StopIteration:
-        model_dtype = torch.float64
-        model_device = torch.device("cpu")
+    if sigma_mean < 0.003:
+        print(f"  >> WARN: sigma too small — SDE barely diffuses")
+    elif sigma_mean > 0.05:
+        print(f"  >> WARN: sigma large — may over-produce vol")
+    else:
+        print(f"  >> OK: sigma in plausible range [0.003, 0.05]")
 
-    z_t = torch.as_tensor(Z_clip, dtype=model_dtype, device=model_device)
-    flat = z_t.reshape(-1, z_t.shape[-1])
+    return {"sigma_mean": sigma_mean, "sigma_std": sigma_std}
+
+
+# =============================================================================
+# 3. Short rate
+# =============================================================================
+
+def check_short_rate(model, X_ccy, device, z0):
+    dtype = next(model.parameters()).dtype
+    with torch.no_grad():
+        z_all = model.encoder(X_ccy.to(device=device, dtype=dtype))
+        r_all = model.R(z_all).detach().cpu().numpy().flatten()
+        r0    = float(model.R(z0).detach().cpu().numpy().flatten()[0])
+
+    sep()
+    print("3. SHORT RATE  (R network)")
+    sep()
+    print(f"  r0 at chosen date      = {r0*100:.4f}%  ({r0*10000:.1f} bp)")
+    print(f"  r across EUR cloud:  mean={r_all.mean()*100:.3f}%  "
+          f"std={r_all.std()*100:.3f}%  "
+          f"min={r_all.min()*100:.3f}%  max={r_all.max()*100:.3f}%")
+
+    if r_all.min() < -0.10:
+        print(f"  >> WARN: short rate goes very negative ({r_all.min()*100:.2f}%)")
+
+    return {"r0_pct": r0 * 100, "r_mean_pct": float(r_all.mean() * 100)}
+
+
+# =============================================================================
+# 4. Martingale check  E[F_T] vs K
+# =============================================================================
+
+def check_martingale(model, z0, device, n_paths=MC_N_PATHS, n_steps=MC_N_STEPS, dt=MC_DT):
+    torch.manual_seed(42)
+
+    sep()
+    print("4. MARTINGALE CHECK  E[F_T] vs K  (should be ~0 after training)")
+    sep()
+    print(f"  Paths={n_paths}, steps={n_steps}, dt={dt:.4f}  ({n_steps*dt:.1f}y horizon)")
+
+    z_paths, r_paths, _, _ = simulate_latent_paths(
+        model=model, z0=z0, n_paths=n_paths, n_steps=n_steps, dt=dt, device=device
+    )
 
     with torch.no_grad():
-        if hasattr(model, "decode_from_z"):
-            P_mkt, aux = model.decode_from_z(flat, tau=None, do_arb_checks=False, return_aux=True)
+        _, aux0 = model.decode_from_z(z0, tau=None, do_arb_checks=False, return_aux=True)
+    P_full_0  = aux0["P_full"].detach().cpu().numpy()
+    tau_grid0 = aux0["tau_grid"].detach().cpu().numpy()
 
-            if isinstance(aux, dict) and "P_full" in aux:
-                out = aux["P_full"]
+    annual_steps = {1: int(round(1/dt)), 5: int(round(5/dt)), 10: int(round(10/dt))}
+
+    print(f"\n  {'Pair':>8}  {'K (bp)':>8}  {'E[F_T] (bp)':>13}  "
+          f"{'drift (bp)':>12}  {'std (bp)':>10}  {'|drift|/std':>12}")
+    print(f"  {'-'*8}  {'-'*8}  {'-'*13}  {'-'*12}  {'-'*10}  {'-'*12}")
+
+    results = {}
+    for expiry in EXPIRIES:
+        exp_step = annual_steps[expiry]
+        if exp_step >= z_paths.shape[1]:
+            continue
+
+        z_at_exp = z_paths[:, exp_step, :]
+
+        # Decode in chunks
+        P_full_list, tau_exp = [], None
+        with torch.no_grad():
+            for i in range(0, z_at_exp.shape[0], 256):
+                _, aux = model.decode_from_z(
+                    z_at_exp[i:i+256], tau=None, do_arb_checks=False, return_aux=True
+                )
+                P_full_list.append(aux["P_full"].detach().cpu().numpy())
+                if tau_exp is None:
+                    tau_exp = aux["tau_grid"].detach().cpu().numpy()
+        P_full_exp = np.concatenate(P_full_list, axis=0)
+
+        for tenor in TENORS:
+            q0 = time0_forward_swap_and_annuity(P_full_0, tau_grid0, expiry, tenor)
+            K  = q0["forward_swap"]
+
+            rates = []
+            for pi in range(n_paths):
+                try:
+                    res = swap_from_discount_curve_at_expiry(P_full_exp[pi], tau_exp, tenor)
+                    r = res["swap_rate"]
+                    if np.isfinite(r):
+                        rates.append(r)
+                except Exception:
+                    pass
+
+            if not rates:
+                print(f"  {expiry}Y×{tenor}Y  {'n/a':>8}  {'n/a':>13}  {'n/a':>12}  {'n/a':>10}  {'n/a':>12}  (no valid paths)")
+                continue
+
+            F_T   = np.array(rates)
+            drift = (F_T.mean() - K) * 10000
+            std   = F_T.std() * 10000
+            ratio = abs(drift) / std if std > 0 else float("inf")
+
+            results[(expiry, tenor)] = {
+                "K_bp": K * 10000, "drift_bp": drift, "std_bp": std, "ratio": ratio,
+                "n_valid": len(rates)
+            }
+            flag = " <<" if abs(drift) > 50 else ""
+            print(f"  {expiry}Y×{tenor}Y  {K*10000:>8.1f}  {F_T.mean()*10000:>13.1f}  "
+                  f"{drift:>+12.1f}  {std:>10.1f}  {ratio:>12.2f}  ({len(rates)}/{n_paths}){flag}")
+
+    mean_abs_drift = float(np.nanmean([abs(v["drift_bp"]) for v in results.values()])) if results else float("nan")
+    print(f"\n  Mean |drift| across all pairs: {mean_abs_drift:.1f} bp")
+    if mean_abs_drift > 50:
+        print(f"  >> FAIL: large drift — theta points to wrong rate level")
+        print(f"           Pricing training (Fix A) must correct this.")
+    elif mean_abs_drift > 10:
+        print(f"  >> CAUTION: moderate drift — monitor during training")
+    else:
+        print(f"  >> PASS: martingale condition approximately satisfied")
+
+    return results, mean_abs_drift, z_paths, P_full_0, tau_grid0
+
+
+# =============================================================================
+# 5. Implied vol table (MC)
+# =============================================================================
+
+def check_implied_vols(model, z0, z_paths, P_full_0, tau_grid0, date_str, device,
+                       n_paths=MC_N_PATHS, n_steps=MC_N_STEPS, dt=MC_DT):
+    sep()
+    print("5. IMPLIED VOL TABLE  (MC normal vol vs market)")
+    sep()
+
+    market = MARKET_VOLS_BP.get(date_str, {})
+    if not market:
+        print(f"  No market vols loaded for {date_str} — skipping vol comparison")
+
+    r_paths = None  # reuse z_paths from martingale check, recompute discount
+    with torch.no_grad():
+        r_list = []
+        for i in range(0, z_paths.shape[0] * z_paths.shape[1], 256):
+            path_i = i // z_paths.shape[1]
+            step_i = i % z_paths.shape[1]
+            if path_i >= z_paths.shape[0]:
+                break
+        # compute r_paths efficiently
+        n_p, n_t, d = z_paths.shape
+        z_flat = z_paths.reshape(-1, d)
+        r_flat = []
+        for i in range(0, z_flat.shape[0], 512):
+            r_chunk = model.R(z_flat[i:i+512]).detach()
+            if r_chunk.ndim == 2 and r_chunk.shape[-1] == 1:
+                r_chunk = r_chunk.squeeze(-1)
+            r_flat.append(r_chunk)
+        r_paths = torch.cat(r_flat).reshape(n_p, n_t)
+
+    discount_paths = compute_discount_paths(r_paths, dt=dt)
+
+    # Decode P_full paths (annual steps only to save time)
+    annual_steps = {1: int(round(1/dt)), 5: int(round(5/dt)), 10: int(round(10/dt))}
+    P_exp_cache = {}
+    for expiry, exp_step in annual_steps.items():
+        z_at_exp = z_paths[:, exp_step, :]
+        P_full_list, tau_exp = [], None
+        with torch.no_grad():
+            for i in range(0, z_at_exp.shape[0], 256):
+                _, aux = model.decode_from_z(
+                    z_at_exp[i:i+256], tau=None, do_arb_checks=False, return_aux=True
+                )
+                P_full_list.append(aux["P_full"].detach().cpu().numpy())
+                if tau_exp is None:
+                    tau_exp = aux["tau_grid"].detach().cpu().numpy()
+        P_exp_cache[expiry] = (np.concatenate(P_full_list, axis=0), tau_exp)
+
+    print(f"\n  {'Pair':>8}  {'Mkt (bp)':>9}  {'Model (bp)':>11}  "
+          f"{'Error (bp)':>11}  {'|Error|/Mkt':>13}")
+    print(f"  {'-'*8}  {'-'*9}  {'-'*11}  {'-'*11}  {'-'*13}")
+
+    vol_results = {}
+    for expiry in EXPIRIES:
+        exp_step = annual_steps[expiry]
+        P_full_exp, tau_exp = P_exp_cache[expiry]
+        disc_exp = discount_paths[:, exp_step].detach().cpu().numpy()
+
+        for tenor in TENORS:
+            q0  = time0_forward_swap_and_annuity(P_full_0, tau_grid0, expiry, tenor)
+            K   = q0["forward_swap"]
+            A0  = q0["annuity"]
+
+            # Pathwise payoffs — filter invalid paths and discount factors
+            pvs = []
+            for pi in range(n_paths):
+                try:
+                    res = swap_from_discount_curve_at_expiry(P_full_exp[pi], tau_exp, tenor)
+                    if not np.isfinite(res["swap_rate"]) or not np.isfinite(res["annuity"]):
+                        continue
+                    payoff = max(res["swap_rate"] - K, 0.0) * res["annuity"]
+                    pv = disc_exp[pi] * payoff
+                    if np.isfinite(pv):
+                        pvs.append(pv)
+                except Exception:
+                    pass
+
+            if not pvs:
+                iv_bp = float("nan")
+                mc_price = float("nan")
             else:
-                out = P_mkt
+                mc_price = float(np.mean(pvs))
+                if not np.isfinite(mc_price) or mc_price < 0:
+                    iv_bp = float("nan")
+                else:
+                    iv = implied_bachelier_vol(
+                        market_price=mc_price, forward=K, strike=K,
+                        expiry=expiry, annuity=A0, payer=True
+                    )
+                    iv_bp = iv * 10000 if np.isfinite(iv) else float("nan")
 
-            out = to_numpy(out)
-            return out.reshape(z_t.shape[0], z_t.shape[1], -1)
+            mkt_bp  = market.get((expiry, tenor), float("nan"))
+            err_bp  = iv_bp - mkt_bp if np.isfinite(iv_bp) and np.isfinite(mkt_bp) else float("nan")
+            rel_err = abs(err_bp) / mkt_bp if np.isfinite(err_bp) and mkt_bp > 0 else float("nan")
 
-    raise RuntimeError("Found model but no decoder entry point.")
+            vol_results[(expiry, tenor)] = {
+                "model_bp": iv_bp, "market_bp": mkt_bp, "error_bp": err_bp
+            }
+
+            mkt_str = f"{mkt_bp:>9.1f}" if np.isfinite(mkt_bp) else f"{'n/a':>9}"
+            err_str = f"{err_bp:>+11.1f}" if np.isfinite(err_bp) else f"{'n/a':>11}"
+            rel_str = f"{rel_err:>12.1%}" if np.isfinite(rel_err) else f"{'n/a':>12}"
+            print(f"  {expiry}Y×{tenor}Y  {mkt_str}  {iv_bp:>11.2f}  {err_str}  {rel_str}")
+
+    valid_errors = [abs(v["error_bp"]) for v in vol_results.values()
+                    if np.isfinite(v.get("error_bp", float("nan")))]
+    mae = float(np.mean(valid_errors)) if valid_errors else float("nan")
+    print(f"\n  MAE across all pairs: {mae:.1f} bp")
+
+    return vol_results, mae
 
 
-# =====================================================================
-# NEW: dynamics diagnostics
-# =====================================================================
-def print_dynamics_diagnostics(ctx, z_train_std=None):
-    """
-    Print key quantities that determine whether mean-reversion can
-    keep simulated paths inside the training distribution:
+# =============================================================================
+# 6. Curve RMSE
+# =============================================================================
 
-        kappa       — global drift scale (larger = stronger reversion)
-        M eigenvalues — must all be negative for stability
-        sigma at z0 — diffusion size (should be << kappa for stability)
-        implied std  — sigma * sqrt(T) over 10 years (should be < training std)
-        theta        — long-run mean the drift pulls toward
-        reversion ratio — kappa / sigma: rule of thumb > 5 is healthy
-    """
-    if torch is None:
-        print("torch not available — skipping dynamics diagnostics")
-        return
-
-    model = get_ctx_or_attr(ctx, ["model", "net", "full_model"])
-    if model is None:
-        print("No model found in ctx — skipping dynamics diagnostics")
-        return
-
-    z0_tensor = get_ctx_or_attr(ctx, ["z0"])
-    if z0_tensor is None:
-        print("No z0 found in ctx — skipping dynamics diagnostics")
-        return
-
-    model.eval()
-
-    print("\n" + "=" * 60)
-    print("DYNAMICS DIAGNOSTICS")
-    print("=" * 60)
-
+def check_curve_rmse(model, X_ccy, device):
+    dtype = next(model.parameters()).dtype
+    outs  = []
     with torch.no_grad():
-        # --- K: drift ---
-        if hasattr(model.K, "raw_kappa"):
-            kappa = F.softplus(model.K.raw_kappa).item()
-            print(f"  kappa (drift scale)  : {kappa:.6f}")
-        else:
-            print("  kappa                : (not available — not KMuStable)")
+        for i in range(0, X_ccy.shape[0], 256):
+            outs.append(model(X_ccy[i:i+256].to(device=device, dtype=dtype)).detach().cpu())
+    S_hat = torch.cat(outs, dim=0)
+    X_cpu = X_ccy.cpu()
+    mask  = torch.isfinite(X_cpu).all(dim=1) & torch.isfinite(S_hat).all(dim=1)
+    rmse  = float(((X_cpu[mask] - S_hat[mask]) ** 2).mean().sqrt().item() * 10000)
 
-        if hasattr(model.K, "drift_matrix"):
-            M = model.K.drift_matrix()
-            eigs = torch.linalg.eigvals(M).real.detach().cpu().numpy()
-            print(f"  M eigenvalues (real) : {eigs}")
-            print(f"  All negative?        : {bool((eigs < 0).all())}")
-        else:
-            print("  M eigenvalues        : (not available)")
-
-        if hasattr(model.K, "theta"):
-            theta = model.K.theta.detach().cpu().numpy()
-            print(f"  theta (long-run mean): {theta}")
-
-        # --- H: diffusion ---
-        z0 = z0_tensor
-        if z0.dim() == 1:
-            z0 = z0.unsqueeze(0)
-
-        try:
-            sigmas, rhos = model.H(z0)
-            sigma_vals = sigmas.detach().cpu().numpy().flatten()
-            print(f"  sigma at z0          : {sigma_vals}")
-
-            # Implied std of z over T=10 years under pure diffusion (no drift)
-            T = 10.0
-            implied_std = sigma_vals * np.sqrt(T)
-            print(f"  implied std (T=10y)  : {implied_std}  "
-                  f"[sigma * sqrt(10)]")
-
-            if z_train_std is not None:
-                print(f"  training z std       : {z_train_std}")
-                ratio = implied_std / (np.asarray(z_train_std) + 1e-12)
-                print(f"  implied/training std : {ratio}  "
-                      f"[> 1 means diffusion dominates over 10y]")
-
-            if hasattr(model.K, "raw_kappa"):
-                rev_ratio = kappa / (sigma_vals + 1e-12)
-                print(f"  kappa / sigma        : {rev_ratio}  "
-                      f"[rule of thumb: > 5 is healthy]")
-
-                # Half-life: time for mean reversion to halve displacement
-                # For OU: half_life = log(2) / |lambda_min|
-                if hasattr(model.K, "drift_matrix"):
-                    lambda_min = float(np.abs(eigs).min())
-                    if lambda_min > 0:
-                        half_life = np.log(2) / lambda_min
-                        print(f"  mean-reversion half-life: {half_life:.2f}y  "
-                              f"[should be << 10y]")
-
-        except Exception as e:
-            print(f"  [WARN] Could not compute sigma diagnostics: {e}")
-
-        # --- displacement of z0 from theta ---
-        if hasattr(model.K, "theta"):
-            z0_np = z0.detach().cpu().numpy().flatten()
-            theta_np = model.K.theta.detach().cpu().numpy()
-            displacement = z0_np - theta_np
-            print(f"  z0 - theta           : {displacement}  "
-                  f"[initial displacement from long-run mean]")
-
-    print("=" * 60)
-
-
-def run_P_D_diagnostics(
-    checkpoint_path,
-    as_of_date,
-    ccy="EUR",
-    n_paths=2000,
-    n_steps=120,
-    dt=1 / 12,
-    n_plot_paths=20,
-):
-    print(f"Running diagnostics for {as_of_date}")
-
-    ctx = pricing.run_simulation(
-        checkpoint_path=checkpoint_path,
-        ccy_filter=ccy,
-        as_of_date=str(as_of_date),
-        n_paths=n_paths,
-        n_steps=n_steps,
-        dt=dt,
-        show_plot=False,
-    )
-
-    # -----------------------------------------------------------------
-    # ── NEW: print dynamics diagnostics immediately after simulation ──
-    # -----------------------------------------------------------------
-    z_train_std_raw = get_ctx_or_attr(ctx, ["z_train_std"])
-    z_train_std_np  = to_numpy(z_train_std_raw) if z_train_std_raw is not None else None
-    print_dynamics_diagnostics(ctx, z_train_std=z_train_std_np)
-
-    # -----------------------------------------------------------------
-    # Extract latent paths
-    # -----------------------------------------------------------------
-    Z_raw = get_from_ctx(
-        ctx,
-        ["z_paths", "latent_paths", "z_full_paths", "z"],
-        "latent paths z",
-    )
-
-    Z = to_numpy(Z_raw)
-    Z = np.squeeze(Z)
-
-    if Z.ndim != 3:
-        raise ValueError(f"Z must be 3D after squeeze, got shape {Z.shape}")
-
-    if Z.shape[0] == n_paths and Z.shape[1] == n_steps + 1:
-        pass
-    elif Z.shape[0] == n_steps + 1 and Z.shape[1] == n_paths:
-        Z = np.transpose(Z, (1, 0, 2))
+    sep()
+    print("6. CURVE RMSE  (encoder-decoder reconstruction)")
+    sep()
+    print(f"  EUR curve RMSE = {rmse:.2f} bp")
+    if rmse > 5.0:
+        print(f"  >> WARN: RMSE > 5 bp — G has drifted from autoencoder quality")
     else:
-        print("Unexpected Z shape:", Z.shape)
+        print(f"  >> OK")
 
-    print("\nZ shape:", Z.shape)
-    print("Z overall min:", Z.min(axis=(0, 1)))
-    print("Z overall max:", Z.max(axis=(0, 1)))
-    print("Z mean:", Z.mean(axis=(0, 1)))
-    print("Z std :", Z.std(axis=(0, 1)))
+    return {"curve_rmse_bp": rmse}
 
-    # Empirical training box from your earlier diagnostics
-    train_min = np.array([-0.071420, -0.064361], dtype=float)
-    train_max = np.array([0.005746,  0.012604],  dtype=float)
 
-    below   = (Z < train_min).any(axis=2)
-    above   = (Z > train_max).any(axis=2)
-    outside = below | above
-
-    print("\nLatent OOD diagnostics")
-    print(f"Share of path-times outside training box: {outside.mean():.4%}")
-    print(f"Share with z[0] below min: {(Z[:, :, 0] < train_min[0]).mean():.4%}")
-    print(f"Share with z[0] above max: {(Z[:, :, 0] > train_max[0]).mean():.4%}")
-    print(f"Share with z[1] below min: {(Z[:, :, 1] < train_min[1]).mean():.4%}")
-    print(f"Share with z[1] above max: {(Z[:, :, 1] > train_max[1]).mean():.4%}")
-
-    # -----------------------------------------------------------------
-    # Extract discount factors and decoded curves
-    # -----------------------------------------------------------------
-    D_raw = get_from_ctx(
-        ctx,
-        ["discount_paths", "D_t", "D_paths", "discount_factors", "D"],
-        "discount factor paths D",
-    )
-
-    P_raw = get_from_ctx(
-        ctx,
-        ["P_full_paths", "P_full", "P_paths", "discount_curves", "P"],
-        "decoded discount curves P",
-    )
-
-    time_grid_raw = None
-    tau_grid_raw  = None
-
-    for candidates in [["t_grid", "time_grid", "times", "t"]]:
-        try:
-            time_grid_raw = get_from_ctx(ctx, candidates, "time grid")
-            break
-        except Exception:
-            pass
-
-    for candidates in [["tau_grid", "taus", "tau", "maturity_grid"]]:
-        try:
-            tau_grid_raw = get_from_ctx(ctx, candidates, "tau grid")
-            break
-        except Exception:
-            pass
-
-    D = normalize_D(D_raw, n_paths=n_paths, n_steps=n_steps)
-    P = normalize_P(P_raw, n_paths=n_paths, n_steps=n_steps)
-
-    n_paths_eff, n_times, n_tau = P.shape
-
-    if time_grid_raw is None:
-        time_grid = np.arange(n_times) * dt
-    else:
-        time_grid = np.asarray(to_numpy(time_grid_raw)).reshape(-1)
-
-    if tau_grid_raw is None:
-        tau_grid = np.arange(n_tau)
-    else:
-        tau_grid = np.asarray(to_numpy(tau_grid_raw)).reshape(-1)
-
-    # -----------------------------------------------------------------
-    # Link bad curves to latent extrapolation
-    # -----------------------------------------------------------------
-    bad_P = np.any(np.diff(P, axis=2) > 1e-10, axis=2) | np.any(P > 1.0, axis=2)
-
-    print("\nLink between bad curves and latent extrapolation")
-    print("Share bad_P overall:", bad_P.mean())
-    print("Share outside overall:", outside.mean())
-    print("Share bad_P among outside:", bad_P[outside].mean() if outside.any() else 0.0)
-    print("Share bad_P among inside :", bad_P[~outside].mean() if (~outside).any() else 0.0)
-
-    print("\nShapes")
-    print("D shape:", D.shape)
-    print("P shape:", P.shape)
-    print("time_grid shape:", time_grid.shape)
-    print("tau_grid shape :", tau_grid.shape)
-
-    # -----------------------------------------------------------------
-    # Diagnostics for D
-    # -----------------------------------------------------------------
-    ED   = D.mean(axis=0)
-    D_q01 = np.quantile(D, 0.01, axis=0)
-    D_q50 = np.quantile(D, 0.50, axis=0)
-    D_q99 = np.quantile(D, 0.99, axis=0)
-
-    print("\nD diagnostics")
-    print(f"E[D_t] min/max       : [{ED.min():.6f}, {ED.max():.6f}]")
-    print(f"D overall min/max    : [{D.min():.6f}, {D.max():.6f}]")
-    print(f"Share D_t > 1        : {(D > 1.0).mean():.4%}")
-    print(f"Share D_t <= 0       : {(D <= 0.0).mean():.4%}")
-
-    # -----------------------------------------------------------------
-    # Diagnostics for P
-    # -----------------------------------------------------------------
-    print("\nP diagnostics")
-    print(f"P overall min/max    : [{np.nanmin(P):.6f}, {np.nanmax(P):.6f}]")
-    print(f"Share P > 1          : {(P > 1.0).mean():.4%}")
-    print(f"Share P <= 0         : {(P <= 0.0).mean():.4%}")
-
-    dP_dtau  = np.diff(P, axis=2)
-    mono_viol = dP_dtau > 1e-10
-    viol_any  = np.any(mono_viol, axis=2)
-
-    print(f"Share mono violations: {mono_viol.mean():.4%}")
-    print(f"Share path-time with any maturity violation: {viol_any.mean():.4%}")
-
-    # -----------------------------------------------------------------
-    # Selected maturities
-    # -----------------------------------------------------------------
-    tau_targets = [1, 5, 10]
-    tau_idxs = []
-    for target in tau_targets:
-        if len(tau_grid) > 0:
-            tau_idxs.append(nearest_index(tau_grid, target))
-    tau_idxs = sorted(set(tau_idxs))
-
-    print("\nSelected maturities")
-    for idx in tau_idxs:
-        print(f"tau index {idx}, tau ~ {tau_grid[idx]}")
-
-    # -----------------------------------------------------------------
-    # Clipped-latent sanity check
-    # -----------------------------------------------------------------
-    P_clip = None
-    Z_clip = np.clip(Z, train_min, train_max)
-
-    print("\nRunning clipped-latent sanity check...")
-    try:
-        P_clip_raw = try_decode_clipped_paths(ctx, Z_clip)
-        P_clip = normalize_P(P_clip_raw, n_paths=n_paths, n_steps=n_steps)
-
-        stats_orig = summarize_bad_curves(P)
-        stats_clip = summarize_bad_curves(P_clip)
-
-        print("\nOriginal decoded P diagnostics")
-        print(f"P range                 : [{stats_orig['P_min']:.6f}, {stats_orig['P_max']:.6f}]")
-        print(f"Share P > 1             : {stats_orig['share_P_gt_1']:.4%}")
-        print(f"Share P <= 0            : {stats_orig['share_P_le_0']:.4%}")
-        print(f"Share mono violations   : {stats_orig['share_mono_viol']:.4%}")
-        print(f"Share bad path-times    : {stats_orig['share_bad_path_time']:.4%}")
-
-        print("\nClipped decoded P diagnostics")
-        print(f"P_clip range            : [{stats_clip['P_min']:.6f}, {stats_clip['P_max']:.6f}]")
-        print(f"Share P_clip > 1        : {stats_clip['share_P_gt_1']:.4%}")
-        print(f"Share P_clip <= 0       : {stats_clip['share_P_le_0']:.4%}")
-        print(f"Share mono viol (clip)  : {stats_clip['share_mono_viol']:.4%}")
-        print(f"Share bad path-times    : {stats_clip['share_bad_path_time']:.4%}")
-
-        time_targets_clip = [0.0, 1.0, 5.0, 10.0]
-        time_idxs_clip = sorted(set(nearest_index(time_grid, t) for t in time_targets_clip))
-
-        plt.figure(figsize=(8, 5))
-        for j in time_idxs_clip:
-            plt.plot(tau_grid, P[:, j, :].mean(axis=0),
-                     linestyle="--", label=f"orig t≈{time_grid[j]:.2f}")
-            plt.plot(tau_grid, P_clip[:, j, :].mean(axis=0),
-                     label=f"clip t≈{time_grid[j]:.2f}")
-        plt.axhline(1.0, linestyle=":", linewidth=1)
-        plt.xlabel("tau")
-        plt.ylabel("Mean discount curve")
-        plt.title(f"Original vs clipped decoded curves: {as_of_date}")
-        plt.grid(True, alpha=0.3)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-    except Exception as e:
-        print("\nClipped-latent sanity check could not be completed.")
-        print("Reason:", repr(e))
-
-    # -----------------------------------------------------------------
-    # Plot 1: E[D_t] with bands
-    # -----------------------------------------------------------------
-    plt.figure(figsize=(8, 5))
-    plt.plot(time_grid, ED, label="E[D_t]")
-    plt.plot(time_grid, D_q50, linestyle="--", label="Median D_t")
-    plt.fill_between(time_grid, D_q01, D_q99, alpha=0.2, label="1%-99% band")
-    plt.axhline(1.0, linestyle=":", linewidth=1)
-    plt.xlabel("t")
-    plt.ylabel("D_t")
-    plt.title(f"Discount-factor diagnostics: {as_of_date}")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    # -----------------------------------------------------------------
-    # Plot 2: sample D paths
-    # -----------------------------------------------------------------
-    plt.figure(figsize=(8, 5))
-    n_show = min(n_plot_paths, D.shape[0])
-    for i in range(n_show):
-        plt.plot(time_grid, D[i], alpha=0.5)
-    plt.axhline(1.0, linestyle=":", linewidth=1)
-    plt.xlabel("t")
-    plt.ylabel("D_t")
-    plt.title(f"Sample D paths: {as_of_date}")
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-    # -----------------------------------------------------------------
-    # Plot 3: mean P(t, tau) for selected maturities
-    # -----------------------------------------------------------------
-    plt.figure(figsize=(8, 5))
-    for idx in tau_idxs:
-        mean_P_tau = P[:, :, idx].mean(axis=0)
-        plt.plot(time_grid, mean_P_tau, label=f"tau≈{tau_grid[idx]:.2f}")
-    plt.axhline(1.0, linestyle=":", linewidth=1)
-    plt.xlabel("t")
-    plt.ylabel("E[P_t(tau)]")
-    plt.title(f"Mean decoded bond prices at selected maturities: {as_of_date}")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    # -----------------------------------------------------------------
-    # Plot 4: mean curve snapshots at selected times
-    # -----------------------------------------------------------------
-    time_targets = [0.0, 1.0, 5.0, 10.0]
-    time_idxs = sorted(set(nearest_index(time_grid, t) for t in time_targets))
-
-    plt.figure(figsize=(8, 5))
-    for idx in time_idxs:
-        mean_curve = P[:, idx, :].mean(axis=0)
-        plt.plot(tau_grid, mean_curve, label=f"t≈{time_grid[idx]:.2f}")
-    plt.axhline(1.0, linestyle=":", linewidth=1)
-    plt.xlabel("tau")
-    plt.ylabel("E[P_t(tau)]")
-    plt.title(f"Mean decoded discount curves: {as_of_date}")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    # -----------------------------------------------------------------
-    # Plot 5: share of P>1 over time for selected tau
-    # -----------------------------------------------------------------
-    plt.figure(figsize=(8, 5))
-    for idx in tau_idxs:
-        share_gt1 = (P[:, :, idx] > 1.0).mean(axis=0)
-        plt.plot(time_grid, share_gt1, label=f"tau≈{tau_grid[idx]:.2f}")
-    plt.xlabel("t")
-    plt.ylabel("Share[P_t(tau) > 1]")
-    plt.title(f"Frequency of P>1 by maturity: {as_of_date}")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    # -----------------------------------------------------------------
-    # Plot 6: latent path fans for each dimension
-    # -----------------------------------------------------------------
-    n_show = min(n_plot_paths, Z.shape[0])
-    n_dims = Z.shape[2]
-
-    fig, axes = plt.subplots(1, n_dims, figsize=(6 * n_dims, 5))
-    if n_dims == 1:
-        axes = [axes]
-
-    for d, ax in enumerate(axes):
-        for i in range(n_show):
-            ax.plot(time_grid, Z[i, :, d], alpha=0.4, linewidth=0.8)
-        ax.axhline(train_min[d], color="red",   linestyle="--", linewidth=1.5,
-                   label=f"train min ({train_min[d]:.4f})")
-        ax.axhline(train_max[d], color="red",   linestyle="--", linewidth=1.5,
-                   label=f"train max ({train_max[d]:.4f})")
-        ax.set_xlabel("t (years)")
-        ax.set_ylabel(f"z[{d}]")
-        ax.set_title(f"Latent paths z[{d}]")
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-
-    fig.suptitle(f"Latent path fans: {as_of_date}", fontsize=12)
-    fig.tight_layout()
-    plt.show()
-
-    return {
-        "ctx": ctx,
-        "D": D,
-        "P": P,
-        "P_clip": P_clip,
-        "Z": Z,
-        "time_grid": time_grid,
-        "tau_grid": tau_grid,
-        "ED": ED,
-    }
-
+# =============================================================================
+# Main
+# =============================================================================
 
 def main():
-    checkpoint_path = (
-        r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults"
-        r"\dim2_stable\pricing_continuation\final_checkpoint.pt"
-    )
+    parser = argparse.ArgumentParser(description="Pricing monitor — pre/during/post training")
+    parser.add_argument("--checkpoint", default=DEFAULT_CHECKPOINT)
+    parser.add_argument("--ccy",        default=DEFAULT_CCY)
+    parser.add_argument("--date",       default=DEFAULT_DATE)
+    parser.add_argument("--tag",        default=DEFAULT_TAG,
+                        help="Label for this snapshot (e.g. 'ep200_baseline', 'ep50', 'final')")
+    parser.add_argument("--no-mc",      action="store_true",
+                        help="Skip MC checks (sections 4 and 5) — fast mode for quick drift/sigma checks")
+    parser.add_argument("--paths",      type=int, default=MC_N_PATHS)
+    args = parser.parse_args()
 
-    _out = run_P_D_diagnostics(
-        checkpoint_path=checkpoint_path,
-        as_of_date="2010-10-29",
-        ccy="EUR",
-        n_paths=2000,
-        n_steps=120,
-        dt=1 / 12,
-        n_plot_paths=20,
-    )
+    device = torch.device("cpu")
+    print("\n" + "=" * 70)
+    print(f"PRICING MONITOR  —  {args.tag}")
+    print(f"  checkpoint : {os.path.basename(args.checkpoint)}")
+    print(f"  date       : {args.date}")
+    print(f"  run time   : {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print("=" * 70)
+
+    model    = load_model(args.checkpoint, device)
+    meta, X_tensor, *_ = my_data(ccy_filter=args.ccy)
+    dtype    = next(model.parameters()).dtype
+    X_tensor = X_tensor.to(dtype=dtype)
+
+    mask_ccy = meta["ccy"].astype(str).str.upper() == args.ccy.upper()
+    X_ccy    = X_tensor[mask_ccy.to_numpy()]
+
+    idx = resolve_curve_index(meta, as_of_date=args.date)
+    S0  = X_tensor[idx:idx+1].to(device=device, dtype=dtype)
+    with torch.no_grad():
+        z0 = model.encoder(S0)
+    print(f"\n  z0 = {z0.detach().cpu().numpy().flatten()}")
+
+    # Run all checks
+    drift_stats  = check_drift(model)
+    diff_stats   = check_diffusion(model, X_ccy, device)
+    rate_stats   = check_short_rate(model, X_ccy, device, z0)
+    rmse_stats   = check_curve_rmse(model, X_ccy, device)
+
+    mart_results = vol_results = None
+    mean_drift   = mae = float("nan")
+
+    if not args.no_mc:
+        mart_results, mean_drift, z_paths, P_full_0, tau_grid0 = check_martingale(
+            model, z0, device, n_paths=args.paths
+        )
+        vol_results, mae = check_implied_vols(
+            model, z0, z_paths, P_full_0, tau_grid0,
+            date_str=args.date, device=device, n_paths=args.paths
+        )
+
+    # -------------------------------------------------------------------------
+    # Summary
+    # -------------------------------------------------------------------------
+    sep("=")
+    print("SUMMARY")
+    sep("=")
+    print(f"  Tag              : {args.tag}")
+    print(f"  kappa            : {drift_stats['kappa']:.4f}")
+    print(f"  half-life (fast) : {drift_stats['hl_fast']:.2f} y")
+    print(f"  half-life (slow) : {drift_stats['hl_slow']:.2f} y")
+    print(f"  theta            : [{drift_stats['theta_0']:.4f}, {drift_stats['theta_1']:.4f}]")
+    print(f"  sigma_mean       : {diff_stats['sigma_mean']:.6f}")
+    print(f"  r0               : {rate_stats['r0_pct']:.3f}%")
+    print(f"  curve RMSE       : {rmse_stats['curve_rmse_bp']:.2f} bp")
+    print(f"  mean |drift|     : {mean_drift:.1f} bp  (martingale, target < 10)")
+    print(f"  vol MAE          : {mae:.1f} bp  (vs market)")
+
+    # -------------------------------------------------------------------------
+    # Append to CSV log
+    # -------------------------------------------------------------------------
+    log_row = {
+        "timestamp":    datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "tag":          args.tag,
+        "checkpoint":   os.path.basename(args.checkpoint),
+        "date":         args.date,
+        "kappa":        drift_stats["kappa"],
+        "hl_fast_y":    drift_stats["hl_fast"],
+        "hl_slow_y":    drift_stats["hl_slow"],
+        "theta_0":      drift_stats["theta_0"],
+        "theta_1":      drift_stats["theta_1"],
+        "sigma_mean":   diff_stats["sigma_mean"],
+        "r0_pct":       rate_stats["r0_pct"],
+        "curve_rmse_bp": rmse_stats["curve_rmse_bp"],
+        "mean_drift_bp": mean_drift,
+        "vol_mae_bp":   mae,
+    }
+
+    write_header = not os.path.exists(LOG_FILE)
+    with open(LOG_FILE, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(log_row.keys()))
+        if write_header:
+            writer.writeheader()
+        writer.writerow(log_row)
+    print(f"\n  Log appended to: {LOG_FILE}")
 
 
 if __name__ == "__main__":

@@ -1,525 +1,286 @@
+# =============================================================================
+# diag_checkpoint_v4.py
+# =============================================================================
+# v3 showed the model produces 86 bp of *spot* swap rate std at 5Y.
+# But the MC swaption gives only ~3 bp implied vol at 5Y×1Y.
+#
+# The missing piece: at expiry T, the swaption payoff is
+#   max( F_T(T, T+n) - K, 0 )
+# where F_T(T, T+n) is the spot-starting swap rate AT TIME T,
+# and K = F_0(T, T+n) is the FORWARD swap rate seen from t=0.
+#
+# If K is set correctly (ATM at t=0), and F_T has std=86 bp, then
+# implied vol should be roughly 86/sqrt(5) ≈ 38 bp — not 3 bp.
+#
+# So either:
+#   (a) K is wrong (not matching F_0 properly), OR
+#   (b) The distribution of F_T - K is highly skewed / peaked near zero
+#       because paths mean-revert so strongly that F_T ≈ K for almost all paths
+#       (i.e. the spot swap rate mean-reverts toward K, not away from it)
+#
+# This script checks both by:
+#   1. Printing the distribution of F_T at each expiry for the 1Y tenor
+#   2. Comparing F_T mean vs K (ATM strike)
+#   3. Computing E[max(F_T - K, 0)] directly and converting to vol
+#   4. Checking whether F_T std matches the spot swap std from v3
+# =============================================================================
+
+import argparse
 import math
 import os
 import sys
-import time
-import pandas as pd
 
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 
 try:
-    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    REPO_ROOT = os.getcwd()
+    SCRIPT_DIR = os.getcwd()
 
-PROJECT_ROOT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
-THESIS_ROOT = os.path.abspath(os.path.join(REPO_ROOT, "..", ".."))
+CODE_ROOT   = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+THESIS_ROOT = os.path.abspath(os.path.join(CODE_ROOT,  ".."))
+for p in [THESIS_ROOT, CODE_ROOT, SCRIPT_DIR]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-if THESIS_ROOT not in sys.path:
-    sys.path.insert(0, THESIS_ROOT)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
+DEFAULT_CHECKPOINT = (
+    r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults"
+    r"\dim2_stable\ep300\checkpoint_dim2_ep300.pt"
+)
+DEFAULT_CCY  = "EUR"
+DEFAULT_DATE = "2010-10-29"
+N_PATHS      = 2000
+N_STEPS      = 120
+DT           = 1 / 12
 
 from Code import config
 from Code.model.full_model import FullModel
-from Code.load_swapdata import my_data
 from Code.model.sigma_matrix import L_from_sigmas_rhos
+from Code.load_swapdata import my_data
+from Code.Pricing.simulate_model import (
+    resolve_curve_index, simulate_latent_paths, compute_discount_paths
+)
+from Code.Pricing.pricing import (
+    time0_forward_swap_and_annuity,
+    swap_from_discount_curve_at_expiry,
+)
+from scipy.optimize import brentq
 
-# ==========================================================
-# Checkpoint switch
-# ==========================================================
-checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep200\checkpoint_dim2_ep200.pt"
 
-
-def load_and_setup_model(device, checkpoint_path, latent_dim=2, use_double=True):
-    state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
-
-    model = FullModel(latent_dim=latent_dim).to(device)
-    model.load_state_dict(state_dict, strict=True)
-
-    if use_double:
-        model = model.double()
-
+def load_model(checkpoint_path, device):
+    raw   = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    state = raw["model_state_dict"] if (isinstance(raw, dict) and "model_state_dict" in raw) else raw
+    model = FullModel(latent_dim=2).to(device).double()
+    model.load_state_dict(state, strict=False)
     model.eval()
-
-    print(f"Loaded model from {checkpoint_path}")
-    print(f"Model dtype: {next(model.parameters()).dtype}")
     return model
 
 
-@torch.no_grad()
-def get_mu(model, z):
-    return model.K(z)
+def bachelier_price(F, K, sigma, T, A):
+    """Normal (Bachelier) swaption price."""
+    if sigma <= 0 or T <= 0:
+        return A * max(F - K, 0.0)
+    d  = (F - K) / (sigma * math.sqrt(T))
+    from scipy.stats import norm
+    return A * (sigma * math.sqrt(T) * (d * norm.cdf(d) + norm.pdf(d)))
 
 
-@torch.no_grad()
-def get_L(model, z):
-    sigmas, rhos = model.H(z)
-    return L_from_sigmas_rhos(sigmas, rhos)
+def implied_bachelier(price, F, K, T, A, payer=True):
+    """Invert Bachelier price to get normal vol."""
+    intrinsic = A * max(F - K, 0.0) if payer else A * max(K - F, 0.0)
+    if price <= intrinsic + 1e-14:
+        return 0.0
+    def obj(sigma):
+        return bachelier_price(F, K, sigma, T, A) - price
+    try:
+        return brentq(obj, 1e-8, 10.0, xtol=1e-12, maxiter=200)
+    except Exception:
+        return float("nan")
 
 
-@torch.no_grad()
-def get_r(model, z):
-    r = model.R(z)
-    if r.ndim == 2 and r.shape[-1] == 1:
-        r = r.squeeze(-1)
-    return r
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--checkpoint", default=DEFAULT_CHECKPOINT)
+    parser.add_argument("--ccy",        default=DEFAULT_CCY)
+    parser.add_argument("--date",       default=DEFAULT_DATE)
+    args = parser.parse_args()
 
+    device = torch.device("cpu")
+    torch.manual_seed(1234)
+    np.random.seed(1234)
 
-def recalibrate_z0(model, S0, device, n_steps=400, lr=5e-3, tol=1e-10):
-    """
-    Find z* = argmin_z ||S_hat(z) - S_market||²
+    print("="*70)
+    print("DIAGNOSTIC v4 — Forward swap distribution at expiry")
+    print("="*70)
 
-    After pricing continuation training, the decoder G may have drifted so
-    that encoder(S_market) no longer gives back S_market when decoded.
-    This function finds the latent state that exactly reproduces the observed
-    market swap curve, warm-started from the encoder output.
+    model = load_model(args.checkpoint, device)
 
-    This is the correct approach for a spot-starting swaption comparison:
-    the model must be calibrated to today's market curve before simulating.
-
-    Args:
-        model:    FullModel (eval mode)
-        S0:       (1, n_tenors) observed market swap rates
-        device:   torch device
-        n_steps:  max optimisation iterations
-        lr:       Adam learning rate
-        tol:      convergence tolerance on loss change
-
-    Returns:
-        z_star:   (1, latent_dim) recalibrated latent state (detached)
-    """
-    from Code.utils.rates import par_swap_from_discount
-
-    model.eval()
+    meta, X_tensor, *_ = my_data(ccy_filter=args.ccy)
     dtype = next(model.parameters()).dtype
-    S = S0.to(device=device, dtype=dtype)
-    if S.dim() == 1:
-        S = S.unsqueeze(0)
+    X_tensor = X_tensor.to(dtype=dtype)
 
-    # Warm-start from encoder
+    idx = resolve_curve_index(meta, as_of_date=args.date)
+    S0  = X_tensor[idx:idx+1].to(device=device, dtype=dtype)
     with torch.no_grad():
-        z_init = model.encoder(S).clone()
+        z0 = model.encoder(S0)
 
-    z = z_init.clone().detach().requires_grad_(True)
-    optim = torch.optim.Adam([z], lr=lr)
-
-    prev_loss = float("inf")
-    for step in range(n_steps):
-        optim.zero_grad()
-        P_mkt = model.decode_from_z(z, tau=None)  # (1, tau_max)
-        S_hat = par_swap_from_discount(P_mkt, model.tenors)  # (1, n_tenors)
-        loss = torch.nn.functional.mse_loss(S_hat, S)
-        loss.backward()
-        optim.step()
-
-        if abs(prev_loss - loss.item()) < tol:
-            break
-        prev_loss = loss.item()
-
-    rmse_bp = float(loss.item() ** 0.5) * 10000
-    z_enc = z_init.detach().cpu().numpy().flatten()
-    z_cal = z.detach().cpu().numpy().flatten()
-    print(f"  Recalibration: {step + 1} steps  RMSE={rmse_bp:.4f} bp")
-    print(f"  z_encoder  : {z_enc}")
-    print(f"  z_calibrated: {z_cal}")
-
-    return z.detach()
-
-
-def compute_latent_statistics(model, X_tensor, device, latent_dim):
-    z_train_list = []
-
+    # -------------------------------------------------------------------------
+    # Decode initial curve to get F0 and A0 for each (expiry, tenor)
+    # -------------------------------------------------------------------------
     with torch.no_grad():
-        for i in range(0, X_tensor.shape[0], 256):
-            batch = X_tensor[i:min(i + 256, X_tensor.shape[0])].to(device=device, dtype=next(model.parameters()).dtype)
-            z_batch = model.encoder(batch)
-            z_train_list.append(z_batch)
+        _, aux0 = model.decode_from_z(z0, tau=None, do_arb_checks=False, return_aux=True)
+    P_full_0 = aux0["P_full"].detach().cpu().numpy()    # (1, tau_max+1)
+    tau_grid = aux0["tau_grid"].detach().cpu().numpy()  # (tau_max+1,)
 
-    z_train = torch.cat(z_train_list, dim=0)
-    z_train_mean = z_train.mean(dim=0).detach()
-    z_train_cov = torch.cov(z_train.t()).detach()
-    z_train_std = z_train.std(dim=0).detach()
+    print(f"\n  z0 = {z0.detach().cpu().numpy().flatten()}")
+    print(f"  tau_grid range: [{tau_grid.min():.2f}, {tau_grid.max():.2f}]")
 
-    print("Training latent cloud mean:", z_train_mean.cpu().numpy())
-    print("Training latent cloud std: ", z_train_std.cpu().numpy())
-    for d in range(latent_dim):
-        print(f"  z[{d}] range = [{z_train[:, d].min().item():.6f}, {z_train[:, d].max().item():.6f}]")
-
-    return z_train_mean, z_train_cov, z_train_std
-
-
-def simulate_latent_paths(
-        model,
-        z0,
-        n_paths,
-        n_steps,
-        dt,
-        device,
-        diffusion_scale=1.0,
-):
-    if z0.dim() != 2 or z0.shape[0] != 1:
-        raise ValueError(f"Expected z0 shape (1,d), got {tuple(z0.shape)}")
-
-    if diffusion_scale < 0:
-        raise ValueError("diffusion_scale must be non-negative")
-
-    d = z0.shape[1]
-    sqrt_dt = math.sqrt(dt)
-
-    z = z0.repeat(n_paths, 1).to(device)
-
-    z_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=z.dtype)
-    r_paths = torch.empty((n_paths, n_steps + 1), device=device, dtype=z.dtype)
-    mu_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=z.dtype)
-    L_paths = torch.empty((n_paths, n_steps + 1, d, d), device=device, dtype=z.dtype)
-
-    z_paths[:, 0, :] = z
-    r_paths[:, 0] = get_r(model, z)
-    mu_paths[:, 0, :] = get_mu(model, z)
-    L_paths[:, 0, :, :] = get_L(model, z)
-
-    for t in range(n_steps):
-        B = get_L(model, z)
-        dW = torch.randn(n_paths, B.shape[-1], device=device, dtype=z.dtype) * sqrt_dt
-        shock = diffusion_scale * torch.bmm(B, dW.unsqueeze(-1)).squeeze(-1)
-        drift = get_mu(model, z) * dt
-
-        z = z + drift + shock
-
-        z_paths[:, t + 1, :] = z
-        r_paths[:, t + 1] = get_r(model, z)
-        mu_paths[:, t + 1, :] = get_mu(model, z)
-        L_paths[:, t + 1, :, :] = get_L(model, z)
-
-    return z_paths, r_paths, mu_paths, L_paths
-
-
-def compute_discount_paths(r_paths: torch.Tensor, dt: float, method: str = "trapezoid") -> torch.Tensor:
-    if dt <= 0:
-        raise ValueError("dt must be positive")
-    if r_paths.ndim != 2:
-        raise ValueError(f"Expected r_paths to have shape (n_paths, n_steps+1), got {tuple(r_paths.shape)}")
-
-    n_paths, n_times = r_paths.shape
-    if n_times < 2:
-        return torch.ones_like(r_paths)
-
-    if method == "left":
-        increments = r_paths[:, :-1] * dt
-    elif method == "trapezoid":
-        increments = 0.5 * (r_paths[:, :-1] + r_paths[:, 1:]) * dt
-    else:
-        raise ValueError("method must be 'left' or 'trapezoid'")
-
-    int_r = torch.cumsum(increments, dim=1)
-    disc = torch.ones((n_paths, n_times), device=r_paths.device, dtype=r_paths.dtype)
-    disc[:, 1:] = torch.exp(-int_r)
-    return disc
-
-
-def plot_simulation_results(results, n_paths_to_plot=20):
-    """
-    Plot the simulation results including latent paths, interest rates, and discount curves.
-
-    Args:
-        results: Dictionary returned from run_simulation
-        n_paths_to_plot: Number of paths to plot (default: 20)
-    """
-    z_paths = results["z_paths"].cpu().numpy()
-    r_paths = results["r_paths"].cpu().numpy()
-    discount_paths = results["discount_paths"].cpu().numpy()
-    P_full_paths = results["P_full_paths"].cpu().numpy()
-    times = results["times"]
-    z0 = results["z0"].cpu().numpy().flatten()
-    z_train_mean = results["z_train_mean"].cpu().numpy()
-    z_train_std = results["z_train_std"].cpu().numpy()
-
-    n_paths_plot = min(n_paths_to_plot, z_paths.shape[0])
-
-    fig = plt.figure(figsize=(14, 10))
-
-    # Plot 1: Latent state paths
-    n_latent = z_paths.shape[2]
-    for d in range(n_latent):
-        ax = plt.subplot(2, 2, d + 1)
-        for i in range(n_paths_plot):
-            ax.plot(times, z_paths[i, :, d], alpha=0.5, linewidth=0.8)
-        ax.axhline(z0[d], color='red', linestyle='--', linewidth=2, label='z0')
-        ax.axhline(z_train_mean[d], color='green', linestyle='--', linewidth=2, label='Train mean')
-        ax.fill_between(
-            times,
-            z_train_mean[d] - z_train_std[d],
-            z_train_mean[d] + z_train_std[d],
-            alpha=0.2,
-            color='green',
-            label='Train ±1 std'
-        )
-        ax.set_xlabel("Time (years)")
-        ax.set_ylabel(f"z[{d}]")
-        ax.set_title(f"Latent State z[{d}]")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.show()
-
-    # Plot 2: Short rate paths
-    fig, ax = plt.subplots(figsize=(12, 6))
-    for i in range(n_paths_plot):
-        ax.plot(times, r_paths[i, :] * 100, alpha=0.5, linewidth=0.8)
-    ax.axhline(r_paths[0, 0] * 100, color='red', linestyle='--', linewidth=2, label='Initial r')
-    ax.set_xlabel("Time (years)")
-    ax.set_ylabel("Short Rate (%)")
-    ax.set_title("Short Rate Paths")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-    # Plot 3: Discount factor paths
-    fig, ax = plt.subplots(figsize=(12, 6))
-    for i in range(n_paths_plot):
-        ax.plot(times, discount_paths[i, :], alpha=0.5, linewidth=0.8)
-    ax.set_xlabel("Time (years)")
-    ax.set_ylabel("Discount Factor")
-    ax.set_title("Stochastic Discount Paths")
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-    # Plot 4: Discount curve term structure at different times
-    fig, ax = plt.subplots(figsize=(12, 6))
-    tau_grid = results["tau_grid"].cpu().numpy()
-    time_indices = np.linspace(0, P_full_paths.shape[1] - 1, min(5, P_full_paths.shape[1]), dtype=int)
-
-    for t_idx in time_indices:
-        time_val = times[t_idx]
-        paths_at_t = P_full_paths[:n_paths_plot, t_idx, :]
-        mean_at_t = paths_at_t.mean(axis=0)
-        std_at_t = paths_at_t.std(axis=0)
-
-        ax.plot(tau_grid, mean_at_t, marker='o', label=f't={time_val:.2f}', linewidth=2)
-        ax.fill_between(
-            tau_grid,
-            mean_at_t - std_at_t,
-            mean_at_t + std_at_t,
-            alpha=0.2
-        )
-
-    ax.set_xlabel("Maturity (years)")
-    ax.set_ylabel("Discount Factor")
-    ax.set_title("Term Structure of Discount Curves")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
-def resolve_curve_index(meta, as_of_date=0):
-    if as_of_date == 0:
-        return 0
-
-    if "as_of_date" not in meta.columns:
-        raise KeyError("meta does not contain column 'as_of_date'")
-
-    target_date = pd.Timestamp(as_of_date).normalize()
-    meta_dates = pd.to_datetime(meta["as_of_date"]).dt.normalize()
-
-    matches = np.where(meta_dates.values == target_date.to_datetime64())[0]
-
-    if len(matches) == 0:
-        raise ValueError(f"No row found for as_of_date={target_date.date()}")
-
-    if len(matches) > 1:
-        print(f"Found {len(matches)} rows for {target_date.date()}; using first match.")
-
-    return int(matches[0])
-
-
-def run_simulation(
-        use="bbg",
-        latent_dim=2,
-        checkpoint_path=None,
-        n_paths=100,
-        n_steps=24,
-        dt=1 / 12,
-        as_of_date=None,
-        ccy_filter="",
-        diffusion_scale=1.0,
-        seed=1234,
-        device=None,
-        show_plot=True,
-):
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    print(f"Using device: {device}")
-    print(f"Seed: {seed}")
-
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-
-    model = load_and_setup_model(
-        device=device,
-        checkpoint_path=checkpoint_path,
-        latent_dim=latent_dim,
-        use_double=True,
+    # -------------------------------------------------------------------------
+    # Simulate paths
+    # -------------------------------------------------------------------------
+    print(f"\n  Simulating {N_PATHS} paths x {N_STEPS} steps...")
+    z_paths, r_paths, _, _ = simulate_latent_paths(
+        model=model, z0=z0, n_paths=N_PATHS, n_steps=N_STEPS, dt=DT, device=device
     )
+    discount_paths = compute_discount_paths(r_paths, dt=DT)
 
-    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(
-        use=use,
-        ccy_filter=ccy_filter,
-    )
+    # Decode P_full at each annual step (only need annual steps)
+    annual_steps = {1: 12, 5: 60, 10: 120}   # expiry_yr -> step_index
 
-    model_dtype = next(model.parameters()).dtype
-    X_tensor = X_tensor.to(dtype=model_dtype)
-    X_tensor_full = X_tensor_full.to(dtype=model_dtype)
+    print(f"\n{'='*70}")
+    print("FORWARD SWAP RATE DISTRIBUTION AT EXPIRY")
+    print(f"{'='*70}")
+    print(f"  K = F_0(expiry, tenor) = ATM strike set from t=0 initial curve")
+    print()
 
-    print(f"SCALE_IS_PERCENT from my_data(): {SCALE_IS_PERCENT}")
+    for tenor in [1, 5, 10]:
+        print(f"  Tenor = {tenor}Y")
+        print(f"  {'Expiry':>8}  {'K (bp)':>8}  {'F_T mean (bp)':>14}  "
+              f"{'F_T std (bp)':>13}  {'E[payoff]':>11}  {'impl vol (bp)':>14}  "
+              f"{'F_T≈K? (%)':>12}")
+        print(f"  {'-'*8}  {'-'*8}  {'-'*14}  {'-'*13}  {'-'*11}  {'-'*14}  {'-'*12}")
 
-    start_idx = resolve_curve_index(meta, as_of_date=as_of_date)
+        for expiry_yr, exp_step in sorted(annual_steps.items()):
 
-    S0 = X_tensor[start_idx:start_idx + 1].to(device=device, dtype=model_dtype)
-    meta_row = meta.iloc[start_idx]
-    print(f"Initial curve metadata row:\n{meta_row}")
-
-    # Training latent statistics
-    z_train_mean, z_train_cov, z_train_std = compute_latent_statistics(model, X_tensor, device, latent_dim)
-
-    # Initial latent state — recalibrate z0 so that decode(z0) matches market rates.
-    # After pricing continuation training, the decoder G may have drifted, so
-    # encoder(S_market) no longer reproduces S_market when decoded.
-    # Recalibration finds z* = argmin_z ||S_hat(z) - S_market||² (warm-started
-    # from the encoder), ensuring the simulation starts on the correct market curve.
-    print("Recalibrating z0 to market curve ...")
-    z0 = recalibrate_z0(model, S0, device)
-
-    print(f"Initial latent state z0 (calibrated): {z0.detach().cpu().numpy().flatten()}")
-
-    # Decode initial curve directly from latent state using FullModel decoder
-    with torch.no_grad():
-        _, aux0 = model.decode_from_z(
-            z0,
-            tau=None,
-            do_arb_checks=False,
-            return_aux=True,
-        )
-
-    P_full_0 = aux0["P_full"]  # shape (1, tau_max+1)
-    P_mkt_0 = aux0["P_mkt"]  # shape (1, tau_max)
-    S_hat_0 = aux0["S_hat"]  # shape (1, len(tenors))
-    tau_grid = aux0["tau_grid"]
-
-    print(
-        f"Initial decoded discount curve range: "
-        f"[{P_full_0.min().item():.6f}, {P_full_0.max().item():.6f}]"
-    )
-
-    print(
-        f"Simulating {n_paths} paths with {n_steps} steps "
-    )
-
-    t0 = time.time()
-    z_paths, r_paths, mu_paths, L_paths = simulate_latent_paths(
-        model=model,
-        z0=z0,
-        n_paths=n_paths,
-        n_steps=n_steps,
-        dt=dt,
-        device=device,
-        diffusion_scale=diffusion_scale,
-    )
-    print(f"Simulation completed in {time.time() - t0:.2f}s.")
-
-    discount_paths = compute_discount_paths(r_paths, dt=dt, method="trapezoid")
-    print(
-        f"Built path discount factors: D_t range = "
-        f"[{discount_paths.min().item():.6f}, {discount_paths.max().item():.6f}]"
-    )
-
-    n_paths, n_times, d = z_paths.shape
-    z_flat = z_paths.reshape(-1, d)
-
-    # Decode in chunks to avoid OOM on large simulations.
-    # A single batch of n_paths*n_times rows requires ~6 GB for vmap Hessians.
-    DECODE_CHUNK = 256
-    P_full_list, P_mkt_list, S_hat_list = [], [], []
-    tau_grid = None
-
-    with torch.no_grad():
-        for i in range(0, z_flat.shape[0], DECODE_CHUNK):
-            z_chunk = z_flat[i:i + DECODE_CHUNK]
-            _, aux_chunk = model.decode_from_z(
-                z_chunk,
-                tau=None,
-                do_arb_checks=False,
-                return_aux=True,
+            # ATM strike K from t=0 curve
+            q0 = time0_forward_swap_and_annuity(
+                P_full_0, tau_grid, expiry=expiry_yr, tenor=tenor, accrual=1.0
             )
-            P_full_list.append(aux_chunk["P_full"])
-            P_mkt_list.append(aux_chunk["P_mkt"])
-            if aux_chunk["S_hat"] is not None:
-                S_hat_list.append(aux_chunk["S_hat"])
-            if tau_grid is None:
-                tau_grid = aux_chunk["tau_grid"]
+            K  = q0["forward_swap"]
+            A0 = q0["annuity"]
 
-    P_full_flat = torch.cat(P_full_list, dim=0)
-    P_mkt_flat = torch.cat(P_mkt_list, dim=0)
-    S_hat_flat = torch.cat(S_hat_list, dim=0) if S_hat_list else None
+            # Extract z at expiry step for all paths
+            z_at_exp = z_paths[:, exp_step, :]   # (N_PATHS, d)
 
-    P_full_paths = P_full_flat.reshape(n_paths, n_times, -1)
-    P_mkt_paths = P_mkt_flat.reshape(n_paths, n_times, -1)
+            # Decode P_full for all paths at expiry
+            with torch.no_grad():
+                _, aux_exp = model.decode_from_z(
+                    z_at_exp, tau=None, do_arb_checks=False, return_aux=True
+                )
+            P_full_exp = aux_exp["P_full"].detach().cpu().numpy()   # (N_PATHS, tau_max+1)
+            tau_grid_exp = aux_exp["tau_grid"].detach().cpu().numpy()
 
-    if S_hat_flat is not None:
-        S_hat_paths = S_hat_flat.reshape(n_paths, n_times, -1)
-    else:
-        S_hat_paths = None
+            # Compute spot-starting swap rate at expiry for each path
+            swap_rates = []
+            annuities  = []
+            for pi in range(N_PATHS):
+                try:
+                    res = swap_from_discount_curve_at_expiry(
+                        P_full_exp[pi], tau_grid_exp, tenor=tenor, accrual=1.0
+                    )
+                    swap_rates.append(res["swap_rate"])
+                    annuities.append(res["annuity"])
+                except Exception:
+                    swap_rates.append(float("nan"))
+                    annuities.append(float("nan"))
 
-    print(
-        f"Decoded latent paths to discount curves: "
-        f"P_full range = [{P_full_paths.min().item():.6f}, {P_full_paths.max().item():.6f}]"
-    )
+            F_T = np.array(swap_rates)
+            A_T = np.array(annuities)
+            valid = np.isfinite(F_T) & np.isfinite(A_T)
+            F_T = F_T[valid]
+            A_T = A_T[valid]
 
-    times = np.arange(n_steps + 1) * dt
-    annual_indices = list(range(1, P_full_paths.shape[-1]))  # tau = 1,2,...,tau_max
-    bundle_path = None
+            # Discount factors to expiry for valid paths
+            D_T = discount_paths[:, exp_step].detach().cpu().numpy()[valid]
 
-    results_dict = {
-        "model": model,
-        "meta": meta,
-        "meta_full": meta_full,
-        "S0": S0,
-        "meta_row": meta_row,
-        "z0": z0,
-        "z_paths": z_paths,
-        "r_paths": r_paths,
-        "mu_paths": mu_paths,
-        "L_paths": L_paths,
-        "discount_paths": discount_paths,  # pathwise money-market discounting
-        "P_full_0": P_full_0,  # initial cross-sectional curve incl tau=0
-        "P_mkt_0": P_mkt_0,  # initial cross-sectional curve at 1..tau_max
-        "S_hat_0": S_hat_0,  # reconstructed swaps at t=0
-        "P_full_paths": P_full_paths,  # decoded from simulated z_paths
-        "P_mkt_paths": P_mkt_paths,  # decoded from simulated z_paths
-        "S_hat_paths": S_hat_paths,  # swap curves decoded from simulated z_paths
-        "times": times,
-        "z_train_mean": z_train_mean,
-        "z_train_cov": z_train_cov,
-        "z_train_std": z_train_std,
-        "tenors": tenors,
-        "tau_grid": tau_grid,
-        "annual_indices": annual_indices,
-        "bundle_path": bundle_path,
-    }
+            # Payer payoff: max(F_T - K, 0) * A_T, discounted to t=0
+            payoff  = np.maximum(F_T - K, 0.0) * A_T
+            pv      = D_T * payoff
+            mc_price = pv.mean()
 
-    if show_plot:
-        plot_simulation_results(results_dict)
+            # Implied vol (use A0 as annuity for Bachelier — standard convention)
+            F0_val = float(K)   # ATM: F0 = K by construction
+            iv = implied_bachelier(mc_price, F0_val, K, expiry_yr, A0)
+            iv_bp = iv * 10000
 
-    return results_dict
+            # Diagnostics
+            F_T_mean_bp = F_T.mean() * 10000
+            F_T_std_bp  = F_T.std()  * 10000
+            K_bp        = K * 10000
+            pct_near_K  = np.mean(np.abs(F_T - K) < 0.0005) * 100  # within 5 bp of K
+
+            print(f"  {expiry_yr:>6}Y  {K_bp:>8.1f}  {F_T_mean_bp:>14.1f}  "
+                  f"{F_T_std_bp:>13.1f}  {mc_price:>11.6f}  {iv_bp:>14.2f}  "
+                  f"{pct_near_K:>11.1f}%")
+
+        print()
+
+    # -------------------------------------------------------------------------
+    # Key check: does F_T mean ≈ K (martingale property)?
+    # -------------------------------------------------------------------------
+    print("="*70)
+    print("MARTINGALE CHECK — F_T mean should ≈ K for ATM swaptions")
+    print("="*70)
+    print("  (Under the annuity measure, F_T is a martingale, so E[F_T] = F_0 = K)")
+    print("  Large drift in F_T mean -> model is not martingale -> pricing error")
+    print()
+
+    for expiry_yr, exp_step in sorted(annual_steps.items()):
+        z_at_exp = z_paths[:, exp_step, :]
+        with torch.no_grad():
+            _, aux_exp = model.decode_from_z(
+                z_at_exp, tau=None, do_arb_checks=False, return_aux=True
+            )
+        P_full_exp = aux_exp["P_full"].detach().cpu().numpy()
+        tau_grid_exp = aux_exp["tau_grid"].detach().cpu().numpy()
+
+        for tenor in [1, 5]:
+            q0 = time0_forward_swap_and_annuity(P_full_0, tau_grid, expiry_yr, tenor)
+            K  = q0["forward_swap"]
+
+            rates = []
+            for pi in range(N_PATHS):
+                try:
+                    res = swap_from_discount_curve_at_expiry(
+                        P_full_exp[pi], tau_grid_exp, tenor=tenor
+                    )
+                    rates.append(res["swap_rate"])
+                except Exception:
+                    pass
+
+            F_T_arr = np.array(rates)
+            drift_bp = (F_T_arr.mean() - K) * 10000
+            print(f"  {expiry_yr}Y×{tenor}Y:  K={K*10000:.1f} bp,  "
+                  f"E[F_T]={F_T_arr.mean()*10000:.1f} bp,  "
+                  f"drift={drift_bp:+.1f} bp,  std={F_T_arr.std()*10000:.1f} bp")
+
+    print()
+    print("="*70)
+    print("VERDICT")
+    print("="*70)
+    print()
+    print("  If F_T std is large (e.g. 80+ bp) but implied vol is small:")
+    print("    -> The payoff E[max(F_T - K, 0)] is small because F_T mean")
+    print("       has drifted far above K (paths mostly in-the-money -> low optionality)")
+    print("       OR far below K (paths mostly out-of-the-money).")
+    print("    -> Check the 'drift' column in the martingale check above.")
+    print()
+    print("  If drift >> 0: F_T mean > K, paths mostly in-the-money,")
+    print("    payoff ≈ (F_T_mean - K) * A — almost deterministic, low vol.")
+    print("  If drift << 0: F_T mean < K, paths mostly out-of-the-money,")
+    print("    payoff ≈ 0 for most paths, implied vol collapses.")
 
 
 if __name__ == "__main__":
-    run_simulation(checkpoint_path=checkpoint_path, ccy_filter="EUR", show_plot=False)
+    main()

@@ -236,19 +236,17 @@ def comparison_table(
 
 
 def main():
-    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_continuation\final_checkpoint.pt"
-
+    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_simple_v2\final_checkpoint.pt"
 
     df_compare = comparison_table(
         checkpoint_path=checkpoint_path,
         ccy="EUR",
-        n_paths=5000,
+        n_paths=2000,
         n_steps=120,
         dt=1 / 12,
         payer=True,
         accrual=1.0,
         notional=1.0,
-        max_rows= 9,
         vol_in_bp=True,
     )
 
