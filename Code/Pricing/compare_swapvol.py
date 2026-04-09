@@ -236,7 +236,7 @@ def comparison_table(
 
 
 def main():
-    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\pricing_simple_v2\final_checkpoint.pt"
+    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep300\checkpoint_dim2_ep300.pt"
 
     df_compare = comparison_table(
         checkpoint_path=checkpoint_path,
@@ -248,6 +248,7 @@ def main():
         accrual=1.0,
         notional=1.0,
         vol_in_bp=True,
+        max_rows = 100
     )
 
     print("\nComparison table:")

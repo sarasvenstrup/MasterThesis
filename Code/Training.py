@@ -285,6 +285,33 @@ else:
     print("No RMSE history to plot (avg_rmse_bps_hist empty).")
 
 # ==========================================================
+# Save latent coordinates (z_1, z_2) for scatter plotting
+# ==========================================================
+
+@torch.no_grad()
+def get_latent(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    was_training = model.training
+    model.eval()
+    zs = []
+    for i in range(0, X.shape[0], batch_size):
+        xb = X[i:i + batch_size].to(device)
+        z = model.encoder(xb)
+        zs.append(z.detach().cpu())
+    if was_training:
+        model.train()
+    return torch.cat(zs, dim=0)
+
+Z = get_latent(model, X_tensor, batch_size=EVAL_BATCH_SIZE)  # (N, LATENT_DIM)
+
+df_latent = meta.copy().reset_index(drop=True)
+df_latent["z_1"] = Z[:, 0].numpy()
+df_latent["z_2"] = Z[:, 1].numpy()
+
+latent_csv_path = os.path.join(FIGURES_DIR, f"latent_z_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.csv")
+df_latent.to_csv(latent_csv_path, index=False)
+print("Saved latent CSV:", latent_csv_path)
+
+# ==========================================================
 # Save trained model checkpoint
 # ==========================================================
 CHECKPOINT_DIR = os.path.join(REPO_ROOT, "..", "checkpoints")

@@ -31,8 +31,7 @@ from Code.model.sigma_matrix import L_from_sigmas_rhos
 # ==========================================================
 # Checkpoint switch
 # ==========================================================
-checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep200\checkpoint_dim2_ep200.pt"
-
+checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep3500\checkpoint_dim2_ep3500.pt"
 
 def load_and_setup_model(device, checkpoint_path, latent_dim=2, use_double=True):
     state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
