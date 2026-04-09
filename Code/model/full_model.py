@@ -145,9 +145,7 @@ class FullModel(nn.Module):
             + (B_vals ** 2) * gamma
         )
 
-        sigma_bar = 0.006
-        tau_safe = torch.clamp(tau.unsqueeze(0), min=1e-8)
-        SR_tau = R_tau / (tau_safe * sigma_bar)
+        SR_tau = R_tau
 
         return {
             "R_tau": R_tau[:, 1:],

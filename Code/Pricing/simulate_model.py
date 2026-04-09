@@ -31,7 +31,8 @@ from Code.model.sigma_matrix import L_from_sigmas_rhos
 # ==========================================================
 # Checkpoint switch
 # ==========================================================
-checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep3500\checkpoint_dim2_ep3500.pt"
+checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_baseline\ep3500\checkpoint_dim2_ep3500.pt"
+
 
 def load_and_setup_model(device, checkpoint_path, latent_dim=2, use_double=True):
     state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -91,13 +92,13 @@ def compute_latent_statistics(model, X_tensor, device, latent_dim):
 
 
 def simulate_latent_paths(
-    model,
-    z0,
-    n_paths,
-    n_steps,
-    dt,
-    device,
-    diffusion_scale=1.0,
+        model,
+        z0,
+        n_paths,
+        n_steps,
+        dt,
+        device,
+        diffusion_scale=1.0,
 ):
     if z0.dim() != 2 or z0.shape[0] != 1:
         raise ValueError(f"Expected z0 shape (1,d), got {tuple(z0.shape)}")
@@ -153,10 +154,11 @@ def compute_discount_paths(r_paths: torch.Tensor, dt: float) -> torch.Tensor:
     disc[:, 1:] = torch.exp(-int_r)
     return disc
 
+
 def plot_simulation_results(results, n_paths_to_plot=20):
     """
     Plot the simulation results including latent paths, interest rates, and discount curves.
-    
+
     Args:
         results: Dictionary returned from run_simulation
         n_paths_to_plot: Number of paths to plot (default: 20)
@@ -169,11 +171,11 @@ def plot_simulation_results(results, n_paths_to_plot=20):
     z0 = results["z0"].cpu().numpy().flatten()
     z_train_mean = results["z_train_mean"].cpu().numpy()
     z_train_std = results["z_train_std"].cpu().numpy()
-    
+
     n_paths_plot = min(n_paths_to_plot, z_paths.shape[0])
-    
+
     fig = plt.figure(figsize=(14, 10))
-    
+
     # Plot 1: Latent state paths
     n_latent = z_paths.shape[2]
     for d in range(n_latent):
@@ -195,10 +197,10 @@ def plot_simulation_results(results, n_paths_to_plot=20):
         ax.set_title(f"Latent State z[{d}]")
         ax.legend()
         ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.show()
-    
+
     # Plot 2: Short rate paths
     fig, ax = plt.subplots(figsize=(12, 6))
     for i in range(n_paths_plot):
@@ -211,7 +213,7 @@ def plot_simulation_results(results, n_paths_to_plot=20):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
-    
+
     # Plot 3: Discount factor paths
     fig, ax = plt.subplots(figsize=(12, 6))
     for i in range(n_paths_plot):
@@ -222,18 +224,18 @@ def plot_simulation_results(results, n_paths_to_plot=20):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
-    
+
     # Plot 4: Discount curve term structure at different times
     fig, ax = plt.subplots(figsize=(12, 6))
     tau_grid = results["tau_grid"].cpu().numpy()
     time_indices = np.linspace(0, P_full_paths.shape[1] - 1, min(5, P_full_paths.shape[1]), dtype=int)
-    
+
     for t_idx in time_indices:
         time_val = times[t_idx]
         paths_at_t = P_full_paths[:n_paths_plot, t_idx, :]
         mean_at_t = paths_at_t.mean(axis=0)
         std_at_t = paths_at_t.std(axis=0)
-        
+
         ax.plot(tau_grid, mean_at_t, marker='o', label=f't={time_val:.2f}', linewidth=2)
         ax.fill_between(
             tau_grid,
@@ -241,7 +243,7 @@ def plot_simulation_results(results, n_paths_to_plot=20):
             mean_at_t + std_at_t,
             alpha=0.2
         )
-    
+
     ax.set_xlabel("Maturity (years)")
     ax.set_ylabel("Discount Factor")
     ax.set_title("Term Structure of Discount Curves")
@@ -249,6 +251,7 @@ def plot_simulation_results(results, n_paths_to_plot=20):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
+
 
 def resolve_curve_index(meta, as_of_date=0):
     if as_of_date == 0 or as_of_date is None:
@@ -270,19 +273,20 @@ def resolve_curve_index(meta, as_of_date=0):
 
     return int(matches[0])
 
+
 def run_simulation(
-    use="bbg",
-    latent_dim=2,
-    checkpoint_path=None,
-    n_paths=100,
-    n_steps=24,
-    dt=1 / 12,
-    as_of_date=None,
-    ccy_filter="",
-    diffusion_scale=1.0,
-    seed=1234,
-    device=None,
-    show_plot=True,
+        use="bbg",
+        latent_dim=2,
+        checkpoint_path=None,
+        n_paths=500,
+        n_steps=24,
+        dt=1 / 12,
+        as_of_date=None,
+        ccy_filter="",
+        diffusion_scale=1.0,
+        seed=1234,
+        device=None,
+        show_plot=True,
 ):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -335,9 +339,9 @@ def run_simulation(
             return_aux=True,
         )
 
-    P_full_0 = aux0["P_full"]   # shape (1, tau_max+1)
-    P_mkt_0 = aux0["P_mkt"]     # shape (1, tau_max)
-    S_hat_0 = aux0["S_hat"]     # shape (1, len(tenors))
+    P_full_0 = aux0["P_full"]  # shape (1, tau_max+1)
+    P_mkt_0 = aux0["P_mkt"]  # shape (1, tau_max)
+    S_hat_0 = aux0["S_hat"]  # shape (1, len(tenors))
     tau_grid = aux0["tau_grid"]
 
     print(
@@ -397,6 +401,53 @@ def run_simulation(
     )
 
     times = np.arange(n_steps + 1) * dt
+
+    # ==========================================================
+    # Save simulation latent summary (mean + percentiles + subset)
+    # ==========================================================
+    z_np = z_paths.cpu().numpy()  # (n_paths, n_times, 2)
+
+    # --- Summary statistics across paths, per timestep ---
+    percentiles = [5, 25, 50, 75, 95]
+    rows = []
+    for t_idx, t_val in enumerate(times):
+        z1 = z_np[:, t_idx, 0]
+        z2 = z_np[:, t_idx, 1]
+        row = {"time": t_val}
+        for p in percentiles:
+            row[f"z1_p{p}"] = np.percentile(z1, p)
+            row[f"z2_p{p}"] = np.percentile(z2, p)
+        row["z1_mean"] = z1.mean()
+        row["z2_mean"] = z2.mean()
+        rows.append(row)
+
+    df_sim_summary = pd.DataFrame(rows)
+
+    # --- Small subset of raw paths for trajectory plotting ---
+    n_subset = min(50, n_paths)
+    rng = np.random.default_rng(seed)
+    subset_idx = rng.choice(n_paths, size=n_subset, replace=False)
+    z_subset = z_np[subset_idx]  # (50, n_times, 2)
+
+    path_ids = np.repeat(np.arange(n_subset), len(times))
+    df_sim_subset = pd.DataFrame({
+        "path": path_ids,
+        "time": np.tile(times, n_subset),
+        "z_1": z_subset[:, :, 0].flatten(),
+        "z_2": z_subset[:, :, 1].flatten(),
+    })
+
+    sim_csv_dir = os.path.dirname(checkpoint_path)
+    ccy_tag = ccy_filter if ccy_filter else "all"
+
+    summary_path = os.path.join(sim_csv_dir, f"latent_sim_summary_{ccy_tag}_npaths{n_paths}_nsteps{n_steps}.csv")
+    subset_path = os.path.join(sim_csv_dir, f"latent_sim_subset_{ccy_tag}_npaths{n_paths}_nsteps{n_steps}.csv")
+
+    df_sim_summary.to_csv(summary_path, index=False)
+    df_sim_subset.to_csv(subset_path, index=False)
+    print("Saved simulation summary:", summary_path)
+    print("Saved simulation subset: ", subset_path)
+
     annual_indices = list(range(1, P_full_paths.shape[-1]))  # tau = 1,2,...,tau_max
     bundle_path = None
 
@@ -432,6 +483,7 @@ def run_simulation(
         plot_simulation_results(results_dict)
 
     return results_dict
+
 
 if __name__ == "__main__":
     run_simulation(checkpoint_path=checkpoint_path, ccy_filter="EUR", show_plot=False)

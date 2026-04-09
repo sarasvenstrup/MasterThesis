@@ -236,7 +236,7 @@ def comparison_table(
 
 
 def main():
-    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep300\checkpoint_dim2_ep300.pt"
+    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep3500\checkpoint_dim2_ep3500.pt"
 
     df_compare = comparison_table(
         checkpoint_path=checkpoint_path,
