@@ -52,7 +52,7 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # --- User option: show plots interactively? ---
 SHOW_PLOTS = True  # Set to False to only save plots
 
-LATENT_DIM = 3
+LATENT_DIM = 2
 EPOCHS = 300
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
