@@ -36,7 +36,7 @@ print("Using device:", device)
 
 # ============================= Config ===============================
 USE = "bbg"
-LATENT_DIM = 4
+LATENT_DIM = 2
 
 # Recommended rolling window setup (baseline OOS)
 TRAIN_YEARS = 5
@@ -45,7 +45,7 @@ STEP_MONTHS = 6
 MIN_TRAIN_OBS = 200
 
 # Training setup per window
-EPOCHS = 2500
+EPOCHS = 3500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 TARGET_MSE = -1          # set >0 if you want early stop
@@ -213,6 +213,7 @@ cols = (
      "time_train_sec", "time_test_sec",
      "avg_rmse_bps"]
     + [f"rmse_bps_{ccy}" for ccy in ccy_order]
+    + [f"eig_real_{i+1}" for i in range(LATENT_DIM)]
 )
 pd.DataFrame(columns=cols).to_csv(oos_csv_path, index=False)
 print("OOS CSV:", oos_csv_path)
@@ -271,6 +272,15 @@ for k, test_start in enumerate(roll_starts):
     model, train_mse_hist, lr_hist = train_one_window(X_train)
     t1 = time.perf_counter()
 
+    # Eigenvalues of drift matrix M (real parts, sorted descending)
+    with torch.no_grad():
+        if hasattr(model.K, "lin"):
+            M = model.K.lin.weight.cpu()
+        else:
+            M = model.K.stable_matrix().cpu()
+        eig_reals = torch.linalg.eigvals(M).real.numpy()
+        eig_reals = np.sort(eig_reals)[::-1]  # descending
+
     # Test
     t2 = time.perf_counter()
     rmse_per_ccy, avg_rmse_bps, n_good, n_bad = rmse_bps_on_subset(model, X_test, meta_test)
@@ -298,6 +308,8 @@ for k, test_start in enumerate(roll_starts):
     }
     for ccy in ccy_order:
         row[f"rmse_bps_{ccy}"] = float(rmse_per_ccy.get(ccy, np.nan))
+    for i, ev in enumerate(eig_reals):
+        row[f"eig_real_{i+1}"] = round(float(ev), 6)
 
     pd.DataFrame([row], columns=cols).to_csv(oos_csv_path, mode="a", header=False, index=False)
 
