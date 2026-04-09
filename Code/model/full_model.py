@@ -11,7 +11,7 @@ from .K_mu import KMu as KMuBaseline
 from .R_short import RShort as RShortBaseline
 from .H_sigma import HSigma as HSigmaBaseline
 
-from .K_mu_stable import KMuStable
+from .K_mu_stable import KMuStable_old
 from .R_short_stable import RShortStable
 from .H_sigma_stable import HSigmaStable
 
@@ -76,12 +76,10 @@ class FullModel(nn.Module):
 
         # Use config.py as single source of truth
         if config.VARIANT == "stable":
-            self.K = KMuStable(
+            self.K = KMuStable_old(
                 latent_dim=latent_dim,
-                z_center_init=k_z_center_init,
+                bias=True,
                 epsilon=k_epsilon,
-                drift_scale_init=k_drift_scale_init,
-                learn_center=k_learn_center,
             )
             self.H = HSigmaStable(
                 latent_dim=latent_dim,
