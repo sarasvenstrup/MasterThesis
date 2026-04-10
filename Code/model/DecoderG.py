@@ -25,7 +25,7 @@ class DecoderG(nn.Module):
         return g
 
 class DecoderGStable(nn.Module):
-    def __init__(self, latent_dim: int, hidden_dim: int, bias: bool = True):
+    def __init__(self, latent_dim: int, hidden_dim: int, bias: bool = True, g_floor_init: float = 0.0):
         super().__init__()
         self.latent_dim = latent_dim
 
@@ -35,9 +35,7 @@ class DecoderGStable(nn.Module):
             nn.Linear(hidden_dim, 1, bias=bias),
         )
 
-        # Learnable per-nothing floor: G >= softplus(g_floor) + eps
-        # Initialised so floor ≈ 0.05 at the start of retraining
-        self.g_floor = nn.Parameter(torch.tensor(0.0))
+        self.g_floor = nn.Parameter(torch.tensor(float(g_floor_init)))
 
     def forward(self, z: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
         B, d = z.shape
@@ -49,6 +47,5 @@ class DecoderGStable(nn.Module):
 
         g = self.net(inp.reshape(-1, d + 1)).reshape(B, N)
 
-        # Shift up so G > softplus(g_floor) > 0 everywhere
         floor = torch.nn.functional.softplus(self.g_floor)
         return g + floor
