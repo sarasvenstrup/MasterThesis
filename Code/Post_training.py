@@ -67,7 +67,7 @@ from Code.load_swapdata import my_data
 # =============================================================================
 CHECKPOINT_PATH = (
     r"C:\Users\Bruger\PycharmProjects\MasterThesis"
-    r"\Figures\TrainingResults\dim2_baseline\ep3500\checkpoint_dim2_ep3500.pt"
+    r"\Figures\TrainingResults\dim2_stable\ep3500\checkpoint_dim2_ep3500.pt"
 )
 
 LATENT_DIM = 2
