@@ -31,9 +31,9 @@ class HSigmaStable(nn.Module):
         latent_dim: int,
         hidden_dim: int,
         bias: bool = False,
-        sigma_init: float = 0.015,
+        sigma_init: float = 0.3,
         sigma_min: float = 1e-4,
-        sigma_max: float = 0.20,
+        sigma_max: float = 2,
         rho_max: float = 0.999,
     ):
         super().__init__()

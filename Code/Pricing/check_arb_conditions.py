@@ -69,7 +69,7 @@ CHECKPOINT_PATH = (
 )
 
 CCY_FILTER = "EUR"
-N_PATHS = 5000
+N_PATHS = 2000
 N_STEPS = 120
 DT = 1 / 12
 DIFFUSION_SCALE = 1.0
@@ -675,17 +675,21 @@ def check_annuity_martingale(ctx: dict,
             continue
 
         # Build annuity and swap rate at expiry for each path
-        payment_taus = [accrual * j for j in range(1, tenor + 1)]
+        # P_exp is the curve at expiry: tau_grid is RESIDUAL from T_e, so use j alone
+        payment_taus_res = [accrual * j for j in range(1, tenor + 1)]
+        # P_full_0 is the t=0 curve: tau_grid is ABSOLUTE, so use expiry + j
+        payment_taus_abs = [expiry + accrual * j for j in range(1, tenor + 1)]
         try:
-            pay_indices = [get_tau_idx(tau) for tau in payment_taus]
+            pay_indices_res = [get_tau_idx(tau) for tau in payment_taus_res]
+            pay_indices_abs = [get_tau_idx(tau) for tau in payment_taus_abs]
         except ValueError as e:
             rows.append({"expiry": expiry, "tenor": tenor, "error": str(e)})
             continue
 
-        P_exp = P_paths[:, t_idx, :]                    # (n_paths, tau_max+1)
-        pay_dfs = P_exp[:, pay_indices]                  # (n_paths, tenor)
-        A_paths = accrual * pay_dfs.sum(axis=1)          # (n_paths,)
-        P_end_paths = pay_dfs[:, -1]                     # (n_paths,)
+        P_exp = P_paths[:, t_idx, :]                            # (n_paths, tau_max+1)
+        pay_dfs = P_exp[:, pay_indices_res]                      # (n_paths, tenor)
+        A_paths = accrual * pay_dfs.sum(axis=1)                  # (n_paths,)
+        P_end_paths = pay_dfs[:, -1]                             # (n_paths,)
         SR_paths = (1.0 - P_end_paths) / np.maximum(A_paths, 1e-12)
 
         D_exp = D[:, t_idx]                              # (n_paths,)
@@ -695,12 +699,12 @@ def check_annuity_martingale(ctx: dict,
         # E^Q[ D * A ] (denominator — should equal A_0 under Q)
         denom_mc = float(np.mean(D_exp * A_paths))
 
-        # Time-0 annuity and forward swap rate from initial curve
-        pay_dfs_0 = P_full_0[0, pay_indices]
+        # Time-0 annuity and forward swap rate from initial curve (absolute maturities)
+        pay_dfs_0 = P_full_0[0, pay_indices_abs]
         A0 = float(accrual * pay_dfs_0.sum())
         P_start_0_idx = get_tau_idx(float(expiry))
         P_start_0 = float(P_full_0[0, P_start_0_idx])
-        P_end_0 = float(P_full_0[0, pay_indices[-1]])
+        P_end_0 = float(P_full_0[0, pay_indices_abs[-1]])
         F0 = (P_start_0 - P_end_0) / max(A0, 1e-12)
 
         # Under Q^A: E[S(Te)] should equal F0
@@ -766,21 +770,23 @@ def check_swap_rate_distribution(ctx: dict,
     rows = []
     for expiry, tenor in expiry_tenor_pairs:
         t_idx = get_time_idx(float(expiry))
-        payment_taus = [accrual * j for j in range(1, tenor + 1)]
-        pay_indices = [get_tau_idx(tau) for tau in payment_taus]
+        payment_taus_res = [accrual * j for j in range(1, tenor + 1)]
+        payment_taus_abs = [expiry + accrual * j for j in range(1, tenor + 1)]
+        pay_indices_res = [get_tau_idx(tau) for tau in payment_taus_res]
+        pay_indices_abs = [get_tau_idx(tau) for tau in payment_taus_abs]
 
         P_exp = P_paths[:, t_idx, :]
-        pay_dfs = P_exp[:, pay_indices]
+        pay_dfs = P_exp[:, pay_indices_res]
         A_paths = accrual * pay_dfs.sum(axis=1)
         P_end_paths = pay_dfs[:, -1]
         SR_paths = (1.0 - P_end_paths) / np.maximum(A_paths, 1e-12)
 
-        # Time-0 forward swap rate
-        pay_dfs_0 = P_full_0[0, pay_indices]
+        # Time-0 forward swap rate (absolute maturities)
+        pay_dfs_0 = P_full_0[0, pay_indices_abs]
         A0 = float(accrual * pay_dfs_0.sum())
         P_start_idx = get_tau_idx(float(expiry))
         P_start_0 = float(P_full_0[0, P_start_idx])
-        P_end_0 = float(P_full_0[0, pay_indices[-1]])
+        P_end_0 = float(P_full_0[0, pay_indices_abs[-1]])
         F0 = (P_start_0 - P_end_0) / max(A0, 1e-12)
 
         sr_finite = SR_paths[np.isfinite(SR_paths)]

@@ -43,17 +43,14 @@ class FullModel(nn.Module):
         r_hidden: int = 4,
         g_bias: bool = True,
         hr_bias: bool = False,
-        sigma_init: float = 0.015,
+        sigma_init: float = 0.3,
 
         # stable K controls
-        k_z_center_init=None,
         k_epsilon: float = 1e-3,
-        k_drift_scale_init: float = 0.10,
-        k_learn_center: bool = True,
 
         # stable H controls
         h_sigma_min: float = 1e-4,
-        h_sigma_max: float = 0.20,
+        h_sigma_max: float = 2.0,
         h_rho_max: float = 0.999,
 
         # stable G controls
