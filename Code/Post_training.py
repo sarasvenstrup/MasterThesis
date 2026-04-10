@@ -312,28 +312,72 @@ def check_discount_constraints(p_full: np.ndarray, tau_grid: np.ndarray) -> dict
 # Check 3: G(z,0)
 # =============================================================================
 @torch.no_grad()
-def check_G0(model: FullModel, z_test: torch.Tensor) -> dict:
-    tau_zero = torch.zeros(1, device=z_test.device, dtype=z_test.dtype)
-    G0 = model.G(z_test, tau_zero).squeeze(-1).detach().cpu().numpy()
+def check_G_full_tau(model: FullModel, z_test: torch.Tensor) -> dict:
+    """
+    Check G(z, tau) across the full tau grid.
+    G appears in the ODE denominator as beta = r_tilde / G.
+    Near-zero or negative G causes ODE blow-up in every forward pass.
+    """
+    device = z_test.device
+    dtype  = z_test.dtype
+    tau_tensor = model._tau(device=device, dtype=dtype)
+    T = tau_tensor.numel()
 
-    pct_neg = 100.0 * (G0 < 0.0).mean()
-    pct_tiny = 100.0 * (np.abs(G0) < 1e-4).mean()
+    g_chunks = []
+    for i in range(0, z_test.shape[0], BATCH_SIZE):
+        zb = z_test[i:i + BATCH_SIZE]
+        g_chunks.append(model.G(zb, tau_tensor).cpu().numpy())
+    G_all = np.concatenate(g_chunks, axis=0)   # (N, T)
+    tau_np = tau_tensor.cpu().numpy()
 
+    rows = []
     print("\n" + "=" * 72)
-    print("Check 3: G(z,0)")
+    print("Check 3: G(z, tau) across full tau grid")
+    print("  beta = r_tilde / G  ->  ODE blows up when G -> 0")
     print("=" * 72)
-    print(f"min G0                        = {G0.min():.8f}")
-    print(f"max G0                        = {G0.max():.8f}")
-    print(f"mean G0                       = {G0.mean():.8f}")
-    print(f"std G0                        = {G0.std():.8f}")
-    print(f"% G0 < 0                      = {pct_neg:.4f}%")
-    print(f"% |G0| < 1e-4                 = {pct_tiny:.4f}%")
-    print(f"status                        = {status_str(pct_neg == 0.0)}")
+    print(f"{'tau':>5}  {'mean':>8}  {'std':>8}  {'min':>8}  {'max':>8}  "
+          f"{'%<0':>6}  {'%<0.01':>7}  {'%<0.05':>7}")
+
+    for t_idx in range(1, T):
+        tau_val = float(tau_np[t_idx])
+        g = G_all[:, t_idx]
+        g_mean = float(np.mean(g));  g_std = float(np.std(g))
+        g_min  = float(np.min(g));   g_max = float(np.max(g))
+        pct_neg   = 100.0 * float(np.mean(g < 0.0))
+        pct_tiny  = 100.0 * float(np.mean(g < 0.01))
+        pct_small = 100.0 * float(np.mean(g < 0.05))
+        flag = "  <-- NEGATIVE G" if pct_neg > 0 else ("  <-- NEAR ZERO" if pct_tiny > 0 else "")
+        print(f"{tau_val:>5.0f}  {g_mean:>8.4f}  {g_std:>8.4f}  {g_min:>8.4f}  "
+              f"{g_max:>8.4f}  {pct_neg:>6.1f}  {pct_tiny:>7.1f}  {pct_small:>7.1f}{flag}")
+        rows.append({"tau": tau_val, "G_mean": g_mean, "G_std": g_std,
+                     "G_min": g_min, "G_max": g_max,
+                     "pct_neg": pct_neg, "pct_lt001": pct_tiny, "pct_lt005": pct_small})
+
+    df = pd.DataFrame(rows)
+    any_neg  = df["pct_neg"].max() > 0
+    any_tiny = df["pct_lt001"].max() > 0
+    overall_min = float(G_all[:, 1:].min())
+
+    first_neg  = df.loc[df["pct_neg"] > 0,    "tau"]
+    first_tiny = df.loc[df["pct_lt001"] > 0,  "tau"]
+    print()
+    print(f"  Global G min (tau >= 1)      : {overall_min:.6f}")
+    if not first_neg.empty:
+        print(f"  First tau with G < 0         : {first_neg.iloc[0]:.0f}Y  --> ODE unstable")
+    if not first_tiny.empty:
+        print(f"  First tau with G < 0.01      : {first_tiny.iloc[0]:.0f}Y  --> beta spike")
+    print(f"  G > 0 everywhere             : {status_str(not any_neg)}")
+    print(f"  G > 0.01 everywhere          : {status_str(not any_tiny)}")
+
+    G0 = G_all[:, 0]
+    pct_neg_G0 = 100.0 * float(np.mean(G0 < 0.0))
+    print(f"\n  G(z,0) boundary: min={G0.min():.6f}  mean={G0.mean():.6f}  "
+          f"%<0={pct_neg_G0:.2f}%  {status_str(pct_neg_G0 == 0.0)}")
 
     return {
-        "G0": G0,
-        "pct_neg": pct_neg,
-        "pct_tiny": pct_tiny,
+        "G_all": G_all, "tau_grid": tau_np, "G_by_tau_df": df,
+        "overall_min": overall_min, "any_neg": any_neg, "any_tiny": any_tiny,
+        "G0": G0, "pct_neg_G0": pct_neg_G0,
     }
 
 
@@ -391,6 +435,65 @@ def check_sigma_rho(model: FullModel, z_test: torch.Tensor) -> dict:
         "pct_rho_out": pct_rho_out,
         "cov_min_eigs": cov_min_eigs,
         "min_cov_eig": min_cov_eig,
+    }
+
+
+
+# =============================================================================
+# Check 4b: r_tilde value diagnostics
+# =============================================================================
+@torch.no_grad()
+def check_r_tilde(model: FullModel, z_test: torch.Tensor) -> dict:
+    """
+    Inspect the short rate r_tilde(z) across training z points.
+
+    Reports distribution statistics and flags economically implausible values:
+      - r < -0.02  (-200 bp): deeply negative, unusual even in NIRP regimes
+      - r > 0.10   (+1000 bp): very high, plausible only in crisis/EM environments
+      - r < 0      (negative): valid for EUR/DKK/SEK/JPY/CHF in 2014-2022
+    """
+    R_NEG_WARN  = -0.02    # -200 bp floor
+    R_HIGH_WARN =  0.10    # +1000 bp ceiling
+
+    r = model.R(z_test)
+    if r.ndim == 2 and r.shape[-1] == 1:
+        r = r.squeeze(-1)
+    r_np = r.detach().cpu().numpy()
+
+    r_mean   = float(r_np.mean())
+    r_std    = float(r_np.std())
+    r_min    = float(r_np.min())
+    r_max    = float(r_np.max())
+    r_p5     = float(np.percentile(r_np, 5))
+    r_p95    = float(np.percentile(r_np, 95))
+    pct_neg  = 100.0 * float(np.mean(r_np < 0.0))
+    pct_very_neg = 100.0 * float(np.mean(r_np < R_NEG_WARN))
+    pct_high = 100.0 * float(np.mean(r_np > R_HIGH_WARN))
+
+    print("\n" + "=" * 72)
+    print("Check 4b: r_tilde(z) value diagnostics")
+    print("=" * 72)
+    print(f"  mean          : {r_mean:.6f}  ({r_mean*1e4:.1f} bp)")
+    print(f"  std           : {r_std:.6f}  ({r_std*1e4:.1f} bp)")
+    print(f"  min           : {r_min:.6f}  ({r_min*1e4:.1f} bp)")
+    print(f"  max           : {r_max:.6f}  ({r_max*1e4:.1f} bp)")
+    print(f"  p5            : {r_p5:.6f}  ({r_p5*1e4:.1f} bp)")
+    print(f"  p95           : {r_p95:.6f}  ({r_p95*1e4:.1f} bp)")
+    print(f"  % r < 0       : {pct_neg:.2f}%  (negative rates — valid for NIRP currencies)")
+    print(f"  % r < {R_NEG_WARN*1e4:.0f}bp : {pct_very_neg:.2f}%  {status_str(pct_very_neg == 0.0)}")
+    print(f"  % r > {R_HIGH_WARN*1e4:.0f}bp  : {pct_high:.2f}%  {status_str(pct_high == 0.0)}")
+
+    return {
+        "r_np":        r_np,
+        "r_mean":      r_mean,
+        "r_std":       r_std,
+        "r_min":       r_min,
+        "r_max":       r_max,
+        "r_p5":        r_p5,
+        "r_p95":       r_p95,
+        "pct_neg":     pct_neg,
+        "pct_very_neg": pct_very_neg,
+        "pct_high":    pct_high,
     }
 
 
@@ -555,6 +658,7 @@ def save_outputs(
     discount_res: dict,
     g0_res: dict,
     sigma_res: dict,
+    r_res: dict,
     tau_summary_df: pd.DataFrame,
     tau_detail_df: pd.DataFrame,
     sharpe_res: dict,
@@ -572,17 +676,29 @@ def save_outputs(
                 "pct_above_one": discount_res["pct_above_one"],
                 "pct_upticks": discount_res["pct_upticks"],
                 "max_uptick": discount_res["max_uptick"],
-                "g0_min": float(g0_res["G0"].min()),
-                "g0_max": float(g0_res["G0"].max()),
-                "g0_mean": float(g0_res["G0"].mean()),
-                "g0_pct_neg": g0_res["pct_neg"],
+                "g0_min":         float(g0_res["G0"].min()),
+                "g0_max":         float(g0_res["G0"].max()),
+                "g0_mean":        float(g0_res["G0"].mean()),
+                "g0_pct_neg":     g0_res["pct_neg_G0"],
+                "G_global_min":   g0_res["overall_min"],
+                "G_any_neg":      int(g0_res["any_neg"]),
+                "G_any_tiny":     int(g0_res["any_tiny"]),
                 "sigma_min": sigma_res["sigma_min"],
                 "sigma_max": sigma_res["sigma_max"],
                 "pct_sigma_nonpos": sigma_res["pct_sigma_nonpos"],
                 "rho_abs_max": sigma_res["rho_abs_max"],
                 "pct_rho_out": sigma_res["pct_rho_out"],
-                "min_cov_eig": sigma_res["min_cov_eig"],
-                "max_abs_sr": sharpe_res["max_abs_sr"],
+                "min_cov_eig":    sigma_res["min_cov_eig"],
+                "r_mean":         r_res["r_mean"],
+                "r_std":          r_res["r_std"],
+                "r_min":          r_res["r_min"],
+                "r_max":          r_res["r_max"],
+                "r_p5":           r_res["r_p5"],
+                "r_p95":          r_res["r_p95"],
+                "r_pct_neg":      r_res["pct_neg"],
+                "r_pct_very_neg": r_res["pct_very_neg"],
+                "r_pct_high":     r_res["pct_high"],
+                "max_abs_sr":     sharpe_res["max_abs_sr"],
                 "mean_abs_sr": sharpe_res["mean_abs_sr"],
             }
         ]
@@ -593,6 +709,8 @@ def save_outputs(
 
     if rmse_df is not None:
         rmse_df.to_csv(os.path.join(out_dir, "reconstruction_rmse_per_currency.csv"), index=False)
+
+    g0_res["G_by_tau_df"].to_csv(os.path.join(out_dir, "G_values_by_tau_training.csv"), index=False)
 
 
 # =============================================================================
@@ -607,6 +725,7 @@ def make_summary_plot(
     discount_res: dict,
     g0_res: dict,
     sigma_res: dict,
+    r_res: dict,
     tau_summary_df: pd.DataFrame,
     sharpe_res: dict,
     rmse_df: pd.DataFrame | None,
@@ -695,8 +814,20 @@ def make_summary_plot(
     else:
         ax.axis("off")
 
-    # 8. RMSE per currency
+    # 8. r_tilde histogram
     ax = axes[2, 1]
+    ax.hist(r_res["r_np"] * 1e4, bins=60, edgecolor="white")
+    ax.axvline(0.0,   color="red",    linestyle="--", lw=1, label="r=0")
+    ax.axvline(-200,  color="orange", linestyle=":",  lw=1, label="-200bp")
+    ax.axvline(1000,  color="orange", linestyle=":",  lw=1, label="+1000bp")
+    ax.set_title("r_tilde distribution (bp)")
+    ax.set_xlabel("r_tilde (bp)")
+    ax.set_ylabel("count")
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+
+    # 9. RMSE per currency
+    ax = axes[2, 2]
     if rmse_df is not None:
         ax.bar(rmse_df["ccy"], rmse_df["rmse_bps"])
         ax.set_title("Reconstruction RMSE per currency")
@@ -710,24 +841,22 @@ def make_summary_plot(
     ax = axes[2, 2]
     ax.axis("off")
 
-    tau_smallest = tau_summary_df["tau1"].min()
-    tau_small_row = tau_summary_df.loc[tau_summary_df["tau1"].idxmin()]
-    tau_largest = tau_summary_df["tau1"].max()
-    tau_large_row = tau_summary_df.loc[tau_summary_df["tau1"].idxmax()]
-
     summary_rows = [
         ["Metric", "Value", "Status"],
-        ["max |P(0)-1|", f"{discount_res['p0_err'].max():.2e}", status_str(discount_res["p0_err"].max() < P0_TOL)],
-        ["max P", f"{discount_res['max_p']:.6f}", status_str(discount_res["max_p"] <= 1.0 + P_LEQ1_TOL)],
-        ["% P<=0", f"{discount_res['pct_nonpos']:.4f}%", status_str(discount_res["pct_nonpos"] == 0.0)],
-        ["max uptick", f"{discount_res['max_uptick']:.2e}", status_str(discount_res["max_uptick"] <= MONO_TOL)],
-        ["% G0<0", f"{g0_res['pct_neg']:.4f}%", status_str(g0_res["pct_neg"] == 0.0)],
-        ["min cov eig", f"{sigma_res['min_cov_eig']:.2e}", status_str(sigma_res["min_cov_eig"] >= -1e-10)],
-        [f"mean abs err @ tau={tau_largest:.3g}", f"{safe_bp(tau_large_row['mean_abs_error']):.2f} bp", ""],
-        [f"mean abs err @ tau={tau_smallest:.3g}", f"{safe_bp(tau_small_row['mean_abs_error']):.2f} bp", ""],
-        ["max |SR|", f"{sharpe_res['max_abs_sr']:.4f}" if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A",
+        ["max |P(0)-1|",  f"{discount_res['p0_err'].max():.2e}",  status_str(discount_res["p0_err"].max() < P0_TOL)],
+        ["max P",         f"{discount_res['max_p']:.6f}",          status_str(discount_res["max_p"] <= 1.0 + P_LEQ1_TOL)],
+        ["% P<=0",        f"{discount_res['pct_nonpos']:.4f}%",    status_str(discount_res["pct_nonpos"] == 0.0)],
+        ["max uptick",    f"{discount_res['max_uptick']:.2e}",     status_str(discount_res["max_uptick"] <= MONO_TOL)],
+        ["% G0<0",        f"{g0_res['pct_neg_G0']:.4f}%",          status_str(g0_res["pct_neg_G0"] == 0.0)],
+        ["G global min",  f"{g0_res['overall_min']:.4f}",          status_str(not g0_res["any_neg"])],
+        ["r mean",        f"{r_res['r_mean']*1e4:.1f} bp",         ""],
+        ["r range",       f"[{r_res['r_min']*1e4:.1f}, {r_res['r_max']*1e4:.1f}] bp", ""],
+        ["% r < -200bp",  f"{r_res['pct_very_neg']:.2f}%",        status_str(r_res["pct_very_neg"] == 0.0)],
+        ["% r > 1000bp",  f"{r_res['pct_high']:.2f}%",            status_str(r_res["pct_high"] == 0.0)],
+        ["min cov eig",   f"{sigma_res['min_cov_eig']:.2e}",       status_str(sigma_res["min_cov_eig"] >= -1e-10)],
+        ["max |SR|",      f"{sharpe_res['max_abs_sr']:.2e}" if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A",
          status_str(np.isfinite(sharpe_res["max_abs_sr"]) and sharpe_res["max_abs_sr"] < SHARPE_TOL) if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A"],
-        ["avg RMSE", f"{rmse_df['rmse_bps'].mean():.2f} bp" if rmse_df is not None else "N/A", ""],
+        ["avg RMSE",      f"{rmse_df['rmse_bps'].mean():.2f} bp" if rmse_df is not None else "N/A", ""],
     ]
 
     x0, x1, x2 = 0.02, 0.55, 0.86
@@ -789,8 +918,9 @@ def main():
 
     debug_res = check0_single_point_debug(model, z_all)
     discount_res = check_discount_constraints(p_full, tau_grid)
-    g0_res = check_G0(model, z_test)
+    g0_res = check_G_full_tau(model, z_test)
     sigma_res = check_sigma_rho(model, z_test)
+    r_res = check_r_tilde(model, z_test)
     tau_summary_df, tau_detail_df = check_short_rate_tau_sweep(model, z_test, TAU_SWEEP)
     sharpe_res = check_sharpe_ratios(model, z_test)
     rmse_df = check_rmse_per_currency(X_tensor, S_hat, meta, scale_is_percent)
@@ -800,6 +930,7 @@ def main():
         discount_res=discount_res,
         g0_res=g0_res,
         sigma_res=sigma_res,
+        r_res=r_res,
         tau_summary_df=tau_summary_df,
         tau_detail_df=tau_detail_df,
         sharpe_res=sharpe_res,
@@ -815,6 +946,7 @@ def main():
         discount_res=discount_res,
         g0_res=g0_res,
         sigma_res=sigma_res,
+        r_res=r_res,
         tau_summary_df=tau_summary_df,
         sharpe_res=sharpe_res,
         rmse_df=rmse_df,
