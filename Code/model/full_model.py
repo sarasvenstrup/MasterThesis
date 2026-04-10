@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from .Encoder import Encoder
-from .DecoderG import DecoderG
+from .DecoderG import DecoderG, DecoderGStable
 
 from Code import config
 
@@ -55,6 +55,9 @@ class FullModel(nn.Module):
         h_sigma_min: float = 1e-4,
         h_sigma_max: float = 0.20,
         h_rho_max: float = 0.999,
+
+        # stable G controls
+        g_floor_init: float = 0.0,   # softplus(0) ≈ 0.693 initial floor; tune if needed
     ):
         super().__init__()
 
@@ -72,10 +75,10 @@ class FullModel(nn.Module):
         )
 
         self.encoder = Encoder(input_dim, latent_dim)
-        self.G = DecoderG(latent_dim, g_hidden, g_bias)
 
         # Use config.py as single source of truth
         if config.VARIANT == "stable":
+            self.G = DecoderGStable(latent_dim, g_hidden, g_bias, g_floor_init=g_floor_init)
             self.K = KMuStable_old(
                 latent_dim=latent_dim,
                 bias=True,
@@ -96,6 +99,7 @@ class FullModel(nn.Module):
                 bias=hr_bias,
             )
         else:
+            self.G = DecoderG(latent_dim, g_hidden, g_bias)
             self.K = KMuBaseline(
                 latent_dim=latent_dim,
                 bias=True,

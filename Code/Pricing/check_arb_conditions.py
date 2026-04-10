@@ -567,6 +567,249 @@ def check_sharpe_ratios(model, z_test: torch.Tensor) -> dict:
 
 
 # =============================================================================
+# E. Martingale / pricing consistency checks
+# =============================================================================
+
+def check_discount_factor_consistency(ctx: dict) -> pd.DataFrame:
+    """
+    E1: Compare E[D(0,T)] from simulated paths vs P(0,T) from the initial decoded curve.
+
+    Under Q, D(0,T) = exp(-int_0^T r dt) is the stochastic discount factor.
+    The no-arbitrage condition requires:
+        E^Q[ D(0,T) ] = P(0,T)   for every T on the simulation grid.
+
+    If these disagree it means r_tilde(z) is inconsistent with the decoded
+    initial discount curve P_full_0, which will directly bias all MC swaption prices.
+    """
+    D = ctx["discount_paths"].detach().cpu().numpy()        # (n_paths, n_times)
+    times = np.asarray(ctx["times"], dtype=float)           # (n_times,)
+    P_full_0 = ctx["P_full_0"].detach().cpu().numpy()       # (1, tau_max+1)
+    tau_grid = ctx["tau_grid"].detach().cpu().numpy()       # (tau_max+1,)
+
+    rows = []
+    for t_idx, t_val in enumerate(times):
+        if t_val == 0.0:
+            continue
+
+        # E[D(0,T)] from Monte Carlo
+        mean_D = float(np.mean(D[:, t_idx]))
+
+        # P(0,T) from initial decoded curve (find nearest tau)
+        diffs = np.abs(tau_grid - t_val)
+        best_idx = int(np.argmin(diffs))
+        if diffs[best_idx] > 0.5:          # more than 6M away - skip
+            continue
+        P0T = float(P_full_0[0, best_idx])
+
+        abs_err = abs(mean_D - P0T)
+        rel_err = abs_err / max(P0T, 1e-12)
+
+        rows.append({
+            "T": t_val,
+            "E[D(0,T)]_mc": mean_D,
+            "P(0,T)_curve": P0T,
+            "abs_error": abs_err,
+            "rel_error_pct": 100.0 * rel_err,
+        })
+
+    df = pd.DataFrame(rows)
+
+    print("\n" + "=" * 72)
+    print("E1: E[D(0,T)] vs P(0,T) — short-rate / curve consistency")
+    print("=" * 72)
+    if df.empty:
+        print("  (no overlapping time points)")
+    else:
+        with pd.option_context("display.float_format", "{:.6f}".format):
+            print(df.to_string(index=False))
+        worst = df["abs_error"].max()
+        ok = worst < 5e-3
+        print(f"\nmax |E[D]-P0|               = {worst:.6e}   {status_str(ok)}")
+        if not ok:
+            print("  WARN: short-rate r_tilde appears inconsistent with the decoded")
+            print("        initial curve. This will bias all MC swaption prices.")
+
+    return df
+
+
+def check_annuity_martingale(ctx: dict,
+                              expiry_tenor_pairs: list[tuple[int, int]],
+                              accrual: float = 1.0) -> pd.DataFrame:
+    """
+    E2: Annuity-measure martingale check.
+
+    Under the annuity measure Q^A associated with the T_e x n swaption:
+        E^{Q^A}[ S(T_e; T_e, T_e+n) ] = F_0(T_e, n)     (forward swap rate)
+
+    Equivalently under Q:
+        E^Q[ D(0,T_e) * A(T_e, n) * S(T_e) ] = A(0, n) * F_0
+
+    We check the left side (computable from paths) vs the right side (from t=0 curve).
+    A discrepancy here means the simulated swap-rate distribution is biased,
+    which directly explains model_vol != market_vol even if the decoder is perfect.
+    """
+    D = ctx["discount_paths"].detach().cpu().numpy()        # (n_paths, n_times)
+    P_paths = ctx["P_full_paths"].detach().cpu().numpy()    # (n_paths, n_times, tau_max+1)
+    P_full_0 = ctx["P_full_0"].detach().cpu().numpy()       # (1, tau_max+1)
+    tau_grid = ctx["tau_grid"].detach().cpu().numpy()
+    times = np.asarray(ctx["times"], dtype=float)
+
+    def get_tau_idx(tau_val):
+        idx = int(np.argmin(np.abs(tau_grid - tau_val)))
+        if abs(tau_grid[idx] - tau_val) > 0.01:
+            raise ValueError(f"tau={tau_val} not in tau_grid")
+        return idx
+
+    def get_time_idx(t_val):
+        idx = int(np.argmin(np.abs(times - t_val)))
+        if abs(times[idx] - t_val) > 0.5 * (times[1] - times[0]):
+            raise ValueError(f"t={t_val} not in times grid")
+        return idx
+
+    rows = []
+    for expiry, tenor in expiry_tenor_pairs:
+        try:
+            t_idx = get_time_idx(float(expiry))
+        except ValueError:
+            rows.append({"expiry": expiry, "tenor": tenor, "error": "expiry not in grid"})
+            continue
+
+        # Build annuity and swap rate at expiry for each path
+        payment_taus = [accrual * j for j in range(1, tenor + 1)]
+        try:
+            pay_indices = [get_tau_idx(tau) for tau in payment_taus]
+        except ValueError as e:
+            rows.append({"expiry": expiry, "tenor": tenor, "error": str(e)})
+            continue
+
+        P_exp = P_paths[:, t_idx, :]                    # (n_paths, tau_max+1)
+        pay_dfs = P_exp[:, pay_indices]                  # (n_paths, tenor)
+        A_paths = accrual * pay_dfs.sum(axis=1)          # (n_paths,)
+        P_end_paths = pay_dfs[:, -1]                     # (n_paths,)
+        SR_paths = (1.0 - P_end_paths) / np.maximum(A_paths, 1e-12)
+
+        D_exp = D[:, t_idx]                              # (n_paths,)
+
+        # E^Q[ D * A * S ] (numerator)
+        numerator_mc = float(np.mean(D_exp * A_paths * SR_paths))
+        # E^Q[ D * A ] (denominator — should equal A_0 under Q)
+        denom_mc = float(np.mean(D_exp * A_paths))
+
+        # Time-0 annuity and forward swap rate from initial curve
+        pay_dfs_0 = P_full_0[0, pay_indices]
+        A0 = float(accrual * pay_dfs_0.sum())
+        P_start_0_idx = get_tau_idx(float(expiry))
+        P_start_0 = float(P_full_0[0, P_start_0_idx])
+        P_end_0 = float(P_full_0[0, pay_indices[-1]])
+        F0 = (P_start_0 - P_end_0) / max(A0, 1e-12)
+
+        # Under Q^A: E[S(Te)] should equal F0
+        # proxy via change of measure: E^Q[D*A*S] / E^Q[D*A]
+        implied_fwd = numerator_mc / max(abs(denom_mc), 1e-12)
+        fwd_err_bp = 10000.0 * (implied_fwd - F0)
+
+        # Also check annuity: E^Q[D*A] vs A0
+        annuity_err = denom_mc - A0
+        annuity_err_pct = 100.0 * annuity_err / max(A0, 1e-12)
+
+        rows.append({
+            "expiry": expiry,
+            "tenor": tenor,
+            "F0_curve_bp": round(10000.0 * F0, 2),
+            "implied_fwd_mc_bp": round(10000.0 * implied_fwd, 2),
+            "fwd_error_bp": round(fwd_err_bp, 2),
+            "A0_curve": round(A0, 6),
+            "E[D*A]_mc": round(denom_mc, 6),
+            "annuity_error_pct": round(annuity_err_pct, 4),
+        })
+
+    df = pd.DataFrame(rows)
+
+    print("\n" + "=" * 72)
+    print("E2: Annuity-measure martingale check  (E^Q[D·A·S] / E^Q[D·A] vs F0)")
+    print("=" * 72)
+    if df.empty:
+        print("  (no expiry/tenor pairs to check)")
+    else:
+        with pd.option_context("display.float_format", "{:.4f}".format):
+            print(df.to_string(index=False))
+
+    return df
+
+
+def check_swap_rate_distribution(ctx: dict,
+                                  expiry_tenor_pairs: list[tuple[int, int]],
+                                  accrual: float = 1.0) -> pd.DataFrame:
+    """
+    E3: Swap rate distribution at expiry vs time-0 forward.
+
+    Prints mean, std, skew, p5/p95 of the physical (Q-measure) swap rate
+    distribution at each expiry and compares the mean to F0.
+    Large mean shifts indicate the z-dynamics are drifting the swap rate
+    distribution away from the forward rate, which inflates/deflates implied vols.
+    """
+    from scipy.stats import skew as scipy_skew
+
+    P_paths = ctx["P_full_paths"].detach().cpu().numpy()
+    P_full_0 = ctx["P_full_0"].detach().cpu().numpy()
+    tau_grid = ctx["tau_grid"].detach().cpu().numpy()
+    times = np.asarray(ctx["times"], dtype=float)
+
+    def get_tau_idx(tau_val):
+        idx = int(np.argmin(np.abs(tau_grid - tau_val)))
+        return idx
+
+    def get_time_idx(t_val):
+        idx = int(np.argmin(np.abs(times - t_val)))
+        return idx
+
+    rows = []
+    for expiry, tenor in expiry_tenor_pairs:
+        t_idx = get_time_idx(float(expiry))
+        payment_taus = [accrual * j for j in range(1, tenor + 1)]
+        pay_indices = [get_tau_idx(tau) for tau in payment_taus]
+
+        P_exp = P_paths[:, t_idx, :]
+        pay_dfs = P_exp[:, pay_indices]
+        A_paths = accrual * pay_dfs.sum(axis=1)
+        P_end_paths = pay_dfs[:, -1]
+        SR_paths = (1.0 - P_end_paths) / np.maximum(A_paths, 1e-12)
+
+        # Time-0 forward swap rate
+        pay_dfs_0 = P_full_0[0, pay_indices]
+        A0 = float(accrual * pay_dfs_0.sum())
+        P_start_idx = get_tau_idx(float(expiry))
+        P_start_0 = float(P_full_0[0, P_start_idx])
+        P_end_0 = float(P_full_0[0, pay_indices[-1]])
+        F0 = (P_start_0 - P_end_0) / max(A0, 1e-12)
+
+        sr_finite = SR_paths[np.isfinite(SR_paths)]
+        rows.append({
+            "expiry": expiry,
+            "tenor": tenor,
+            "F0_bp": round(10000.0 * F0, 1),
+            "mean_SR_bp": round(10000.0 * float(np.mean(sr_finite)), 1),
+            "mean_minus_F0_bp": round(10000.0 * (float(np.mean(sr_finite)) - F0), 1),
+            "std_SR_bp": round(10000.0 * float(np.std(sr_finite)), 1),
+            "p5_SR_bp": round(10000.0 * float(np.percentile(sr_finite, 5)), 1),
+            "p95_SR_bp": round(10000.0 * float(np.percentile(sr_finite, 95)), 1),
+            "skew": round(float(scipy_skew(sr_finite)), 3),
+            "n_finite": int(sr_finite.size),
+        })
+
+    df = pd.DataFrame(rows)
+
+    print("\n" + "=" * 72)
+    print("E3: Swap rate distribution at expiry  (all values in bp)")
+    print("    mean_minus_F0 is the key number: should be near 0")
+    print("=" * 72)
+    if not df.empty:
+        print(df.to_string(index=False))
+
+    return df
+
+
+# =============================================================================
 # Save results
 # =============================================================================
 def save_outputs(
@@ -707,6 +950,12 @@ def main():
     tau_summary_df, tau_detail_df = check_short_rate_tau_sweep(model, z_test, TAU_SWEEP)
     sharpe_res = check_sharpe_ratios(model, z_test)
 
+    # --- NEW: pricing-consistency checks ---
+    SWAPTION_PAIRS = [(1,1),(1,5),(1,10),(5,1),(5,5),(5,10),(10,1),(10,5),(10,10)]
+    df_consistency = check_discount_factor_consistency(ctx)
+    df_annuity     = check_annuity_martingale(ctx, SWAPTION_PAIRS)
+    df_sr_dist     = check_swap_rate_distribution(ctx, SWAPTION_PAIRS)
+
     out_dir = os.path.dirname(CHECKPOINT_PATH)
     save_outputs(
         out_dir=out_dir,
@@ -721,6 +970,12 @@ def main():
         tau_detail_df=tau_detail_df,
         sharpe_res=sharpe_res,
     )
+
+    # Save new pricing-consistency tables
+    df_consistency.to_csv(os.path.join(out_dir, "check_E1_discount_consistency.csv"), index=False)
+    df_annuity.to_csv(os.path.join(out_dir, "check_E2_annuity_martingale.csv"), index=False)
+    df_sr_dist.to_csv(os.path.join(out_dir, "check_E3_swap_rate_distribution.csv"), index=False)
+    print(f"Saved E1/E2/E3 CSV tables to {out_dir}")
 
     print("\nDone.")
 
