@@ -79,21 +79,16 @@ class FullModel(nn.Module):
         # Use config.py as single source of truth
         if config.VARIANT == "stable":
             self.G = DecoderGStable(latent_dim, g_hidden, g_bias, g_floor_init=g_floor_init)
-            self.K = KMuStable_old(
+            self.K = KMuBaseline(
                 latent_dim=latent_dim,
                 bias=True,
-                epsilon=k_epsilon,
             )
-            self.H = HSigmaStable(
+            self.H = HSigmaBaseline(
                 latent_dim=latent_dim,
                 hidden_dim=h_hidden,
                 bias=hr_bias,
-                sigma_init=sigma_init,
-                sigma_min=h_sigma_min,
-                sigma_max=h_sigma_max,
-                rho_max=h_rho_max,
             )
-            self.R = RShortStable(
+            self.R = RShortBaseline(
                 latent_dim=latent_dim,
                 hidden_dim=r_hidden,
                 bias=hr_bias,
