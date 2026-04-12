@@ -114,3 +114,30 @@ class HSigmaStable(nn.Module):
         return sigmas, rhos
 
 
+
+class HSigmaStable_v2(nn.Module):
+    def __init__(self, latent_dim, hidden_dim, bias=False,
+                 sigma_init=0.3, sigma_min=1e-4, sigma_max=2.0, rho_max=0.999):
+        super().__init__()
+        self.d = latent_dim
+        self.n_corr = latent_dim * (latent_dim - 1) // 2
+        self.sigma_min, self.sigma_max, self.rho_max = sigma_min, sigma_max, rho_max
+        self.log_sigma_min = math.log(sigma_min)
+        self.log_sigma_range = math.log(sigma_max) - math.log(sigma_min)
+        self.net = nn.Sequential(
+            nn.Linear(self.d, hidden_dim, bias=bias), CenteredSoftStep(),
+            nn.Linear(hidden_dim, self.d + self.n_corr, bias=bias),
+        )
+        nn.init.zeros_(self.net[-1].weight)
+        target = (math.log(sigma_init) - self.log_sigma_min) / self.log_sigma_range
+        target = min(max(target, 1e-8), 1 - 1e-8)
+        self.raw_logsigma_offset = nn.Parameter(
+            torch.full((self.d,), math.log(target / (1 - target)))
+        )
+    def forward(self, z):
+        if z.dim() == 1: z = z.unsqueeze(0)
+        raw = self.net(z)
+        raw_ls = raw[:, :self.d] + self.raw_logsigma_offset
+        sigmas = torch.exp(self.log_sigma_min + self.log_sigma_range * torch.sigmoid(raw_ls))
+        rhos = self.rho_max * torch.tanh(raw[:, self.d:]) if self.n_corr > 0 else raw[:, :0]
+        return sigmas, rhos

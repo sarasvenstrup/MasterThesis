@@ -384,16 +384,78 @@ def check_G_full_tau(model: FullModel, z_test: torch.Tensor) -> dict:
 # =============================================================================
 # Check 4: sigma / rho / PSD diagnostics
 # =============================================================================
+
+def _cholesky_inside_terms(rhos: torch.Tensor, d: int) -> dict:
+    """
+    Recomputes the sqrt arguments from the analytic Cholesky WITHOUT clamping.
+
+    A negative value means the eps clamp fired in L_from_sigmas_rhos for that
+    observation — the rhos formed a geometrically invalid correlation matrix
+    and L was silently distorted. This is only possible for d >= 3.
+
+    Returns a dict of (N,) tensors, one per inside term:
+      d2: 1 - rho12^2                          (always > 0 when |rho12| < 1)
+      d3: the d=3 determinant expression        (< 0 => clamp fired)
+      d4: the d=4 determinant expression        (< 0 => clamp fired)
+    """
+    out = {}
+    if d < 2:
+        return out
+
+    rho12            = rhos[:, 0].cpu()
+    one_minus_r12_sq = 1.0 - rho12 ** 2
+    out["d2"] = one_minus_r12_sq
+
+    if d >= 3:
+        rho13   = rhos[:, 1].cpu()
+        rho23   = rhos[:, 2].cpu()
+        inside3 = (
+            1.0 - rho13 ** 2
+            - ((rho23 - rho12 * rho13) ** 2) / one_minus_r12_sq.clamp(min=1e-12)
+        )
+        out["d3"] = inside3
+
+    if d >= 4:
+        rho13    = rhos[:, 1].cpu()
+        rho14    = rhos[:, 2].cpu()
+        rho23    = rhos[:, 3].cpu()
+        rho24    = rhos[:, 4].cpu()
+        rho34    = rhos[:, 5].cpu()
+        inside3c = (
+            1.0 - rho13 ** 2
+            - ((rho23 - rho12 * rho13) ** 2) / one_minus_r12_sq.clamp(min=1e-12)
+        ).clamp(min=1e-12)
+        inside4 = (
+            1.0
+            - rho14 ** 2
+            - ((rho24 - rho12 * rho14) ** 2) / one_minus_r12_sq.clamp(min=1e-12)
+            - (
+                (
+                    rho34 - rho13 * rho14
+                    - ((rho23 - rho12 * rho13) * (rho24 - rho12 * rho14))
+                    / one_minus_r12_sq.clamp(min=1e-12)
+                ) ** 2
+            ) / inside3c
+        )
+        out["d4"] = inside4
+
+    return out
+
+
 @torch.no_grad()
 def check_sigma_rho(model: FullModel, z_test: torch.Tensor) -> dict:
+    d = model.H.d
     sigmas, rhos = model.H(z_test)
     sigmas_np = sigmas.detach().cpu().numpy()
-    rhos_np = rhos.detach().cpu().numpy()
+    rhos_np   = rhos.detach().cpu().numpy()
+    N         = sigmas.shape[0]
 
-    L = L_from_sigmas_rhos(sigmas, rhos)
+    L   = L_from_sigmas_rhos(sigmas, rhos)
     cov = L @ L.transpose(-1, -2)
-    eigs = torch.linalg.eigvalsh(cov)
+    eigs         = torch.linalg.eigvalsh(cov)       # (N, d)
     cov_min_eigs = eigs[:, 0].detach().cpu().numpy()
+    cov_max_eigs = eigs[:, -1].detach().cpu().numpy()
+    cond_numbers = (cov_max_eigs / np.clip(cov_min_eigs, 1e-12, None))
 
     pct_sigma_nonpos = 100.0 * (sigmas_np <= 0.0).mean()
     sigma_min = float(sigmas_np.min())
@@ -406,12 +468,16 @@ def check_sigma_rho(model: FullModel, z_test: torch.Tensor) -> dict:
         rho_abs_max = 0.0
         pct_rho_out = 0.0
 
-    pct_sigma_low = 100.0 * (sigmas_np < SIGMA_MIN_EXPECTED - 1e-8).mean()
+    pct_sigma_low  = 100.0 * (sigmas_np < SIGMA_MIN_EXPECTED - 1e-8).mean()
     pct_sigma_high = 100.0 * (sigmas_np > SIGMA_MAX_EXPECTED + 1e-8).mean()
-    min_cov_eig = float(cov_min_eigs.min())
+    min_cov_eig    = float(cov_min_eigs.min())
+
+    # Cholesky inside terms (raw, no clamp) — d>=3 only
+    inside = _cholesky_inside_terms(rhos, d)
+    inside_np = {k: v.numpy() for k, v in inside.items()}
 
     print("\n" + "=" * 72)
-    print("Check 4: sigma / rho / PSD diagnostics")
+    print("Check 4: sigma / rho / PSD / Cholesky diagnostics")
     print("=" * 72)
     print(f"sigma min                     = {sigma_min:.8f}")
     print(f"sigma max                     = {sigma_max:.8f}")
@@ -420,21 +486,56 @@ def check_sigma_rho(model: FullModel, z_test: torch.Tensor) -> dict:
     print(f"% sigma > expected max        = {pct_sigma_high:.4f}%")
     print(f"max |rho|                     = {rho_abs_max:.8f}")
     print(f"% |rho| > expected cap        = {pct_rho_out:.4f}%")
-    print(f"min eigenvalue of SigmaSigma' = {min_cov_eig:.8e}")
-    print(f"PSD status                    = {status_str(min_cov_eig >= -1e-10)}")
+    print(f"min eigenvalue of Sigma       = {min_cov_eig:.8e}  {status_str(min_cov_eig >= -1e-10)}")
+    print(f"max condition number of Sigma = {cond_numbers.max():.4f}")
+    print(f"mean condition number         = {cond_numbers.mean():.4f}")
+
+    # Diagonal consistency: diag(Sigma) should equal sigma_i^2
+    diag_sigma = torch.diagonal(cov, dim1=-2, dim2=-1).detach().cpu().numpy()  # (N, d)
+    diag_err   = np.abs(diag_sigma - sigmas_np ** 2)
+    print(f"max |diag(Sigma)-sigma^2|     = {diag_err.max():.4e}  {status_str(diag_err.max() < 1e-4)}")
+
+    # Cholesky inside terms
+    print()
+    print("  Cholesky inside terms (< 0 means clamp fired => L was distorted):")
+    chol_any_neg = False
+    for key, vals in inside_np.items():
+        n_neg   = int((vals < 0).sum())
+        pct_neg = 100.0 * n_neg / N
+        ok      = n_neg == 0
+        chol_any_neg = chol_any_neg or (not ok)
+        print(
+            f"    {key}: min={vals.min():.6f}  mean={vals.mean():.6f}  "
+            f"n_neg={n_neg}/{N} ({pct_neg:.2f}%)  {status_str(ok)}"
+        )
+        if not ok:
+            print(
+                f"         WARNING: clamp fired for {n_neg} observations. "
+                f"L_from_sigmas_rhos distorted these covariance matrices.\n"
+                f"         Consider switching to L_from_sigmas_rhos_numerically for d>={key[1]}."
+            )
+    if not inside_np:
+        print("    d=1 or d=2: analytically valid for all tanh-bounded rhos. No check needed.")
 
     return {
-        "sigmas": sigmas_np,
-        "rhos": rhos_np,
-        "sigma_min": sigma_min,
-        "sigma_max": sigma_max,
-        "pct_sigma_nonpos": pct_sigma_nonpos,
-        "pct_sigma_low": pct_sigma_low,
-        "pct_sigma_high": pct_sigma_high,
-        "rho_abs_max": rho_abs_max,
-        "pct_rho_out": pct_rho_out,
-        "cov_min_eigs": cov_min_eigs,
-        "min_cov_eig": min_cov_eig,
+        "sigmas":            sigmas_np,
+        "rhos":              rhos_np,
+        "sigma_min":         sigma_min,
+        "sigma_max":         sigma_max,
+        "pct_sigma_nonpos":  pct_sigma_nonpos,
+        "pct_sigma_low":     pct_sigma_low,
+        "pct_sigma_high":    pct_sigma_high,
+        "rho_abs_max":       rho_abs_max,
+        "pct_rho_out":       pct_rho_out,
+        "cov_min_eigs":      cov_min_eigs,
+        "cov_max_eigs":      cov_max_eigs,
+        "cond_numbers":      cond_numbers,
+        "min_cov_eig":       min_cov_eig,
+        "max_cond":          float(cond_numbers.max()),
+        "mean_cond":         float(cond_numbers.mean()),
+        "diag_err_max":      float(diag_err.max()),
+        "inside":            inside_np,
+        "chol_any_neg":      chol_any_neg,
     }
 
 
@@ -688,7 +789,13 @@ def save_outputs(
                 "pct_sigma_nonpos": sigma_res["pct_sigma_nonpos"],
                 "rho_abs_max": sigma_res["rho_abs_max"],
                 "pct_rho_out": sigma_res["pct_rho_out"],
-                "min_cov_eig":    sigma_res["min_cov_eig"],
+                "min_cov_eig":      sigma_res["min_cov_eig"],
+                "max_cond":         sigma_res["max_cond"],
+                "mean_cond":        sigma_res["mean_cond"],
+                "diag_err_max":     sigma_res["diag_err_max"],
+                "chol_any_neg":     int(sigma_res["chol_any_neg"]),
+                **{f"chol_inside_{k}_min": float(v.min()) for k, v in sigma_res["inside"].items()},
+                **{f"chol_inside_{k}_pct_neg": float(100.0 * (v < 0).mean()) for k, v in sigma_res["inside"].items()},
                 "r_mean":         r_res["r_mean"],
                 "r_std":          r_res["r_std"],
                 "r_min":          r_res["r_min"],
@@ -854,6 +961,9 @@ def make_summary_plot(
         ["% r < -200bp",  f"{r_res['pct_very_neg']:.2f}%",        status_str(r_res["pct_very_neg"] == 0.0)],
         ["% r > 1000bp",  f"{r_res['pct_high']:.2f}%",            status_str(r_res["pct_high"] == 0.0)],
         ["min cov eig",   f"{sigma_res['min_cov_eig']:.2e}",       status_str(sigma_res["min_cov_eig"] >= -1e-10)],
+        ["max cond(Sigma)", f"{sigma_res['max_cond']:.2f}",            ""],
+        ["diag(Sigma)=σ²", f"{sigma_res['diag_err_max']:.2e}",        status_str(sigma_res["diag_err_max"] < 1e-4)],
+        ["chol clamp fired", "YES" if sigma_res["chol_any_neg"] else "NO", status_str(not sigma_res["chol_any_neg"])],
         ["max |SR|",      f"{sharpe_res['max_abs_sr']:.2e}" if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A",
          status_str(np.isfinite(sharpe_res["max_abs_sr"]) and sharpe_res["max_abs_sr"] < SHARPE_TOL) if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A"],
         ["avg RMSE",      f"{rmse_df['rmse_bps'].mean():.2f} bp" if rmse_df is not None else "N/A", ""],
