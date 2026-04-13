@@ -81,20 +81,20 @@ class FullModel(nn.Module):
                 bias=True,
                 epsilon=k_epsilon,
             )
-            #self.H = HSigmaStable(
-            #    latent_dim=latent_dim,
-            #    hidden_dim=h_hidden,
-            #    bias=hr_bias,
-            #    sigma_init=sigma_init,
-            #    sigma_min=h_sigma_min,
-            #    sigma_max=h_sigma_max,
-            #    rho_max=h_rho_max,
-            #)
-            self.H = HSigmaBaseline(
+            self.H = HSigmaStable(
                 latent_dim=latent_dim,
                 hidden_dim=h_hidden,
                 bias=hr_bias,
+                sigma_init=sigma_init,
+                sigma_min=h_sigma_min,
+                sigma_max=h_sigma_max,
+                rho_max=h_rho_max,
             )
+            #self.H = HSigmaBaseline(
+            #    latent_dim=latent_dim,
+            #    hidden_dim=h_hidden,
+            #    bias=hr_bias,
+            #)
             self.R = RShortStable(
                 latent_dim=latent_dim,
                 hidden_dim=r_hidden,
