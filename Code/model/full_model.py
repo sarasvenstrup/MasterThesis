@@ -11,7 +11,7 @@ from .K_mu import KMu as KMuBaseline
 from .R_short import RShort as RShortBaseline
 from .H_sigma import HSigma as HSigmaBaseline
 
-from .K_mu_stable import KMuStable_old
+from .K_mu_stable import KMuStable
 from .R_short_stable import RShortStable
 from .H_sigma_stable import HSigmaStable
 
@@ -76,7 +76,7 @@ class FullModel(nn.Module):
         # Use config.py as single source of truth
         if config.VARIANT == "stable":
             self.G = DecoderGStable(latent_dim, g_hidden, g_bias, g_floor_init=g_floor_init)
-            self.K = KMuStable_old(
+            self.K = KMuStable(
                 latent_dim=latent_dim,
                 bias=True,
                 epsilon=k_epsilon,
