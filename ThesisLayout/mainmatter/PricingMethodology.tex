@@ -3,9 +3,12 @@
 \label{chap:pricing_methodology}
 %=========================================================
 
-Having established in Chapter~\ref{chap:sim_comparison} that the stable latent-factor
-model produces well-behaved simulated paths, this chapter develops the full pricing and
-calibration framework. Section~\ref{sec:bachelier_model} describes the Bachelier normal
+% ── Opening motivation (why simulation-based pricing?) ──────────────────────
+\input{ThesisLayout/mainmatter/PricingMotivation}
+% ────────────────────────────────────────────────────────────────────────────
+
+The remainder of this chapter develops the technical framework.
+Section~\ref{sec:bachelier_model} describes the Bachelier normal
 model and its two roles in the pipeline: as a pricing-target converter in the second-stage
 calibration and as an implied-volatility inverter for reporting.
 Section~\ref{sec:bachelier_greeks} collects the analytic Greeks of the Bachelier price.
