@@ -1,0 +1,197 @@
+\chapter{Simulation}
+\label{chap:simulation}
+
+This chapter describes how scenarios are generated from the trained neural encoder--decoder model. The purpose is no longer only to reconstruct a curve at a fixed date, but to simulate future latent states and decode them into full zero-coupon bond curves. This provides the dynamic objects needed for the pricing analysis carried out later.
+
+\section{Simulation of Latent Dynamics and Curve Reconstruction}
+\label{sec:simulation-latent-dynamics}
+
+We use the same swap data as in the previous chapters. Let \(S_0 \in \mathbb{R}^8\) denote an observed market swap curve at the initial date, corresponding to the eight quoted maturities used in the model. In the implementation, \(S_0\) is selected either as the first row in the dataset or as the row corresponding to a specified date. The trained encoder maps this curve to the latent initial state
+\[
+z_0 = E(S_0) \in \mathbb{R}^\ell,
+\]
+where \(\ell\) denotes the latent dimension.
+
+Starting from \(z_0\), the latent state is simulated forward under the risk-neutral dynamics introduced in Chapter ????,
+\[
+dz_t = \mu(z_t)\,dt + \sigma(z_t)\,dW_t^Q,
+\]
+where \(W_t^Q\) is an \(\ell\)-dimensional Brownian motion under the risk-neutral measure \(Q\). In the implementation, the drift and short-rate functions are given by the trained networks
+\[
+\mu(z)=K(z), \qquad r(z)=R(z),
+\]
+while the network \(H\) returns state-dependent volatilities and correlations. These are used to construct the matrix \(L(z_t)\), which enters directly in the simulation of the latent process.
+
+The dynamics are discretized using the Euler--Maruyama scheme. For a time step \(\Delta t > 0\) and grid points \(t_n = n\Delta t\), the simulated paths satisfy
+\[
+z_{t_{n+1}}
+=
+z_{t_n}
++
+\mu(z_{t_n})\,\Delta t
++
+L(z_{t_n})\,\Delta W_n,
+\qquad
+\Delta W_n \sim \mathcal{N}(0,\Delta t\,I_\ell).
+\]
+
+From the simulated short-rate path
+\[
+r_{t_0}, r_{t_1}, \dots, r_{t_N},
+\]
+the corresponding money-market discount process is constructed. In continuous time,
+\[
+D_t = \exp\left(-\int_0^t r_s\,ds\right).
+\]
+Since the short rate is only observed on the simulation grid, the integral is approximated numerically using the trapezoidal rule:
+\[
+\int_0^{t_n} r_s\,ds
+\approx
+\sum_{k=0}^{n-1} \frac{r_{t_k}+r_{t_{k+1}}}{2}\,\Delta t,
+\]
+which gives
+\[
+D_{t_n}
+\approx
+\exp\left(
+-
+\sum_{k=0}^{n-1} \frac{r_{t_k}+r_{t_{k+1}}}{2}\,\Delta t
+\right).
+\]
+
+For each simulated latent state \(z_{t_n}\), the corresponding zero-coupon bond curve is obtained through the decoder described in Chapter~\ref{chap:framework}. More precisely, for each realized state \(z_{t_n}\), the functions \(A_{z_{t_n}}(\tau)\) and \(B_{z_{t_n}}(\tau)\) are obtained by solving the no-arbitrage ODE system numerically, after which bond prices are recovered from
+\[
+P(z_{t_n},\tau)
+=
+\exp\bigl(A_{z_{t_n}}(\tau)-B_{z_{t_n}}(\tau)G(z_{t_n},\tau)\bigr).
+\]
+
+Hence, each simulated path produces not only a short-rate path and pathwise discount factors, but also a full sequence of zero-coupon bond curves across maturities.
+
+
+\section{Monte Carlo Pricing of Swaptions}
+\label{sec:swaption-pricing}
+
+Having generated simulated latent paths and the associated zero-coupon bond curves, we can now price interest-rate derivatives by Monte Carlo under the risk-neutral measure. In this section, we consider European swaptions.
+
+Let \(T_e\) denote the option expiry, let \(n\) denote the number of fixed-leg payments of the underlying swap, and let \(\delta>0\) denote the accrual period. In the implementation, we use annual accrual, so \(\delta=1\). The payment dates of the underlying swap are therefore
+\[
+T_e+\delta,\; T_e+2\delta,\; \dots,\; T_e+n\delta.
+\]
+The corresponding swap tenor is \(n\delta\).
+
+The initial strike is determined from the time-zero discount curve. Given the decoded bond prices \(P(0,T)\), the swap annuity at time \(0\) is
+\[
+A_0
+=
+\delta \sum_{j=1}^{n} P(0,T_e+j\delta),
+\]
+and the corresponding forward swap rate is
+\[
+F_0
+=
+\frac{P(0,T_e)-P(0,T_e+n\delta)}{A_0}.
+\]
+For an at-the-money swaption, the strike is chosen as
+\[
+K = F_0.
+\]
+
+For each simulated path \(m=1,\dots,M\), the decoder delivers a full zero-coupon bond curve at expiry. Since the model is expressed in terms of time-to-maturity, this curve is written as
+\[
+\tau \mapsto P^{(m)}(T_e,\tau).
+\]
+The payment dates of the underlying swap correspond to the maturities
+\[
+\delta,\; 2\delta,\; \dots,\; n\delta
+\]
+measured from \(T_e\). The pathwise annuity at expiry is therefore
+\[
+A^{(m)}(T_e)
+=
+\delta \sum_{j=1}^{n} P^{(m)}(T_e,j\delta),
+\]
+and the corresponding spot-starting swap rate is
+\[
+S^{(m)}(T_e)
+=
+\frac{1-P^{(m)}(T_e,n\delta)}{A^{(m)}(T_e)}.
+\]
+
+Let \(\mathcal N>0\) denote the notional. The payer swaption payoff on path \(m\) is
+\[
+X^{(m)}_{T_e}
+=
+\mathcal N\,A^{(m)}(T_e)\max\bigl(S^{(m)}(T_e)-K,0\bigr),
+\]
+while the receiver swaption payoff is
+\[
+X^{(m)}_{T_e}
+=
+\mathcal N\,A^{(m)}(T_e)\max\bigl(K-S^{(m)}(T_e),0\bigr).
+\]
+
+The payoff is discounted back to time \(0\) using the pathwise money-market discount factor from Section~\ref{sec:simulation-latent-dynamics}. Denoting this factor on path \(m\) by
+\[
+D^{(m)}_{T_e}
+=
+\exp\left(-\int_0^{T_e} r_s^{(m)}\,ds\right),
+\]
+the discounted present value on path \(m\) is
+\[
+V_0^{(m)} = D^{(m)}_{T_e} X^{(m)}_{T_e}.
+\]
+The time-zero swaption price is then estimated by the Monte Carlo average
+\[
+\widehat V_0
+=
+\frac{1}{M}\sum_{m=1}^{M} V_0^{(m)}.
+\]
+
+To assess numerical uncertainty, we also report the sample standard deviation
+\[
+\widehat \sigma_{\mathrm{MC}}
+=
+\sqrt{\frac{1}{M-1}\sum_{m=1}^{M}\left(V_0^{(m)}-\widehat V_0\right)^2}
+\]
+and the associated Monte Carlo standard error
+\[
+\widehat{\mathrm{SE}}_{\mathrm{MC}}
+=
+\frac{\widehat \sigma_{\mathrm{MC}}}{\sqrt{M}}.
+\]
+
+Finally, the Monte Carlo price is converted into a model-implied normal volatility using the Bachelier swaption formula. For a payer swaption, the Bachelier price is
+\[
+V_0^{\mathrm{Bach}}
+=
+\mathcal N A_0
+\left[
+(F_0-K)\Phi(d) + \sigma_N \sqrt{T_e}\,\phi(d)
+\right],
+\qquad
+d=\frac{F_0-K}{\sigma_N\sqrt{T_e}},
+\]
+where \(\Phi\) and \(\phi\) denote the standard normal distribution and density functions, respectively, and \(\sigma_N\) is the normal volatility.
+
+For a receiver swaption, the corresponding formula is
+\[
+V_0^{\mathrm{Bach}}
+=
+\mathcal N A_0
+\left[
+(K-F_0)\Phi(-d) + \sigma_N \sqrt{T_e}\,\phi(d)
+\right].
+\]
+The model-implied normal volatility is then obtained by numerically inverting the Bachelier formula so that the analytical price matches the Monte Carlo estimate \(\widehat V_0\).
+
+In the implementation, the time-zero quantities \(F_0\) and \(A_0\) are computed directly from the decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and \(A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry on each simulated path. Because the pricing routine extracts bond prices directly from the model grids, the option expiry \(T_e\) must lie on the simulation time grid, while the payment dates \(j\delta\) must lie on the decoder maturity grid. In the numerical examples below, we consider in particular at-the-money payer swaptions, for which the strike is set equal to the time-zero forward swap rate.
+
+Overall, the pricing pipeline can be summarized schematically as
+\[
+z \;\longrightarrow\; P \;\longrightarrow\; (F_0,A_0) \;\longrightarrow\; (S(T_e),A(T_e)) \;\longrightarrow\; X(T_e) \;\longrightarrow\; V_0 \;\longrightarrow\; \sigma_N.
+\]
+
+\section{Diagnostics}
+
+We now turn to a set of simple diagnostics for this simulation and pricing setup before comparing the model-implied quantities with observed market data.
