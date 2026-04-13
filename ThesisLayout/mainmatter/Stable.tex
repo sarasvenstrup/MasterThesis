@@ -264,12 +264,238 @@ singular, and controls the minimum rate of mean reversion.
 \end{remark}
 
 
+%========================================================
+\section{Problem 3: Bounded and positive-definite diffusion}
+\label{sec:stable_diffusion}
+%========================================================
+
+Even when the drift is mean-reverting, the Euler--Maruyama simulation can still produce implausible paths if the diffusion coefficient grows too large or if the correlation matrix ceases to be positive definite at states far from the training cloud.
+The baseline diffusion network $\mathcal{H}$ exhibits two potential weaknesses that become practically relevant during long-horizon simulation.
+
+\subsection{Unbounded volatilities}
+
+In the baseline parameterization, the individual volatilities are recovered as
+\[
+\sigma_i(z) = \exp\bigl([\mathcal{H}(z)]_i\bigr), \qquad i = 1,\ldots,\ell.
+\]
+We showed in the proof of Proposition~\ref{thm:existence_uniqueness_sde} that the bounded activation $\psi$ confines the pre-exponential outputs to a compact interval $[-C_{\mathrm{pre}}, C_{\mathrm{pre}}]$, so that $\sigma_i \in [e^{-C_{\mathrm{pre}}}, e^{C_{\mathrm{pre}}}]$ for all $z$.
+This guarantees the theoretical linear-growth and Lipschitz conditions needed for existence and uniqueness of the SDE solution, but the \emph{practical} upper bound $e^{C_{\mathrm{pre}}}$ depends on the learned weight matrices $W_1,W_2$ and can be large.
+When the latent state drifts outside the support of the training data --- as inevitably happens during multi-year simulation --- the network may output pre-exponential values near its saturation limits, producing volatilities that are technically finite but economically implausible (e.g.\ $\sigma_i > 5$).
+
+To address this, we replace the $\exp$-link with a \emph{sigmoid-bounded} parameterization:
+\[
+\log\sigma_i(z) \;=\; \log\sigma_{\min}
+  + \bigl(\log\sigma_{\max} - \log\sigma_{\min}\bigr)
+    \cdot \operatorname{sigmoid}\!\bigl(h_i(z) + b_i\bigr),
+\]
+where $h_i(z)$ denotes the $i$-th output of the shared hidden layer, $b_i$ is a learnable offset initialised so that $\sigma_i = \sigma_{\mathrm{init}}$ when $h_i = 0$, and $0 < \sigma_{\min} < \sigma_{\max}$ are user-specified bounds.
+This guarantees
+\[
+\sigma_i(z) \;\in\; (\sigma_{\min},\;\sigma_{\max}) \qquad \forall\, z \in \mathbb{R}^\ell,
+\]
+while retaining full differentiability. The sigmoid link is monotone and its derivative is bounded, so the Lipschitz property established in the proof above still holds --- in fact with a \emph{tighter} constant, since the output range is now strictly controlled.
+
+\begin{proposition}
+\label{prop:bounded_sigma}
+Let $\sigma_{\min}, \sigma_{\max} > 0$ with $\sigma_{\min} < \sigma_{\max}$. The stable volatility parameterization satisfies, for all $z \in \mathbb{R}^\ell$:
+\begin{enumerate}
+    \item $\sigma_i(z) \in (\sigma_{\min}, \sigma_{\max})$ for every $i = 1,\ldots,\ell$.
+    \item The mapping $z \mapsto \sigma_i(z)$ is Lipschitz continuous with constant
+    \[
+    L_{\sigma} = \frac{1}{4}\,(\log\sigma_{\max} - \log\sigma_{\min})\,\sigma_{\max}\,\|W_2^{(i)}\|\,\|W_1\|,
+    \]
+    where $W_2^{(i)}$ denotes the $i$-th row of the output weight matrix.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+\emph{Part 1.} Since $\operatorname{sigmoid}(x) \in (0,1)$ for all $x \in \mathbb{R}$, we have $\log\sigma_i \in (\log\sigma_{\min},\,\log\sigma_{\max})$ and therefore $\sigma_i \in (\sigma_{\min},\,\sigma_{\max})$.
+
+\emph{Part 2.} Write $s_i(z) = h_i(z) + b_i$ and $\phi = \operatorname{sigmoid}$. Then $\sigma_i = \exp\!\bigl(\log\sigma_{\min} + \Delta\,\phi(s_i)\bigr)$ with $\Delta = \log\sigma_{\max} - \log\sigma_{\min}$. By the chain rule:
+\[
+\|\nabla_z \sigma_i\| = \sigma_i \cdot \Delta \cdot \phi'(s_i) \cdot \|\nabla_z h_i\|
+\leq \sigma_{\max} \cdot \Delta \cdot \tfrac{1}{4} \cdot \|W_2^{(i)}\|\,\|W_1\|,
+\]
+where we used $\sigma_i \leq \sigma_{\max}$, $\phi'(x) = \phi(x)(1-\phi(x)) \leq \frac{1}{4}$, and the fact that $\|\nabla_z h_i\| \leq \|W_2^{(i)}\|\,\|W_1\|$ because the hidden activation $\psi$ satisfies $|\psi'| \leq \frac{1}{4} \leq 1$.
+\end{proof}
 
 
+\subsection{Positive-definite correlations for arbitrary dimension}
+
+The baseline network parameterizes correlations as
+\[
+\rho_{ij}(z) = \tanh\!\bigl([\mathcal{H}(z)]_k\bigr),
+\]
+which ensures each pairwise correlation lies in $(-1,1)$, but does \emph{not} guarantee that the full $\ell \times \ell$ correlation matrix $R$ is positive definite when $\ell \geq 3$.
+A set of pairwise correlations $\{\rho_{ij}\}$ that are individually valid can still fail to be jointly realisable: for example, $\rho_{12} = \rho_{13} = 0.9$ and $\rho_{23} = -0.9$ gives a correlation matrix with a negative eigenvalue.
+If $R$ is not positive definite, the Cholesky factorization $R = L_R L_R^\top$ fails and the diffusion matrix $\Sigma = \operatorname{diag}(\sigma)\,L_R$ is undefined.
+
+For $\ell = 2$, this issue does not arise: any single correlation $\rho_{12} \in (-1,1)$ gives a valid $2 \times 2$ correlation matrix.
+However, since the architecture is designed to work for any $\ell$, a structurally safe parameterization is required.
+
+We adopt the \emph{hyperspherical Cholesky} parameterization \citep{Pinheiro1996}, which maps $\ell(\ell-1)/2$ free angles $\theta_k \in (0,\pi)$ to a lower-triangular matrix $L_R$ such that $R = L_R L_R^\top$ is a valid correlation matrix by construction.
+
+\begin{definition}[Hyperspherical Cholesky factor]
+\label{def:hyperspherical_cholesky}
+For $\ell \geq 2$, define the lower-triangular matrix $L_R \in \mathbb{R}^{\ell \times \ell}$ by:
+\[
+L_R[0,0] = 1, \qquad
+L_R[i,j] = \cos\theta_{i,j+1}\prod_{k=1}^{j}\sin\theta_{i,k}, \quad j < i, \qquad
+L_R[i,i] = \prod_{k=1}^{i}\sin\theta_{i,k},
+\]
+where the angles $\{\theta_{i,k}\}$ are indexed row by row, using $\ell(\ell-1)/2$ free parameters in total.
+\end{definition}
+
+\begin{proposition}
+\label{prop:pd_correlation}
+If all angles satisfy $\theta_{i,k} \in (0,\pi)$, then $R = L_R L_R^\top$ is a symmetric positive-definite matrix with unit diagonal (i.e.\ a valid correlation matrix).
+\end{proposition}
+
+\begin{proof}
+\emph{Unit diagonal.} Each row of $L_R$ has squared norm:
+\[
+\sum_{j=0}^{i} L_R[i,j]^2 = 1,
+\]
+which follows from the trigonometric identity $\cos^2\theta + \sin^2\theta = 1$ applied recursively.
+Therefore $R[i,i] = \sum_j L_R[i,j]^2 = 1$.
+
+\emph{Positive definiteness.} For $\theta_{i,k} \in (0,\pi)$, we have $\sin\theta_{i,k} > 0$, so the diagonal entries $L_R[i,i] = \prod_{k=1}^{i}\sin\theta_{i,k} > 0$.
+Hence $L_R$ is lower-triangular with strictly positive diagonal, which means it is non-singular.
+For any $x \neq 0$:
+\[
+x^\top R\, x = x^\top L_R L_R^\top x = \|L_R^\top x\|^2 > 0,
+\]
+since $L_R^\top$ is non-singular. Therefore $R$ is positive definite.
+
+\emph{Symmetry.} $R = L_R L_R^\top$ is symmetric by construction.
+\end{proof}
+
+In the stable network, the angles are produced from the shared hidden layer via
+\[
+\theta_k(z) = \pi \cdot \operatorname{sigmoid}\!\bigl(g_k(z)\bigr) \;\in\; (0,\pi),
+\]
+where $g_k(z)$ is the $(d+k)$-th output of the network.
+The sigmoid ensures that the angles are always in the open interval $(0,\pi)$, so Proposition~\ref{prop:pd_correlation} applies for every input $z$ and the correlation matrix is guaranteed to be positive definite.
+
+\begin{remark}[Initialization]
+When the output-layer weights are initialized to zero, we have $g_k(z) = 0$ for all $z$ and $k$, so $\theta_k = \pi/2$.
+Since $\cos(\pi/2) = 0$, the off-diagonal entries of $L_R$ vanish and $L_R = I$, giving $R = I$ (zero correlations).
+The model therefore starts from an uncorrelated prior and learns non-trivial correlation structure during training.
+\end{remark}
 
 
+%========================================================
+\section{Summary of the stable autoencoder}
+\label{sec:stable_summary}
+%========================================================
+
+The following table summarises the differences between the baseline and stable variants.
+The encoder, decoder $G$, and short-rate network $R$ are \emph{shared} across both variants; only the drift~$K$ and diffusion~$H$ networks differ.
+
+\begin{table}[H]
+\centering
+\caption{Comparison of baseline and stable network parameterizations.}
+\label{tab:stable_summary}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Component} & \textbf{Baseline} & \textbf{Stable} \\
+\midrule
+Drift matrix $M$ & Unconstrained $M \in \mathbb{R}^{\ell \times \ell}$ & $M = -(V^\top V + \epsilon I)$, Hurwitz by construction \\
+Volatilities $\sigma_i$ & $\exp(\text{net}_i)$, bounded but potentially large & $\sigma_i \in (\sigma_{\min}, \sigma_{\max})$ via sigmoid link \\
+Correlations $\rho_{ij}$ & $\tanh(\text{net}_k) \in (-1,1)$ per pair & Hyperspherical angles $\to$ PD $R$ by construction \\
+\midrule
+Mean reversion & Not guaranteed & Guaranteed (all $\lambda_i \leq -\epsilon$) \\
+PD diffusion & Guaranteed only for $\ell \leq 2$ & Guaranteed for any $\ell$ \\
+$\sigma$ bounds & $\sigma_i \in (0, e^{C_{\text{pre}}})$ & $\sigma_i \in (\sigma_{\min}, \sigma_{\max})$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These modifications ensure that the latent SDE
+\[
+dz_t = \mathcal{K}(z_t)\,dt + \Sigma(z_t)\,dW_t
+\]
+is not only well-posed in the sense of Theorem~\ref{thm:existence_uniqueness_sde} (which both variants satisfy), but also \emph{practically stable} during long-horizon Euler--Maruyama simulation: the drift always pulls the state back toward its long-run mean, the volatilities remain in an economically reasonable range, and the diffusion matrix is always well-defined.
+
+The cost of these guarantees is a slight reduction in expressiveness: the stable drift is restricted to symmetric negative-definite matrices rather than arbitrary Hurwitz matrices, and the volatilities cannot exceed the prescribed upper bound.
+In the next section, we verify empirically that this trade-off is favourable: the stable variant achieves comparable reconstruction accuracy while producing qualitatively superior simulation behaviour.
 
 
+%========================================================
+\section{Empirical comparison: baseline vs.\ stable simulation}
+\label{sec:stable_empirical}
+%========================================================
+
+To demonstrate the practical effect of the stable parameterization, we run paired Euler--Maruyama simulations from both the baseline and stable checkpoints using identical Brownian increments.
+This isolates the impact of the network architecture from stochastic variation.
+All figures in this section are produced by the script \texttt{stable\_vs\_baseline\_results.py}, which can be re-run to update the results.
+
+
+\subsection{Eigenvalues of the drift matrix}
+
+Figure~\ref{fig:drift_eigenvalues} shows the eigenvalues of the drift matrix $M$ for both variants.
+In the baseline model, the eigenvalues of the unconstrained $M$ depend entirely on the learned parameters and may have positive real parts, corresponding to an explosive (non-mean-reverting) drift direction.
+In the stable variant, $M = -(V^\top V + \epsilon I)$ is negative definite by construction, so all eigenvalues are bounded above by $-\epsilon$.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{Figures/Pricing/fig_eigenvalues.png}
+    \caption{Eigenvalues of the learned drift matrix $M$ for the baseline and stable variants ($\ell = 2$). The stable parameterization guarantees all eigenvalues are strictly negative.}
+    \label{fig:drift_eigenvalues}
+\end{figure}
+
+
+\subsection{Volatility bounds}
+
+Figure~\ref{fig:sigma_bounds} shows the realised range of the individual volatilities $\sigma_i(z)$ evaluated across the training latent cloud and on a wider grid.
+The stable variant confines $\sigma_i$ to the interval $(\sigma_{\min}, \sigma_{\max})$ by construction, whereas the baseline volatilities can reach substantially larger values at extrapolated states.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/Pricing/fig_sigma_bounds.png}
+    \caption{Distribution of $\sigma_i(z)$ across the training cloud (solid) and an expanded grid (dashed), for baseline (blue) and stable (red). The stable model's volatilities are bounded between $\sigma_{\min}$ and $\sigma_{\max}$ (grey band).}
+    \label{fig:sigma_bounds}
+\end{figure}
+
+
+\subsection{Simulated latent paths and short rates}
+
+Figures~\ref{fig:latent_fans} and \ref{fig:short_rate_fan} display percentile fan charts (5/25/50/75/95) for the latent factors and the short rate over a 10-year simulation horizon.
+Under the baseline parameterization, the latent factors can drift far from the training support when the learned drift matrix $M$ does not enforce mean reversion, causing the short rate to reach implausible levels.
+Under the stable parameterization, the guaranteed mean reversion and bounded diffusion keep the simulated paths within an economically sensible region.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Pricing/fig_latent_fans.png}
+    \caption{Percentile fan charts for latent factors $z_1(t)$ and $z_2(t)$ over a 10-year horizon (500~paths, monthly steps). Left: baseline. Right: stable. Bands show 5--95 and 25--75 percentile ranges.}
+    \label{fig:latent_fans}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/Pricing/fig_short_rate_fan.png}
+    \caption{Short-rate percentile fan chart, baseline vs.\ stable (same simulation as Figure~\ref{fig:latent_fans}).}
+    \label{fig:short_rate_fan}
+\end{figure}
+
+
+\subsection{Simulation diagnostics}
+
+Table~\ref{tab:sim_diagnostics} reports quantitative diagnostics for the paired simulation.
+The key metrics are the fraction of paths that remain finite (no NaN or $\pm\infty$), the maximum absolute latent-state value reached, and the terminal short-rate distribution.
+
+\begin{table}[H]
+    \centering
+    \caption{Simulation diagnostics: baseline vs.\ stable ($\ell=2$, $N=500$ paths, $T=10$\,yr).}
+    \label{tab:sim_diagnostics}
+    \pgfplotstableread[col sep=comma]{Figures/Pricing/sim_diagnostics.csv}\diagtable
+    \pgfplotstabletypeset[
+      columns={Metric, Baseline, Stable},
+      columns/Metric/.style={column name=Metric, string type, column type=l},
+      columns/Baseline/.style={column name=Baseline, string type, column type=r},
+      columns/Stable/.style={column name=Stable, string type, column type=r},
+    ]{\diagtable}
+\end{table}
 
 
 \newpage

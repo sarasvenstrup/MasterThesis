@@ -11,7 +11,7 @@
 
 import sys
 
-VARIANT = "stable"
+VARIANT = "baseline"
 
 
 def confirm_variant():

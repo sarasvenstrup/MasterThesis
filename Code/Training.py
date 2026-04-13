@@ -53,12 +53,12 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 SHOW_PLOTS = True  # Set to False to only save plots
 
 LATENT_DIM = 2
-EPOCHS = 3500
+EPOCHS = 200
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
 EVAL_EVERY = 1
-LOG_EVERY = 100
+LOG_EVERY = 1
 TARGET_MSE = 1e-8
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_{config.VARIANT}", f"ep{EPOCHS}")
@@ -198,7 +198,7 @@ for epoch in range(EPOCHS):
     do_eval = ((epoch + 1) % EVAL_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
     do_log = ((epoch + 1) % LOG_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
 
-    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE:
+    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE and n_obs > 0:
         do_eval = True
         do_log = True
 
@@ -240,7 +240,7 @@ for epoch in range(EPOCHS):
             f"time_total={time_total/60:.1f}min interval={time_interval/60:.1f}min"
         )
 
-    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE:
+    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE and n_obs > 0:
         print(f"[STOP] epoch={epoch} train_rmse={epoch_rmse:.6e} lr={optim.param_groups[0]['lr']:.2e}")
         break
 
@@ -304,8 +304,8 @@ def get_latent(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torc
 Z = get_latent(model, X_tensor, batch_size=EVAL_BATCH_SIZE)  # (N, LATENT_DIM)
 
 df_latent = meta.copy().reset_index(drop=True)
-df_latent["z_1"] = Z[:, 0].numpy()
-df_latent["z_2"] = Z[:, 1].numpy()
+for k in range(LATENT_DIM):
+    df_latent[f"z_{k+1}"] = Z[:, k].numpy()
 
 latent_csv_path = os.path.join(FIGURES_DIR, f"latent_z_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.csv")
 df_latent.to_csv(latent_csv_path, index=False)

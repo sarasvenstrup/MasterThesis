@@ -31,14 +31,21 @@ from Code.model.sigma_matrix import L_from_sigmas_rhos
 # ==========================================================
 # Checkpoint switch
 # ==========================================================
-checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_baseline\ep3500\checkpoint_dim2_ep3500.pt"
+checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep200\checkpoint_dim2_ep200.pt"
 
 
 def load_and_setup_model(device, checkpoint_path, latent_dim=2, use_double=True):
     state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     model = FullModel(latent_dim=latent_dim).to(device)
-    model.load_state_dict(state_dict, strict=True)
+
+    # strict=False tolerates old checkpoints that had since-removed
+    # parameters (g_floor, r_center, raw_r_scale).
+    result = model.load_state_dict(state_dict, strict=False)
+    if result.missing_keys:
+        print(f"  [load] missing keys: {result.missing_keys}")
+    if result.unexpected_keys:
+        print(f"  [load] unexpected keys (dropped): {result.unexpected_keys}")
 
     if use_double:
         model = model.double()
@@ -486,4 +493,4 @@ def run_simulation(
 
 
 if __name__ == "__main__":
-    run_simulation(checkpoint_path=checkpoint_path, ccy_filter="EUR", show_plot=False)
+    run_simulation(checkpoint_path=checkpoint_path, ccy_filter="EUR", show_plot=True)

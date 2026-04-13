@@ -362,7 +362,9 @@ def load_stable_dim2_model():
     state = torch.load(ckpt, map_location="cpu")
     model = FullModel(latent_dim=STABLE_DIM)
     sd = state["model_state_dict"] if isinstance(state, dict) and "model_state_dict" in state else state
-    model.load_state_dict(sd)
+    result = model.load_state_dict(sd, strict=False)
+    if result.unexpected_keys:
+        print(f"  [load] dropped old params: {result.unexpected_keys}")
     model.eval()
     print(f"  Loaded stable dim={STABLE_DIM} ep={STABLE_EP} checkpoint.")
     return model

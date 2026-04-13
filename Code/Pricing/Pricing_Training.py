@@ -1,355 +1,390 @@
-# =============================================================================
-# pricing_training_simple.py  (v2)
-# =============================================================================
-# Builds on v1 (theta fix + transition NLL).
-#
-# What changed vs v1:
-#   - Added sigma regularisation toward SIGMA_TARGET.
-#     v1 fitted sigma to historical transitions -> sigma ~0.012, vols ~30-39 bp.
-#     Market 5Y/10Y vols are ~18-27 bp, requiring lower sigma (~0.008).
-#     The NLL pushes back if data truly needs more vol, so the balance
-#     point is determined by both losses together.
-#
-# What stays the same:
-#   - theta = EUR latent mean, frozen
-#   - encoder, G, R frozen
-#   - no cloud penalty, no kappa reinit, no G updates
-# =============================================================================
-
+import math
 import os
 import sys
-import time
-import math
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
-from torch.utils.data import TensorDataset, DataLoader
+import torch.nn as nn
 
+# =============================================================================
+# Paths (adjust to your project structure)
+# =============================================================================
 try:
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    SCRIPT_DIR = os.getcwd()
+    CODE_ROOT = os.getcwd()
 
-CODE_ROOT   = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
-THESIS_ROOT = os.path.abspath(os.path.join(CODE_ROOT,  ".."))
-for p in [THESIS_ROOT, CODE_ROOT, SCRIPT_DIR]:
+PROJECT_ROOT = os.path.abspath(os.path.join(CODE_ROOT, ".."))
+THESIS_ROOT  = os.path.abspath(os.path.join(CODE_ROOT, "..", ".."))
+
+for p in [CODE_ROOT, PROJECT_ROOT, THESIS_ROOT]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from Code import config
-config.confirm_variant()
-from Code.load_swapdata import my_data
 from Code.model.full_model import FullModel
 from Code.model.sigma_matrix import L_from_sigmas_rhos
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Torch   : {torch.__version__}")
-print(f"Device  : {device}")
-print(f"Variant : {config.VARIANT}")
-
-# =============================================================================
-# SETTINGS
-# =============================================================================
-
-CHECKPOINT_PATH = (
-    r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults"
-    r"\dim2_stable\ep300\checkpoint_dim2_ep300.pt"
-)
-
-OUT_DIR = os.path.join(
-    THESIS_ROOT, "Figures", "TrainingResults",
-    f"dim2_{config.VARIANT}", "pricing_simple_v2"
-)
-os.makedirs(OUT_DIR, exist_ok=True)
-
-CCY        = "EUR"
-EPOCHS     = 200
-BATCH_SIZE = 32
-LR         = 1e-4
-VAL_FRAC   = 0.15
-
-# Sigma regularisation — disabled (LAMBDA_SIGMA=0 turns it off).
-# The sigma penalty did not move sigma meaningfully vs the NLL.
-# The good vol results from v2 come from the correct theta, not sigma reg.
-# Kept here in case you want to experiment — set LAMBDA_SIGMA > 0 to activate.
-SIGMA_TARGET = 0.008
-LAMBDA_SIGMA = 0.0
-
-JITTER = 1e-8
-
-# =============================================================================
-# DATA
-# =============================================================================
-
-def build_transition_pairs(df_wide, tenors, scale_is_percent, ccy):
-    df = df_wide.copy()
-    df["as_of_date"] = pd.to_datetime(df["as_of_date"])
-    df = df[df["ccy"].astype(str).str.upper() == ccy.upper()].copy()
-    df = df.sort_values("as_of_date").reset_index(drop=True)
-
-    tenor_cols = [int(t) for t in tenors]
-    X_arr = df[tenor_cols].to_numpy(dtype=np.float64)
-    if scale_is_percent:
-        X_arr /= 100.0
-
-    dates = df["as_of_date"].to_numpy()
-    X_t_list, X_tp1_list, dt_list = [], [], []
-    for i in range(len(df) - 1):
-        dt_days = (dates[i + 1] - dates[i]) / np.timedelta64(1, "D")
-        if dt_days <= 0:
-            continue
-        X_t_list.append(X_arr[i])
-        X_tp1_list.append(X_arr[i + 1])
-        dt_list.append(float(dt_days) / 365.25)
-
-    X_t  = torch.tensor(np.array(X_t_list),  dtype=torch.float64)
-    Xtp1 = torch.tensor(np.array(X_tp1_list), dtype=torch.float64)
-    dt   = torch.tensor(np.array(dt_list),    dtype=torch.float64).unsqueeze(1)
-    print(f"  Transition pairs: {len(X_t_list)}  "
-          f"dt mean={dt.mean().item():.4f}y  max={dt.max().item():.4f}y")
-    return TensorDataset(X_t, Xtp1, dt)
-
-
-def split_timewise(dataset, val_frac):
-    n     = len(dataset)
-    n_val = max(1, int(math.ceil(val_frac * n)))
-    return (torch.utils.data.Subset(dataset, range(n - n_val)),
-            torch.utils.data.Subset(dataset, range(n - n_val, n)))
+from Code.load_swapdata import my_data
+from Code.Pricing.load_swapvol_ois import load_swaption_vol_data
 
 
 # =============================================================================
-# LOSSES
+# 1.  DIFFERENTIABLE SIMULATION TO EXPIRY
 # =============================================================================
 
-def transition_nll(model, z_t, z_tp1, dt):
-    """Euler-Gaussian NLL for z_{t+1} | z_t."""
-    mu   = model.K(z_t)
-    sigmas, rhos = model.H(z_t)
-    L    = L_from_sigmas_rhos(sigmas, rhos)
-    B, d = z_t.shape
-    I    = torch.eye(d, device=z_t.device, dtype=z_t.dtype).unsqueeze(0)
-    Sigma = (L @ L.transpose(1, 2)) * dt.view(-1, 1, 1) + JITTER * I
-    resid = (z_tp1 - z_t - mu * dt).unsqueeze(-1)
-    quad  = resid.transpose(1, 2).bmm(
-                torch.linalg.solve(Sigma, resid)
-            ).squeeze()
-    return (0.5 * (quad + torch.logdet(Sigma))).mean()
+def simulate_to_expiry_differentiable(
+    model,
+    z0    : torch.Tensor,   # (1, d)  — initial latent state, detached
+    n_steps: int,           # Euler steps to reach expiry T
+    dt    : float,
+    n_paths: int,
+    eps   : torch.Tensor,   # (n_paths, n_steps, d) — PRE-DRAWN, fixed noise
+) -> torch.Tensor:          # (n_paths, d)  — z at expiry, WITH grad w.r.t. H
+    """
+    Differentiable Euler-Maruyama.
 
+    The noise eps is drawn BEFORE this function and passed in as a fixed
+    tensor (no grad). This is the reparameterization trick of Mohamed et al.:
+    the randomness is decoupled from the parameters, so autograd flows cleanly
+    through L(z_t; H) at every step.
 
-def sigma_reg(model, z_t):
-    """Pull sigma mean toward SIGMA_TARGET."""
-    sigmas, _ = model.H(z_t)
-    return (sigmas.mean() - SIGMA_TARGET).pow(2)
+    K is called with torch.no_grad() because we freeze it — this avoids
+    building an unnecessary computation graph for K's parameters.
+    """
+    sqrt_dt = math.sqrt(dt)
 
+    z = z0.expand(n_paths, -1).clone()   # (n_paths, d)
 
-# =============================================================================
-# LOAD DATA
-# =============================================================================
-print("\n── Loading data ──")
-(meta, X_tensor, meta_full, X_tensor_full,
- tenors, df_wide, df_wide_all, SCALE_IS_PERCENT) = my_data(use="bbg")
+    for t in range(n_steps):
+        # --- Volatility: gradients flow through H --------------------------
+        sigmas, rhos = model.H(z)
+        L = L_from_sigmas_rhos(sigmas, rhos)         # (n_paths, d, d)
 
-X_tensor = X_tensor.double()
-mask_ccy = meta["ccy"].astype(str).str.upper() == CCY.upper()
-X_ccy    = X_tensor[mask_ccy.to_numpy()]
-print(f"  EUR curves : {X_ccy.shape[0]}")
-
-print("\n── Building transition pairs ──")
-full_ds = build_transition_pairs(df_wide, tenors, SCALE_IS_PERCENT, CCY)
-train_set, val_set = split_timewise(full_ds, VAL_FRAC)
-train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True,  drop_last=False)
-val_loader   = DataLoader(val_set,   batch_size=BATCH_SIZE, shuffle=False, drop_last=False)
-print(f"  Train: {len(train_set)}   Val: {len(val_set)}")
-
-# =============================================================================
-# LOAD MODEL
-# =============================================================================
-print(f"\n── Loading checkpoint ──")
-raw_ckpt   = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=False)
-state_dict = (raw_ckpt["model_state_dict"]
-              if isinstance(raw_ckpt, dict) and "model_state_dict" in raw_ckpt
-              else raw_ckpt)
-
-model = FullModel(latent_dim=2).to(device).double()
-model.load_state_dict(state_dict, strict=False)
-
-for p in model.encoder.parameters():
-    p.requires_grad = False
-for p in model.G.parameters():
-    p.requires_grad = False
-for p in model.R.parameters():
-    p.requires_grad = False
-
-# =============================================================================
-# SET AND FREEZE THETA
-# =============================================================================
-print(f"\n── Setting theta to EUR latent mean ──")
-with torch.no_grad():
-    zs = []
-    for i in range(0, X_ccy.shape[0], 256):
-        zs.append(model.encoder(X_ccy[i:i+256].to(device)).detach().cpu())
-    z_eur_mean = torch.cat(zs, dim=0).mean(dim=0)
-
-print(f"  EUR latent mean : {z_eur_mean.numpy()}")
-print(f"  theta before    : {model.K.theta.detach().cpu().numpy()}")
-with torch.no_grad():
-    model.K.theta.copy_(z_eur_mean.to(device=device, dtype=model.K.theta.dtype))
-model.K.theta.requires_grad = False
-print(f"  theta after     : {model.K.theta.detach().cpu().numpy()}  [FROZEN]")
-
-# =============================================================================
-# OPTIMIZER
-# =============================================================================
-trainable = [p for p in model.parameters() if p.requires_grad]
-print(f"\n── Trainable parameters: {sum(p.numel() for p in trainable):,}  (K excl. theta, H)")
-print(f"   SIGMA_TARGET={SIGMA_TARGET}  LAMBDA_SIGMA={LAMBDA_SIGMA}")
-
-optim     = torch.optim.Adam(trainable, lr=LR)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=EPOCHS, eta_min=1e-6)
-
-# =============================================================================
-# HELPERS
-# =============================================================================
-def curve_rmse(model, X_ccy):
-    model.eval()
-    outs = []
-    with torch.no_grad():
-        for i in range(0, X_ccy.shape[0], 256):
-            outs.append(model(X_ccy[i:i+256].to(device)).detach().cpu())
-    S_hat = torch.cat(outs)
-    rmse  = float(((X_ccy.cpu() - S_hat)**2).mean().sqrt().item() * 10000)
-    model.train()
-    return rmse
-
-def kappa_hl(model):
-    k = F.softplus(model.K.raw_kappa).item()
-    e = torch.linalg.eigvals(model.K.drift_matrix()).real.detach().cpu().numpy()
-    hl = math.log(2) / float(np.abs(e).min()) if np.abs(e).min() > 0 else float("inf")
-    return k, hl
-
-rmse_init = curve_rmse(model, X_ccy)
-k0, hl0   = kappa_hl(model)
-with torch.no_grad():
-    z_s = model.encoder(X_ccy[:32].to(device))
-    s0, _ = model.H(z_s)
-print(f"\n  Initial: kappa={k0:.4f} hl={hl0:.2f}y  "
-      f"sigma={s0.mean().item():.6f}  rmse={rmse_init:.2f}bp")
-
-# =============================================================================
-# TRAINING LOOP
-# =============================================================================
-print(f"\n── Training ({EPOCHS} epochs) ──")
-
-csv_path = os.path.join(OUT_DIR, "metrics.csv")
-cols = ["epoch", "train_nll", "train_sigma_loss", "train_total",
-        "val_nll", "val_sigma_loss", "val_total",
-        "curve_rmse_bp", "kappa", "hl_y", "sigma_mean", "lr", "time_sec"]
-pd.DataFrame(columns=cols).to_csv(csv_path, index=False)
-
-best_val  = float("inf")
-best_path = os.path.join(OUT_DIR, "best_checkpoint.pt")
-t0        = time.perf_counter()
-
-for epoch in range(EPOCHS):
-    model.train()
-    sum_nll, sum_sig, sum_tot, n_train, n_nan = 0., 0., 0., 0, 0
-
-    for X_t, X_tp1, dt in train_loader:
-        X_t, X_tp1, dt = X_t.to(device), X_tp1.to(device), dt.to(device)
-        optim.zero_grad()
-
+        # --- Drift: detach since K is frozen --------------------------------
         with torch.no_grad():
-            z_t   = model.encoder(X_t)
-            z_tp1 = model.encoder(X_tp1)
+            mu = model.K(z)                          # (n_paths, d)
 
-        l_nll = transition_nll(model, z_t, z_tp1, dt)
-        l_sig = sigma_reg(model, z_t)
-        loss  = l_nll + LAMBDA_SIGMA * l_sig
+        # --- Euler step with fixed noise ------------------------------------
+        dW    = eps[:, t, :] * sqrt_dt              # (n_paths, d)
+        shock = torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)  # (n_paths, d)
 
-        if not torch.isfinite(loss):
-            n_nan += 1
-            continue
+        z = z + mu.detach() * dt + shock            # grad flows through shock
+        # Note: z itself now carries grad w.r.t. H, which feeds into
+        # model.H(z) at the NEXT step — the gradient propagates in time.
 
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(trainable, max_norm=1.0)
-        optim.step()
+    return z   # (n_paths, d)
 
-        bs = X_t.shape[0]
-        sum_nll += l_nll.item() * bs
-        sum_sig += l_sig.item() * bs
-        sum_tot += loss.item()  * bs
-        n_train += bs
 
-    scheduler.step()
+# =============================================================================
+# 2.  DIFFERENTIABLE SWAP RATE FROM BOND PRICE CURVE
+# =============================================================================
 
-    # Validation
+def swap_rate_torch(
+    P_full : torch.Tensor,   # (n_paths, tau_max+1)  — P(z_T, 0), P(z_T,1), ...
+    tenor  : int,
+    accrual: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute swap rate F and annuity A from the discount curve.
+
+    P_full[:, j] = P(z_T, j) for j = 0, 1, ..., tau_max (integer year grid).
+    Payment dates are accrual, 2*accrual, ..., tenor*accrual years from expiry.
+
+    Returns
+    -------
+    F : (n_paths,)   swap rates, WITH grad w.r.t. H via P_full
+    A : (n_paths,)   annuities
+    """
+    pay_idx     = [int(round(accrual * j)) for j in range(1, tenor + 1)]
+    payment_dfs = P_full[:, pay_idx]                 # (n_paths, tenor)
+    A           = accrual * payment_dfs.sum(dim=1)   # (n_paths,)
+    P_end       = payment_dfs[:, -1]                 # (n_paths,)
+    F           = (1.0 - P_end) / A.clamp(min=1e-8) # (n_paths,)
+    return F, A
+
+
+# =============================================================================
+# 3.  SWAPTION VOL LOSS FOR ONE (expiry, tenor) PAIR
+# =============================================================================
+
+def swaption_vol_loss_single(
+    model        ,
+    z0           : torch.Tensor,   # (1, d)
+    expiry       : int,
+    tenor        : int,
+    sigma_market : float,          # market Bachelier normal vol (absolute)
+    n_paths      : int,
+    dt           : float,
+    device       : torch.device,
+    dtype        : torch.dtype,
+) -> tuple[torch.Tensor, float]:
+    """
+    Compute squared vol error for one swaption via the pathwise estimator.
+
+    sigma_model  = std(F_T) / sqrt(T)      [Bachelier vol proxy]
+    loss         = (sigma_model - sigma_market)^2  in bp^2
+
+    Gradient path:
+        H -> L(z_t) -> z_T -> P(z_T,tau) -> F_T -> std(F_T) -> loss
+    """
+    n_steps = max(1, int(round(expiry / dt)))
+
+    # Draw noise outside the graph — this is the reparameterization trick.
+    # eps is fixed; only L(z;H) carries the parameter dependence.
+    eps = torch.randn(n_paths, n_steps, z0.shape[1],
+                      device=device, dtype=dtype)    # no grad
+
+    # --- Differentiable simulation to expiry ---------------------------------
+    z_T = simulate_to_expiry_differentiable(
+        model=model, z0=z0, n_steps=n_steps,
+        dt=dt, n_paths=n_paths, eps=eps,
+    )   # (n_paths, d) — grad w.r.t. H
+
+    # --- Decode bond prices (NO torch.no_grad — gradient flows through ODE) -
+    # model.decode_from_z is differentiable: it was used in original training.
+    _, aux = model.decode_from_z(z_T, tau=None, do_arb_checks=False, return_aux=True)
+    P_full = aux["P_full"]   # (n_paths, tau_max+1) — grad w.r.t. H via z_T
+
+    # --- Swap rates ----------------------------------------------------------
+    F_T, _ = swap_rate_torch(P_full, tenor=tenor)   # (n_paths,)
+
+    # --- Bachelier vol proxy -------------------------------------------------
+    sigma_model = F_T.std() / math.sqrt(expiry)     # scalar tensor
+
+    # --- Loss in bp^2 (scaling prevents vanishingly small gradients) ---------
+    loss = ((sigma_model - sigma_market) * 10_000) ** 2
+
+    return loss, float(sigma_model.detach()) * 10_000   # (loss, model_vol_bp)
+
+
+# =============================================================================
+# 4.  MAIN CALIBRATION LOOP
+# =============================================================================
+
+def calibrate_H(
+    checkpoint_path : str,
+    ccy             : str   = "EUR",
+    n_paths         : int   = 512,
+    dt              : float = 1 / 12,
+    lr              : float = 1e-4,
+    n_epochs        : int   = 500,
+    batch_size      : int   = 3,      # (date, expiry, tenor) triplets per step
+    seed            : int   = 42,
+    device                  = None,
+    save_path       : str   = None,
+    log_every       : int   = 25,
+) -> tuple:
+    """
+    Fine-tune network H to match market swaption normal vols.
+
+    Parameters
+    ----------
+    checkpoint_path : path to the ep3500 checkpoint
+    ccy             : currency filter for swap and vol data
+    n_paths         : MC paths per gradient step (512-1000 recommended)
+    dt              : simulation time step (1/12 = monthly)
+    lr              : Adam learning rate for H
+    n_epochs        : calibration epochs
+    batch_size      : number of (date, expiry, tenor) triplets per step
+    seed            : random seed for reproducibility
+    save_path       : where to save calibrated checkpoint (None = auto)
+    log_every       : print diagnostics every N epochs
+
+    Returns
+    -------
+    model        : calibrated FullModel
+    loss_history : list of loss values per epoch
+    df_vol       : market vol DataFrame used for calibration
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device : {device}")
+
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    # -------------------------------------------------------------------------
+    # Load model from checkpoint
+    # -------------------------------------------------------------------------
+    model = FullModel(latent_dim=2).to(device)
+    state = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    result = model.load_state_dict(state, strict=False)
+    if result.unexpected_keys:
+        print(f"  [load] dropped old params: {result.unexpected_keys}")
+    model = model.double()
+    dtype = next(model.parameters()).dtype
+    print(f"Loaded checkpoint: {os.path.basename(checkpoint_path)}")
+
+    # -------------------------------------------------------------------------
+    # Freeze everything except H
+    # -------------------------------------------------------------------------
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.H.parameters():
+        param.requires_grad = True
+
+    n_trainable = sum(p.numel() for p in model.H.parameters())
+    n_total     = sum(p.numel() for p in model.parameters())
+    print(f"Parameters: {n_trainable} trainable (H) / {n_total} total")
+
+    # -------------------------------------------------------------------------
+    # Load swap data and precompute z0 for every date
+    # -------------------------------------------------------------------------
+    meta, X_tensor, *_ = my_data(ccy_filter=ccy)
+    X_tensor = X_tensor.to(device=device, dtype=dtype)
+
     model.eval()
-    v_nll, v_sig, v_tot, n_val = 0., 0., 0., 0
     with torch.no_grad():
-        for X_t, X_tp1, dt in val_loader:
-            X_t, X_tp1, dt = X_t.to(device), X_tp1.to(device), dt.to(device)
-            z_t   = model.encoder(X_t)
-            z_tp1 = model.encoder(X_tp1)
-            ln = transition_nll(model, z_t, z_tp1, dt)
-            ls = sigma_reg(model, z_t)
-            lt = ln + LAMBDA_SIGMA * ls
-            if torch.isfinite(lt):
-                v_nll += ln.item() * X_t.shape[0]
-                v_sig += ls.item() * X_t.shape[0]
-                v_tot += lt.item() * X_t.shape[0]
-                n_val += X_t.shape[0]
+        z0_list = [model.encoder(X_tensor[i:i+1]) for i in range(X_tensor.shape[0])]
 
-    n  = max(n_train, 1);  nv = max(n_val, 1)
-    tr_nll = sum_nll / n;  tr_sig = sum_sig / n;  tr_tot = sum_tot / n
-    vl_nll = v_nll / nv;   vl_sig = v_sig / nv;   vl_tot = v_tot / nv
+    dates = [pd.Timestamp(meta.iloc[i]["as_of_date"]).normalize()
+             for i in range(len(z0_list))]
+    z0_dict = dict(zip(dates, z0_list))
+    print(f"Precomputed z0 for {len(z0_dict)} dates")
 
-    if vl_tot < best_val:
-        best_val = vl_tot
-        torch.save(model.state_dict(), best_path)
+    # -------------------------------------------------------------------------
+    # Load and filter market vols
+    # -------------------------------------------------------------------------
+    df_vol = load_swaption_vol_data(currency=ccy)
+    df_vol["as_of_date"] = pd.to_datetime(df_vol["as_of_date"]).dt.normalize()
+    df_vol = df_vol[df_vol["as_of_date"].isin(set(z0_dict.keys()))].copy()
+    df_vol["market_vol"] = df_vol["vol"] / 10_000.0   # bp -> absolute
 
-    k, hl = kappa_hl(model)
-    with torch.no_grad():
-        z_s = model.encoder(X_ccy[:32].to(device))
-        sig, _ = model.H(z_s)
-        sigma_now = float(sig.mean().item())
-    rmse_bp = curve_rmse(model, X_ccy)
-    lr_now  = optim.param_groups[0]["lr"]
-    elapsed = time.perf_counter() - t0
+    print(f"Vol targets: {len(df_vol)} triplets across "
+          f"{df_vol['as_of_date'].nunique()} dates")
 
-    row = {
-        "epoch": epoch,
-        "train_nll": tr_nll, "train_sigma_loss": tr_sig, "train_total": tr_tot,
-        "val_nll": vl_nll,   "val_sigma_loss": vl_sig,   "val_total": vl_tot,
-        "curve_rmse_bp": rmse_bp, "kappa": k, "hl_y": hl,
-        "sigma_mean": sigma_now, "lr": lr_now, "time_sec": elapsed,
-    }
-    pd.DataFrame([row], columns=cols).to_csv(csv_path, mode="a", header=False, index=False)
+    if df_vol.empty:
+        raise ValueError(
+            "No overlapping dates between market vol data and swap data. "
+            "Check that load_swaption_vol_data() returns dates matching your swap data."
+        )
 
-    print(f"ep {epoch:3d} | "
-          f"nll={tr_nll:+.3f}  sig={tr_sig:.6f}  tot={tr_tot:.3f} | "
-          f"val={vl_tot:.3f} | "
-          f"rmse={rmse_bp:.1f}bp | "
-          f"kappa={k:.4f} hl={hl:.2f}y | "
-          f"sigma={sigma_now:.5f}→{SIGMA_TARGET} | "
-          f"lr={lr_now:.1e}  nan={n_nan}  t={elapsed/60:.1f}min")
+    # -------------------------------------------------------------------------
+    # Optimizer (H only)
+    # -------------------------------------------------------------------------
+    optimizer = torch.optim.Adam(model.H.parameters(), lr=lr)
+
+    # -------------------------------------------------------------------------
+    # Training loop
+    # -------------------------------------------------------------------------
+    loss_history = []
+
+    print(f"\nStarting calibration: {n_epochs} epochs, "
+          f"batch_size={batch_size}, n_paths={n_paths}, lr={lr}")
+    print("=" * 65)
+
+    for epoch in range(n_epochs):
+        model.train()
+
+        # Sample a random mini-batch of (date, expiry, tenor) triplets
+        batch = df_vol.sample(n=min(batch_size, len(df_vol)))
+
+        optimizer.zero_grad()
+
+        total_loss   = torch.zeros(1, device=device, dtype=dtype)
+        batch_log    = []
+
+        for _, row in batch.iterrows():
+            date      = pd.Timestamp(row["as_of_date"]).normalize()
+            expiry    = int(row["option_maturity"])
+            tenor     = int(row["swap_tenor"])
+            sigma_mkt = float(row["market_vol"])
+
+            # Detach z0 from encoder graph — encoder is frozen
+            z0 = z0_dict[date].detach()   # (1, 2)
+
+            loss_ij, sigma_mod_bp = swaption_vol_loss_single(
+                model=model,
+                z0=z0,
+                expiry=expiry,
+                tenor=tenor,
+                sigma_market=sigma_mkt,
+                n_paths=n_paths,
+                dt=dt,
+                device=device,
+                dtype=dtype,
+            )
+
+            total_loss = total_loss + loss_ij
+
+            batch_log.append({
+                "date"         : date.date(),
+                "expiry"       : expiry,
+                "tenor"        : tenor,
+                "mkt_vol_bp"   : round(sigma_mkt * 10_000, 2),
+                "mod_vol_bp"   : round(sigma_mod_bp, 2),
+                "error_bp"     : round(sigma_mod_bp - sigma_mkt * 10_000, 2),
+            })
+
+        total_loss = total_loss / len(batch)
+        total_loss.backward()
+
+        # Gradient clipping for stability
+        nn.utils.clip_grad_norm_(model.H.parameters(), max_norm=1.0)
+
+        optimizer.step()
+
+        loss_val = float(total_loss.detach())
+        loss_history.append(loss_val)
+
+        if epoch % log_every == 0 or epoch == n_epochs - 1:
+            print(f"\nEpoch {epoch:4d}  loss = {loss_val:8.2f} bp²")
+            df_log = pd.DataFrame(batch_log)
+            print(df_log.to_string(index=False))
+
+    print("\n" + "=" * 65)
+    print(f"Final loss: {loss_history[-1]:.2f} bp²")
+
+    # -------------------------------------------------------------------------
+    # Save calibrated checkpoint
+    # -------------------------------------------------------------------------
+    if save_path is None:
+        base      = os.path.dirname(checkpoint_path)
+        save_path = os.path.join(base, "checkpoint_H_calibrated.pt")
+
+    torch.save(model.state_dict(), save_path)
+    print(f"Saved calibrated model → {save_path}")
+
+    return model, loss_history, df_vol
+
 
 # =============================================================================
-# SAVE & SUMMARY
+# 5.  ENTRY POINT
 # =============================================================================
-final_path = os.path.join(OUT_DIR, "final_checkpoint.pt")
-torch.save(model.state_dict(), final_path)
 
-k_f, hl_f = kappa_hl(model)
-with torch.no_grad():
-    z_s = model.encoder(X_ccy[:32].to(device))
-    sf, _ = model.H(z_s)
+def main():
+    CHECKPOINT_PATH = (
+        r"C:\Users\Bruger\PycharmProjects\MasterThesis"
+        r"\Figures\TrainingResults\dim2_stable\ep3500\checkpoint_dim2_ep3500.pt"
+    )
 
-print(f"\nDone.")
-print(f"  kappa={k_f:.4f}  hl={hl_f:.2f}y")
-print(f"  sigma_mean={sf.mean().item():.6f}  (target={SIGMA_TARGET})")
-print(f"  curve RMSE : {curve_rmse(model, X_ccy):.2f} bp  (was {rmse_init:.2f} bp)")
-print(f"  theta      : {model.K.theta.detach().cpu().numpy()}  [frozen]")
-print(f"  Saved final : {final_path}")
-print(f"  Saved best  : {best_path}")
+    model, loss_history, df_vol = calibrate_H(
+        checkpoint_path = CHECKPOINT_PATH,
+        ccy             = "EUR",
+        n_paths         = 512,
+        dt              = 1 / 12,
+        lr              = 1e-4,
+        n_epochs        = 500,
+        batch_size      = 3,
+        log_every       = 25,
+    )
+
+    # Quick loss plot (optional)
+    try:
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 4))
+        plt.plot(loss_history)
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss (bp²)")
+        plt.title("Swaption calibration loss — H network")
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        out_dir = os.path.dirname(CHECKPOINT_PATH)
+        plt.savefig(os.path.join(out_dir, "calibration_loss.png"), dpi=150)
+        print(f"Loss plot saved to {out_dir}")
+    except Exception as e:
+        print(f"Could not save plot: {e}")
+
+
+if __name__ == "__main__":
+    main()
