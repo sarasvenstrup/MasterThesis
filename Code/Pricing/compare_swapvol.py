@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import warnings
 
@@ -140,6 +140,8 @@ def prepare_market_table(
 
 def comparison_table(
     checkpoint_path,
+    label="run",
+    out_dir=None,
     ccy="EUR",
     n_paths=1000,
     n_steps=120,
@@ -150,6 +152,18 @@ def comparison_table(
     vol_in_bp=True,
     max_rows=None,
 ):
+    """
+    Run ATM swaption pricing comparison: model MC vol vs market Bachelier vol.
+
+    Parameters
+    ----------
+    label   : str  — appended to the output filename, e.g. "pre_stage2", "post_stage2"
+    out_dir : str  — directory for the output Excel; defaults to CODE_ROOT
+    """
+    if out_dir is None:
+        out_dir = CODE_ROOT
+    os.makedirs(out_dir, exist_ok=True)
+
     df_compare = prepare_market_table(
         ccy=ccy,
         vol_in_bp=vol_in_bp,
@@ -180,8 +194,7 @@ def comparison_table(
             continue
 
         if model_date not in sim_cache:
-            print(f"\nRunning simulation for model date {model_date.date()} "
-                  f"(market date {market_date.date()})")
+            print(f"\n[{label}] Simulating {model_date.date()} ...")
 
             sim_cache[model_date] = pricing.run_simulation(
                 checkpoint_path=checkpoint_path,
@@ -193,16 +206,23 @@ def comparison_table(
                 show_plot=False,
             )
 
-        ctx = sim_cache[model_date]
+            # Print F0 grid once per date (sanity check — not inside every row)
+            ctx = sim_cache[model_date]
+            from pricing import quote_swaption_time0
+            print(f"  F0 grid for {model_date.date()}:")
+            for exp in [1, 5, 10]:
+                for ten in [1, 5, 10]:
+                    try:
+                        q = quote_swaption_time0(
+                            ctx, expiry=exp, tenor=ten,
+                            strike_atm=True, payer=True, accrual=1.0
+                        )
+                        print(f"    F0({exp}Yx{ten}Y) = {q['forward_swap']*10000:.1f}bp  "
+                              f"A0={q['annuity']:.4f}")
+                    except Exception:
+                        pass
 
-        # Sanity check: print F0 for each expiry/tenor before pricing
-        from pricing import quote_swaption_time0
-        for exp in [1, 5, 10]:
-            for ten in [1, 5, 10]:
-                q = quote_swaption_time0(ctx, expiry=exp, tenor=ten,
-                                         strike_atm=True, payer=True, accrual=1.0)
-                print(f"  F0({exp}Y×{ten}Y) = {q['forward_swap'] * 10000:.1f} bp  "
-                      f"A0 = {q['annuity']:.4f}")
+        ctx = sim_cache[model_date]
 
         try:
             res = pricing.atm_swaption_mc_price_from_simulation(
@@ -223,8 +243,8 @@ def comparison_table(
 
         except Exception as e:
             warnings.warn(
-                f"Failed at row {idx} for market_date={market_date.date()}, "
-                f"model_date={model_date.date()}, expiry={expiry}, tenor={tenor}: {e}",
+                f"Failed at row {idx} for {market_date.date()}, "
+                f"expiry={expiry}, tenor={tenor}: {e}",
                 RuntimeWarning,
             )
 
@@ -232,14 +252,38 @@ def comparison_table(
     df_compare["vol_error_bp"] = df_compare["model_vol_bp"] - df_compare["market_vol_bp"]
     df_compare["abs_vol_error_bp"] = df_compare["vol_error_bp"].abs()
 
+    # ── Save labelled Excel ──────────────────────────────────────────
+    out_xlsx = os.path.join(out_dir, f"swaption_vol_comparison_{label}.xlsx")
+    df_save = df_compare.copy()
+    df_save["market_as_of_date"] = pd.to_datetime(df_save["market_as_of_date"]).dt.date
+    df_save["model_as_of_date"] = pd.to_datetime(df_save["model_as_of_date"]).dt.date
+    df_save.to_excel(out_xlsx, index=False, engine="openpyxl")
+    print(f"\n[{label}] Saved → {out_xlsx}")
+
+    # ── Console summary ──────────────────────────────────────────────
+    valid = df_compare.dropna(subset=["model_vol_bp"])
+    if not valid.empty:
+        mae   = valid["abs_vol_error_bp"].mean()
+        rmse  = (valid["vol_error_bp"] ** 2).mean() ** 0.5
+        print(f"[{label}] MAE = {mae:.1f} bp   RMSE = {rmse:.1f} bp   "
+              f"(N={len(valid)} swaptions)")
+    else:
+        print(f"[{label}] No valid model vols computed.")
+
     return df_compare
 
 
 def main():
-    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep200\checkpoint_dim2_ep200.pt"
+    CHECKPOINT = (
+        r"C:\Users\Bruger\PycharmProjects\MasterThesis"
+        r"\Figures\TrainingResults\dim2_stable\ep3500\checkpoint_dim2_ep3500.pt"
+    )
+    OUT_DIR = os.path.join(CODE_ROOT, "swapvol_results")
 
-    df_compare = comparison_table(
-        checkpoint_path=checkpoint_path,
+    df = comparison_table(
+        checkpoint_path=CHECKPOINT,
+        label="stage1_ep3500",
+        out_dir=OUT_DIR,
         ccy="EUR",
         n_paths=2000,
         n_steps=120,
@@ -248,33 +292,14 @@ def main():
         accrual=1.0,
         notional=1.0,
         vol_in_bp=True,
-        max_rows = 50
+        max_rows=50,
     )
 
-    print("\nComparison table:")
+    print("\nSummary table (first 20 rows):")
     print(
-        df_compare[
-            [
-                "market_as_of_date",
-                "model_as_of_date",
-                "date_diff_days",
-                "option_maturity",
-                "swap_tenor",
-                "market_vol_bp",
-                "model_vol_bp",
-                "vol_error_bp",
-            ]
-        ].head(20)
+        df[["market_as_of_date", "option_maturity", "swap_tenor",
+            "market_vol_bp", "model_vol_bp", "vol_error_bp"]].head(20)
     )
-
-    out_xlsx = os.path.join(CODE_ROOT, "swaption_vol_comparison.xlsx")
-
-    df_save = df_compare.copy()
-    df_save["market_as_of_date"] = pd.to_datetime(df_save["market_as_of_date"]).dt.date
-    df_save["model_as_of_date"] = pd.to_datetime(df_save["model_as_of_date"]).dt.date
-
-    df_save.to_excel(out_xlsx, index=False, engine="openpyxl")
-    print(f"\nSaved comparison to {out_xlsx}")
 
 
 if __name__ == "__main__":

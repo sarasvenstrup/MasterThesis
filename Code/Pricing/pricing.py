@@ -7,6 +7,7 @@ from scipy.stats import norm
 from scipy.optimize import brentq
 
 import numpy as np
+import torch
 
 try:
     CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +37,73 @@ def get_grid_index_for_value(grid, value, tol=1e-10):
             f"Closest value is {grid[idx]}."
         )
     return idx
+
+
+# =============================================================================
+# DIFFERENTIABLE BACHELIER PRICE  (torch-native, grad-compatible)
+# =============================================================================
+
+def bachelier_price_torch(F, K, sigma, expiry, A, notional: float = 1.0):
+    """
+    Analytic Bachelier (normal-model) payer swaption price.
+
+        V = notional * A * [ (F-K)*Φ(d) + σ√T * φ(d) ]
+        d = (F - K) / (σ√T)
+
+    Works for scalar Python floats OR 0-d/scalar torch tensors.
+    When any of F, K, sigma, A is a torch.Tensor the result is a tensor
+    and gradients flow through it normally.
+
+    For ATM (K = F):
+        V = notional * A * σ * √T / √(2π)
+
+    The Python-float path uses scipy, suitable for computing fixed market
+    price targets outside any autograd context.
+    """
+    T_sqrt = math.sqrt(max(float(expiry), 1e-12))
+
+    if any(isinstance(x, torch.Tensor) for x in (F, K, sigma, A)):
+        # Torch path — fully differentiable via torch.erf
+        vol_term = sigma * T_sqrt
+        vol_term = vol_term.clamp(min=1e-12) if isinstance(vol_term, torch.Tensor) \
+            else max(float(vol_term), 1e-12)
+        d   = (F - K) / vol_term
+        Phi = 0.5 * (1.0 + torch.erf(d / math.sqrt(2.0)))
+        phi = torch.exp(-0.5 * d * d) / math.sqrt(2.0 * math.pi)
+        return notional * A * ((F - K) * Phi + vol_term * phi)
+    else:
+        # Pure-Python path — no grad, uses scipy
+        vol_term = max(float(sigma) * T_sqrt, 1e-12)
+        d   = (float(F) - float(K)) / vol_term
+        Phi = norm.cdf(d)
+        phi = norm.pdf(d)
+        return notional * float(A) * ((float(F) - float(K)) * Phi + vol_term * phi)
+
+
+# =============================================================================
+# DIFFERENTIABLE SWAP RATE FROM BOND PRICE CURVE  (torch-native)
+# =============================================================================
+
+def swap_rate_torch(
+    P_full : torch.Tensor,    # (n_paths, tau_max+1)
+    tenor  : int,
+    accrual: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute ATM forward swap rate F and annuity A directly from the full
+    discount curve P_full in a differentiable manner.
+
+    Returns
+    -------
+    F : (n_paths,)  forward swap rates — WITH grad w.r.t. upstream params
+    A : (n_paths,)  annuities
+    """
+    pay_idx     = [int(round(accrual * j)) for j in range(1, tenor + 1)]
+    payment_dfs = P_full[:, pay_idx]
+    A           = accrual * payment_dfs.sum(dim=1)
+    P_end       = payment_dfs[:, -1]
+    F           = (1.0 - P_end) / A.clamp(min=1e-8)
+    return F, A
 
 
 def extract_discount(P_full_0, tau_grid, tau):
@@ -329,6 +397,111 @@ def bachelier_price(forward, strike, normal_vol, expiry, annuity, notional=1.0, 
         return notional * annuity * ((forward - strike) * norm.cdf(d) + vol_term * norm.pdf(d))
     else:
         return notional * annuity * ((strike - forward) * norm.cdf(-d) + vol_term * norm.pdf(d))
+
+
+def bachelier_greeks(
+    forward,
+    strike,
+    normal_vol,
+    expiry,
+    annuity,
+    notional: float = 1.0,
+    payer: bool = True,
+) -> dict:
+    """
+    Analytic Bachelier (normal-model) Greeks for a European payer or receiver
+    swaption.
+
+    The pricing formula is (payer):
+        V = N · A · [(F − K) · Φ(d) + σ√T · φ(d)]
+        d = (F − K) / (σ√T)
+
+    Returns
+    -------
+    dict with keys:
+        delta  : ∂V/∂F   — rate sensitivity
+        vega   : ∂V/∂σ   — normal-vol sensitivity  (per unit of σ, i.e. absolute)
+        gamma  : ∂²V/∂F² — convexity
+        theta  : ∂V/∂T   — time value per unit of time-to-expiry (positive)
+                           Note: conventional "time decay" = −∂V/∂t = +∂V/∂T.
+        dv01   : ∂V/∂F · (1 bp) — dollar value of 1 basis point shift in F
+        vanna  : ∂²V/(∂F ∂σ) — delta sensitivity to vol
+        volga  : ∂²V/∂σ²     — vega convexity (vomma)
+        d      : standardized moneyness
+        phi_d  : φ(d) — standard normal density at d
+        Phi_d  : Φ(d) or Φ(−d) depending on payer flag — CDF used in delta
+
+    Edge cases
+    ----------
+    * expiry ≤ 0 or normal_vol ≤ 0 → returns intrinsic greeks
+      (delta = Φ(d) in {0,1}, vega=gamma=theta=vanna=volga=0)
+    """
+    F  = float(forward)
+    K  = float(strike)
+    sv = float(normal_vol)
+    T  = float(expiry)
+    A  = float(annuity)
+    N  = float(notional)
+
+    intrinsic = N * A * (max(F - K, 0.0) if payer else max(K - F, 0.0))
+
+    # --- Degenerate cases ---------------------------------------------------
+    if T <= 0.0 or sv <= 0.0:
+        # At or past expiry: delta = 1 if ITM, 0 if OTM; all other greeks = 0
+        delta = N * A * (1.0 if (F > K if payer else K > F) else 0.0)
+        return dict(delta=delta, vega=0.0, gamma=0.0, theta=0.0,
+                    dv01=delta * 1e-4, vanna=0.0, volga=0.0,
+                    d=float("inf") if F != K else 0.0,
+                    phi_d=0.0, Phi_d=float(delta > 0))
+
+    T_sqrt   = math.sqrt(T)
+    vol_term = sv * T_sqrt                       # σ√T, always > 0
+
+    d        = (F - K) / vol_term
+    phi_d    = norm.pdf(d)                       # φ(d)  = φ(−d)
+    Phi_d    = norm.cdf(d if payer else -d)      # Φ(d) payer, Φ(−d) receiver
+
+    # --- First-order greeks -------------------------------------------------
+    # Payer:   delta = N·A·Φ(d)
+    # Receiver: delta = N·A·(Φ(d) − 1) = −N·A·Φ(−d)
+    delta  = N * A * Phi_d if payer else -N * A * Phi_d
+
+    # Vega is the same for payer and receiver (put-call symmetry in Bachelier)
+    vega   = N * A * T_sqrt * phi_d
+
+    # --- Second-order greeks ------------------------------------------------
+    # Gamma = ∂²V/∂F² = N·A·φ(d) / (σ√T)
+    gamma  = N * A * phi_d / vol_term
+
+    # Theta = ∂V/∂T = N·A·σ·φ(d) / (2√T)   (positive: option gains value with T)
+    # Equivalently derived from the ATM formula V_ATM = N·A·σ·√(T/2π):
+    #   ∂V_ATM/∂T = N·A·σ / (2√(2πT))  = N·A·σ·φ(0) / (2√T)  [same formula]
+    theta  = N * A * sv * phi_d / (2.0 * T_sqrt)
+
+    # DV01 = value change for 1 bp shift in F
+    dv01   = delta * 1e-4
+
+    # Vanna = ∂²V / (∂F ∂σ) = d(delta)/dσ = −N·A·φ(d)·d / σ
+    # Derivation: d(Φ(d))/dσ = φ(d)·∂d/∂σ = φ(d)·(−d/σ)
+    vanna  = -N * A * phi_d * d / sv
+
+    # Volga (Vomma) = ∂²V / ∂σ² = d(vega)/dσ
+    # = N·A·√T · φ'(d) · ∂d/∂σ  =  N·A·√T · (−d·φ(d)) · (−d/σ)
+    # = N·A·√T · d² · φ(d) / σ
+    volga  = N * A * T_sqrt * (d ** 2) * phi_d / sv
+
+    return dict(
+        delta=delta,
+        vega=vega,
+        gamma=gamma,
+        theta=theta,
+        dv01=dv01,
+        vanna=vanna,
+        volga=volga,
+        d=d,
+        phi_d=phi_d,
+        Phi_d=Phi_d,
+    )
 
 
 def implied_bachelier_vol(

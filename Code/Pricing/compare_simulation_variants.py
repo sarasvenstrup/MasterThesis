@@ -46,7 +46,7 @@ from Code.utils.common import set_paper_theme
 # USER SETTINGS
 # =============================================================================
 LATENT_DIM     = 2
-EPOCHS = 200
+EPOCHS = 3500
 BASELINE_CKPT  = os.path.join(
     THESIS_ROOT, "Figures", "TrainingResults",
     f"dim{LATENT_DIM}_baseline", f"ep{EPOCHS}",
@@ -70,7 +70,7 @@ DEVICE         = "cpu"
 DTYPE          = torch.float64
 
 N_PATHS_PLOT   = 30
-OUT_DIR        = os.path.join(SCRIPT_DIR, "compare_out")
+OUT_DIR        = os.path.join(SCRIPT_DIR, "compare_out", f"dim{LATENT_DIM}_ep{EPOCHS}")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # Colours
@@ -120,7 +120,7 @@ def _simulate(model, z0, n_paths, n_steps, dt, device, dtype, dW_all):
     for t in range(n_steps):
         mu = model.K(z)
         sigmas, rhos = model.H(z)
-        L = L_from_sigmas_rhos(sigmas, rhos)
+        L = L_from_sigmas_rhos(sigmas, rhos, validate=False)
 
         dW = dW_all[:, t, :].to(device=device, dtype=dtype) * sqrt_dt
         shock = torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
