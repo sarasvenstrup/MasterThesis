@@ -217,7 +217,10 @@ Both questions, whether the autoencoder generalizes to unseen data and how it co
 
 \textcolor{red}{Disclaimer: The results for $\ell=2$ are for now not shown in the figure, but is updated soon.}
 
-The results reveal an instability in the model out-of-sample, with severity increasing with the number of latent dimensions. As shown in Figure~\ref{fig:Q2b}, while $\ell=2$ shows a modest increase from an in-sample RMSE of 12.67 bps to an out-of-sample RMSE of 31.40 bps, $\ell=3$ and $\ell=4$ produce catastrophically high average out-of-sample errors of 219.2 and 403.3 bps respectively, despite in-sample RMSEs of 10.33 and \textcolor{red}{X} bps. 
+% Old comment using 2500epochs
+%The results reveal an instability in the model out-of-sample, with severity increasing with the number of latent dimensions. As shown in Figure~\ref{fig:Q2b}, while $\ell=2$ shows a modest increase from an in-sample RMSE of 12.67 bps to an out-of-sample RMSE of 31.40 bps, $\ell=3$ and $\ell=4$ produce catastrophically high average out-of-sample errors of 219.2 and 403.3 bps respectively, despite in-sample RMSEs of 10.33 and \textcolor{red}{X} bps. 
+
+The results reveal an instability in the model out-of-sample, reflected in a substantial gap between in-sample and out-of-sample performance. As shown in Figure~\ref{fig:Q2b}, $\ell=2$, $\ell=3$, and $\ell=4$ achieve in-sample RMSEs of 12.7, 10.3, and 9.1 bps respectively, while their average out-of-sample RMSEs are considerably higher at 31.40, 35.5, and 23.0 bps.
 
 
 
@@ -257,12 +260,15 @@ in minutes.}
 \end{table}
 
 
+% Old comment using 2500epochs
+%The currency-level breakdown in Table~\ref{tab:Q4a} reveals where the explosions are most severe, with $\ell=3$ reaching 321.47 bps for GBP and $\ell=4$ reaching 471.4 bps for JPY. Across all specifications and almost all currencies, the EKF DNS model substantially outperforms the autoencoder in terms of out-of-sample reconstruction accuracy, while also requiring significantly less computation time. 
 
-The currency-level breakdown in Table~\ref{tab:Q4a} reveals where the explosions are most severe, with $\ell=3$ reaching 321.47 bps for GBP and $\ell=4$ reaching 471.4 bps for JPY. Across all specifications and almost all currencies, the EKF DNS model substantially outperforms the autoencoder in terms of out-of-sample reconstruction accuracy, while also requiring significantly less computation time. 
-
-Figure~\ref{fig:Q3b} further reveals that the autoencoder explosions are concentrated around periods of market stress, most notably the ECB QE period in 2015 and the COVID shock in 2020, with more latent factors amplifying the instability. 
+%Figure~\ref{fig:Q3b} further reveals that the autoencoder explosions are concentrated around periods of market stress, most notably the ECB QE period in 2015 and the COVID shock in 2020, with more latent factors amplifying the instability. 
 
 
+The currency-level breakdown in Table~\ref{tab:Q4a} reveals where the out-of-sample underperformance is most severe, with $\ell=3$ reaching 147.14 bps for EUR and $\ell=4$ reaching 59.11 bps for USD. Across all specifications and currencies, the EKF DNS model substantially outperforms the autoencoder in terms of out-of-sample reconstruction accuracy, while requiring only a fraction of the computation time (0.51 and 0.33 minutes per window for $\ell=3$ and $\ell=4$, compared to 27.42 and 32.52 minutes for the autoencoder). \textcolor{red}{[Comment on the $\ell=2$ OOS per-currency results once the dim2 ep3500 rolling results are available.]}
+
+Figure~\ref{fig:Q3b} further reveals that the autoencoder explosions are concentrated around two periods: the low-rate environment of early 2016 and the rate-hike cycle of 2022, with $\ell=3$ and $\ell=4$ both exhibiting spikes in these windows while $\ell=2$ \textcolor{red}{...Comment when results are availbel}.
 
 
 
@@ -280,10 +286,12 @@ Figure~\ref{fig:Q3b} further reveals that the autoencoder explosions are concent
 
 
 
+% Old comment using 3500epochs
+%Despite demonstrating reasonable in-sample reconstruction accuracy, the out-of-sample results paint a concerning picture, with the frequency and severity of the explosions increasing with the number of latent dimensions. The observed instability is hypothesized to stem from the absence of theoretical conditions imposed on the neural networks governing the drift and diffusion of the swap rate dynamics, which is explored further in the following chapter.
 
-Despite demonstrating reasonable in-sample reconstruction accuracy, the out-of-sample results paint a concerning picture, with the frequency and severity of the explosions increasing with the number of latent dimensions. The observed instability is hypothesized to stem from the absence of theoretical conditions imposed on the neural networks governing the drift and diffusion of the swap rate dynamics, which is explored further in the following chapter.
 
 
+Despite demonstrating reasonable in-sample reconstruction accuracy, the out-of-sample results paint a concerning picture, with all three specifications exhibiting notable gaps between in-sample and out-of-sample performance. The observed instability is hypothesized to stem from the absence of theoretical conditions imposed on the neural networks governing the drift and diffusion of the swap rate dynamics, which is explored further in the following chapter.
 
 
 
