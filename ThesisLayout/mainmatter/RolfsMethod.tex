@@ -99,13 +99,17 @@ We begin by specifying the short rate. Recall from \eqref{shortrate} that the sh
 \begin{equation}
     f(t,\tau)=-\frac{\partial\log(P(z_t,\tau))}{\partial \tau}\\
     =-\partial_{\tau}A_{z_t}(\tau)+\partial_{\tau}B_{z_t}(\tau)\mathcal{G}(z_t,\tau)+\partial_{\tau}\mathcal{G}(z_t,\tau)B_{z_t}(\tau)
+    \label{eq:instantforwardrate}
 \end{equation}
 Taking the limit as $\tau \to 0$ and recalling that 
 $r(t)=\lim_{\tau\to0}f(t,\tau)$
 shows that the short rate is determined entirely by the current latent state $z_t$. We therefore define the short-rate function $\tilde r:\mathbb{R}^\ell\to\mathbb{R}$ such that
-\[
-r(t)=\tilde r(z_t).
-\]
+\begin{equation}
+    r(t)=\lim_{\tau\to0}f(t,\tau)=\tilde r(z_t)
+    \label{hardconstraint}
+\end{equation}
+
+This will be referred to as the hard constraint that serves as a hard constraint for the arbitrage-free decoding neural network $\mathcal{G}$.
 
 % Furthermore, comparing the affine-inspired representation \eqref{affineinspiredzcbprices} with the risk-neutral pricing formula \eqref{riskneturalbondpriceformula} shows that the bond prices depend only on the current latent state. Hence, under absence of arbitrage, the latent state vector $z_t$ must form a Markov process under the risk-neutral measure $\mathbb{Q}$.
 
@@ -230,8 +234,10 @@ whereby the identity reduces to
 \]
 For this to hold for all $\tau\geq0$, a sufficient choice is
 \begin{align}
-\partial_\tau B_{z_t}(\tau) &= \alpha_{z_t}(\tau)\,B_{z_t}(\tau) + \beta_{z_t}(\tau),\qquad B(0)=0\\
-\partial_\tau A_{z_t}(\tau) &= B_{z_t}(\tau)^2\,\gamma_{z_t}(\tau),\qquad \qquad\;\;\;\;\; A(0)=0
+\partial_\tau B_{z_t}(\tau) &= \alpha_{z_t}(\tau)\,B_{z_t}(\tau) + \beta_{z_t}(\tau),\qquad B_{z_t}(0)=0
+\label{ODEB}\\
+\partial_\tau A_{z_t}(\tau) &= B_{z_t}(\tau)^2\,\gamma_{z_t}(\tau),\qquad \qquad\;\;\;\;\; A_{z_t}(0)=0
+\label{ODEA}
 \end{align}
 where the boundary condition follows from $P(z_t,0)=\exp(A_{z_t}(0)-B_{z_t}(0)\mathcal{G}(z_t,0))=1$.
 
@@ -271,8 +277,24 @@ This system of coupled ODEs can be reduced to a single ODE by introducing a vect
 where $\odot$ denotes elementwise multiplication. This system is solved numerically for each realized latent state $z_t$ using a fourth-order Runge--Kutta scheme (3/8-rule), yielding $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ such that the resulting bond prices \eqref{affineinspiredzcbprices} satisfy the no-arbitrage condition for all maturities $\tau$.
 
 \input{ThesisLayout/figures/Fig_RolfsMethodVisual2}
-
 \textcolor{red}{Find uaf hvor denne figur skal placeres!}
+
+The derivation of the ODE system is only complete once we verify that the \textit{hard constraint} \eqref{hardconstraint} holds. From \eqref{eq:instantforwardrate}, the short rate is
+$$\lim_{\tau\rightarrow0}f(t,\tau)=\lim_{\tau\rightarrow0}\bigg(-\partial_{\tau}A_{z_t}(\tau)+\partial_{\tau}B_{z_t}(\tau)\mathcal{G}(z_t,\tau)+\partial_{\tau}\mathcal{G}(z_t,\tau)B_{z_t}(\tau)\bigg)$$
+To evaluate this limit, we note that setting $\tau=0$ in \eqref{ODEB} and \eqref{ODEA} yield the following boundary conditions for the first-order derivatives of $B_{z_t}$ and $A_{z_t}$
+\begin{align}
+\partial_\tau B_{z_t}(\tau=0) &=\beta_{z_t}(\tau=0)=\frac{\tilde{r}(z_t)}{\mathcal{G}(z_t,\tau=0)}
+\label{boundcondB}\\
+\partial_\tau A_{z_t}(\tau=0) &= 0
+\label{boundcondA}
+\end{align}
+Since $B_{z_t}(\tau=0)=0$, we conclude that
+$$\lim_{\tau\rightarrow0}f(t,\tau)=\tilde{r}(z_t)$$
+and the hard constraint \eqref{hardconstraint} is satisfied by construction, guaranteeing internal consistency between the short rate implied by the bond price curve and that defined in \eqref{shortratedynamic}.
+
+ % remember that we of course must make sure that we produce a bond price curve whose implied short rate mathces the NN short rate
+
+
 
 
 \subsection{Neural Modelling of the Dynamics}
