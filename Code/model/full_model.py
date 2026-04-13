@@ -2,21 +2,21 @@ import torch
 import torch.nn as nn
 
 from .Encoder import Encoder
-from .DecoderG import DecoderG, DecoderGStable
+from .DecoderG import DecoderG
 
 from Code import config
 
-# Import both variants
+# Baseline variants
 from .K_mu import KMu as KMuBaseline
-from .R_short import RShort as RShortBaseline
+from .R_short import RShort
 from .H_sigma import HSigma as HSigmaBaseline
 
+# Stable variants (K and H only — G and R are shared)
 from .K_mu_stable import KMuStable
-from .R_short_stable import RShortStable
 from .H_sigma_stable import HSigmaStable
 
 from Code.utils.rates import par_swap_from_discount
-from Code.model.sigma_matrix import L_from_sigmas_rhos
+from .sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (
     d_tau_autograd_nodewise,
     grad_and_trace_cov_hess_G,
@@ -52,9 +52,6 @@ class FullModel(nn.Module):
         h_sigma_min: float = 1e-4,
         h_sigma_max: float = 2.0,
         h_rho_max: float = 0.999,
-
-        # stable G controls
-        g_floor_init: float = 0.0,   # softplus(0) ≈ 0.693 initial floor; tune if needed
     ):
         super().__init__()
 
@@ -73,9 +70,13 @@ class FullModel(nn.Module):
 
         self.encoder = Encoder(input_dim, latent_dim)
 
-        # Use config.py as single source of truth
+        # G and R are shared across variants — simulation stability
+        # comes from K (mean-reversion) and H (bounded PD diffusion).
+        self.G = DecoderG(latent_dim, g_hidden, g_bias)
+        self.R = RShort(latent_dim, r_hidden, bias=hr_bias)
+
+        # Use config.py as single source of truth for K and H
         if config.VARIANT == "stable":
-            self.G = DecoderGStable(latent_dim, g_hidden, g_bias, g_floor_init=g_floor_init)
             self.K = KMuStable(
                 latent_dim=latent_dim,
                 bias=True,
@@ -90,18 +91,7 @@ class FullModel(nn.Module):
                 sigma_max=h_sigma_max,
                 rho_max=h_rho_max,
             )
-            #self.H = HSigmaBaseline(
-            #    latent_dim=latent_dim,
-            #    hidden_dim=h_hidden,
-            #    bias=hr_bias,
-            #)
-            self.R = RShortStable(
-                latent_dim=latent_dim,
-                hidden_dim=r_hidden,
-                bias=hr_bias,
-            )
         else:
-            self.G = DecoderG(latent_dim, g_hidden, g_bias)
             self.K = KMuBaseline(
                 latent_dim=latent_dim,
                 bias=True,
@@ -109,11 +99,6 @@ class FullModel(nn.Module):
             self.H = HSigmaBaseline(
                 latent_dim=latent_dim,
                 hidden_dim=h_hidden,
-                bias=hr_bias,
-            )
-            self.R = RShortBaseline(
-                latent_dim=latent_dim,
-                hidden_dim=r_hidden,
                 bias=hr_bias,
             )
 
@@ -229,7 +214,8 @@ class FullModel(nn.Module):
         A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)
 
         # 6) Bond prices
-        P_full = torch.exp(A_vals - B_vals * G_vals)
+        log_P = A_vals - B_vals * G_vals
+        P_full = torch.exp(log_P)
         P_mkt = P_full[:, 1:]
 
         # 7) Swap rates only if tau matches annual market grid

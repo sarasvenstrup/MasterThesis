@@ -1,6 +1,69 @@
 import torch
 
 
+# ---------------------------------------------------------------------------
+# Hyperspherical angle parameterization  (guarantees PD for any d)
+# ---------------------------------------------------------------------------
+
+def angles_to_rhos(angles: torch.Tensor, d: int) -> torch.Tensor:
+    """
+    Map d*(d-1)/2 angles in (0, π) to d*(d-1)/2 correlations that are
+    guaranteed to form a positive-definite correlation matrix.
+
+    Uses the hyperspherical Cholesky parameterization:
+      Row i of the Cholesky factor L_R of the correlation matrix R:
+        L_R[i, j] = cos(θ_{i,j+1}) * ∏_{k=1}^{j} sin(θ_{i,k})   for j < i
+        L_R[i, i] = ∏_{k=1}^{i} sin(θ_{i,k})
+      with L_R[0, 0] = 1  (row 0 has no free angles).
+
+    Then R = L_R @ L_R^T is PD by construction (diagonal = 1, all rows
+    have unit norm, L_R has strictly positive diagonal when θ ∈ (0, π)).
+
+    Args:
+        angles: (B, n_corr)  with n_corr = d*(d-1)//2, values in (0, π)
+        d:      latent dimension
+
+    Returns:
+        rhos: (B, n_corr)  upper-triangle correlations in the standard
+              ordering [ρ12, ρ13, ..., ρ(d-1,d)]
+    """
+    if d <= 1:
+        return angles[:, :0]  # (B, 0)
+
+    B = angles.shape[0]
+    device, dtype = angles.device, angles.dtype
+
+    cos_a = torch.cos(angles)  # (B, n_corr)
+    sin_a = torch.sin(angles)  # (B, n_corr)
+
+    # Build L_R  (B, d, d)  — lower-triangular, unit-diagonal-norm rows
+    L = torch.zeros(B, d, d, device=device, dtype=dtype)
+    L[:, 0, 0] = 1.0
+
+    idx = 0  # pointer into the flat angle vector
+    for i in range(1, d):
+        # Row i has i free angles: θ_{i,1}, ..., θ_{i,i}
+        # Columns j = 0 .. i-1:  L[i,j] = cos(θ_{i,j+1}) * ∏_{k=1..j} sin(θ_{i,k})
+        # Column  j = i:          L[i,i] = ∏_{k=1..i} sin(θ_{i,k})
+        cum_sin = torch.ones(B, device=device, dtype=dtype)
+        for j in range(i):
+            L[:, i, j] = cum_sin * cos_a[:, idx + j]
+            cum_sin = cum_sin * sin_a[:, idx + j]
+        L[:, i, i] = cum_sin          # remaining product of sines
+        idx += i
+
+    # R = L_R @ L_R^T  →  (B, d, d)
+    R = L @ L.transpose(-1, -2)
+
+    # Extract upper-triangle in standard ordering: (0,1), (0,2), ..., (d-2,d-1)
+    rhos_list = []
+    for i in range(d):
+        for j in range(i + 1, d):
+            rhos_list.append(R[:, i, j])
+
+    return torch.stack(rhos_list, dim=1)  # (B, n_corr)
+
+
 def _default_eigen_tol(dtype: torch.dtype) -> float:
     return max(100.0 * torch.finfo(dtype).eps, 1e-12)
 

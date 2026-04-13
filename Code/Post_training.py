@@ -15,10 +15,20 @@ Checks
    - monotonicity in tau on the default annual grid
 3. Decoder shape at origin:
    - G(z,0) distribution
+   - G(z,tau) > 0 across full tau grid (ODE denominator stability)
 4. Stable-H constraints / diffusion diagnostics:
    - sigma positivity / bounds
    - rho bounds
    - covariance PSD check
+4b. Short-rate r_tilde(z) value diagnostics
+4c. K drift matrix eigenvalue check:
+   - All eigenvalues of M must have strictly negative real parts
+     (mean-reversion guarantee from the paper)
+4d. ODE boundary conditions:
+   - A(0) = 0 and B(0) = 0 (from the paper, ensures P(z,0)=1)
+4e. Gamma non-negativity and covariance symmetry:
+   - gamma = 1/2 ||sigma^T nabla_z G||^2 >= 0
+   - Sigma = L L^T must be symmetric
 5. Short-rate consistency:
    - tau sweep for
        f_fd(0,tau1) = -[log P(tau1)-log P(0)] / tau1
@@ -143,7 +153,9 @@ def load_model(checkpoint_path: str, latent_dim: int, device: torch.device) -> F
     else:
         state_dict = obj
 
-    model.load_state_dict(state_dict, strict=True)
+    result = model.load_state_dict(state_dict, strict=False)
+    if result.unexpected_keys:
+        print(f"  [load] dropped old params: {result.unexpected_keys}")
     model = model.double()
     model.eval()
 
@@ -599,6 +611,169 @@ def check_r_tilde(model: FullModel, z_test: torch.Tensor) -> dict:
 
 
 # =============================================================================
+# Check 4c: K drift matrix — mean-reversion eigenvalue check
+# =============================================================================
+@torch.no_grad()
+def check_K_eigenvalues(model: FullModel) -> dict:
+    """
+    Paper constraint: the drift matrix M must have all strictly negative
+    eigenvalues to guarantee mean-reversion of the latent process.
+
+    Stable variant:  M = -(V^T V + eps*I)  → negative definite by construction.
+    Baseline variant: M = weight matrix of K.lin — may or may not be stable.
+
+    We verify this numerically and report PASS/WARN.
+    """
+    if hasattr(model.K, "stable_matrix"):
+        M = model.K.stable_matrix().detach().cpu()
+        variant_label = "stable (M = -(V^T V + eps*I))"
+    elif hasattr(model.K, "lin"):
+        M = model.K.lin.weight.detach().cpu()
+        variant_label = "baseline (M = K.lin.weight)"
+    else:
+        print("\n" + "=" * 72)
+        print("Check 4c: K drift eigenvalues — SKIPPED (unknown K variant)")
+        print("=" * 72)
+        return {"skipped": True}
+
+    eig_vals = torch.linalg.eigvals(M)
+    eig_reals = eig_vals.real.numpy()
+    eig_imags = eig_vals.imag.numpy()
+    eig_reals_sorted = np.sort(eig_reals)[::-1]  # descending
+
+    max_real = float(eig_reals.max())
+    all_negative = bool(max_real < 0.0)
+    has_imag = bool(np.any(np.abs(eig_imags) > 1e-10))
+
+    print("\n" + "=" * 72)
+    print("Check 4c: K drift matrix — mean-reversion eigenvalue check")
+    print("=" * 72)
+    print(f"  variant             : {variant_label}")
+    print(f"  M shape             : {tuple(M.shape)}")
+    print(f"  eigenvalues (real)  : {eig_reals_sorted}")
+    if has_imag:
+        print(f"  eigenvalues (imag)  : {np.sort(eig_imags)[::-1]}")
+    print(f"  max Re(eig)         : {max_real:.8e}")
+    print(f"  all Re(eig) < 0     : {status_str(all_negative)}")
+
+    if not all_negative:
+        print("  WARNING: drift matrix has non-negative eigenvalue(s).")
+        print("           Latent process is NOT mean-reverting → simulation unstable.")
+
+    return {
+        "skipped":       False,
+        "M":             M.numpy(),
+        "eig_reals":     eig_reals_sorted,
+        "max_real_eig":  max_real,
+        "all_negative":  all_negative,
+        "has_imag":      has_imag,
+    }
+
+
+# =============================================================================
+# Check 4d: ODE boundary conditions A(0)=0 and B(0)=0
+# =============================================================================
+@torch.no_grad()
+def check_ODE_boundary(model: FullModel, z_test: torch.Tensor) -> dict:
+    """
+    Paper constraint: the ODE initial conditions require A(0)=0 and B(0)=0
+    so that P(z,0) = exp(A(0) - B(0)*G(z,0)) = exp(0) = 1.
+
+    The solver initialises A=B=0 by construction, but this check catches
+    any solver regression or numerical drift at the boundary.
+    """
+    a_errs, b_errs = [], []
+
+    for i in range(0, z_test.shape[0], BATCH_SIZE):
+        zb = z_test[i:i + BATCH_SIZE]
+        _, aux = model.decode_from_z(zb, tau=None, do_arb_checks=False, return_aux=True)
+        a_errs.append(aux["A_vals"][:, 0].abs().detach().cpu())
+        b_errs.append(aux["B_vals"][:, 0].abs().detach().cpu())
+
+    a_err = torch.cat(a_errs).numpy()
+    b_err = torch.cat(b_errs).numpy()
+
+    max_a0 = float(a_err.max())
+    max_b0 = float(b_err.max())
+    mean_a0 = float(a_err.mean())
+    mean_b0 = float(b_err.mean())
+
+    tol = 1e-12
+    ok = max_a0 < tol and max_b0 < tol
+
+    print("\n" + "=" * 72)
+    print("Check 4d: ODE boundary conditions A(0)=0, B(0)=0")
+    print("=" * 72)
+    print(f"  max |A(0)|          : {max_a0:.4e}  {status_str(max_a0 < tol)}")
+    print(f"  max |B(0)|          : {max_b0:.4e}  {status_str(max_b0 < tol)}")
+    print(f"  mean |A(0)|         : {mean_a0:.4e}")
+    print(f"  mean |B(0)|         : {mean_b0:.4e}")
+    print(f"  overall             : {status_str(ok)}")
+
+    return {
+        "max_a0":  max_a0,
+        "max_b0":  max_b0,
+        "mean_a0": mean_a0,
+        "mean_b0": mean_b0,
+        "ok":      ok,
+    }
+
+
+# =============================================================================
+# Check 4e: gamma >= 0 and covariance symmetry
+# =============================================================================
+@torch.no_grad()
+def check_gamma_and_cov_symmetry(model: FullModel, z_test: torch.Tensor) -> dict:
+    """
+    Paper constraints:
+      (a) gamma = 1/2 ||sigma^T nabla_z G||^2 >= 0 for all (z,tau).
+          Negative gamma would violate the ODE derivation.
+      (b) Sigma = L L^T must be symmetric.  Guaranteed by construction
+          but we verify numerically as a sanity check.
+    """
+    gamma_mins, gamma_maxs = [], []
+    sym_errs = []
+
+    for i in range(0, z_test.shape[0], BATCH_SIZE):
+        zb = z_test[i:i + BATCH_SIZE]
+        _, aux = model.decode_from_z(zb, tau=None, do_arb_checks=False, return_aux=True)
+
+        g = aux["gamma"].detach().cpu()
+        gamma_mins.append(g.min().item())
+        gamma_maxs.append(g.max().item())
+
+        L = aux["sigma"].detach().cpu()           # (B, d, d)
+        cov = L @ L.transpose(-1, -2)             # (B, d, d)
+        sym_err = (cov - cov.transpose(-1, -2)).abs().max().item()
+        sym_errs.append(sym_err)
+
+    gamma_global_min = float(min(gamma_mins))
+    gamma_global_max = float(max(gamma_maxs))
+    gamma_nonneg = gamma_global_min >= -1e-12
+    pct_neg_gamma = 0.0  # recompute properly if needed
+
+    max_sym_err = float(max(sym_errs))
+    sym_ok = max_sym_err < 1e-10
+
+    print("\n" + "=" * 72)
+    print("Check 4e: gamma >= 0 and covariance symmetry")
+    print("=" * 72)
+    print(f"  gamma global min    : {gamma_global_min:.8e}  {status_str(gamma_nonneg)}")
+    print(f"  gamma global max    : {gamma_global_max:.8e}")
+    if not gamma_nonneg:
+        print("  WARNING: negative gamma detected. ODE derivation assumes gamma >= 0.")
+    print(f"  max |Sigma - Sigma^T| : {max_sym_err:.4e}  {status_str(sym_ok)}")
+
+    return {
+        "gamma_min":    gamma_global_min,
+        "gamma_max":    gamma_global_max,
+        "gamma_nonneg": gamma_nonneg,
+        "max_sym_err":  max_sym_err,
+        "sym_ok":       sym_ok,
+    }
+
+
+# =============================================================================
 # Check 5: short-rate consistency tau sweep
 # =============================================================================
 @torch.no_grad()
@@ -760,11 +935,22 @@ def save_outputs(
     g0_res: dict,
     sigma_res: dict,
     r_res: dict,
+    k_res: dict,
+    ode_res: dict,
+    gamma_res: dict,
     tau_summary_df: pd.DataFrame,
     tau_detail_df: pd.DataFrame,
     sharpe_res: dict,
     rmse_df: pd.DataFrame | None,
 ) -> None:
+    # -- K eigenvalue fields --
+    k_fields = {}
+    if not k_res.get("skipped", True):
+        k_fields["K_max_real_eig"] = k_res["max_real_eig"]
+        k_fields["K_all_neg"]      = int(k_res["all_negative"])
+        for i, ev in enumerate(k_res["eig_reals"]):
+            k_fields[f"K_eig_real_{i}"] = float(ev)
+
     pd.DataFrame(
         [
             {
@@ -796,6 +982,15 @@ def save_outputs(
                 "chol_any_neg":     int(sigma_res["chol_any_neg"]),
                 **{f"chol_inside_{k}_min": float(v.min()) for k, v in sigma_res["inside"].items()},
                 **{f"chol_inside_{k}_pct_neg": float(100.0 * (v < 0).mean()) for k, v in sigma_res["inside"].items()},
+                **k_fields,
+                "ODE_max_A0":       ode_res["max_a0"],
+                "ODE_max_B0":       ode_res["max_b0"],
+                "ODE_boundary_ok":  int(ode_res["ok"]),
+                "gamma_min":        gamma_res["gamma_min"],
+                "gamma_max":        gamma_res["gamma_max"],
+                "gamma_nonneg":     int(gamma_res["gamma_nonneg"]),
+                "cov_max_sym_err":  gamma_res["max_sym_err"],
+                "cov_sym_ok":       int(gamma_res["sym_ok"]),
                 "r_mean":         r_res["r_mean"],
                 "r_std":          r_res["r_std"],
                 "r_min":          r_res["r_min"],
@@ -833,6 +1028,9 @@ def make_summary_plot(
     g0_res: dict,
     sigma_res: dict,
     r_res: dict,
+    k_res: dict,
+    ode_res: dict,
+    gamma_res: dict,
     tau_summary_df: pd.DataFrame,
     sharpe_res: dict,
     rmse_df: pd.DataFrame | None,
@@ -956,14 +1154,18 @@ def make_summary_plot(
         ["max uptick",    f"{discount_res['max_uptick']:.2e}",     status_str(discount_res["max_uptick"] <= MONO_TOL)],
         ["% G0<0",        f"{g0_res['pct_neg_G0']:.4f}%",          status_str(g0_res["pct_neg_G0"] == 0.0)],
         ["G global min",  f"{g0_res['overall_min']:.4f}",          status_str(not g0_res["any_neg"])],
+        ["K mean-revert",
+         f"max Re(eig)={k_res['max_real_eig']:.2e}" if not k_res.get("skipped", True) else "SKIP",
+         status_str(k_res.get("all_negative", False)) if not k_res.get("skipped", True) else "N/A"],
+        ["A(0)=B(0)=0",  f"{ode_res['max_a0']:.1e}/{ode_res['max_b0']:.1e}",  status_str(ode_res["ok"])],
+        ["gamma >= 0",    f"min={gamma_res['gamma_min']:.2e}",     status_str(gamma_res["gamma_nonneg"])],
+        ["Sigma symm",    f"err={gamma_res['max_sym_err']:.2e}",   status_str(gamma_res["sym_ok"])],
+        ["min cov eig",   f"{sigma_res['min_cov_eig']:.2e}",       status_str(sigma_res["min_cov_eig"] >= -1e-10)],
+        ["diag(Sigma)=σ²", f"{sigma_res['diag_err_max']:.2e}",        status_str(sigma_res["diag_err_max"] < 1e-4)],
+        ["chol clamp",    "YES" if sigma_res["chol_any_neg"] else "NO", status_str(not sigma_res["chol_any_neg"])],
         ["r mean",        f"{r_res['r_mean']*1e4:.1f} bp",         ""],
-        ["r range",       f"[{r_res['r_min']*1e4:.1f}, {r_res['r_max']*1e4:.1f}] bp", ""],
         ["% r < -200bp",  f"{r_res['pct_very_neg']:.2f}%",        status_str(r_res["pct_very_neg"] == 0.0)],
         ["% r > 1000bp",  f"{r_res['pct_high']:.2f}%",            status_str(r_res["pct_high"] == 0.0)],
-        ["min cov eig",   f"{sigma_res['min_cov_eig']:.2e}",       status_str(sigma_res["min_cov_eig"] >= -1e-10)],
-        ["max cond(Sigma)", f"{sigma_res['max_cond']:.2f}",            ""],
-        ["diag(Sigma)=σ²", f"{sigma_res['diag_err_max']:.2e}",        status_str(sigma_res["diag_err_max"] < 1e-4)],
-        ["chol clamp fired", "YES" if sigma_res["chol_any_neg"] else "NO", status_str(not sigma_res["chol_any_neg"])],
         ["max |SR|",      f"{sharpe_res['max_abs_sr']:.2e}" if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A",
          status_str(np.isfinite(sharpe_res["max_abs_sr"]) and sharpe_res["max_abs_sr"] < SHARPE_TOL) if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A"],
         ["avg RMSE",      f"{rmse_df['rmse_bps'].mean():.2f} bp" if rmse_df is not None else "N/A", ""],
@@ -971,13 +1173,13 @@ def make_summary_plot(
 
     x0, x1, x2 = 0.02, 0.55, 0.86
     y = 0.97
-    dy = 0.085
+    dy = 0.047
     for i, row in enumerate(summary_rows):
         fw = "bold" if i == 0 else "normal"
-        ax.text(x0, y, row[0], transform=ax.transAxes, va="top", fontweight=fw, fontsize=9)
-        ax.text(x1, y, row[1], transform=ax.transAxes, va="top", fontweight=fw, fontsize=9)
+        ax.text(x0, y, row[0], transform=ax.transAxes, va="top", fontweight=fw, fontsize=8)
+        ax.text(x1, y, row[1], transform=ax.transAxes, va="top", fontweight=fw, fontsize=8)
         ax.text(
-            x2, y, row[2], transform=ax.transAxes, va="top", fontweight=fw, fontsize=9,
+            x2, y, row[2], transform=ax.transAxes, va="top", fontweight=fw, fontsize=8,
             color=("green" if row[2] == "PASS" else "crimson" if row[2] == "WARN" else "black")
         )
         y -= dy
@@ -1031,6 +1233,9 @@ def main():
     g0_res = check_G_full_tau(model, z_test)
     sigma_res = check_sigma_rho(model, z_test)
     r_res = check_r_tilde(model, z_test)
+    k_res = check_K_eigenvalues(model)
+    ode_res = check_ODE_boundary(model, z_test)
+    gamma_res = check_gamma_and_cov_symmetry(model, z_test)
     tau_summary_df, tau_detail_df = check_short_rate_tau_sweep(model, z_test, TAU_SWEEP)
     sharpe_res = check_sharpe_ratios(model, z_test)
     rmse_df = check_rmse_per_currency(X_tensor, S_hat, meta, scale_is_percent)
@@ -1041,6 +1246,9 @@ def main():
         g0_res=g0_res,
         sigma_res=sigma_res,
         r_res=r_res,
+        k_res=k_res,
+        ode_res=ode_res,
+        gamma_res=gamma_res,
         tau_summary_df=tau_summary_df,
         tau_detail_df=tau_detail_df,
         sharpe_res=sharpe_res,
@@ -1057,6 +1265,9 @@ def main():
         g0_res=g0_res,
         sigma_res=sigma_res,
         r_res=r_res,
+        k_res=k_res,
+        ode_res=ode_res,
+        gamma_res=gamma_res,
         tau_summary_df=tau_summary_df,
         sharpe_res=sharpe_res,
         rmse_df=rmse_df,
