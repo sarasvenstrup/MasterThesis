@@ -1,83 +1,167 @@
-import pandas as pd
 import os
+import pandas as pd
 
-# Path to the SwapVol_OIS.xlsx file
-EXCEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'SwapData', 'SwapVol.xlsx')
 
-# Read the sheet, get both the code row (option/swap) and the data row
-header_rows = [1, 4]  # 2nd row (index 1) for codes, 5th row (index 4) for data
-raw = pd.read_excel(EXCEL_PATH, sheet_name=0, header=None)
+def parse_swaption_code(code):
+    """
+    Parse Bloomberg-style code into:
+        (option_maturity, swap_tenor)
 
-# Extract the code row (row 1, index 1)
-code_row = raw.iloc[0]
-# Extract the data starting from row 5 (index 4)
-data = pd.read_excel(EXCEL_PATH, sheet_name=0, header=4)
+    Examples
+    --------
+    "15"   -> (1, 5)
+    "110"  -> (1, 10)
+    "510"  -> (5, 10)
+    "101"  -> (10, 1)
+    "1010" -> (10, 10)
+    """
+    code_str = str(code).strip() if code is not None else ""
 
-# Debug prints
-data_columns = list(data.columns)
-print('Code row:', list(code_row))
-print('Data columns:', data_columns)
-print('First 6 rows of raw Excel:')
-print(raw.head(6))
+    if not code_str.isdigit():
+        return None, None
 
-# Build a mapping from column index to (option_maturity, swap_tenor)
-col_map = {}
-for idx, col in enumerate(data_columns):
-    code = code_row[idx] if idx < len(code_row) else None
-    code_str = str(code).strip() if code is not None else ''
-    if code_str.isdigit():
-        n = len(code_str)
-        if n == 2:
-            option_maturity = int(code_str[0])
-            swap_tenor      = int(code_str[1])
-        elif n == 3:
-            # e.g. "110" → (1,10),  "510" → (5,10),  "101" → (10,1)
-            if code_str[:2] == "10":          # 10Y option
-                option_maturity = 10
-                swap_tenor      = int(code_str[2])
-            else:                              # 1Y or 5Y option, 10Y tenor
-                option_maturity = int(code_str[0])
-                swap_tenor      = int(code_str[1:])
-        elif n == 4:                           # e.g. "1010" → (10,10)
-            option_maturity = int(code_str[:2])
-            swap_tenor      = int(code_str[2:])
+    n = len(code_str)
+
+    if n == 2:
+        option_maturity = int(code_str[0])
+        swap_tenor = int(code_str[1])
+    elif n == 3:
+        if code_str[:2] == "10":
+            option_maturity = 10
+            swap_tenor = int(code_str[2])
         else:
-            option_maturity = None
-            swap_tenor      = None
-        col_map[col] = (option_maturity, swap_tenor)
+            option_maturity = int(code_str[0])
+            swap_tenor = int(code_str[1:])
+    elif n == 4:
+        option_maturity = int(code_str[:2])
+        swap_tenor = int(code_str[2:])
     else:
-        col_map[col] = (None, None)
+        option_maturity = None
+        swap_tenor = None
 
-# Identify the date column (second column)
-date_col = data.columns[1]
+    return option_maturity, swap_tenor
 
-# Remove columns that are all NaN or irrelevant
-cols_to_keep = [col for col in data.columns if not data[col].isnull().all()]
-data = data[cols_to_keep]
 
-# Melt the DataFrame to long format
-melted = data.melt(id_vars=[date_col], var_name='swap_col', value_name='vol')
+def load_swaption_vol_data(
+    excel_path=r"C:\Users\Bruger\PycharmProjects\MasterThesis\SwapData\SwapVol.xlsx",
+    currency="EUR",
+    sheet_name=0,
+    code_row_idx=0,
+    data_start_row_idx=5,
+    first_date_col_pos=1,
+    save_csv=False,
+    output_csv_path=None,
+    verbose=False,
+):
+    """
+    Load swaption vol data from Bloomberg-style Excel export.
 
-# Map option_maturity and swap_tenor using col_map
-melted['option_maturity'] = melted['swap_col'].map(lambda c: col_map.get(c, (None, None))[0])
-melted['swap_tenor'] = melted['swap_col'].map(lambda c: col_map.get(c, (None, None))[1])
+    Expected sheet structure
+    ------------------------
+    Row code_row_idx contains swaption codes in every SECOND column:
+        e.g. col 2 -> 11, col 4 -> 15, col 6 -> 110, ...
 
-# Filter out rows where both option_maturity and swap_tenor are None (i.e., not a swap vol column)
-melted = melted[~(melted['option_maturity'].isna() & melted['swap_tenor'].isna())]
+    Starting from data_start_row_idx, the sheet contains repeating pairs:
+        [date_col, vol_col, date_col, vol_col, ...]
 
-# Add currency and rename date column
-melted['currency'] = 'EUR'
-melted = melted.rename(columns={date_col: 'as_of_date'})
+    Example:
+        col 1 = dates for code in col 2
+        col 2 = vols  for code in col 2
+        col 3 = dates for code in col 4
+        col 4 = vols  for code in col 4
+        etc.
 
-# Ensure as_of_date is datetime
-melted['as_of_date'] = pd.to_datetime(melted['as_of_date'], errors='coerce')
+    Returns columns:
+        currency, as_of_date, option_maturity, swap_tenor, vol
+    """
+    raw = pd.read_excel(
+        excel_path,
+        sheet_name=sheet_name,
+        header=None,
+        engine="openpyxl",
+    )
 
-# Select and reorder columns
-final_cols = ['currency', 'as_of_date', 'option_maturity', 'swap_tenor', 'vol']
-melted = melted[final_cols]
+    if verbose:
+        print("First 8 rows of raw Excel:")
+        print(raw.head(8))
+        print("\nCode row:")
+        print(list(raw.iloc[code_row_idx]))
 
-# Save to CSV
-output_path = os.path.join(os.path.dirname(__file__), '..', 'SwapVol_OIS_formatted.csv')
-melted.to_csv(output_path, index=False)
-print(melted.head())
-print(f"Saved formatted data to {output_path}")
+    n_cols = raw.shape[1]
+    out_frames = []
+
+    # Loop over date/vol pairs:
+    # first pair is (1,2), next (3,4), ..., so vol cols are 2,4,6,...
+    for vol_col in range(first_date_col_pos + 1, n_cols, 2):
+        date_col = vol_col - 1
+
+        code = raw.iat[code_row_idx, vol_col] if vol_col < n_cols else None
+        option_maturity, swap_tenor = parse_swaption_code(code)
+
+        if option_maturity is None or swap_tenor is None:
+            if verbose:
+                print(f"Skipping vol_col={vol_col}: invalid code={code}")
+            continue
+
+        tmp = raw.iloc[data_start_row_idx:, [date_col, vol_col]].copy()
+        tmp.columns = ["as_of_date", "vol"]
+
+        tmp["as_of_date"] = pd.to_datetime(tmp["as_of_date"], errors="coerce")
+        tmp["vol"] = pd.to_numeric(tmp["vol"], errors="coerce")
+
+        tmp = tmp.dropna(subset=["as_of_date", "vol"]).copy()
+        if tmp.empty:
+            if verbose:
+                print(
+                    f"No valid rows for code={code} "
+                    f"(expiry={option_maturity}, tenor={swap_tenor})"
+                )
+            continue
+
+        tmp["currency"] = str(currency).upper()
+        tmp["option_maturity"] = int(option_maturity)
+        tmp["swap_tenor"] = int(swap_tenor)
+
+        out_frames.append(
+            tmp[["currency", "as_of_date", "option_maturity", "swap_tenor", "vol"]]
+        )
+
+        if verbose:
+            print(
+                f"Loaded code={code}: "
+                f"expiry={option_maturity}, tenor={swap_tenor}, rows={len(tmp)}"
+            )
+
+    if not out_frames:
+        result = pd.DataFrame(
+            columns=["currency", "as_of_date", "option_maturity", "swap_tenor", "vol"]
+        )
+    else:
+        result = pd.concat(out_frames, ignore_index=True)
+        result = result.sort_values(
+            ["currency", "as_of_date", "option_maturity", "swap_tenor"]
+        ).reset_index(drop=True)
+
+    if save_csv:
+        if output_csv_path is None:
+            try:
+                base_dir = os.path.dirname(__file__)
+            except NameError:
+                base_dir = os.getcwd()
+
+            output_csv_path = os.path.abspath(
+                os.path.join(base_dir, "..", "SwapVol_OIS_formatted.csv")
+            )
+
+        result.to_csv(output_csv_path, index=False)
+        if verbose:
+            print(f"\nSaved formatted data to {output_csv_path}")
+
+    return result
+
+
+if __name__ == "__main__":
+    df_swaption_vol = load_swaption_vol_data(save_csv=True, verbose=True)
+    print("\nParsed dataframe:")
+    print(df_swaption_vol.head(20))
+    print("\nShape:", df_swaption_vol.shape)

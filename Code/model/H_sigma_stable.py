@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from Code.utils.common import CenteredSoftStep
+from .sigma_matrix import angles_to_rhos
 
 
 class HSigmaStable(nn.Module):
@@ -11,19 +12,22 @@ class HSigmaStable(nn.Module):
 
     Guarantees:
       sigma_i(z) in (sigma_min, sigma_max)  for all i = 1, ..., d
-      rho_ij(z)  in (-rho_max, rho_max)     for all pairs i < j, with rho_max < 1
+      The d*(d-1)/2 correlations always form a positive-definite
+      correlation matrix — for ANY d, not just d ≤ 2.
 
-    Smooth bounded parameterization:
+    Sigma parameterization (unchanged):
       log_sigma_i(z) = log_sigma_min
                        + (log_sigma_max - log_sigma_min) * sigmoid(net_i(z) + offset_i)
-      rho_ij(z)      = rho_max * tanh(net_ij(z))
 
-    This is not clamping — it is a smooth reparameterization.
+    Correlation parameterization (hyperspherical angles):
+      θ_k(z) = π · sigmoid(net_k(z))          ∈ (0, π)
+      Build L_R from angles  →  R = L_R L_R^T  is PD by construction
+      Extract ρ_ij from R.
 
     Properties:
-      - sigma_i > 0 and bounded above for all z  ->  diffusion cannot grow arbitrarily
-      - |rho_ij| < rho_max < 1                   ->  Cholesky factor is always real
-      - Generalises to any latent_dim d
+      - sigma_i > 0 and bounded above for all z  →  diffusion cannot grow arbitrarily
+      - R is PD by construction for any d         →  Cholesky factor is always real
+      - Smooth, differentiable parameterization everywhere
     """
 
     def __init__(
@@ -31,10 +35,10 @@ class HSigmaStable(nn.Module):
         latent_dim: int,
         hidden_dim: int,
         bias: bool = False,
-        sigma_init: float = 0.015,
+        sigma_init: float = 0.3,
         sigma_min: float = 1e-4,
-        sigma_max: float = 0.20,
-        rho_max: float = 0.999,
+        sigma_max: float = 2,
+        rho_max: float = 0.999,   # kept for API compat; see note below
     ):
         super().__init__()
 
@@ -42,16 +46,13 @@ class HSigmaStable(nn.Module):
             raise ValueError("Require 0 < sigma_min < sigma_max.")
         if not (sigma_min < sigma_init < sigma_max):
             raise ValueError("Require sigma_min < sigma_init < sigma_max.")
-        if not (0.0 < rho_max < 1.0):
-            raise ValueError("Require 0 < rho_max < 1.")
 
         self.d = int(latent_dim)
         self.n_corr = self.d * (self.d - 1) // 2
-        out_dim = self.d + self.n_corr  # d sigmas + d(d-1)/2 correlations
+        out_dim = self.d + self.n_corr  # d sigmas + d(d-1)/2 angle params
 
         self.sigma_min = float(sigma_min)
         self.sigma_max = float(sigma_max)
-        self.rho_max = float(rho_max)
 
         self.log_sigma_min = math.log(self.sigma_min)
         self.log_sigma_max = math.log(self.sigma_max)
@@ -75,13 +76,18 @@ class HSigmaStable(nn.Module):
 
         self.raw_logsigma_offset = nn.Parameter(torch.full((self.d,), raw_init))
 
+        # Note on initialization of the correlation part:
+        # With zero-init weights, raw_rhos = 0  →  sigmoid(0) = 0.5  →  θ = π/2
+        # cos(π/2) = 0  →  L_R = I  →  R = I  →  all ρ = 0  (uncorrelated at init).
+        # No extra offset is needed.
+
     def forward(self, z: torch.Tensor, return_raw: bool = False):
         """
         z: (B, d) or (d,)
 
         Returns (default):
-          sigmas: (B, d)    — volatilities in (sigma_min, sigma_max)
-          rhos:   (B, n_corr) — correlations in (-rho_max, rho_max)
+          sigmas: (B, d)      — volatilities in (sigma_min, sigma_max)
+          rhos:   (B, n_corr) — correlations from a PD correlation matrix
 
         If return_raw=True:
           dict with intermediate tensors for diagnostics
@@ -91,15 +97,16 @@ class HSigmaStable(nn.Module):
 
         raw = self.net(z)  # (B, d + n_corr)
 
-        # Smoothly bounded log-sigmas
+        # ── Smoothly bounded log-sigmas (unchanged) ──
         raw_logsigmas = raw[:, :self.d] + self.raw_logsigma_offset   # (B, d)
         log_sigmas = self.log_sigma_min + self.log_sigma_range * torch.sigmoid(raw_logsigmas)
         sigmas = torch.exp(log_sigmas)                                 # (B, d)
 
-        # Smoothly bounded correlations away from ±1
+        # ── PD-guaranteed correlations via hyperspherical angles ──
         if self.n_corr > 0:
-            raw_rhos = raw[:, self.d:]                                 # (B, n_corr)
-            rhos = self.rho_max * torch.tanh(raw_rhos)                 # (B, n_corr)
+            raw_angles = raw[:, self.d:]                               # (B, n_corr)
+            angles = math.pi * torch.sigmoid(raw_angles)               # (B, n_corr) ∈ (0, π)
+            rhos = angles_to_rhos(angles, self.d)                      # (B, n_corr)
         else:
             rhos = raw[:, :0]                                          # (B, 0) empty
 
@@ -108,9 +115,8 @@ class HSigmaStable(nn.Module):
                 "raw": raw,
                 "raw_logsigmas": raw_logsigmas,
                 "log_sigmas": log_sigmas,
-                "raw_rhos": raw[:, self.d:] if self.n_corr > 0 else None,
+                "raw_angles": raw[:, self.d:] if self.n_corr > 0 else None,
+                "angles": angles if self.n_corr > 0 else None,
             }
 
         return sigmas, rhos
-
-

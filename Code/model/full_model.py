@@ -6,17 +6,17 @@ from .DecoderG import DecoderG
 
 from Code import config
 
-# Import both variants
+# Baseline variants
 from .K_mu import KMu as KMuBaseline
-from .R_short import RShort as RShortBaseline
+from .R_short import RShort
 from .H_sigma import HSigma as HSigmaBaseline
 
+# Stable variants (K and H only — G and R are shared)
 from .K_mu_stable import KMuStable
-from .R_short_stable import RShortStable
 from .H_sigma_stable import HSigmaStable
 
 from Code.utils.rates import par_swap_from_discount
-from Code.model.sigma_matrix import L_from_sigmas_rhos
+from .sigma_matrix import L_from_sigmas_rhos
 from Code.utils.ode import (
     d_tau_autograd_nodewise,
     grad_and_trace_cov_hess_G,
@@ -43,17 +43,14 @@ class FullModel(nn.Module):
         r_hidden: int = 4,
         g_bias: bool = True,
         hr_bias: bool = False,
-        sigma_init: float = 0.015,
+        sigma_init: float = 0.3,
 
         # stable K controls
-        k_z_center_init=None,
         k_epsilon: float = 1e-3,
-        k_drift_scale_init: float = 0.10,
-        k_learn_center: bool = True,
 
         # stable H controls
         h_sigma_min: float = 1e-4,
-        h_sigma_max: float = 0.20,
+        h_sigma_max: float = 2.0,
         h_rho_max: float = 0.999,
     ):
         super().__init__()
@@ -72,16 +69,18 @@ class FullModel(nn.Module):
         )
 
         self.encoder = Encoder(input_dim, latent_dim)
-        self.G = DecoderG(latent_dim, g_hidden, g_bias)
 
-        # Use config.py as single source of truth
+        # G and R are shared across variants — simulation stability
+        # comes from K (mean-reversion) and H (bounded PD diffusion).
+        self.G = DecoderG(latent_dim, g_hidden, g_bias)
+        self.R = RShort(latent_dim, r_hidden, bias=hr_bias)
+
+        # Use config.py as single source of truth for K and H
         if config.VARIANT == "stable":
             self.K = KMuStable(
                 latent_dim=latent_dim,
-                z_center_init=k_z_center_init,
+                bias=True,
                 epsilon=k_epsilon,
-                drift_scale_init=k_drift_scale_init,
-                learn_center=k_learn_center,
             )
             self.H = HSigmaStable(
                 latent_dim=latent_dim,
@@ -92,11 +91,6 @@ class FullModel(nn.Module):
                 sigma_max=h_sigma_max,
                 rho_max=h_rho_max,
             )
-            self.R = RShortStable(
-                latent_dim=latent_dim,
-                hidden_dim=r_hidden,
-                bias=hr_bias,
-            )
         else:
             self.K = KMuBaseline(
                 latent_dim=latent_dim,
@@ -105,11 +99,6 @@ class FullModel(nn.Module):
             self.H = HSigmaBaseline(
                 latent_dim=latent_dim,
                 hidden_dim=h_hidden,
-                bias=hr_bias,
-            )
-            self.R = RShortBaseline(
-                latent_dim=latent_dim,
-                hidden_dim=r_hidden,
                 bias=hr_bias,
             )
 
@@ -147,9 +136,7 @@ class FullModel(nn.Module):
             + (B_vals ** 2) * gamma
         )
 
-        sigma_bar = 0.006
-        tau_safe = torch.clamp(tau.unsqueeze(0), min=1e-8)
-        SR_tau = R_tau / (tau_safe * sigma_bar)
+        SR_tau = R_tau
 
         return {
             "R_tau": R_tau[:, 1:],
@@ -159,30 +146,43 @@ class FullModel(nn.Module):
             "max_abs_SR_1to30": SR_tau[:, 1:].abs().max(dim=1).values,
         }
 
-    def forward(
-        self,
-        S_in: torch.Tensor,
-        do_arb_checks: bool = False,
-        return_aux: bool = False,
+    def decode_from_z(
+            self,
+            z: torch.Tensor,
+            tau: torch.Tensor | None = None,
+            do_arb_checks: bool = False,
+            return_aux: bool = False,
     ):
+        """
+        Decode latent states directly to discount factors and swap rates.
+
+        Args:
+            z:   shape (B, latent_dim) or (latent_dim,)
+            tau: optional custom tau grid. If None, uses the model's default grid 0,1,...,tau_max
+
+        Returns:
+            - P_mkt by default
+            - (P_mkt, aux) if return_aux=True
+        """
         squeeze_back = False
-        if S_in.dim() == 1:
-            S_in = S_in.unsqueeze(0)
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
             squeeze_back = True
 
-        device = S_in.device
-        dtype = S_in.dtype
-        tau = self._tau(device=device, dtype=dtype)
+        device = z.device
+        dtype = z.dtype
 
-        # 1) Encode observed swap curve -> latent factors
-        z = self.encoder(S_in)
+        if tau is None:
+            tau = self._tau(device=device, dtype=dtype)
+        else:
+            tau = tau.to(device=device, dtype=dtype)
 
-        # 2) Evaluate G(z, tau)
+        # 1) Evaluate G(z, tau)
         G_vals = self.G(z, tau)
         if G_vals.dim() == 1:
             G_vals = G_vals.unsqueeze(0)
 
-        # 3) Risk-neutral parameter networks
+        # 2) Risk-neutral parameter networks
         mu = self.K(z)
 
         sigmas, rhos = self.H(z)
@@ -192,14 +192,14 @@ class FullModel(nn.Module):
         if r_tilde.ndim == 2 and r_tilde.shape[-1] == 1:
             r_tilde = r_tilde.squeeze(-1)
 
-        # 4) Derivatives
+        # 3) Derivatives
         def G_single(z_single: torch.Tensor) -> torch.Tensor:
             return self.G(z_single.unsqueeze(0), tau).squeeze(0)
 
         dG_dtau = d_tau_autograd_nodewise(self.G, z, tau)
         grad_z_G, trace_cov_hess = grad_and_trace_cov_hess_G(G_single, z, sigma)
 
-        # 5) ODE coefficients
+        # 4) ODE coefficients
         alpha, beta, gamma = paper_alpha_beta_gamma_trace(
             G=G_vals,
             dG_dtau=dG_dtau,
@@ -210,28 +210,23 @@ class FullModel(nn.Module):
             r_tilde=r_tilde,
         )
 
-        # 6) Solve ODEs
+        # 5) Solve ODEs
         A_vals, B_vals = solve_AB(tau, alpha, beta, gamma)
 
-        # 7) Sanity checks
-        assert A_vals.shape == G_vals.shape, f"A_vals {A_vals.shape} != G_vals {G_vals.shape}"
-        assert B_vals.shape == G_vals.shape, f"B_vals {B_vals.shape} != G_vals {G_vals.shape}"
-
-        assert torch.allclose(A_vals[:, 0], torch.zeros_like(A_vals[:, 0]), atol=1e-6)
-        assert torch.allclose(B_vals[:, 0], torch.zeros_like(B_vals[:, 0]), atol=1e-6)
-
-        # 8) Bond prices
-        P_full = torch.exp(A_vals - B_vals * G_vals)
+        # 6) Bond prices
+        log_P = A_vals - B_vals * G_vals
+        P_full = torch.exp(log_P)
         P_mkt = P_full[:, 1:]
 
-        # 9) Swap rates
-        S_hat = par_swap_from_discount(P_mkt, self.tenors)
+        # 7) Swap rates only if tau matches annual market grid
+        S_hat = None
+        if tau.numel() == self.tau_max + 1:
+            tau_default = self._tau(device=device, dtype=dtype)
+            if torch.allclose(tau, tau_default, atol=1e-10, rtol=0.0):
+                S_hat = par_swap_from_discount(P_mkt, self.tenors)
 
         arb = None
         if do_arb_checks:
-            assert torch.allclose(P_full[:, 0], torch.ones_like(P_full[:, 0]), atol=1e-4), \
-                f"P(tau=0) sanity check failed: max deviation = {(P_full[:, 0] - 1).abs().max().item():.2e}"
-
             arb = self._compute_arb_diagnostics(
                 tau=tau,
                 G_vals=G_vals,
@@ -248,9 +243,9 @@ class FullModel(nn.Module):
             )
 
         aux = {
-            "z": z,
-            "P_mkt": P_mkt,
             "P_full": P_full,
+            "P_mkt": P_mkt,
+            "S_hat": S_hat,
             "A_vals": A_vals,
             "B_vals": B_vals,
             "G_vals": G_vals,
@@ -264,7 +259,34 @@ class FullModel(nn.Module):
             "gamma": gamma,
             "arb": arb,
             "tau_grid": tau,
+            "z": z,
         }
+
+        if squeeze_back:
+            P_mkt = P_mkt.squeeze(0)
+            aux = {k: (v.squeeze(0) if torch.is_tensor(v) and v.shape[0] == 1 else v) for k, v in aux.items()}
+
+        if return_aux:
+            return P_mkt, aux
+        return P_mkt
+
+    def forward(
+            self,
+            S_in: torch.Tensor,
+            do_arb_checks: bool = False,
+            return_aux: bool = False,
+    ):
+        squeeze_back = False
+        if S_in.dim() == 1:
+            S_in = S_in.unsqueeze(0)
+            squeeze_back = True
+
+        z = self.encoder(S_in)
+        _, aux = self.decode_from_z(z, tau=None, do_arb_checks=do_arb_checks, return_aux=True)
+
+        S_hat = aux["S_hat"]
+        if S_hat is None:
+            raise RuntimeError("Default tau grid should produce S_hat, but got None.")
 
         if squeeze_back:
             S_hat = S_hat.squeeze(0)

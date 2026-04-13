@@ -53,7 +53,7 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 SHOW_PLOTS = True  # Set to False to only save plots
 
 LATENT_DIM = 2
-EPOCHS = 200
+EPOCHS = 1000
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
@@ -198,7 +198,7 @@ for epoch in range(EPOCHS):
     do_eval = ((epoch + 1) % EVAL_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
     do_log = ((epoch + 1) % LOG_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
 
-    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE:
+    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE and n_obs > 0:
         do_eval = True
         do_log = True
 
@@ -240,7 +240,7 @@ for epoch in range(EPOCHS):
             f"time_total={time_total/60:.1f}min interval={time_interval/60:.1f}min"
         )
 
-    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE:
+    if TARGET_MSE > 0 and epoch_mse <= TARGET_MSE and n_obs > 0:
         print(f"[STOP] epoch={epoch} train_rmse={epoch_rmse:.6e} lr={optim.param_groups[0]['lr']:.2e}")
         break
 
@@ -283,6 +283,33 @@ if len(avg_rmse_bps_hist) > 0:
     plt.close(fig)
 else:
     print("No RMSE history to plot (avg_rmse_bps_hist empty).")
+
+# ==========================================================
+# Save latent coordinates (z_1, z_2) for scatter plotting
+# ==========================================================
+
+@torch.no_grad()
+def get_latent(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    was_training = model.training
+    model.eval()
+    zs = []
+    for i in range(0, X.shape[0], batch_size):
+        xb = X[i:i + batch_size].to(device)
+        z = model.encoder(xb)
+        zs.append(z.detach().cpu())
+    if was_training:
+        model.train()
+    return torch.cat(zs, dim=0)
+
+Z = get_latent(model, X_tensor, batch_size=EVAL_BATCH_SIZE)  # (N, LATENT_DIM)
+
+df_latent = meta.copy().reset_index(drop=True)
+for k in range(LATENT_DIM):
+    df_latent[f"z_{k+1}"] = Z[:, k].numpy()
+
+latent_csv_path = os.path.join(FIGURES_DIR, f"latent_z_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.csv")
+df_latent.to_csv(latent_csv_path, index=False)
+print("Saved latent CSV:", latent_csv_path)
 
 # ==========================================================
 # Save trained model checkpoint
