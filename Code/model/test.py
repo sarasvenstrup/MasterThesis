@@ -14,7 +14,7 @@ from Code.Pricing.simulate_model import (
 # SETTINGS
 # =========================
 MODE = "both"   # "real", "sim", or "both"
-CHECKPOINT_PATH = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_baseline\ep3500\checkpoint_dim2_ep3500.pt"
+CHECKPOINT_PATH = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep3500\checkpoint_dim2_ep3500.pt"
 
 USE = "bbg"
 CCY_FILTER = "EUR"
@@ -22,7 +22,7 @@ AS_OF_DATE = None          # e.g. "2016-08-30"
 N_PATHS = 500
 N_STEPS = 24
 DT = 1 / 365
-DIFFUSION_SCALE = 0.1
+DIFFUSION_SCALE = 1.0
 DEVICE = "cpu"
 DTYPE = torch.float64
 SEED = 1234
