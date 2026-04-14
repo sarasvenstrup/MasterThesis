@@ -39,8 +39,6 @@ def load_and_setup_model(device, checkpoint_path, latent_dim=2, use_double=True)
 
     model = FullModel(latent_dim=latent_dim).to(device)
 
-    # strict=False tolerates old checkpoints that had since-removed
-    # parameters (g_floor, r_center, raw_r_scale).
     result = model.load_state_dict(state_dict, strict=False)
     if result.missing_keys:
         print(f"  [load] missing keys: {result.missing_keys}")
@@ -65,7 +63,7 @@ def get_mu(model, z):
 @torch.no_grad()
 def get_L(model, z):
     sigmas, rhos = model.H(z)
-    return L_from_sigmas_rhos(sigmas, rhos)
+    return L_from_sigmas_rhos(sigmas, rhos, validate=False)
 
 
 @torch.no_grad()
@@ -157,6 +155,11 @@ def compute_discount_paths(r_paths: torch.Tensor, dt: float) -> torch.Tensor:
     increments = 0.5 * (r_paths[:, :-1] + r_paths[:, 1:]) * dt
 
     int_r = torch.cumsum(increments, dim=1)
+    # Clamp the integrated rate to [-30, 30] so exp never over/underflows.
+    # This corresponds to discount factors in [exp(-30), exp(30)] ~ [1e-13, 1e13],
+    # which is physically unreachable but prevents NaN propagation when simulated
+    # paths stray outside the training support.
+    int_r = int_r.clamp(min=-30.0, max=30.0)
     disc = torch.ones((n_paths, n_times), device=r_paths.device, dtype=r_paths.dtype)
     disc[:, 1:] = torch.exp(-int_r)
     return disc
@@ -490,6 +493,80 @@ def run_simulation(
         plot_simulation_results(results_dict)
 
     return results_dict
+
+
+# =============================================================================
+# DIFFERENTIABLE SIMULATION TO EXPIRY
+# =============================================================================
+
+def simulate_to_expiry_differentiable(
+    model,
+    z0      : torch.Tensor,    # (1, d)  — initial latent state, detached
+    n_steps : int,
+    dt      : float,
+    n_paths : int,
+    eps     : torch.Tensor,    # (n_paths, n_steps, d) — PRE-DRAWN, no grad
+    freeze_K: bool = True,     # If False, K.N grad flows; K.V always frozen
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Differentiable Euler-Maruyama simulation to a fixed horizon.
+
+    Returns
+    -------
+    z_T : (n_paths, d)  — terminal latent state WITH grad w.r.t. H
+                          (and K.N if freeze_K=False)
+    D_T : (n_paths,)    — pathwise money-market discount factor, always
+                          DETACHED (R is frozen throughout)
+
+    The noise eps must be pre-drawn and passed in as a fixed tensor (no grad).
+    This is the reparameterization trick: randomness is decoupled from the
+    parameters so autograd flows cleanly through L(z_t ; H) at every step.
+
+    Discount uses the trapezoid rule:
+        log D_T = -Σ_t  ½ (r_t + r_{t+1}) · dt
+    evaluated under torch.no_grad() via model.R — R is never trained here.
+
+    When freeze_K=False:
+        K.N has requires_grad=True → grad flows to K.N via the drift
+        K.V always stays frozen   → negative-definiteness is preserved
+    """
+    sqrt_dt = math.sqrt(dt)
+
+    z = z0.expand(n_paths, -1).clone()          # (n_paths, d)
+
+    with torch.no_grad():
+        r_prev = model.R(z).squeeze(-1)         # (n_paths,)
+
+    log_D = torch.zeros(n_paths, device=z.device, dtype=z.dtype)
+
+    for t in range(n_steps):
+        # Volatility — gradient flows through H
+        sigmas, rhos = model.H(z)
+        L = L_from_sigmas_rhos(sigmas, rhos, validate=False)    # (n_paths, d, d)
+
+        # Drift — freeze K entirely, or let K.N receive gradients
+        if freeze_K:
+            with torch.no_grad():
+                mu = model.K(z)
+            drift = mu.detach() * dt
+        else:
+            # K.V.requires_grad = False → no grad flows to K.V
+            # K.N.requires_grad = True  → grad flows to K.N
+            drift = model.K(z) * dt
+
+        # Euler step with fixed noise
+        dW    = eps[:, t, :] * sqrt_dt          # (n_paths, d)
+        shock = torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
+        z     = z + drift + shock
+
+        # Trapezoid discount (detached — R is frozen)
+        with torch.no_grad():
+            r_next = model.R(z.detach()).squeeze(-1)
+            log_D  = log_D - 0.5 * (r_prev + r_next) * dt
+            r_prev = r_next
+
+    D_T = log_D.exp().detach()                  # (n_paths,)
+    return z, D_T
 
 
 if __name__ == "__main__":
