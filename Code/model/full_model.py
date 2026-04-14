@@ -186,7 +186,7 @@ class FullModel(nn.Module):
         mu = self.K(z)
 
         sigmas, rhos = self.H(z)
-        sigma = L_from_sigmas_rhos(sigmas, rhos)
+        sigma = L_from_sigmas_rhos(sigmas, rhos, validate=False)
 
         r_tilde = self.R(z)
         if r_tilde.ndim == 2 and r_tilde.shape[-1] == 1:
