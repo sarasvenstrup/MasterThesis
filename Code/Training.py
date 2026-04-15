@@ -50,9 +50,9 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # ==========================================================
 
 # --- User option: show plots interactively? ---
-SHOW_PLOTS = True  # Set to False to only save plots
+SHOW_PLOTS = False  # Set to False to only save plots
 
-LATENT_DIM = 3
+LATENT_DIM = 4
 EPOCHS = 5000
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
@@ -71,7 +71,7 @@ X_tensor = X_tensor.float()
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
-torch.manual_seed(0)
+torch.manual_seed(1)
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
@@ -141,10 +141,15 @@ def eval_rmse_bps(model: nn.Module, X_full: torch.Tensor, meta_full: pd.DataFram
 ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 csv_path = os.path.join(FIGURES_DIR, f"train_rmse_log_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.csv")
 
+torch_version = torch.__version__
+python_version = sys.version.split()[0]
+numpy_version = np.__version__
+
 csv_cols = (
     ["epoch", "time_total_sec", "time_interval_sec", "train_mse", "train_rmse",
      "avg_rmse_bps", "n_good", "n_bad"]
     + [f"rmse_bps_{ccy}" for ccy in ccy_order]
+    + ["torch_version", "python_version", "numpy_version"]
 )
 
 pd.DataFrame(columns=csv_cols).to_csv(csv_path, index=False)
@@ -230,6 +235,10 @@ for epoch in range(EPOCHS):
 
         for ccy in ccy_order:
             row[f"rmse_bps_{ccy}"] = float(rmse_per_ccy.get(ccy, np.nan)) if rmse_per_ccy is not None else np.nan
+
+        row["torch_version"] = torch_version
+        row["python_version"] = python_version
+        row["numpy_version"] = numpy_version
 
         pd.DataFrame([row], columns=csv_cols).to_csv(csv_path, mode="a", header=False, index=False)
 

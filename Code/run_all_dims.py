@@ -1,8 +1,8 @@
 """
 Runner script: runs Training.py sequentially for multiple dims and variants.
 
-  Training.py (baseline): LATENT_DIM = 2, 3, 4  ep=3500
-  Training.py (stable):   LATENT_DIM = 2, 3, 4  ep=3500
+  Training.py (baseline): LATENT_DIM = 3, 2, 4  ep=5000
+  Training.py (stable):   LATENT_DIM = 2, 3, 4  ep=5000
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -26,7 +26,7 @@ STAGES = [
         "name":    "Training (baseline)",
         "script":  TRAINING_PATH,
         "variant": "baseline",
-        "dims":    [2, 3, 4],
+        "dims":    [3, 2, 4],
         "epochs":  5000,
     },
     {

@@ -70,10 +70,7 @@ class FullModel(nn.Module):
 
         self.encoder = Encoder(input_dim, latent_dim)
 
-        # G and R are shared across variants — simulation stability
-        # comes from K (mean-reversion) and H (bounded PD diffusion).
         self.G = DecoderG(latent_dim, g_hidden, g_bias)
-        self.R = RShort(latent_dim, r_hidden, bias=hr_bias)
 
         # Use config.py as single source of truth for K and H
         if config.VARIANT == "stable":
@@ -101,6 +98,8 @@ class FullModel(nn.Module):
                 hidden_dim=h_hidden,
                 bias=hr_bias,
             )
+
+        self.R = RShort(latent_dim, r_hidden, bias=hr_bias)
 
     def _tau(self, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         return self._tau_grid.to(device=device, dtype=dtype)

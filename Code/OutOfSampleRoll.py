@@ -120,7 +120,7 @@ def make_loader(X_sub: torch.Tensor, batch_size: int):
     ds = TensorDataset(X_sub)
     return DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
 
-WINDOW_SEED = 0  # fixed seed for every rolling window — change to reproduce
+WINDOW_SEED = 1  # fixed seed for every rolling window — change to reproduce
 
 def train_one_window(X_train: torch.Tensor):
     torch.manual_seed(WINDOW_SEED)

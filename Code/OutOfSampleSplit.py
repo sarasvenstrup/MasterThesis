@@ -162,7 +162,7 @@ is_rmse_all,  oos_rmse_all  = [], []   # one pd.Series per seed
 is_avg_all,   oos_avg_all   = [], []   # one float per seed
 best_model, best_oos = None, np.inf
 
-SEEDS = list(range(N_SEEDS))  # explicit — change these integers to reproduce exact runs
+SEEDS = list(range(1, N_SEEDS + 1))  # explicit — change these integers to reproduce exact runs
 
 # ── run manifest (written before loop, updated after each seed) ────────────────
 manifest = {

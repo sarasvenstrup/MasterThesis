@@ -6,7 +6,6 @@ class KMu(nn.Module):
     Implements: mu(z) = M z + N
     (pure linear mapping, no activation)
     """
-
     def __init__(self, latent_dim: int, bias=True):
         super().__init__()
         self.lin = nn.Linear(latent_dim, latent_dim, bias=bias)
