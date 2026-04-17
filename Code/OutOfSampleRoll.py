@@ -29,10 +29,11 @@ confirm_variant()
 
 torch.set_num_threads(4)
 torch.set_num_interop_threads(2)
-torch.backends.mkldnn.enabled = True
+torch.backends.mkldnn.enabled = False  # IMPORTANT: Disable MKLDNN for numerical stability
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Using device:", device)
+print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 
 # ============================= Config ===============================
 USE = "bbg"

@@ -246,7 +246,8 @@ def rmse_bps_per_currency_paper(S_true, S_pred, meta_df):
 
     rmses = {}
     for ccy in tmp["ccy"].unique():
-        idx = (tmp["ccy"].values == ccy)
+        # FIX: NumPy 2.x compatibility - use isin() for proper boolean indexing
+        idx = tmp["ccy"].isin([ccy]).values
         e = err[idx, :]
         rmses[ccy] = float(np.sqrt(np.mean(e**2)) * 10000.0)
 

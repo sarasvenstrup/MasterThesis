@@ -96,6 +96,44 @@ def compute_latent_statistics(model, X_tensor, device, latent_dim):
     return z_train_mean, z_train_cov, z_train_std
 
 
+def _euler_step_inference(
+    model: object,
+    z: torch.Tensor,           # (n_paths, d) — current state
+    sqrt_dt: float,
+    device: torch.device,
+    dtype: torch.dtype,
+    diffusion_scale: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Single Euler-Maruyama step for inference mode (no gradients).
+    
+    Returns
+    -------
+    z_new : (n_paths, d)      — updated latent state
+    r     : (n_paths,)        — short rate at new state
+    mu    : (n_paths, d)      — drift at new state
+    L     : (n_paths, d, d)   — diffusion matrix at new state
+    """
+    n_paths = z.shape[0]
+    d = z.shape[1]
+    
+    # Compute diffusion matrix and generate noise
+    L = get_L(model, z)
+    dW = torch.randn(n_paths, d, device=device, dtype=dtype) * sqrt_dt
+    
+    # Euler step: z_new = z + μ*dt + L*dW
+    shock = diffusion_scale * torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
+    drift = get_mu(model, z) * (sqrt_dt ** 2)  # dt = sqrt_dt^2
+    z_new = z + drift + shock
+    
+    # Evaluate model at new state
+    r = get_r(model, z_new)
+    mu = get_mu(model, z_new)
+    L_new = get_L(model, z_new)
+    
+    return z_new, r, mu, L_new
+
+
 def simulate_latent_paths(
         model,
         z0,
@@ -105,6 +143,7 @@ def simulate_latent_paths(
         device,
         diffusion_scale=1.0,
 ):
+
     if z0.dim() != 2 or z0.shape[0] != 1:
         raise ValueError(f"Expected z0 shape (1,d), got {tuple(z0.shape)}")
 
@@ -113,31 +152,37 @@ def simulate_latent_paths(
 
     d = z0.shape[1]
     sqrt_dt = math.sqrt(dt)
+    dtype = z0.dtype
 
     z = z0.repeat(n_paths, 1).to(device)
 
-    z_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=z.dtype)
-    r_paths = torch.empty((n_paths, n_steps + 1), device=device, dtype=z.dtype)
-    mu_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=z.dtype)
-    L_paths = torch.empty((n_paths, n_steps + 1, d, d), device=device, dtype=z.dtype)
+    # Pre-allocate trajectory storage
+    z_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=dtype)
+    r_paths = torch.empty((n_paths, n_steps + 1), device=device, dtype=dtype)
+    mu_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=dtype)
+    L_paths = torch.empty((n_paths, n_steps + 1, d, d), device=device, dtype=dtype)
 
+    # Store initial state
     z_paths[:, 0, :] = z
     r_paths[:, 0] = get_r(model, z)
     mu_paths[:, 0, :] = get_mu(model, z)
     L_paths[:, 0, :, :] = get_L(model, z)
 
+    # Euler-Maruyama loop
     for t in range(n_steps):
-        B = get_L(model, z)
-        dW = torch.randn(n_paths, B.shape[-1], device=device, dtype=z.dtype) * sqrt_dt
-        shock = diffusion_scale * torch.bmm(B, dW.unsqueeze(-1)).squeeze(-1)
-        drift = get_mu(model, z) * dt
-
-        z = z + drift + shock
+        z, r, mu, L = _euler_step_inference(
+            model=model,
+            z=z,
+            sqrt_dt=sqrt_dt,
+            device=device,
+            dtype=dtype,
+            diffusion_scale=diffusion_scale,
+        )
 
         z_paths[:, t + 1, :] = z
-        r_paths[:, t + 1] = get_r(model, z)
-        mu_paths[:, t + 1, :] = get_mu(model, z)
-        L_paths[:, t + 1, :, :] = get_L(model, z)
+        r_paths[:, t + 1] = r
+        mu_paths[:, t + 1, :] = mu
+        L_paths[:, t + 1, :, :] = L
 
     return z_paths, r_paths, mu_paths, L_paths
 
@@ -509,26 +554,56 @@ def simulate_to_expiry_differentiable(
     freeze_K: bool = True,     # If False, K.N grad flows; K.V always frozen
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Differentiable Euler-Maruyama simulation to a fixed horizon.
-
+    Differentiable Euler-Maruyama simulation for optimization/calibration.
+    
+    Core use case: Compute terminal latent state and discount factor with gradients
+    flowing through volatility model H (and optionally drift K.N) for likelihood-based
+    calibration of pricing models.
+    
+    Architecture
+    ============
+    - Noise is PRE-DRAWN via reparameterization trick: randomness decoupled from 
+      parameters so autograd flows cleanly through L(z_t; H) at every step
+    - Gradients flow through: H (volatility), optionally K.N (drift mean-reversion)
+    - R (short rate) is ALWAYS frozen: needed for discount but not optimized
+    - K.V (drift variance/scaling) is ALWAYS frozen: ensures numerical stability
+    
     Returns
     -------
-    z_T : (n_paths, d)  — terminal latent state WITH grad w.r.t. H
-                          (and K.N if freeze_K=False)
-    D_T : (n_paths,)    — pathwise money-market discount factor, always
-                          DETACHED (R is frozen throughout)
-
-    The noise eps must be pre-drawn and passed in as a fixed tensor (no grad).
-    This is the reparameterization trick: randomness is decoupled from the
-    parameters so autograd flows cleanly through L(z_t ; H) at every step.
-
-    Discount uses the trapezoid rule:
-        log D_T = -Σ_t  ½ (r_t + r_{t+1}) · dt
-    evaluated under torch.no_grad() via model.R — R is never trained here.
-
+    z_T : (n_paths, d)
+        Terminal latent state WITH gradients w.r.t. H and K.N (if freeze_K=False)
+    D_T : (n_paths,)
+        Pathwise money-market discount factor exp(-∫_0^T r_t dt), DETACHED 
+        (R is frozen throughout)
+    
+    Mathematical Details
+    ====================
+    Discount uses trapezoid rule:
+        ∫_0^T r_t dt ≈ Σ_t ½(r_t + r_{t+1}) · dt
+    
     When freeze_K=False:
-        K.N has requires_grad=True → grad flows to K.N via the drift
-        K.V always stays frozen   → negative-definiteness is preserved
+        K.N receives gradients → sensitivity to mean-reversion parameters
+        K.V always frozen     → negative-definiteness of diffusion preserved
+    
+    Parameters
+    ----------
+    model : FullModel
+        Trained model with components: encoder, K (drift), H (volatility), 
+        R (short rate)
+    z0 : torch.Tensor
+        Initial latent state, shape (1, d), typically detached
+    n_steps : int
+        Number of simulation steps
+    dt : float
+        Time step in years
+    n_paths : int
+        Number of Monte Carlo paths
+    eps : torch.Tensor
+        Pre-drawn standard normal noise, shape (n_paths, n_steps, d)
+        Must have requires_grad=False (frozen)
+    freeze_K : bool
+        If True (default): K frozen entirely, drift contributes no gradient
+        If False: K.N receives gradients (K.V stays frozen)
     """
     sqrt_dt = math.sqrt(dt)
 

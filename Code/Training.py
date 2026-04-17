@@ -41,9 +41,10 @@ print("Active model variant from config.py:", config.VARIANT)
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Using device:", device)
 
-torch.backends.mkldnn.enabled = True
+torch.backends.mkldnn.enabled = False  # IMPORTANT: Disable MKLDNN for numerical stability
 USE_SET_TO_NONE = True
 print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop_threads())
+print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 
 # ==========================================================
 # Settings
@@ -52,13 +53,13 @@ print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop
 # --- User option: show plots interactively? ---
 SHOW_PLOTS = False  # Set to False to only save plots
 
-LATENT_DIM = 4
-EPOCHS = 5000
+LATENT_DIM = 3
+EPOCHS = 500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
 EVAL_EVERY = 1
-LOG_EVERY = 500
+LOG_EVERY = 1
 TARGET_MSE = 1e-8
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_{config.VARIANT}", f"ep{EPOCHS}")
