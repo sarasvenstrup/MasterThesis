@@ -53,8 +53,8 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 # --- User option: show plots interactively? ---
 SHOW_PLOTS = False  # Set to False to only save plots
 
-LATENT_DIM = 3
-EPOCHS = 500
+LATENT_DIM = 4
+EPOCHS = 2000
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
@@ -76,7 +76,7 @@ torch.manual_seed(1)
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-max_lr = 1e-3
+max_lr = 3e-3
 optim = torch.optim.Adam(model.parameters(), lr=max_lr)
 
 scheduler = OneCycleLR(
@@ -174,18 +174,73 @@ for epoch in range(EPOCHS):
     n_obs = 0
     nan_batches = 0
 
-    for (xb_cpu,) in loader:
+    for batch_idx, (xb_cpu,) in enumerate(loader):
         xb = xb_cpu.to(device)
 
         optim.zero_grad(set_to_none=USE_SET_TO_NONE)
-        S_hat = model(xb)
+        
+        try:
+            S_hat = model(xb)
+        except Exception as e:
+            # Catch any exceptions during forward pass (e.g., ODE solver issues)
+            nan_batches += 1
+            print(f"    [Forward error at epoch {epoch}, batch {batch_idx}]: {str(e)[:200]}")
+            print(f"      Input range: [{xb.min():.3e}, {xb.max():.3e}], shape: {xb.shape}")
+            continue
+
+        # Check if S_hat contains NaN/Inf
+        if not torch.isfinite(S_hat).all():
+            nan_batches += 1
+            nan_count = (~torch.isfinite(S_hat)).sum().item()
+            print(f"    [S_hat has NaN/Inf at epoch {epoch}, batch {batch_idx}]")
+            print(f"      S_hat contains {nan_count} NaN/Inf values out of {S_hat.numel()}")
+            print(f"      S_hat range: [{S_hat[torch.isfinite(S_hat)].min():.3e}, {S_hat[torch.isfinite(S_hat)].max():.3e}]")
+            print(f"      Input range: [{xb.min():.3e}, {xb.max():.3e}]")
+            continue
 
         loss = loss_fn(S_hat, xb)
+        
         if not torch.isfinite(loss):
             nan_batches += 1
+            print(f"    [Loss is NaN/Inf at epoch {epoch}, batch {batch_idx}]")
+            print(f"      Loss value: {loss}")
+            print(f"      S_hat stats: min={S_hat.min():.3e}, max={S_hat.max():.3e}, mean={S_hat.mean():.3e}")
+            print(f"      Input stats: min={xb.min():.3e}, max={xb.max():.3e}, mean={xb.mean():.3e}")
             continue
 
         loss.backward()
+        
+        # Check for NaN/Inf in gradients before clipping
+        has_nan_grad = False
+        nan_grad_params = []
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                if not torch.isfinite(param.grad).all():
+                    has_nan_grad = True
+                    nan_count = (~torch.isfinite(param.grad)).sum().item()
+                    grad_range = param.grad[torch.isfinite(param.grad)]
+                    if len(grad_range) > 0:
+                        grad_min, grad_max = grad_range.min().item(), grad_range.max().item()
+                    else:
+                        grad_min, grad_max = float('nan'), float('nan')
+                    nan_grad_params.append({
+                        'name': name,
+                        'nan_count': nan_count,
+                        'total': param.grad.numel(),
+                        'grad_min': grad_min,
+                        'grad_max': grad_max,
+                    })
+        
+        if has_nan_grad:
+            nan_batches += 1
+            print(f"    [Gradients contain NaN/Inf at epoch {epoch}, batch {batch_idx}]")
+            for param_info in nan_grad_params:
+                print(f"      {param_info['name']}: {param_info['nan_count']}/{param_info['total']} NaN")
+                print(f"        Valid grad range: [{param_info['grad_min']:.3e}, {param_info['grad_max']:.3e}]")
+            print(f"      Loss was: {loss:.3e}")
+            print(f"      S_hat stats: min={S_hat.min():.3e}, max={S_hat.max():.3e}")
+            continue
+        
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optim.step()
         scheduler.step()
