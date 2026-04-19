@@ -41,7 +41,7 @@ print("Active model variant from config.py:", config.VARIANT)
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Using device:", device)
 
-torch.backends.mkldnn.enabled = False  # IMPORTANT: Disable MKLDNN for numerical stability
+torch.backends.mkldnn.enabled = True
 USE_SET_TO_NONE = True
 print("CPU threads:", torch.get_num_threads(), "interop:", torch.get_num_interop_threads())
 print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
@@ -53,13 +53,13 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 # --- User option: show plots interactively? ---
 SHOW_PLOTS = False  # Set to False to only save plots
 
-LATENT_DIM = 4
-EPOCHS = 2000
+LATENT_DIM = 2
+EPOCHS = 3500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
 EVAL_EVERY = 1
-LOG_EVERY = 1
+LOG_EVERY = 100
 TARGET_MSE = 1e-8
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_{config.VARIANT}", f"ep{EPOCHS}")
@@ -72,7 +72,7 @@ X_tensor = X_tensor.float()
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
-torch.manual_seed(1)
+torch.manual_seed(0)
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
@@ -178,7 +178,7 @@ for epoch in range(EPOCHS):
         xb = xb_cpu.to(device)
 
         optim.zero_grad(set_to_none=USE_SET_TO_NONE)
-        
+
         try:
             S_hat = model(xb)
         except Exception as e:
@@ -199,7 +199,7 @@ for epoch in range(EPOCHS):
             continue
 
         loss = loss_fn(S_hat, xb)
-        
+
         if not torch.isfinite(loss):
             nan_batches += 1
             print(f"    [Loss is NaN/Inf at epoch {epoch}, batch {batch_idx}]")
@@ -209,7 +209,7 @@ for epoch in range(EPOCHS):
             continue
 
         loss.backward()
-        
+
         # Check for NaN/Inf in gradients before clipping
         has_nan_grad = False
         nan_grad_params = []
@@ -230,7 +230,7 @@ for epoch in range(EPOCHS):
                         'grad_min': grad_min,
                         'grad_max': grad_max,
                     })
-        
+
         if has_nan_grad:
             nan_batches += 1
             print(f"    [Gradients contain NaN/Inf at epoch {epoch}, batch {batch_idx}]")
@@ -240,7 +240,7 @@ for epoch in range(EPOCHS):
             print(f"      Loss was: {loss:.3e}")
             print(f"      S_hat stats: min={S_hat.min():.3e}, max={S_hat.max():.3e}")
             continue
-        
+
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optim.step()
         scheduler.step()

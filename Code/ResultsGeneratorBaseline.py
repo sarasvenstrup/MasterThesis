@@ -728,25 +728,32 @@ def load_ekf_rolling_train_time_min(dim):
     return float(df["time_train_sec"].mean()) / 60.0
 
 # Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
-#        IS  : training log at ep5000 (globally trained model)
+#        IS  : average per-window in-sample RMSE from rolling CSV (same model as OOS)
 #        OOS : average per-currency RMSE across all rolling windows
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q2a: IS vs OOS RMSE table (all dims, rolling-based) ──")
 
 def load_is_rmse_for_rolling(dim):
-    """Load IS RMSE from ep3500 training log. Returns None if not found."""
-    path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
-                        f"ep3500", f"train_rmse_log_bbg_dim{dim}_ep3500.csv")
-    if not os.path.exists(path):
-        warnings.warn(f"⚠️  ep3500 training log not found for dim={dim} — SKIPPING.\n"
-                      f"  Expected: {path}")
+    """Load per-window IS RMSE averaged across all rolling windows.
+    Reads in_rmse_bps_{ccy} and avg_in_rmse_bps columns from the rolling CSV.
+    Returns None if not found or columns missing (old CSV without IS columns).
+    """
+    df = load_rolling_df(dim)
+    if df is None or len(df) == 0:
         return None
-    df = pd.read_csv(path)
-    last = df.iloc[-1]
-    result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
-    result["Average"] = float(last["avg_rmse_bps"])
-    result["Time (min)"] = float("nan")
-    print(f"  [dim={dim}] IS RMSE from ep3500 training log (last epoch={int(last['epoch'])})")
+    if "avg_in_rmse_bps" not in df.columns:
+        warnings.warn(
+            f"⚠️  Rolling CSV for dim={dim} has no 'avg_in_rmse_bps' column — "
+            f"re-run OutOfSampleRoll.py to generate per-window IS RMSE."
+        )
+        return None
+    result = pd.Series({
+        ccy: float(df[f"in_rmse_bps_{ccy}"].mean())
+        for ccy in CCY_ORDER
+        if f"in_rmse_bps_{ccy}" in df.columns
+    })
+    result["Average"] = float(df["avg_in_rmse_bps"].mean())
+    print(f"  [dim={dim}] IS RMSE averaged across {len(df)} rolling windows (from rolling CSV)")
     return result
 
 def load_rolling_oos_per_ccy(dim):
@@ -950,7 +957,7 @@ if len(roll_avgs) >= 2 or len(is_avgs) >= 2:
     _is_vals  = [is_avgs.get(d, np.nan) for d in _dims]
     _is_bars  = ax.bar(_x - _w, _is_vals,
                        width=_w, color=[DIM_COLORS[d] for d in _dims],
-                       edgecolor="none", label="AE In-Sample (ep3500)")
+                       edgecolor="none", label="AE In-Sample (rolling avg)")
 
     # OOS rolling bars
     _oos_vals = [roll_avgs.get(d, np.nan) for d in _dims]

@@ -121,7 +121,7 @@ def make_loader(X_sub: torch.Tensor, batch_size: int):
     ds = TensorDataset(X_sub)
     return DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
 
-WINDOW_SEED = 1  # fixed seed for every rolling window — change to reproduce
+WINDOW_SEED = 2  # fixed seed for every rolling window — change to reproduce
 
 def train_one_window(X_train: torch.Tensor):
     torch.manual_seed(WINDOW_SEED)
@@ -211,9 +211,11 @@ print(f"Rolling windows: {len(roll_starts)} from {roll_starts[0].date()} to {rol
 cols = (
     ["roll_start", "train_start", "train_end", "test_start", "test_end",
      "n_train", "n_test", "n_test_good", "n_test_bad",
+     "n_train_good", "n_train_bad",
      "time_train_sec", "time_test_sec",
-     "avg_rmse_bps"]
+     "avg_rmse_bps", "avg_in_rmse_bps"]
     + [f"rmse_bps_{ccy}" for ccy in ccy_order]
+    + [f"in_rmse_bps_{ccy}" for ccy in ccy_order]
     + [f"eig_real_{i+1}" for i in range(LATENT_DIM)]
 )
 pd.DataFrame(columns=cols).to_csv(oos_csv_path, index=False)
@@ -242,7 +244,8 @@ with open(manifest_path, "w") as f:
 print(f"Manifest initialised: {manifest_path}")
 
 # ============================= Rolling loop ===============================
-avg_rmse_curve = []  # list of (test_start_date, avg_rmse_bps)
+avg_rmse_curve = []     # list of (test_start_date, avg_oos_rmse_bps)
+avg_in_rmse_curve = []  # list of (test_start_date, avg_in_rmse_bps)
 
 for k, test_start in enumerate(roll_starts):
     train_start = test_start - pd.DateOffset(years=TRAIN_YEARS)
@@ -266,6 +269,7 @@ for k, test_start in enumerate(roll_starts):
 
     X_train = X_tensor[m_train.values]
     X_test = X_tensor[m_test.values]
+    meta_train_sub = meta.loc[m_train.values].reset_index(drop=True)
     meta_test = meta.loc[m_test.values].reset_index(drop=True)
 
     # Train
@@ -282,6 +286,9 @@ for k, test_start in enumerate(roll_starts):
         eig_reals = torch.linalg.eigvals(M).real.numpy()
         eig_reals = np.sort(eig_reals)[::-1]  # descending
 
+    # In-sample RMSE (same model, evaluated on training window)
+    in_rmse_per_ccy, avg_in_rmse_bps, n_train_good, n_train_bad = rmse_bps_on_subset(model, X_train, meta_train_sub)
+
     # Test
     t2 = time.perf_counter()
     rmse_per_ccy, avg_rmse_bps, n_good, n_bad = rmse_bps_on_subset(model, X_test, meta_test)
@@ -291,6 +298,7 @@ for k, test_start in enumerate(roll_starts):
     time_test = t3 - t2
 
     avg_rmse_curve.append((test_start, avg_rmse_bps))
+    avg_in_rmse_curve.append((test_start, avg_in_rmse_bps))
 
     # Row for CSV
     row = {
@@ -303,12 +311,17 @@ for k, test_start in enumerate(roll_starts):
         "n_test": n_test,
         "n_test_good": n_good,
         "n_test_bad": n_bad,
+        "n_train_good": n_train_good,
+        "n_train_bad": n_train_bad,
         "time_train_sec": time_train,
         "time_test_sec": time_test,
         "avg_rmse_bps": avg_rmse_bps,
+        "avg_in_rmse_bps": avg_in_rmse_bps,
     }
     for ccy in ccy_order:
         row[f"rmse_bps_{ccy}"] = float(rmse_per_ccy.get(ccy, np.nan))
+    for ccy in ccy_order:
+        row[f"in_rmse_bps_{ccy}"] = float(in_rmse_per_ccy.get(ccy, np.nan))
     for i, ev in enumerate(eig_reals):
         row[f"eig_real_{i+1}"] = round(float(ev), 6)
 
@@ -317,7 +330,9 @@ for k, test_start in enumerate(roll_starts):
     # update manifest after every window (crash-safe)
     manifest["window_results"][test_start.date().isoformat()] = {
         "avg_rmse_bps":     round(avg_rmse_bps, 4),
+        "avg_in_rmse_bps":  round(avg_in_rmse_bps, 4),
         "per_ccy_bps":      {ccy: round(float(rmse_per_ccy.get(ccy, np.nan)), 4) for ccy in ccy_order},
+        "in_per_ccy_bps":   {ccy: round(float(in_rmse_per_ccy.get(ccy, np.nan)), 4) for ccy in ccy_order},
         "train_minutes":    round(time_train / 60, 2),
         "n_train":          n_train,
         "n_test":           n_test,
@@ -325,7 +340,7 @@ for k, test_start in enumerate(roll_starts):
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
-    print(f"  OOS avg_rmse_bps={avg_rmse_bps:.3f} | time_train={time_train/60:.1f}min time_test={time_test:.1f}s")
+    print(f"  IS  avg_in_rmse_bps={avg_in_rmse_bps:.3f} | OOS avg_rmse_bps={avg_rmse_bps:.3f} | time_train={time_train/60:.1f}min time_test={time_test:.1f}s")
 
     if SAVE_PER_ROLL_PLOTS:
         # Per-roll LR plot
@@ -338,12 +353,17 @@ for k, test_start in enumerate(roll_starts):
         fig.savefig(os.path.join(FIGURES_DIR, f"lr_roll{k+1:02d}_{test_start.date()}.png"), dpi=300)
         plt.close(fig)
 
-        # Per-roll train RMSE plot
+        # Per-roll train RMSE plot (with IS and OOS RMSE as horizontal reference lines)
         fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-        ax.plot(np.arange(len(train_mse_hist)), np.sqrt(train_mse_hist), linewidth=1.0)
+        ax.plot(np.arange(len(train_mse_hist)), np.sqrt(train_mse_hist), linewidth=1.0, label="Train RMSE")
+        ax.axhline(avg_in_rmse_bps / 10_000, color="steelblue", linestyle="--", linewidth=1.0,
+                   label=f"IS RMSE (bps): {avg_in_rmse_bps:.2f}")
+        ax.axhline(avg_rmse_bps / 10_000, color="tomato", linestyle="--", linewidth=1.0,
+                   label=f"OOS RMSE (bps): {avg_rmse_bps:.2f}")
         ax.set_xlabel("Epoch")
         ax.set_ylabel("Train RMSE")
         ax.set_title(f"Train RMSE — roll {k+1:02d} test_start={test_start.date()}")
+        ax.legend(fontsize=8)
         fig.tight_layout()
         fig.savefig(os.path.join(FIGURES_DIR, f"train_rmse_roll{k+1:02d}_{test_start.date()}.png"), dpi=300)
         plt.close(fig)
@@ -356,19 +376,22 @@ print("\nRolling OOS done.")
 
 # ============================= Plot overall OOS avg RMSE curve ===============================
 if len(avg_rmse_curve) > 0:
-    dates = [d for d, v in avg_rmse_curve]
-    vals = [v for d, v in avg_rmse_curve]
+    dates    = [d for d, v in avg_rmse_curve]
+    oos_vals = [v for d, v in avg_rmse_curve]
+    in_vals  = [v for d, v in avg_in_rmse_curve]
 
     fig, ax = plt.subplots(figsize=(8.8, 4.6), dpi=160)
-    ax.plot(dates, vals, marker="o", linewidth=1.0)
+    ax.plot(dates, in_vals,  marker="o", linewidth=1.0, label="IS RMSE (bps)")
+    ax.plot(dates, oos_vals, marker="o", linewidth=1.0, label="OOS RMSE (bps)")
     ax.set_xlabel("Test window start date")
-    ax.set_ylabel("Average OOS RMSE (bps)")
-    ax.set_title(f"OOS rolling avg RMSE (bps) — train={TRAIN_YEARS}Y test={TEST_MONTHS}M step={STEP_MONTHS}M")
+    ax.set_ylabel("Average RMSE (bps)")
+    ax.set_title(f"Rolling IS vs OOS avg RMSE (bps) — train={TRAIN_YEARS}Y test={TEST_MONTHS}M step={STEP_MONTHS}M")
+    ax.legend()
     fig.autofmt_xdate()
     fig.tight_layout()
     fig.savefig(os.path.join(FIGURES_DIR, "oos_avg_rmse_bps_curve.png"), dpi=300)
     plt.close(fig)
 
-    print("Saved OOS avg RMSE curve plot:", os.path.join(FIGURES_DIR, "oos_avg_rmse_bps_curve.png"))
+    print("Saved IS vs OOS avg RMSE curve plot:", os.path.join(FIGURES_DIR, "oos_avg_rmse_bps_curve.png"))
 else:
     print("No OOS curve points to plot (all windows skipped).")
