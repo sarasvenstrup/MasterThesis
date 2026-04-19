@@ -59,7 +59,7 @@ BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
 EVAL_EVERY = 1
-LOG_EVERY = 100
+LOG_EVERY = 1
 TARGET_MSE = 1e-8
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_{config.VARIANT}", f"ep{EPOCHS}")
@@ -76,7 +76,7 @@ torch.manual_seed(0)
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-max_lr = 3e-3
+max_lr = 1e-3
 optim = torch.optim.Adam(model.parameters(), lr=max_lr)
 
 scheduler = OneCycleLR(

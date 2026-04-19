@@ -37,7 +37,7 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 
 # ============================= Config ===============================
 USE = "bbg"
-LATENT_DIM = 4
+LATENT_DIM = 2
 
 # Recommended rolling window setup (baseline OOS)
 TRAIN_YEARS = 5
@@ -52,7 +52,7 @@ EVAL_BATCH_SIZE = 256
 TARGET_MSE = -1          # set >0 if you want early stop
 LOG_EVERY = 1          # training printouts inside each window
 
-max_lr = 3e-3
+max_lr = 1e-3
 final_div_factor = 3000.0
 
 ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
