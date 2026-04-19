@@ -37,7 +37,7 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 
 # ============================= Config ===============================
 USE = "bbg"
-LATENT_DIM = 2
+LATENT_DIM = 4  # Changed from 2 - larger model is more stable with edge case data
 
 # Recommended rolling window setup (baseline OOS)
 TRAIN_YEARS = 5
