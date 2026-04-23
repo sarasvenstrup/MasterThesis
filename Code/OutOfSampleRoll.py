@@ -23,9 +23,9 @@ if REPO_ROOT not in sys.path:
 
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
-from Code.model.full_model import FullModel
-from Code.config import VARIANT, confirm_variant
-confirm_variant()
+from Code.model.full_model_baseline import FullModel
+
+VARIANT = "baseline"  # frozen — no config dependency
 
 torch.set_num_threads(4)
 torch.set_num_interop_threads(2)
@@ -37,7 +37,7 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 
 # ============================= Config ===============================
 USE = "bbg"
-LATENT_DIM = 2
+LATENT_DIM = 4
 
 # Recommended rolling window setup (baseline OOS)
 TRAIN_YEARS = 5
@@ -46,11 +46,11 @@ STEP_MONTHS = 6
 MIN_TRAIN_OBS = 200
 
 # Training setup per window
-EPOCHS = 500
+EPOCHS = 3500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 TARGET_MSE = -1          # set >0 if you want early stop
-LOG_EVERY = 1          # training printouts inside each window
+LOG_EVERY = 10          # training printouts inside each window
 
 max_lr = 1e-3
 final_div_factor = 3000.0
@@ -121,7 +121,7 @@ def make_loader(X_sub: torch.Tensor, batch_size: int):
     ds = TensorDataset(X_sub)
     return DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
 
-WINDOW_SEED = 2  # fixed seed for every rolling window — change to reproduce
+WINDOW_SEED = 0  # fixed seed for every rolling window — change to reproduce
 
 def train_one_window(X_train: torch.Tensor):
     torch.manual_seed(WINDOW_SEED)
@@ -173,7 +173,11 @@ def train_one_window(X_train: torch.Tensor):
                 nan_count = (~torch.isfinite(S_hat)).sum().item()
                 print(f"      [S_hat has NaN/Inf at epoch {epoch}, batch {batch_idx}]")
                 print(f"        S_hat contains {nan_count} NaN/Inf values out of {S_hat.numel()}")
-                print(f"        S_hat range: [{S_hat[torch.isfinite(S_hat)].min():.3e}, {S_hat[torch.isfinite(S_hat)].max():.3e}]")
+                finite_vals = S_hat[torch.isfinite(S_hat)]
+                if finite_vals.numel() > 0:
+                    print(f"        S_hat range: [{finite_vals.min():.3e}, {finite_vals.max():.3e}]")
+                else:
+                    print(f"        S_hat range: all values are NaN/Inf")
                 print(f"        Input range: [{xb.min():.3e}, {xb.max():.3e}]")
                 continue
 
@@ -280,15 +284,19 @@ print("OOS CSV:", oos_csv_path)
 manifest = {
     "window_seed": WINDOW_SEED,
     "latent_dim": LATENT_DIM,
+    "variant": VARIANT,
     "epochs": EPOCHS,
     "batch_size": BATCH_SIZE,
     "max_lr": max_lr,
+    "pct_start": 0.3,
     "final_div_factor": final_div_factor,
+    "mkldnn_enabled": torch.backends.mkldnn.enabled,
     "train_years": TRAIN_YEARS,
     "test_months": TEST_MONTHS,
     "step_months": STEP_MONTHS,
     "n_windows": len(roll_starts),
     "torch_version": torch.__version__,
+    "python_version": sys.version.split()[0],
     "numpy_version": np.__version__,
     "run_started": time.strftime("%Y-%m-%dT%H:%M:%S"),
     "window_results": {},

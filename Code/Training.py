@@ -9,6 +9,7 @@ import torch.nn as nn
 torch.set_num_threads(4)  # --- Torch thread settings MUST be first Torch-related thing ---
 torch.set_num_interop_threads(2)
 
+import json
 import pandas as pd
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import OneCycleLR
@@ -53,13 +54,13 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 # --- User option: show plots interactively? ---
 SHOW_PLOTS = False  # Set to False to only save plots
 
-LATENT_DIM = 2
-EPOCHS = 3500
+LATENT_DIM = 1
+EPOCHS = 4500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
 EVAL_EVERY = 1
-LOG_EVERY = 1
+LOG_EVERY = 100
 TARGET_MSE = 1e-8
 
 FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_{config.VARIANT}", f"ep{EPOCHS}")
@@ -72,7 +73,12 @@ X_tensor = X_tensor.float()
 dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
-torch.manual_seed(0)
+SEED = 0
+PCT_START = 0.3
+DIV_FACTOR = 1.0
+FINAL_DIV_FACTOR = 3000.0
+
+torch.manual_seed(SEED)
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
@@ -84,9 +90,9 @@ scheduler = OneCycleLR(
     max_lr=max_lr,
     steps_per_epoch=len(loader),
     epochs=EPOCHS,
-    pct_start=0.3,
-    div_factor=1.0,
-    final_div_factor=3000.0
+    pct_start=PCT_START,
+    div_factor=DIV_FACTOR,
+    final_div_factor=FINAL_DIV_FACTOR,
 )
 
 loss_fn = nn.MSELoss()
@@ -156,6 +162,26 @@ csv_cols = (
 pd.DataFrame(columns=csv_cols).to_csv(csv_path, index=False)
 print("Logging to:", csv_path)
 
+run_config = {
+    "seed": SEED,
+    "latent_dim": LATENT_DIM,
+    "variant": config.VARIANT,
+    "epochs": EPOCHS,
+    "batch_size": BATCH_SIZE,
+    "max_lr": max_lr,
+    "pct_start": PCT_START,
+    "div_factor": DIV_FACTOR,
+    "final_div_factor": FINAL_DIV_FACTOR,
+    "mkldnn_enabled": torch.backends.mkldnn.enabled,
+    "torch_version": torch_version,
+    "python_version": python_version,
+    "numpy_version": numpy_version,
+}
+config_path = os.path.join(FIGURES_DIR, "run_config.json")
+with open(config_path, "w") as f:
+    json.dump(run_config, f, indent=2)
+print("Saved run config:", config_path)
+
 # ==========================================================
 # Train (with timing + eval every epoch + CSV every LOG_EVERY)
 # ==========================================================
@@ -194,7 +220,11 @@ for epoch in range(EPOCHS):
             nan_count = (~torch.isfinite(S_hat)).sum().item()
             print(f"    [S_hat has NaN/Inf at epoch {epoch}, batch {batch_idx}]")
             print(f"      S_hat contains {nan_count} NaN/Inf values out of {S_hat.numel()}")
-            print(f"      S_hat range: [{S_hat[torch.isfinite(S_hat)].min():.3e}, {S_hat[torch.isfinite(S_hat)].max():.3e}]")
+            finite_vals = S_hat[torch.isfinite(S_hat)]
+            if finite_vals.numel() > 0:
+                print(f"      S_hat range: [{finite_vals.min():.3e}, {finite_vals.max():.3e}]")
+            else:
+                print(f"      S_hat range: all values are NaN/Inf")
             print(f"      Input range: [{xb.min():.3e}, {xb.max():.3e}]")
             continue
 

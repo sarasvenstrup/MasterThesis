@@ -36,9 +36,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS, set_paper_theme
-from Code import config
-config.VARIANT = "baseline"   # always baseline — must be set before FullModel is imported
-from Code.model.full_model import FullModel
+from Code.model.full_model_baseline import FullModel
 
 torch.set_num_threads(4)
 torch.set_num_interop_threads(2)
@@ -89,8 +87,7 @@ X_full   = X_tensor_full.float()
 meta_full_df = meta_full.copy()
 meta_full_df["as_of_date"] = pd.to_datetime(meta_full_df["as_of_date"])
 
-TRAIN_MASK = (meta_full_df["as_of_date"] >= "2010-01-01") & \
-             (meta_full_df["as_of_date"] <= "2020-12-31")
+TRAIN_MASK = (meta_full_df["as_of_date"] >= "2010-01-01")
 TEST_MASK  = (meta_full_df["as_of_date"] >= "2021-01-01") & \
              (meta_full_df["as_of_date"] <= "2022-12-31")
 

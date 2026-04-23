@@ -101,18 +101,6 @@ class FullModel(nn.Module):
 
         self.R = RShort(latent_dim, r_hidden, bias=hr_bias)
 
-        # Initialize weights for numerical stability across PyTorch versions
-        self._init_weights()
-
-    def _init_weights(self):
-        """Initialize weights to stabilize training across PyTorch versions."""
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                # Xavier uniform initialization
-                nn.init.xavier_uniform_(module.weight, gain=1.0)
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
-
     def _tau(self, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         return self._tau_grid.to(device=device, dtype=dtype)
 
