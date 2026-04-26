@@ -356,19 +356,11 @@ This result will be central in the pricing theory developed below. In particular
 
 \section{Arbitragefree Pricing}
 
-
-\subsection{Market Setup}
-
 We work on a filtered probability space $(\Omega, \mathcal{F}, 
-\{\mathcal{F}_t\}_{t \geq 0}, \mathbb{P})$ supporting a $d$-dimensional 
-standard Brownian motion $W = (W^1, \ldots, W^d)^\top$ with independent 
-components. The filtration satisfies the usual conditions and may be strictly 
-larger than the natural filtration of $W$, i.e.\ $\mathcal{F}_t^W \subseteq 
-\mathcal{F}_t$, accommodating additional sources of randomness such as hidden 
-state variables.
+\{\mathcal{F}_t\}_{t \geq 0}, \mathbb{P})$ supporting a $d$-dimensional standard Brownian motion $W = (W^1, \ldots, W^d)^\top$ with independent components, \textcolor{red}{where correlation between assets is captured through the volatility matrix $\sigma^{ij}$.}  We allow the filtrations to be larger than the natural filtration of $W$, that is \ $\mathcal{F}_t^W \subseteq \mathcal{F}_t$, so that the coefficient processes may depend on additional sources of randomness beyond $W$, such as hidden state variables.
 
-We consider a market of $N+1$ assets: $N$ risky assets $S^1, \ldots, S^N$ 
-and a risk-free bank account $B$, with dynamics under $\mathbb{P}$ given by
+
+We consider a market consisting of $N$ risky assets $S^1, \ldots, S^N$ and a risk-free bank account $B$, whose dynamics under $P$ are given by
 \begin{equation}
     \begin{cases}
         dS_t^i = \mu_t^i \, dt + \displaystyle\sum_{j=1}^{d} 
@@ -377,7 +369,6 @@ and a risk-free bank account $B$, with dynamics under $\mathbb{P}$ given by
     \end{cases}
     \label{eq:market_dynamics}
 \end{equation}
-
 where $\mu^i$, $\sigma^{ij}$, and $r$ are $\{\mathcal{F}_t\}$-adapted 
 processes. We interpret $\mu^i_t$ as the \emph{local mean rate of return} 
 and $\sigma^{ij}_t$ as the \emph{volatility} of $S^i$, while $r_t$ denotes 
@@ -387,95 +378,69 @@ Note that $d$ need not equal $N$.
 
 The bank account has solution $B_t = \exp\!\left(\int_0^t r_s\, ds\right)$ 
 with $B_0 = 1$, and serves as our \emph{numeraire}. We associate to it an 
-equivalent martingale measure $\mathbb{Q} \sim \mathbb{P}$, under which 
+equivalent martingale measure $Q \sim P$, under which 
 discounted prices $S^i_t / B_t$ are local martingales. The existence of 
-$\mathbb{Q}$, and its equivalence to the absence of arbitrage, is 
+$Q$, and its equivalence to the absence of arbitrage, is 
 guaranteed by the First Fundamental Theorem of Asset Pricing.
 
 
-\newpage
+
+% I starten af kapitel 11, fortæller forfatteren hvordan man kan læse kaputlet. Ifølge denne paragraf, kan man erstatte udtrykket NFLVR med "No Arbitrage" og ignorere betingelsen "locally bounded", da dette er altid opfyldt for wiener drevne modeller.
+
+\begin{theorem}[The First Fundamental Theorem]
+    Consider the market model $S^0,S^1,...,S^N$ where we assume that $S_t^0>0$, $P$-a.s. for all $t\geq0$. Then the following conditions are equivalent:
+    \begin{itemize}
+        \item The model is arbitragefree
+        \item There exists a measure $Q\sim P$ such that the processes $\frac{S^0}{S^0},\frac{S^1}{S^0},...,\frac{S^N}{S^0},$
+        are (local) martingales under $Q$.
+    \end{itemize}
+\end{theorem}
 
 
-Next, we must establish a financial setting in which we know how to compute arbitrage-free prices. To do we need to setup our marekt. 
+With this established, we turn to the pricing of contingent claims. 
+Given an arbitrage-free market, the task is to assign a \emph{reasonable}, 
+that is, arbitrage-free, price process to a $T$-claim $X$. 
+Taking the bank account $B_t = \exp\!\left(\int_0^t r_s\, ds\right)$ 
+as numeraire, Theorem 11.14 guarantees the existence of an associated 
+equivalent martingale measure $\mathbb{Q}$, under which the risk-neutral 
+valuation formula takes the following form.
 
-We consider a filtered probability space $(\Omega,\mathcal{F}, \{\mathcal{F}_t\}_{t\geq0},\mathbb{P})$, supporting a $d$-dimensional standard Brownian motion $W$ (\textcolor{red}{skal man her nævne noget med independen teller correlated?}). Our setup is as follows
 
-We consider a market model consisting of $N+1$ given asset price processes, hereof $N$ risky assets and $1$ risk-free asset interpreted as the \textit{bank account}, where there dynamics under the objective probability measure $P$ as follows
-
-
+\begin{theorem}[Risk-Neutral Valuation Formula]
+\label{thm:riskneutral}
+Let the market be arbitrage-free and let $\mathbb{Q}$ be an equivalent 
+martingale measure associated with the bank account numeraire $B_t$. 
+Then the arbitrage-free price process of a $T$-claim $X$ is given by
 \begin{equation}
-\begin{cases}
-dS_t^i = \mu_t^i(S_t^i)\,dt + \sigma_t^i(S_t^i)\,dW_t & i = 1, \dots, N \\
-dB_t = r_t B_t \,dt & i = 0
-\end{cases}
+    \Pi_t[X] = \mathbb{E}^{\mathbb{Q}}\!\left[
+    e^{-\int_t^T r_s\, ds} X \,\bigg|\, \mathcal{F}_t \right].
+    \label{eq:riskneutral}
 \end{equation}
+\end{theorem}
+
+We remark that $Q$ need not be unique, and different choices 
+generally yield different price processes for non-attainable claims.
 
 
-
-The coefficient processes are assumed to be adapted $\mu^i$ and $\sigma^{ij}$ above are assumed to be adapted, and we interpret them as the \textit{local mean rate of return} and \textit{volatility} of $S$ respectively. We have a standard risk free asset with price process $B$ with dynamics
-where the short rate $r$ is assumed to be an adapted stochastic process. This will be interpreted as the bank account with the interpreation that ..., and this is chosen to be our numeraire.
-\textcolor{red}{we must be careful with the domestic measure here.} We take $B_t$ as numeraire and work under an equivalent martingale measure $\mathbb{Q}$ associated with this choice of numeraire.
+%A claim X is attainable if there exists a self-financing portfolio h in the traded assets that replicates it perfectly. A claim is non-attainable if no such replicating portfolio exists.
 
 
-Note:
-we do not assume that we have the same number of Brownian motions driving the number of risky assets. and the probability space is also allowed to carry out other processes than the Brownian motion, such that we allow $\mathcal{F}_t^W\subseteq\mathcal{F}_t$ implying that the filtration could be generated by other processes beside $W$. For example, we make no assumptions about the distribution of the short rate process $r$ or of the processes $\mu_i$ and $\sigma_{ij}$, we only assume that they are adapted. In particular, this allows for models where these processes are path dependent upon the Brownian motion, or that they are driven by som other "hidden" state variable processes.
-
-
-
-We consider a financial market consisting of a risk-free asset defined as the bank account and will operate as our numerair and $N$ risky assets.
-
-Within this setup we can now state the first fundamental theorem which tells us in which case this market model is arbitrage free. 
-
-\textcolor{red}{result}
-
-
-With this established, we can now go on to establish how to price contingent claims in such markets, where the task is determining a "reasonable" price process assuming the primary market is arbitrage free.
-
-
-
-note that different choices of $Q$ will generically give rise to different price processes. in 11.41, however assuming that the numeraire is the bank account then this gives rise to the 
-risk neutral valuation formula.
-
-
-
-Let the money-market account be defined by
+As a standard example, consider a zero-coupon bond (ZCB) with maturity 
+$T$, henceforth called a $T$-bond, which is a contract paying one unit 
+of currency at time $T$. Being the trivial claim $X \equiv 1$, 
+Theorem \ref{thm:riskneutral} immediately gives
 \begin{equation}
-B(t)
-=
-\exp\!\left(
-\int_0^t r(u)\,du
-\right),
-\label{eq:bank_account}
+    P(t,T) = \mathbb{E}^{\mathbb{Q}}\!\left[
+    e^{-\int_t^T r_s\, ds} \,\bigg|\, \mathcal{F}_t \right],
+    \label{eq:zcb}
 \end{equation}
-where $r(t)$ denotes the instantaneous short rate.
-
-Under the risk-neutral measure $\mathbb{Q}$, the discounted price process of any traded asset is a martingale. In particular, the arbitrage-free price of a default-free zero-coupon bond satisfies
-\begin{equation}
-P(t,T)
-=
-\mathbb{E}_t^{\mathbb{Q}}
-\left[
-\frac{B(t)}{B(T)}
-\right]
-=
-\mathbb{E}_t^{\mathbb{Q}}
-\left[
-\exp\!\left(
--\int_t^T r(u)\,du
-\right)
-\right].
-\label{eq:riskneutral_bond}
-\end{equation}
+with $P(T,T) = 1$. Once the $\mathbb{Q}$-dynamics of $r$ are specified, 
+\eqref{eq:zcb} determines the entire term structure of interest rates, 
+and will serve as the fundamental building block throughout the remainder 
+of this thesis.
 
 
-
-Once the short-rate dynamics under $\mathbb{Q}$ are specified, bond prices, and thereby the entire discount curve, are determined.
-
-To ready our selves for interest rate theory (in björk chap. 19-24) we need to hereby state som elementary concepts
-
-Def. 11.2 a ZCB
-
-and its price 11.21
+\textcolor{red}{Skal det tilføjes hvad Q-dynamikkerne er for markedsprocesserne?}
 
 
 
@@ -490,47 +455,21 @@ and its price 11.21
 
 
 
-\newpage
-
-\section{Arbitrage-Free Pricing}
-
-We now turn to the financial setting in which the stochastic-calculus results above are used. The fundamental idea is that, in an arbitrage-free market, suitably discounted asset prices are martingales under an equivalent martingale measure. As a consequence, contingent claims can be valued by conditional expectation. When the relevant state variables form a Markov diffusion, the Feynman--Kac formula provides the associated pricing PDE.
-
-Consider a filtered probability space $(\Omega,\mathcal{F},\{\mathcal{F}_t\}_{t\geq 0},\mathbb{Q})$ supporting a $d$-dimensional Brownian motion $W$. We assume that the market consists of a money-market account and a collection of traded assets. The money-market account is defined by
-\begin{equation}
-B_t=\exp\!\left(\int_0^t r_s\,ds\right),
-\label{eq:bank_account}
-\end{equation}
-where $r_t$ denotes the short-rate process. We take $B_t$ as numeraire and work under an equivalent martingale measure $\mathbb{Q}$ associated with this choice of numeraire.
-
-Under $\mathbb{Q}$, the discounted price process of any traded asset is a martingale. More generally, if a contingent claim pays $H$ at time $T$, then its arbitrage-free price process is given by the risk-neutral valuation formula
-\begin{equation}
-\Pi_t
-=
-\mathbb{E}^{\mathbb{Q}}\!\left[
-\exp\!\left(-\int_t^T r_s\,ds\right)H
-\,\middle|\,
-\mathcal{F}_t
-\right].
-\label{eq:riskneutral_valuation}
-\end{equation}
-
-A particularly important special case is the default-free zero-coupon bond, which pays one unit of currency at maturity $T$. Its arbitrage-free price is therefore
-\begin{equation}
-P(t,T)
-=
-\mathbb{E}^{\mathbb{Q}}\!\left[
-\exp\!\left(-\int_t^T r_s\,ds\right)
-\,\middle|\,
-\mathcal{F}_t
-\right].
-\label{eq:riskneutral_bond}
-\end{equation}
-
-Equation \eqref{eq:riskneutral_bond} shows that once the short-rate dynamics under $\mathbb{Q}$ are specified, zero-coupon bond prices are determined. Since bond prices form the basic building blocks of fixed-income markets, we now introduce the main interest-rate quantities derived from them.
 
 
-\newpage
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 \section{Interest Rate Theory}
 
@@ -623,7 +562,7 @@ N S(t,\tau)
 \label{eq:fixed_leg}
 \end{equation}
 
-Under the single-curve assumption adopted throughout this thesis, the forward rate over the accrual period $[T_{i-1},T_i]$ satisfies
+Under the single-curve assumption, the forward rate over the accrual period $[T_{i-1},T_i]$ satisfies
 \[
 1+\Delta_i L(t;T_{i-1},T_i)
 =
@@ -655,26 +594,17 @@ Hence, par swap rates are deterministic nonlinear functions of the underlying di
 
 
 
-\subsection{To be incporated}
 
-
-NOTE:
-
-Chapter 14 in björk?
-
-
-Forward Rate Models (chapter 5, Björk)
-
-Notes to incorporate:
-It is practical to use time \textit{to} maturity rather than time \textit{of} maturity, to parameterize the forward rates. The point of this parametrization is that it highlights the forward rate dynamics as an infinite dimensional SDE. Making it an indespensable tool of modern interest rate theory.
-
-
-The pricing relations above are model-free consequences of arbitrage-free fixed-income theory. To obtain a tractable dynamic model of the yield curve, one must specify the evolution of the underlying state variables under the risk-neutral measure. A particularly important and analytically convenient class is provided by affine term structure models.
 
 %------------------------------------------
 \subsection{Affine Term Structure Models}
 \label{sec:Affine TSM Theory}
 %------------------------------------------
+
+% Skriv generelt om terms strutcure models men specifict om affine. 
+
+
+
 
 In general term structure models will be introduced here (Chap. 22 (p. 298)) where we specifically come with AFfine as example. Markovian factor models
 
@@ -714,3 +644,61 @@ This representation implies that the term structure is generated by the factor v
 Under suitable affine specifications of the factor dynamics under $\mathbb{Q}$, the exponential-affine bond-pricing form leads to a system of ordinary differential equations for the coefficient functions $A(\tau)$ and $B(\tau)$. 
 
 
+
+\newpage
+
+\subsection{To be incporated}
+
+
+NOTE:
+
+Chapter 14 in björk?
+
+
+Forward Rate Models (chapter 5, Björk)
+
+Notes to incorporate:
+It is practical to use time \textit{to} maturity rather than time \textit{of} maturity, to parameterize the forward rates. The point of this parametrization is that it highlights the forward rate dynamics as an infinite dimensional SDE. Making it an indespensable tool of modern interest rate theory.
+
+
+The pricing relations above are model-free consequences of arbitrage-free fixed-income theory. To obtain a tractable dynamic model of the yield curve, one must specify the evolution of the underlying state variables under the risk-neutral measure. A particularly important and analytically convenient class is provided by affine term structure models.
+
+\newpage 
+
+
+\section{Arbitrage-Free Pricing (udkast)}
+
+We now turn to the financial setting in which the stochastic-calculus results above are used. The fundamental idea is that, in an arbitrage-free market, suitably discounted asset prices are martingales under an equivalent martingale measure. As a consequence, contingent claims can be valued by conditional expectation. When the relevant state variables form a Markov diffusion, the Feynman--Kac formula provides the associated pricing PDE.
+
+Consider a filtered probability space $(\Omega,\mathcal{F},\{\mathcal{F}_t\}_{t\geq 0},\mathbb{Q})$ supporting a $d$-dimensional Brownian motion $W$. We assume that the market consists of a money-market account and a collection of traded assets. The money-market account is defined by
+\begin{equation}
+B_t=\exp\!\left(\int_0^t r_s\,ds\right),
+\label{eq:bank_account}
+\end{equation}
+where $r_t$ denotes the short-rate process. We take $B_t$ as numeraire and work under an equivalent martingale measure $\mathbb{Q}$ associated with this choice of numeraire.
+
+Under $\mathbb{Q}$, the discounted price process of any traded asset is a martingale. More generally, if a contingent claim pays $H$ at time $T$, then its arbitrage-free price process is given by the risk-neutral valuation formula
+\begin{equation}
+\Pi_t
+=
+\mathbb{E}^{\mathbb{Q}}\!\left[
+\exp\!\left(-\int_t^T r_s\,ds\right)H
+\,\middle|\,
+\mathcal{F}_t
+\right].
+\label{eq:riskneutral_valuation}
+\end{equation}
+
+A particularly important special case is the default-free zero-coupon bond, which pays one unit of currency at maturity $T$. Its arbitrage-free price is therefore
+\begin{equation}
+P(t,T)
+=
+\mathbb{E}^{\mathbb{Q}}\!\left[
+\exp\!\left(-\int_t^T r_s\,ds\right)
+\,\middle|\,
+\mathcal{F}_t
+\right].
+\label{eq:riskneutral_bond}
+\end{equation}
+
+Equation \eqref{eq:riskneutral_bond} shows that once the short-rate dynamics under $\mathbb{Q}$ are specified, zero-coupon bond prices are determined. Since bond prices form the basic building blocks of fixed-income markets, we now introduce the main interest-rate quantities derived from them.
