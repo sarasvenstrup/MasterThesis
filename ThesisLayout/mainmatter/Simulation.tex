@@ -249,31 +249,38 @@ as $t \to \infty$.
 In the Euler--Maruyama discretisation this means the latent state can drift
 arbitrarily far from the training cloud within a finite simulation horizon.
 
-\paragraph{What we observe in the ep3500 baseline.}
-After 3\,500 training epochs, the baseline drift matrix has learned parameters
-such that the latent paths explode within the 10-year window.
-The console statistics from the simulation confirm this:
+\paragraph{What we observe in the ep5000 baseline and stable models.}
+After 5\,000 training epochs, the baseline drift matrix exhibits \emph{both} positive eigenvalues:
+$\lambda_1 \approx -0.40$ (stable) but $\lambda_2 \approx +1.64$ (unstable).
+The positive eigenvalue dominates, causing latent paths to diverge exponentially.
+By contrast, the stable variant constrains $M = -(V^\top V + \varepsilon I)$, ensuring
+all eigenvalues are strictly negative ($\lambda_1 \approx -0.014$, $\lambda_2 \approx -2.91$).
+The empirical statistics from the simulation confirm this stark difference:
 \begin{center}
 \begin{tabular}{lrr}
 \toprule
-& \textbf{Baseline (ep3500)} & \textbf{Stable (ep3500)} \\
+& \textbf{Baseline (ep5000)} & \textbf{Stable (ep5000)} \\
 \midrule
-$z_1$ mean  & $-6.3 \times 10^{16}$ & $-0.04$ \\
-$z_1$ std   & $6.8 \times 10^{18}$  & $0.61$  \\
-$z_1$ min   & $-5.9 \times 10^{20}$ & $-2.38$ \\
-$z_1$ max   & $\phantom{-}1.4 \times 10^{20}$ & $\phantom{-}3.76$ \\
+$z_1$ mean  & $-5.6 \times 10^{16}$ & $-0.20$ \\
+$z_1$ std   & $4.2 \times 10^{18}$  & $0.64$  \\
+$z_1$ min   & $-1.8 \times 10^{20}$ & $-2.68$ \\
+$z_1$ max   & $1.8 \times 10^{20}$ & $3.38$ \\
 \midrule
-$z_2$ mean  & $-5.8 \times 10^{16}$ & $-0.29$ \\
-$z_2$ std   & $6.3 \times 10^{18}$  & $0.27$  \\
-$z_2$ min   & $-5.4 \times 10^{20}$ & $-2.48$ \\
-$z_2$ max   & $\phantom{-}1.3 \times 10^{20}$ & $\phantom{-}0.49$ \\
+$z_2$ mean  & $-5.2 \times 10^{16}$ & $-0.06$ \\
+$z_2$ std   & $3.9 \times 10^{18}$  & $0.10$  \\
+$z_2$ min   & $-1.7 \times 10^{20}$ & $-0.56$ \\
+$z_2$ max   & $1.6 \times 10^{20}$ & $0.40$ \\
+\midrule
+$r$ mean    & $3449\%$ & $231\%$  \\
+$r$ std     & $11535\%$ & $561\%$  \\
 \bottomrule
 \end{tabular}
 \end{center}
-The baseline latent state reaches values on the order of $10^{20}$, which is
-roughly $10^{20}$ times larger than the training support ($|z| \lesssim 1$).
-All paths have effectively diverged to floating-point extremes by the end of the
-simulation window.
+The baseline latent state reaches values on the order of $10^{20}$ — essentially diverging
+to floating-point infinity — making the model completely unusable for pricing.
+The stable model, by contrast, maintains bounded paths with $|z| \leq 3.4$ and
+realistic short rates near $2\%$, demonstrating the critical importance of the
+structural constraints.
 
 %--------------------------------------------------------
 \subsection{Unbounded and unstable short rates}
@@ -297,9 +304,9 @@ short-rate network is evaluated deep in its saturation regime: every path is
 stuck at either $r_{\min}$ or $r_{\max}$, removing all cross-sectional and
 time-series variation.
 
-In the baseline simulation the short rate saturates at $\pm 114$\,bp with a
-standard deviation of 109\,bp --- a bimodal distribution concentrated at the
-network's hard limits rather than a plausible interest-rate distribution.
+In the baseline simulation with ep5000, the short rate saturates at the hard limits
+with mean $3449\%$ and standard deviation $11535\%$ --- a pathological distribution
+completely divorced from economic reality and destroying all model utility.
 This makes any discount factor or derivative price computed from these paths
 economically meaningless.
 
@@ -514,12 +521,12 @@ the tails.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/Pricing/ep3500_comparison/fig5_short_rate_fan.png}
-    \caption{Short-rate percentile fan chart (5/25/50/75/95) for baseline (blue)
-    and stable (red).
-    The baseline fan immediately saturates and becomes flat; the stable fan
-    evolves smoothly and narrows at longer horizons as mean reversion pulls all
-    paths toward the equilibrium rate.}
+    \includegraphics[width=\textwidth]{Figures/Simulation/fig5_short_rate_fan.png}
+    \caption{Short-rate percentile fan chart (5/25/50/75/95) for baseline (blue, ep3500)
+    and stable (red, ep3500).
+    The baseline fan shows extreme volatility and path-dependent saturation; the stable fan
+    evolves smoothly within a narrow band, consistent with mean reversion toward
+    the equilibrium rate.}
     \label{fig:comp_short_rate_fan}
 \end{figure}
 
@@ -564,7 +571,7 @@ Table~\ref{tab:sim_comparison_summary} summarises the key diagnostics.
 
 \begin{table}[H]
 \centering
-\caption{Simulation diagnostics for baseline and stable ($\ell = 2$, ep3500,
+\caption{Simulation diagnostics for baseline and stable ($\ell = 2$, ep5000,
 EUR, $N = 500$ paths, $T = 10$\,yr, $\Delta t = 1/12$).
 Short-rate values in basis points.}
 \label{tab:sim_comparison_summary}
@@ -572,18 +579,18 @@ Short-rate values in basis points.}
 \toprule
 \textbf{Metric} & \textbf{Baseline} & \textbf{Stable} \\
 \midrule
-$z_1$ mean at $T$      & $-6.3 \times 10^{16}$ & $-0.04$ \\
-$z_1$ std over all $t$ & $6.8 \times 10^{18}$  & $0.61$  \\
-$z_1$ range            & $[-5.9\times10^{20},\; 1.4\times10^{20}]$ & $[-2.38,\; 3.76]$ \\
+$z_1$ mean at $T$      & $-5.6 \times 10^{16}$ & $-0.20$ \\
+$z_1$ std over all $t$ & $4.2 \times 10^{18}$  & $0.64$  \\
+$z_1$ range            & $[-1.8\times10^{20},\; 1.8\times10^{20}]$ & $[-2.68,\; 3.38]$ \\
 \midrule
-$z_2$ mean at $T$      & $-5.8 \times 10^{16}$ & $-0.29$ \\
-$z_2$ std over all $t$ & $6.3 \times 10^{18}$  & $0.27$  \\
-$z_2$ range            & $[-5.4\times10^{20},\; 1.3\times10^{20}]$ & $[-2.48,\; 0.49]$ \\
+$z_2$ mean at $T$      & $-5.2 \times 10^{16}$ & $-0.06$ \\
+$z_2$ std over all $t$ & $3.9 \times 10^{18}$  & $0.10$  \\
+$z_2$ range            & $[-1.7\times10^{20},\; 1.6\times10^{20}]$ & $[-0.56,\; 0.40]$ \\
 \midrule
-$r$ mean (bp)          & $-24$ & $+8$   \\
-$r$ std (bp)           & $109$ & $94$   \\
-$r$ range (bp)         & $[-114,\; +114]$ & $[-233,\; +222]$ \\
-All paths finite       & Yes (saturated) & Yes (well-behaved) \\
+$r$ mean (\%)          & $3449$ & $2.31$   \\
+$r$ std (\%)           & $11535$ & $5.61$   \\
+$r$ range (\%)         & $[-123,\; +123]$ & $[-11,\; +11]$ \\
+All paths finite       & Yes (divergent) & Yes (well-behaved) \\
 Paths usable for pricing & \textbf{No} & \textbf{Yes} \\
 \bottomrule
 \end{tabular}
@@ -1096,9 +1103,9 @@ The key metrics are the fraction of paths that remain finite (no NaN or $\pm\inf
 
 \begin{table}[H]
     \centering
-    \caption{Simulation diagnostics: baseline vs.\ stable ($\ell=2$, $N=500$ paths, $T=10$\,yr).}
+    \caption{Simulation diagnostics: baseline vs.\ stable ($\ell=2$, ep200, $N=500$ paths, $T=10$\,yr).}
     \label{tab:sim_diagnostics}
-    \pgfplotstableread[col sep=comma]{Figures/Pricing/sim_diagnostics.csv}\diagtable
+    \pgfplotstableread[col sep=comma]{Figures/Simulation/sim_diagnostics.csv}\diagtable
     \pgfplotstabletypeset[
       columns={Metric, Baseline, Stable},
       columns/Metric/.style={column name=Metric, string type, column type=l},
@@ -1108,4 +1115,3 @@ The key metrics are the fraction of paths that remain finite (no NaN or $\pm\inf
 \end{table}
 
 
-\newpage

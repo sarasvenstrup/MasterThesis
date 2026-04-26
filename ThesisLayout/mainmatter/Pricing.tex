@@ -46,12 +46,116 @@ This provides a sharper assessment of the financial relevance of the proposed ar
 % ────────────────────────────────────────────────────────────────────────────
 
 The remainder of this chapter develops the technical framework.
+Section~\ref{sec:swaption_pricing_methodology} describes the general Monte Carlo swaption pricing methodology.
 Section~\ref{sec:bachelier_model} describes the Bachelier normal
 model and its two roles in the pipeline: as a pricing-target converter in the second-stage
 calibration and as an implied-volatility inverter for reporting.
 Section~\ref{sec:bachelier_greeks} collects the analytic Greeks of the Bachelier price.
 Section~\ref{sec:second_stage_calibration} presents the second-stage calibration
 procedure. Section~\ref{sec:pricing_diagnostics} summarises the pricing diagnostics.
+
+%=========================================================
+\section{Monte Carlo Pricing of Swaptions}
+\label{sec:swaption_pricing_methodology}
+%=========================================================
+
+Having generated simulated latent paths and the associated zero-coupon bond curves from the trained encoder--decoder model, we can now price interest-rate derivatives by Monte Carlo under the risk-neutral measure. In this section, we present the general methodology for pricing European swaptions.
+
+Let $T_e$ denote the option expiry, let $n$ denote the number of fixed-leg payments of the underlying swap, and let $\delta>0$ denote the accrual period. In the implementation, we use annual accrual, so $\delta=1$. The payment dates of the underlying swap are therefore
+\[
+T_e+\delta,\; T_e+2\delta,\; \dots,\; T_e+n\delta.
+\]
+The corresponding swap tenor is $n\delta$.
+
+The initial strike is determined from the time-zero discount curve. Given the decoded bond prices $P(0,T)$, the swap annuity at time $0$ is
+\[
+A_0
+=
+\delta \sum_{j=1}^{n} P(0,T_e+j\delta),
+\]
+and the corresponding forward swap rate is
+\[
+F_0
+=
+\frac{P(0,T_e)-P(0,T_e+n\delta)}{A_0}.
+\]
+For an at-the-money swaption, the strike is chosen as
+\[
+K = F_0.
+\]
+
+For each simulated path $m=1,\dots,M$, the decoder delivers a full zero-coupon bond curve at expiry. Since the model is expressed in terms of time-to-maturity, this curve is written as
+\[
+\tau \mapsto P^{(m)}(T_e,\tau).
+\]
+The payment dates of the underlying swap correspond to the maturities
+\[
+\delta,\; 2\delta,\; \dots,\; n\delta
+\]
+measured from $T_e$. The pathwise annuity at expiry is therefore
+\[
+A^{(m)}(T_e)
+=
+\delta \sum_{j=1}^{n} P^{(m)}(T_e,j\delta),
+\]
+and the corresponding spot-starting swap rate is
+\[
+S^{(m)}(T_e)
+=
+\frac{1-P^{(m)}(T_e,n\delta)}{A^{(m)}(T_e)}.
+\]
+
+Let $\mathcal N>0$ denote the notional. The payer swaption payoff on path $m$ is
+\[
+X^{(m)}_{T_e}
+=
+\mathcal N\,A^{(m)}(T_e)\max\bigl(S^{(m)}(T_e)-K,0\bigr),
+\]
+while the receiver swaption payoff is
+\[
+X^{(m)}_{T_e}
+=
+\mathcal N\,A^{(m)}(T_e)\max\bigl(K-S^{(m)}(T_e),0\bigr).
+\]
+
+The payoff is discounted back to time $0$ using the pathwise money-market discount factor computed during simulation. Denoting this factor on path $m$ by
+\[
+D^{(m)}_{T_e}
+=
+\exp\left(-\int_0^{T_e} r_s^{(m)}\,ds\right),
+\]
+the discounted present value on path $m$ is
+\[
+V_0^{(m)} = D^{(m)}_{T_e} X^{(m)}_{T_e}.
+\]
+The time-zero swaption price is then estimated by the Monte Carlo average
+\[
+\widehat V_0
+=
+\frac{1}{M}\sum_{m=1}^{M} V_0^{(m)}.
+\]
+
+To assess numerical uncertainty, we also report the sample standard deviation
+\[
+\widehat \sigma_{\mathrm{MC}}
+=
+\sqrt{\frac{1}{M-1}\sum_{m=1}^{M}\left(V_0^{(m)}-\widehat V_0\right)^2}
+\]
+and the associated Monte Carlo standard error
+\[
+\widehat{\mathrm{SE}}_{\mathrm{MC}}
+=
+\frac{\widehat \sigma_{\mathrm{MC}}}{\sqrt{M}}.
+\]
+
+Finally, the Monte Carlo price is converted into a model-implied normal volatility using the Bachelier swaption formula (described in the next section). The model-implied normal volatility is obtained by numerically inverting the Bachelier formula so that the analytical price matches the Monte Carlo estimate $\widehat V_0$.
+
+In the implementation, the time-zero quantities $F_0$ and $A_0$ are computed directly from the decoded initial discount curve, while the pathwise quantities $S^{(m)}(T_e)$ and $A^{(m)}(T_e)$ are computed from the decoded discount curve at expiry on each simulated path. Because the pricing routine extracts bond prices directly from the model grids, the option expiry $T_e$ must lie on the simulation time grid, while the payment dates $j\delta$ must lie on the decoder maturity grid. In the numerical examples below, we consider in particular at-the-money payer swaptions, for which the strike is set equal to the time-zero forward swap rate.
+
+Overall, the pricing pipeline can be summarized schematically as
+\[
+z \;\longrightarrow\; P \;\longrightarrow\; (F_0,A_0) \;\longrightarrow\; (S(T_e),A(T_e)) \;\longrightarrow\; X(T_e) \;\longrightarrow\; V_0 \;\longrightarrow\; \sigma_N.
+\]
 
 %=========================================================
 \section{The Bachelier Normal Swaption Pricing Model}
