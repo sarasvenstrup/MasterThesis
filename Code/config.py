@@ -9,12 +9,17 @@
 # Changing this one line switches the entire pipeline.
 # ─────────────────────────────────────────────────────────────
 
+import os
 import sys
 
-VARIANT = "baseline"
+VARIANT = "stable"
 
 
 def confirm_variant():
+    # When called from run_all_dims.py (non-interactive), skip the prompt.
+    if os.environ.get("SKIP_VARIANT_CONFIRM") == "1":
+        print(f"[run_all_dims] Variant confirmed automatically: '{VARIANT}'")
+        return
     answer = input(f"\nConfig variant is set to: '{VARIANT}' — proceed? [y/n]: ").strip().lower()
     if answer != "y":
         print("Aborted.")

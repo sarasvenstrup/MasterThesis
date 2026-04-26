@@ -1,9 +1,10 @@
 """
-Runner script: runs Training_baseline.py sequentially for each latent dim.
+Runner script: runs Training.py and Training_stable.py sequentially for each latent dim.
 
-  Stage 1 — Training_baseline.py (baseline): LATENT_DIM = 3, 2, 4, 1  ep=5000
+  Stage 1 — Training.py (baseline): LATENT_DIM = 3, 2, 4, 1  ep=5000
+  Stage 2 — Training_stable.py (stable): LATENT_DIM = 2, 3, 4  ep=5000
 
-Baseline uses a frozen model file (full_model_baseline.py) so that stable
+Baseline uses a frozen model file (full_model.py) so that stable
 development can never affect baseline results.
 
 Run from the repo root:
@@ -20,7 +21,8 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
-TRAINING_BASELINE_PATH = os.path.join(REPO_ROOT, "Code", "Training_baseline.py")
+TRAINING_BASELINE_PATH = os.path.join(REPO_ROOT, "Code", "Training.py")
+TRAINING_STABLE_PATH   = os.path.join(REPO_ROOT, "Code", "Training_stable.py")
 
 STAGES = [
     {
@@ -28,6 +30,13 @@ STAGES = [
         "script":  TRAINING_BASELINE_PATH,
         "dims":    [3, 2, 4, 1],
         "epochs":  5000,
+    },
+    {
+        "name":    "Training (stable)",
+        "script":  TRAINING_STABLE_PATH,
+        "dims":    [2, 3, 4],
+        "epochs":  5000,
+        "skip_variant_confirm": True,
     },
 ]
 
@@ -72,6 +81,8 @@ for stage in STAGES:
 
         env = os.environ.copy()
         env["PYTHONPATH"] = REPO_ROOT
+        if stage.get("skip_variant_confirm"):
+            env["SKIP_VARIANT_CONFIRM"] = "1"
 
         try:
             result = subprocess.run(

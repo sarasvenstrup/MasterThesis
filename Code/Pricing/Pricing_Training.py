@@ -25,7 +25,7 @@ for p in [CODE_ROOT, PROJECT_ROOT, THESIS_ROOT]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from Code.model.full_model import FullModel
+from Code.model.full_model_stable import FullModel
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.load_swapdata import my_data
 from Code.Pricing.load_swapvol_ois import load_swaption_vol_data

@@ -87,11 +87,12 @@ C_GREY = "#888888"
 # =============================================================================
 def _load_model(variant: str, ckpt_path: str, latent_dim: int, device: str, dtype):
     """Construct FullModel under *variant* and load checkpoint weights."""
-    config.VARIANT = variant
-    import Code.model.full_model as fm
-    importlib.reload(fm)
+    if variant == "stable":
+        from Code.model.full_model_stable import FullModel
+    else:
+        from Code.model.full_model import FullModel
 
-    model = fm.FullModel(latent_dim=latent_dim).to(device)
+    model = FullModel(latent_dim=latent_dim).to(device)
     sd = torch.load(ckpt_path, map_location=device, weights_only=False)
     if isinstance(sd, dict) and "model_state_dict" in sd:
         sd = sd["model_state_dict"]

@@ -28,16 +28,17 @@ if PROJECT_ROOT not in sys.path:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from Code import config
-config.confirm_variant()
+# Baseline pipeline: imports from full_model_baseline — no config, no stable imports
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
 from Code.model.full_model import FullModel
 
+VARIANT = "baseline"  # frozen — hardcoded, never reads config.py
+
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
 print("MPS available:", hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
-print("Active model variant from config.py:", config.VARIANT)
+print("Active model variant: baseline (frozen)")
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Using device:", device)
@@ -55,7 +56,7 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 SHOW_PLOTS = False  # Set to False to only save plots
 
 LATENT_DIM = 1
-EPOCHS = 4500
+EPOCHS = 5000
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 
@@ -63,7 +64,7 @@ EVAL_EVERY = 1
 LOG_EVERY = 100
 TARGET_MSE = 1e-8
 
-FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_{config.VARIANT}", f"ep{EPOCHS}")
+FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_baseline", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 USE = "bbg"
@@ -165,7 +166,7 @@ print("Logging to:", csv_path)
 run_config = {
     "seed": SEED,
     "latent_dim": LATENT_DIM,
-    "variant": config.VARIANT,
+    "variant": VARIANT,
     "epochs": EPOCHS,
     "batch_size": BATCH_SIZE,
     "max_lr": max_lr,
@@ -427,7 +428,7 @@ torch.save({
     "latent_dim": LATENT_DIM,
     "epochs": EPOCHS,
     "use_data": USE,
-    "variant": config.VARIANT,
+    "variant": VARIANT,
 }, checkpoint_path)
 
 print("Saved checkpoint:", checkpoint_path)

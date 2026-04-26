@@ -4,10 +4,17 @@ import torch.nn as nn
 from .Encoder import Encoder
 from .DecoderG import DecoderG
 
-# Baseline components only — no stable imports, no config dependency
+from Code import config
+
+# Baseline variants
 from .K_mu import KMu as KMuBaseline
 from .R_short import RShort
 from .H_sigma import HSigma as HSigmaBaseline
+
+# Stable variants (K, H and R)
+from .K_mu_stable import KMuStable
+from .H_sigma_stable import HSigmaStable
+from .R_short_stable import RShortStable
 
 from Code.utils.rates import par_swap_from_discount
 from .sigma_matrix import L_from_sigmas_rhos
@@ -18,18 +25,12 @@ from Code.utils.ode import (
     solve_AB,
 )
 
-VARIANT = "baseline"  # frozen — never changes
-
 
 class FullModel(nn.Module):
     """
-    Baseline-only FullModel.  Stable variant imports and config checks have
-    been removed so that changes to the stable pipeline can never affect
-    baseline results or initialization.
-
     Returns:
-        - P_mkt only, by default
-        - (P_mkt, aux) if return_aux=True
+        - S_hat only, by default
+        - (S_hat, aux) if return_aux=True
     """
 
     def __init__(
@@ -43,6 +44,20 @@ class FullModel(nn.Module):
         r_hidden: int = 4,
         g_bias: bool = True,
         hr_bias: bool = False,
+        sigma_init: float = 0.3,
+
+        # stable K controls
+        k_epsilon: float = 1e-3,
+
+        # stable H controls
+        h_sigma_min: float = 1e-4,
+        h_sigma_max: float = 2.0,
+        h_rho_max: float = 0.999,
+
+        # stable R controls
+        r_center_init: float = 0.01,
+        r_scale_init: float = 0.02,
+        r_min_scale: float = 1e-4,
     ):
         super().__init__()
 
@@ -63,17 +78,41 @@ class FullModel(nn.Module):
 
         self.G = DecoderG(latent_dim, g_hidden, g_bias)
 
-        self.K = KMuBaseline(
-            latent_dim=latent_dim,
-            bias=True,
-        )
-        self.H = HSigmaBaseline(
-            latent_dim=latent_dim,
-            hidden_dim=h_hidden,
-            bias=hr_bias,
-        )
-
-        self.R = RShort(latent_dim, r_hidden, bias=hr_bias)
+        # Use config.py as single source of truth for K and H
+        if config.VARIANT == "stable":
+            self.K = KMuStable(
+                latent_dim=latent_dim,
+                bias=True,
+                epsilon=k_epsilon,
+            )
+            self.H = HSigmaStable(
+                latent_dim=latent_dim,
+                hidden_dim=h_hidden,
+                bias=hr_bias,
+                sigma_init=sigma_init,
+                sigma_min=h_sigma_min,
+                sigma_max=h_sigma_max,
+                rho_max=h_rho_max,
+            )
+            self.R = RShortStable(
+                latent_dim=latent_dim,
+                hidden_dim=r_hidden,
+                bias=hr_bias,
+                r_center_init=r_center_init,
+                r_scale_init=r_scale_init,
+                min_scale=r_min_scale,
+            )
+        else:
+            self.K = KMuBaseline(
+                latent_dim=latent_dim,
+                bias=True,
+            )
+            self.H = HSigmaBaseline(
+                latent_dim=latent_dim,
+                hidden_dim=h_hidden,
+                bias=hr_bias,
+            )
+            self.R = RShort(latent_dim, r_hidden, bias=hr_bias)
 
     def _tau(self, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         return self._tau_grid.to(device=device, dtype=dtype)

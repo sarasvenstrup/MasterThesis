@@ -12,7 +12,6 @@ torch.set_num_interop_threads(2)
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
-from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import TensorDataset, DataLoader
 
 # ============================= Environment Setup & Imports ===============================
@@ -28,17 +27,17 @@ if PROJECT_ROOT not in sys.path:
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-# Baseline pipeline: imports from full_model_baseline — no config, no stable imports
+# Baseline pipeline: imports from full_model — no config, no stable imports
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
-from Code.model.full_model_baseline import FullModel
+from Code.model.full_model import FullModel
 
 VARIANT = "baseline"  # frozen — hardcoded, never reads config.py
 
 print("Torch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
 print("MPS available:", hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
-print("Active model variant: baseline (frozen)")
+print("Active model variant: baseline (frozen) — FIXED LR experiment")
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Using device:", device)
@@ -52,10 +51,9 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 # Settings
 # ==========================================================
 
-# --- User option: show plots interactively? ---
-SHOW_PLOTS = False  # Set to False to only save plots
+SHOW_PLOTS = False
 
-LATENT_DIM = 1
+LATENT_DIM = 3
 EPOCHS = 5000
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
@@ -64,7 +62,7 @@ EVAL_EVERY = 1
 LOG_EVERY = 100
 TARGET_MSE = 1e-8
 
-FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_baseline", f"ep{EPOCHS}")
+FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{LATENT_DIM}_baseline_fixed_lr", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 USE = "bbg"
@@ -75,26 +73,14 @@ dataset = TensorDataset(X_tensor)
 loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
 SEED = 0
-PCT_START = 0.3
-DIV_FACTOR = 1.0
-FINAL_DIV_FACTOR = 3000.0
+FIXED_LR = 10e-3  # constant learning rate — no scheduler
 
 torch.manual_seed(SEED)
 model = FullModel(latent_dim=LATENT_DIM).to(device)
 model.train()
 
-max_lr = 1e-3
-optim = torch.optim.Adam(model.parameters(), lr=max_lr)
-
-scheduler = OneCycleLR(
-    optim,
-    max_lr=max_lr,
-    steps_per_epoch=len(loader),
-    epochs=EPOCHS,
-    pct_start=PCT_START,
-    div_factor=DIV_FACTOR,
-    final_div_factor=FINAL_DIV_FACTOR,
-)
+optim = torch.optim.Adam(model.parameters(), lr=FIXED_LR)
+# No scheduler — learning rate stays constant throughout training
 
 loss_fn = nn.MSELoss()
 
@@ -122,13 +108,6 @@ def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> t
     return torch.cat(outs, dim=0)
 
 def eval_rmse_bps(model: nn.Module, X_full: torch.Tensor, meta_full: pd.DataFrame, batch_size: int = 256):
-    """
-    Returns:
-      rmse_per_ccy (pd.Series): index=ccy, values=RMSE in bps
-      avg_rmse_bps (float): mean across currencies in rmse_per_ccy
-      n_bad (int): filtered rows (non-finite)
-      n_good (int): kept rows
-    """
     S_hat_all = predict_S_hat(model, X_full, batch_size=batch_size)
 
     mask = row_finite_mask(X_full) & row_finite_mask(S_hat_all)
@@ -167,12 +146,10 @@ run_config = {
     "seed": SEED,
     "latent_dim": LATENT_DIM,
     "variant": VARIANT,
+    "scheduler": "none (fixed lr)",
+    "fixed_lr": FIXED_LR,
     "epochs": EPOCHS,
     "batch_size": BATCH_SIZE,
-    "max_lr": max_lr,
-    "pct_start": PCT_START,
-    "div_factor": DIV_FACTOR,
-    "final_div_factor": FINAL_DIV_FACTOR,
     "mkldnn_enabled": torch.backends.mkldnn.enabled,
     "torch_version": torch_version,
     "python_version": python_version,
@@ -184,12 +161,12 @@ with open(config_path, "w") as f:
 print("Saved run config:", config_path)
 
 # ==========================================================
-# Train (with timing + eval every epoch + CSV every LOG_EVERY)
+# Train
 # ==========================================================
 train_losses = []
 lrs_per_step = []
 lrs_per_epoch = []
-avg_rmse_bps_hist = []  # (epoch, avg_rmse_bps) for EVERY epoch
+avg_rmse_bps_hist = []
 nan_batches_total = 0
 
 t0 = time.perf_counter()
@@ -209,13 +186,11 @@ for epoch in range(EPOCHS):
         try:
             S_hat = model(xb)
         except Exception as e:
-            # Catch any exceptions during forward pass (e.g., ODE solver issues)
             nan_batches += 1
             print(f"    [Forward error at epoch {epoch}, batch {batch_idx}]: {str(e)[:200]}")
             print(f"      Input range: [{xb.min():.3e}, {xb.max():.3e}], shape: {xb.shape}")
             continue
 
-        # Check if S_hat contains NaN/Inf
         if not torch.isfinite(S_hat).all():
             nan_batches += 1
             nan_count = (~torch.isfinite(S_hat)).sum().item()
@@ -234,14 +209,10 @@ for epoch in range(EPOCHS):
         if not torch.isfinite(loss):
             nan_batches += 1
             print(f"    [Loss is NaN/Inf at epoch {epoch}, batch {batch_idx}]")
-            print(f"      Loss value: {loss}")
-            print(f"      S_hat stats: min={S_hat.min():.3e}, max={S_hat.max():.3e}, mean={S_hat.mean():.3e}")
-            print(f"      Input stats: min={xb.min():.3e}, max={xb.max():.3e}, mean={xb.mean():.3e}")
             continue
 
         loss.backward()
 
-        # Check for NaN/Inf in gradients before clipping
         has_nan_grad = False
         nan_grad_params = []
         for name, param in model.named_parameters():
@@ -267,14 +238,11 @@ for epoch in range(EPOCHS):
             print(f"    [Gradients contain NaN/Inf at epoch {epoch}, batch {batch_idx}]")
             for param_info in nan_grad_params:
                 print(f"      {param_info['name']}: {param_info['nan_count']}/{param_info['total']} NaN")
-                print(f"        Valid grad range: [{param_info['grad_min']:.3e}, {param_info['grad_max']:.3e}]")
-            print(f"      Loss was: {loss:.3e}")
-            print(f"      S_hat stats: min={S_hat.min():.3e}, max={S_hat.max():.3e}")
             continue
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optim.step()
-        scheduler.step()
+        # No scheduler.step()
 
         lrs_per_step.append(optim.param_groups[0]["lr"])
         running += float(loss.detach().cpu()) * xb.shape[0]
@@ -286,7 +254,6 @@ for epoch in range(EPOCHS):
     lrs_per_epoch.append(optim.param_groups[0]["lr"])
     epoch_rmse = epoch_mse ** 0.5
 
-    # ---- EVAL EVERY EPOCH (for plotting convergence) ----
     do_eval = ((epoch + 1) % EVAL_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
     do_log = ((epoch + 1) % LOG_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
 
@@ -302,7 +269,6 @@ for epoch in range(EPOCHS):
     else:
         rmse_per_ccy, avg_rmse_bps, n_bad, n_good = (None, np.nan, np.nan, np.nan)
 
-    # ---- LOG/CSV ONLY EVERY LOG_EVERY ----
     if do_log:
         t_now = time.perf_counter()
         time_total = t_now - t0
@@ -346,12 +312,12 @@ print("Training done.")
 # Plots
 # ==========================================================
 
-# 1) Learning rate plot (per step)
+# 1) Learning rate plot (per step) — will be a flat line for fixed lr
 fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
 ax.plot(np.arange(len(lrs_per_step)), lrs_per_step, linewidth=1.0)
 ax.set_xlabel("Training step (batch)")
 ax.set_ylabel("Learning rate")
-ax.set_title(f"Learning rate schedule — OneCycleLR (dim={LATENT_DIM}, ep={EPOCHS})")
+ax.set_title(f"Learning rate — fixed (dim={LATENT_DIM}, ep={EPOCHS})")
 fig.tight_layout()
 lr_fig_path = os.path.join(FIGURES_DIR, f"lr_schedule_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png")
 fig.savefig(lr_fig_path, dpi=300)
@@ -369,7 +335,7 @@ if len(avg_rmse_bps_hist) > 0:
     ax.plot(epochs_logged, avg_logged, linewidth=1.0)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Average RMSE (bps)")
-    ax.set_title(f"Average RMSE across currencies (bps) — convergence (dim={LATENT_DIM})")
+    ax.set_title(f"Average RMSE across currencies (bps) — convergence (dim={LATENT_DIM}, fixed lr)")
     fig.tight_layout()
     rmse_fig_path = os.path.join(FIGURES_DIR, f"avg_rmse_bps_convergence_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.png")
     fig.savefig(rmse_fig_path, dpi=300)
@@ -381,7 +347,7 @@ else:
     print("No RMSE history to plot (avg_rmse_bps_hist empty).")
 
 # ==========================================================
-# Save latent coordinates (z_1, z_2) for scatter plotting
+# Save latent coordinates
 # ==========================================================
 
 @torch.no_grad()
@@ -397,7 +363,7 @@ def get_latent(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torc
         model.train()
     return torch.cat(zs, dim=0)
 
-Z = get_latent(model, X_tensor, batch_size=EVAL_BATCH_SIZE)  # (N, LATENT_DIM)
+Z = get_latent(model, X_tensor, batch_size=EVAL_BATCH_SIZE)
 
 df_latent = meta.copy().reset_index(drop=True)
 for k in range(LATENT_DIM):
@@ -415,26 +381,106 @@ os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 checkpoint_path = os.path.join(
     CHECKPOINT_DIR,
-    f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}.pt"
+    f"fullmodel_{USE}_dim{LATENT_DIM}_ep{EPOCHS}_fixed_lr.pt"
 )
-
-model_config = {
-    "latent_dim": LATENT_DIM,
-}
 
 torch.save({
     "model_state_dict": model.state_dict(),
-    "model_config": model_config,
+    "model_config": {"latent_dim": LATENT_DIM},
     "latent_dim": LATENT_DIM,
     "epochs": EPOCHS,
     "use_data": USE,
     "variant": VARIANT,
+    "scheduler": "none (fixed lr)",
+    "fixed_lr": FIXED_LR,
 }, checkpoint_path)
 
 print("Saved checkpoint:", checkpoint_path)
 
-# Also save a plain state_dict alongside the training logs so ResultsGenerator
-# can load the ep{EPOCHS} model directly from the Figures/dim{N}/ep{EPOCHS}/ folder.
 figures_ckpt_path = os.path.join(FIGURES_DIR, f"checkpoint_dim{LATENT_DIM}_ep{EPOCHS}.pt")
 torch.save(model.state_dict(), figures_ckpt_path)
 print("Saved figures checkpoint:", figures_ckpt_path)
+
+# ==========================================================
+# Parameter plots over time
+# ==========================================================
+print("\nGenerating parameter plots...")
+
+_ccy_colors = {c: custom_palette[i % len(custom_palette)] for i, c in enumerate(ccy_order)}
+
+
+def extract_parameters(mdl, X_data, meta_df):
+    """Extract μ, σ, ρ, r̃ for every observation. Returns a DataFrame."""
+    mdl.eval()
+    with torch.no_grad():
+        X_d = X_data.to(device)
+        z       = mdl.encoder(X_d)
+        mu      = mdl.K(z)
+        sigmas, rhos = mdl.H(z)
+        r_til   = mdl.R(z).squeeze(-1)
+
+    d      = mdl.latent_dim
+    n_corr = d * (d - 1) // 2
+
+    rec = meta_df.copy().reset_index(drop=True)
+    rec["as_of_date"] = pd.to_datetime(rec["as_of_date"])
+
+    for k in range(d):
+        rec[f"mu_{k+1}"]    = mu[:, k].cpu().numpy()
+        rec[f"sigma_{k+1}"] = sigmas[:, k].cpu().numpy()
+
+    idx = 0
+    for i in range(d):
+        for j in range(i + 1, d):
+            rec[f"rho_{i+1}{j+1}"] = rhos[:, idx].cpu().numpy()
+            idx += 1
+
+    rec["r_tilde"] = r_til.cpu().numpy()
+    return rec
+
+
+def param_label(name):
+    if name.startswith("mu_"):
+        k = name.split("_")[1];  return r"$\mu_{" + k + r"}$"
+    if name.startswith("sigma_"):
+        k = name.split("_")[1];  return r"$\sigma_{" + k + r"}$"
+    if name.startswith("rho_"):
+        ij = name.split("_")[1]; return r"$\rho_{" + ",".join(ij) + r"}$"
+    if name == "r_tilde":
+        return r"$\tilde{r}$"
+    return name
+
+
+# Use only finite rows
+_param_mask = torch.isfinite(X_tensor).all(dim=1)
+df_params = extract_parameters(model, X_tensor[_param_mask], meta.loc[_param_mask.numpy()].reset_index(drop=True))
+
+d = LATENT_DIM
+mu_cols    = [f"mu_{k+1}"    for k in range(d)]
+sig_cols   = [f"sigma_{k+1}" for k in range(d)]
+rho_cols   = [f"rho_{i+1}{j+1}" for i in range(d) for j in range(i + 1, d)]
+param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
+
+params_dir = os.path.join(FIGURES_DIR, "parameters")
+os.makedirs(params_dir, exist_ok=True)
+
+for col in param_cols:
+    fig, ax = plt.subplots(figsize=(5, 3.5))
+    for ccy in ccy_order:
+        sub = df_params[df_params["ccy"] == ccy].sort_values("as_of_date")
+        if sub.empty:
+            continue
+        ax.plot(sub["as_of_date"], sub[col],
+                color=_ccy_colors[ccy], linewidth=0.8, alpha=0.75)
+    ax.set_title(param_label(col), fontsize=11)
+    ax.tick_params(axis="x", rotation=30, labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    out_path = os.path.join(params_dir, col + ".png")
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {out_path}")
+
+print("Parameter plots done.")

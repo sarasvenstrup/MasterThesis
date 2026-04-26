@@ -36,7 +36,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS, set_paper_theme
-from Code.model.full_model_baseline import FullModel
+from Code.model.full_model import FullModel
 
 torch.set_num_threads(4)
 torch.set_num_interop_threads(2)
@@ -46,10 +46,8 @@ device = torch.device("cpu")   # inference only — CPU is fine
 THESIS_RESULTS = os.path.join(REPO_ROOT, "Figures", "thesis_results")
 FIGURES_OUT    = os.path.join(THESIS_RESULTS, "AutoencoderPerformance")
 TABLES_OUT     = os.path.join(THESIS_RESULTS, "AutoencoderPerformance")
-PARAMS_DIR     = os.path.join(THESIS_RESULTS, "parameters")
 EXTRA_OUT      = os.path.join(THESIS_RESULTS, "ExtraFigures")
 os.makedirs(FIGURES_OUT, exist_ok=True)
-os.makedirs(PARAMS_DIR,  exist_ok=True)
 os.makedirs(EXTRA_OUT,   exist_ok=True)
 
 # ── constants ──────────────────────────────────────────────────────────────────
@@ -1700,8 +1698,9 @@ for _dim in ALL_DIMS_PARAM:
         print(f"  No model for ℓ={_dim}, skipping.")
         continue
 
-    # create dim subfolder inside parameters/
-    _dim_dir = os.path.join(PARAMS_DIR, f"dim{_dim}")
+    # parameters live inside the training results folder for this dim/epoch
+    _dim_dir = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                            f"dim{_dim}_baseline", f"ep{TRAIN_LOG_EPOCHS}", "parameters")
     os.makedirs(_dim_dir, exist_ok=True)
 
     if _dim in dim_S_hat:
@@ -1891,5 +1890,5 @@ else:
 
 print(f"\n{'='*65}")
 print(f"  Figures → {FIGURES_OUT}")
-print(f"  Params  → {PARAMS_DIR}")
+print(f"  Params  → Figures/TrainingResults/dim{{N}}_baseline/ep{TRAIN_LOG_EPOCHS}/parameters/")
 print(f"{'='*65}\n")

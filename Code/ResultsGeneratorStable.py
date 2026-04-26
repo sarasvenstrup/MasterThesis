@@ -30,7 +30,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code.load_swapdata import custom_palette, set_paper_theme, my_data, TARGET_TENORS
-from Code.model.full_model import FullModel
+from Code.model.full_model_stable import FullModel
 from Code import config
 config.VARIANT = "stable"
 
@@ -43,14 +43,13 @@ CCY_ORDER  = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 DIM_COLORS = {1: custom_palette[8], 2: custom_palette[4],
               3: custom_palette[0], 4: custom_palette[6]}
 
-# dim=2 stable ep2500 checkpoint
-STABLE_DIM       = 2
-STABLE_EP        = 2500
+# stable checkpoint settings
+STABLE_DIM       = 2   # used for Sharpe plot (single-dim)
+STABLE_EP        = 5000
 TRAIN_START      = "2010-01-01"
 TRAIN_END        = "2020-12-31"
 
-PARAMS_DIR = os.path.join(FIGURES_OUT, "parameters_dim2")
-os.makedirs(PARAMS_DIR, exist_ok=True)
+STABLE_PARAM_DIMS = [2, 3, 4]  # dims for parameter plots
 
 ROLL_SUBDIR            = "train5Y_test6M_step6M"
 ROLL_DIVERGE_THRESHOLD = 100.0
@@ -350,23 +349,23 @@ else:
     print("  SKIPPED — no rolling OOS data found for stable variant.")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Load stable dim=2 ep2500 model + training data
+# Load stable model for a given dim + ep
 # ─────────────────────────────────────────────────────────────────────────────
-def load_stable_dim2_model():
+def load_stable_model(dim, ep=STABLE_EP):
     ckpt = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
-                        f"dim{STABLE_DIM}_stable", f"ep{STABLE_EP}",
-                        f"checkpoint_dim{STABLE_DIM}_ep{STABLE_EP}.pt")
+                        f"dim{dim}_stable", f"ep{ep}",
+                        f"checkpoint_dim{dim}_ep{ep}.pt")
     if not os.path.exists(ckpt):
         print(f"  ⚠️  Checkpoint not found: {ckpt}")
         return None
     state = torch.load(ckpt, map_location="cpu")
-    model = FullModel(latent_dim=STABLE_DIM)
+    model = FullModel(latent_dim=dim)
     sd = state["model_state_dict"] if isinstance(state, dict) and "model_state_dict" in state else state
     result = model.load_state_dict(sd, strict=False)
     if result.unexpected_keys:
         print(f"  [load] dropped old params: {result.unexpected_keys}")
     model.eval()
-    print(f"  Loaded stable dim={STABLE_DIM} ep={STABLE_EP} checkpoint.")
+    print(f"  Loaded stable dim={dim} ep={ep} checkpoint.")
     return model
 
 def _param_label(name):
@@ -420,29 +419,37 @@ _ccy_colors = {ccy: custom_palette[i]
 # ─────────────────────────────────────────────────────────────────────────────
 # Load data + model
 # ─────────────────────────────────────────────────────────────────────────────
-print("\nLoading data for stable dim=2 parameter / Sharpe plots...")
+print("\nLoading data for stable parameter / Sharpe plots...")
 meta_train, X_train, *_ = my_data()
 
-_stable_model = load_stable_dim2_model()
+# also load dim=2 model for Sharpe plot below
+_stable_model = load_stable_model(STABLE_DIM)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Parameters — stable dim=2
+# Parameters — stable dims 2, 3, 4
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Parameters: stable ℓ=2 ──")
-if _stable_model is None:
-    print("  ⚠️  Skipped — no checkpoint.")
-else:
+print("\n── Parameters: stable ℓ=2,3,4 ──")
+for _dim in STABLE_PARAM_DIMS:
+    print(f"\n  dim={_dim}")
+    _model = load_stable_model(_dim)
+    if _model is None:
+        print(f"  ⚠️  Skipped dim={_dim} — no checkpoint.")
+        continue
+
     with torch.no_grad():
-        _S_tmp = _stable_model(X_train)
+        _S_tmp = _model(X_train)
     _mask = finite_mask(X_train, _S_tmp)
-    df_p  = extract_parameters(_stable_model, X_train, meta_train, _mask)
+    df_p  = extract_parameters(_model, X_train, meta_train, _mask)
 
-    d = STABLE_DIM
-    mu_cols  = [f"mu_{k+1}"    for k in range(d)]
-    sig_cols = [f"sigma_{k+1}" for k in range(d)]
+    mu_cols  = [f"mu_{k+1}"    for k in range(_dim)]
+    sig_cols = [f"sigma_{k+1}" for k in range(_dim)]
     rho_cols = [f"rho_{i+1}{j+1}"
-                for i in range(d) for j in range(i + 1, d)]
+                for i in range(_dim) for j in range(i + 1, _dim)]
     param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
+
+    _dim_dir = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                            f"dim{_dim}_stable", f"ep{STABLE_EP}", "parameters")
+    os.makedirs(_dim_dir, exist_ok=True)
 
     for col in param_cols:
         fig, ax = plt.subplots(figsize=(5, 3.5))
@@ -458,10 +465,10 @@ else:
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         fig.tight_layout()
-        out_path = os.path.join(PARAMS_DIR, f"param_{col}_stable_dim2.png")
+        out_path = os.path.join(_dim_dir, f"{col}.png")
         fig.savefig(out_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
-    print(f"  Saved {len(param_cols)} parameter plots → {PARAMS_DIR}")
+    print(f"  Saved {len(param_cols)} parameter plots → {_dim_dir}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Q7_sharpe_stable — IS Sharpe ratio by tenor, stable dim=2

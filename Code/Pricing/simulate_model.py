@@ -24,7 +24,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from Code import config
-from Code.model.full_model import FullModel
+from Code.model.full_model_stable import FullModel
 from Code.load_swapdata import my_data
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 

@@ -23,7 +23,7 @@ if REPO_ROOT not in sys.path:
 
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
-from Code.model.full_model_baseline import FullModel
+from Code.model.full_model import FullModel
 
 VARIANT = "baseline"  # frozen — no config dependency
 

@@ -4,16 +4,10 @@ import torch.nn as nn
 from .Encoder import Encoder
 from .DecoderG import DecoderG
 
-from Code import config
-
-# Baseline variants
+# Baseline components only — no stable imports, no config dependency
 from .K_mu import KMu as KMuBaseline
 from .R_short import RShort
 from .H_sigma import HSigma as HSigmaBaseline
-
-# Stable variants (K and H only — G and R are shared)
-from .K_mu_stable import KMuStable
-from .H_sigma_stable import HSigmaStable
 
 from Code.utils.rates import par_swap_from_discount
 from .sigma_matrix import L_from_sigmas_rhos
@@ -24,12 +18,18 @@ from Code.utils.ode import (
     solve_AB,
 )
 
+VARIANT = "baseline"  # frozen — never changes
+
 
 class FullModel(nn.Module):
     """
+    Baseline-only FullModel.  Stable variant imports and config checks have
+    been removed so that changes to the stable pipeline can never affect
+    baseline results or initialization.
+
     Returns:
-        - S_hat only, by default
-        - (S_hat, aux) if return_aux=True
+        - P_mkt only, by default
+        - (P_mkt, aux) if return_aux=True
     """
 
     def __init__(
@@ -43,15 +43,6 @@ class FullModel(nn.Module):
         r_hidden: int = 4,
         g_bias: bool = True,
         hr_bias: bool = False,
-        sigma_init: float = 0.3,
-
-        # stable K controls
-        k_epsilon: float = 1e-3,
-
-        # stable H controls
-        h_sigma_min: float = 1e-4,
-        h_sigma_max: float = 2.0,
-        h_rho_max: float = 0.999,
     ):
         super().__init__()
 
@@ -72,32 +63,15 @@ class FullModel(nn.Module):
 
         self.G = DecoderG(latent_dim, g_hidden, g_bias)
 
-        # Use config.py as single source of truth for K and H
-        if config.VARIANT == "stable":
-            self.K = KMuStable(
-                latent_dim=latent_dim,
-                bias=True,
-                epsilon=k_epsilon,
-            )
-            self.H = HSigmaStable(
-                latent_dim=latent_dim,
-                hidden_dim=h_hidden,
-                bias=hr_bias,
-                sigma_init=sigma_init,
-                sigma_min=h_sigma_min,
-                sigma_max=h_sigma_max,
-                rho_max=h_rho_max,
-            )
-        else:
-            self.K = KMuBaseline(
-                latent_dim=latent_dim,
-                bias=True,
-            )
-            self.H = HSigmaBaseline(
-                latent_dim=latent_dim,
-                hidden_dim=h_hidden,
-                bias=hr_bias,
-            )
+        self.K = KMuBaseline(
+            latent_dim=latent_dim,
+            bias=True,
+        )
+        self.H = HSigmaBaseline(
+            latent_dim=latent_dim,
+            hidden_dim=h_hidden,
+            bias=hr_bias,
+        )
 
         self.R = RShort(latent_dim, r_hidden, bias=hr_bias)
 
