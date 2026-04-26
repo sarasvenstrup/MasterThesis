@@ -385,6 +385,73 @@ To summarize, the decoder operates by first mapping the latent state $z_t$, thro
 
 
 
+%--------------------------------------------------------
+\section{Estimation Objective and Numerical Training Choices}
+\label{sec:model_estimation_training_choices}
+%--------------------------------------------------------
 
+The affine-inspired encoder--decoder is estimated by choosing the trainable parameters
+\[
+\Omega
+=
+\{A_1,\theta_{\mathcal{G}},\theta_{\mathcal{K}},
+\theta_{\mathcal{H}},\theta_{\mathcal{R}}\},
+\]
+where \(A_1\) denotes the encoder matrix and
+\(\theta_{\mathcal{G}},\theta_{\mathcal{K}},\theta_{\mathcal{H}},\theta_{\mathcal{R}}\)
+denote the parameters of the decoder networks introduced above. The estimation criterion is the mean squared reconstruction error between observed and model-implied par swap rates. For \(N\) observed curves and maturity set
+\[
+\mathcal{M}=\{1,2,3,5,10,15,20,30\},
+\]
+the loss function is
+\begin{equation}
+\mathcal{L}(\Omega)
+=
+\frac{1}{N}
+\sum_{t=1}^{N}
+\sum_{\tau\in\mathcal{M}}
+\left(
+S_t(\tau)-\widetilde S_t(\tau;\Omega)
+\right)^2.
+\label{eq:model_estimation_loss}
+\end{equation}
+The estimated parameter vector is therefore
+\begin{equation}
+\widehat{\Omega}
+=
+\operatorname*{arg\,min}_{\Omega}
+\mathcal{L}(\Omega).
+\label{eq:model_estimator}
+\end{equation}
+
+The optimisation is performed using the Adam optimiser. In order to assess the sensitivity of the estimation to the learning-rate specification, two learning-rate strategies are considered. The first uses a fixed learning rate throughout training. The second uses a one-cycle learning-rate schedule, where the learning rate is varied systematically over the training run.
+
+For the one-cycle specification, the maximum learning rate is set to
+\[
+\texttt{max\_lr}=10^{-3}.
+\]
+The scheduler parameters are
+\[
+\texttt{pct\_start}=0.3,\qquad
+\texttt{div\_factor}=1.0,\qquad
+\texttt{final\_div\_factor}=3000.0.
+\]
+Since \(\texttt{div\_factor}=1.0\), the initial learning rate equals the maximum learning rate. The final learning rate is therefore
+\[
+\frac{\texttt{max\_lr}}{\texttt{final\_div\_factor}}
+=
+\frac{10^{-3}}{3000}
+\approx 3.33\times 10^{-7}.
+\]
+The fixed-learning-rate specification is used as a benchmark against which the one-cycle schedule can be compared.
+
+Training is carried out using mini-batches of size 32. Evaluation is performed using larger batches of size 256 in order to reduce the computational overhead of repeated forward passes. For each specification, the same loss function and model architecture are used, so that differences in performance can be attributed to the optimisation procedure rather than to changes in the model itself.
+
+Since the reconstructed swap rates depend on the solution of the no-arbitrage ODE system, gradients are propagated through the full pricing pipeline. The Runge--Kutta solver is implemented using differentiable tensor operations, so that backpropagation accounts for the effect of each trainable parameter on the solved functions \(A_{z_t}(\tau)\) and \(B_{z_t}(\tau)\), the resulting zero-coupon bond prices, and the final reconstructed swap rates.
+
+To improve numerical stability, gradients are clipped before each optimiser step using a maximum norm of 1.0. The training loop also includes checks for non-finite numerical values. If the forward pass produces NaN or infinite values, or if the loss or gradients become non-finite, the corresponding mini-batch is skipped. These safeguards are useful because the ODE-based decoder may be numerically unstable early in training, before the network parameters have adapted to the term-structure data.
+
+\paragraph{Summary}
+The model is estimated by minimising swap-rate reconstruction error subject to the hard no-arbitrage structure derived above. The no-arbitrage restriction is not imposed through an additional penalty term in the loss function; instead, it is embedded directly in the decoder through the state-specific ODE system for \(A_{z_t}\) and \(B_{z_t}\). The comparison between fixed and one-cycle learning rates is therefore a comparison of optimisation strategies within the same arbitrage-free model class.
 
 
