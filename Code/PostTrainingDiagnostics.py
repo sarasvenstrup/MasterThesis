@@ -55,19 +55,21 @@ import matplotlib.pyplot as plt
 # Paths
 # =============================================================================
 try:
-    CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    CODE_ROOT = os.getcwd()
+    SCRIPT_DIR = os.getcwd()
 
-PROJECT_ROOT = os.path.abspath(os.path.join(CODE_ROOT, ".."))
-THESIS_ROOT = os.path.abspath(os.path.join(CODE_ROOT, "..", ".."))
+CODE_ROOT = os.path.dirname(SCRIPT_DIR)        # MasterThesis/Code -> MasterThesis
+THESIS_ROOT = CODE_ROOT                         # MasterThesis
+PROJECT_ROOT = THESIS_ROOT                      # same
 
-for p in [CODE_ROOT, PROJECT_ROOT, THESIS_ROOT]:
+print(f"Repo root: {THESIS_ROOT}")
+
+for p in [SCRIPT_DIR, CODE_ROOT, THESIS_ROOT]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
 from Code import config
-from Code.model.full_model_stable import FullModel
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.load_swapdata import my_data
 
@@ -75,17 +77,30 @@ from Code.load_swapdata import my_data
 # =============================================================================
 # USER SETTINGS
 # =============================================================================
+# Run diagnostics on BASELINE model for all dimensions
+# Set DIMENSIONS = None to run single model via CHECKPOINT_PATH
+DIMENSIONS = [1, 2, 3, 4]      # Run for all dims; set to None for single checkpoint below
+EPOCHS = 5000
+VARIANT = "baseline"            # "baseline" or "stable"
+
+# Import correct model variant based on VARIANT setting
+if VARIANT == "stable":
+    from Code.model.full_model_stable import FullModel
+else:
+    from Code.model.full_model import FullModel
+
+# Single checkpoint mode (if DIMENSIONS is None):
 CHECKPOINT_PATH = (
     r"C:\Users\Bruger\PycharmProjects\MasterThesis"
     r"\Figures\TrainingResults\dim2_stable\ep3500\checkpoint_dim2_ep3500.pt"
 )
 
-LATENT_DIM = 2
+LATENT_DIM = 2                  # Only used if DIMENSIONS is None
 USE = "bbg"
 CCY_FILTER = ""              # empty = all currencies
 BATCH_SIZE = 256
 MAX_TEST = 5000              # expensive checks use subsample; None = all
-SHOW_PLOTS = True
+SHOW_PLOTS = False            # Changed to False for batch processing
 
 # expected stable-H defaults from FullModel(...)
 SIGMA_MIN_EXPECTED = 1e-4
@@ -160,7 +175,8 @@ def load_model(checkpoint_path: str, latent_dim: int, device: torch.device) -> F
     model.eval()
 
     print(f"Loaded checkpoint: {checkpoint_path}")
-    print(f"Variant from config.py: {config.VARIANT}")
+    print(f"Variant (script): {VARIANT}  |  config.py says: {config.VARIANT}"
+          + ("  <-- MISMATCH" if VARIANT != config.VARIANT else ""))
     return model
 
 
@@ -300,12 +316,16 @@ def check_discount_constraints(p_full: np.ndarray, tau_grid: np.ndarray) -> dict
     print(f"min P                        = {min_p:.8f}")
     print(f"max P                        = {max_p:.8f}")
     print(f"% P <= 0                     = {pct_nonpos:.4f}%")
-    print(f"% P > 1                      = {pct_above_one:.4f}%")
+    print(f"% P > 1                      = {pct_above_one:.4f}%  (informational: expected when r_tilde < 0)")
     print(f"% upward tau-steps           = {pct_upticks:.4f}%")
     print(f"max upward tau-step          = {max_uptick:.4e}")
     print(f"P(0)=1 status                = {status_str(p0_err.max() < P0_TOL)}")
     print(f"P>0 status                   = {status_str(pct_nonpos == 0.0)}")
-    print(f"P<=1 status                  = {status_str(max_p <= 1.0 + P_LEQ1_TOL)}")
+    # NOTE: The article does NOT require P <= 1.
+    # When r_tilde < 0 (negative rates), P(z,tau) = exp(A - B*G) > 1 is mathematically
+    # correct (e.g. P = exp(-r*tau) > 1 for r < 0 and tau > 0).
+    # We therefore report % P > 1 as purely informational -- no PASS/WARN status.
+    print(f"P<=1                         = informational only -- see NOTE above")
     print(f"monotone non-increasing      = {status_str(max_uptick <= MONO_TOL)}")
 
     return {
@@ -344,8 +364,11 @@ def check_G_full_tau(model: FullModel, z_test: torch.Tensor) -> dict:
 
     rows = []
     print("\n" + "=" * 72)
-    print("Check 3: G(z, tau) across full tau grid")
-    print("  beta = r_tilde / G  ->  ODE blows up when G -> 0")
+    print("Check 3: G(z, tau) -- ODE denominator stability")
+    print("  alpha = (...)/G  and  beta = r_tilde/G  -> ODE blows up when G -> 0")
+    print("  NOTE: The article imposes NO sign constraint on G itself.")
+    print("        What matters is |G| >> 0 (avoids division by near-zero).")
+    print("        The eps-clamp in paper_alpha_beta_gamma_trace fires when |G| < 1e-4.")
     print("=" * 72)
     print(f"{'tau':>5}  {'mean':>8}  {'std':>8}  {'min':>8}  {'max':>8}  "
           f"{'%<0':>6}  {'%<0.01':>7}  {'%<0.05':>7}")
@@ -356,39 +379,42 @@ def check_G_full_tau(model: FullModel, z_test: torch.Tensor) -> dict:
         g_mean = float(np.mean(g));  g_std = float(np.std(g))
         g_min  = float(np.min(g));   g_max = float(np.max(g))
         pct_neg   = 100.0 * float(np.mean(g < 0.0))
-        pct_tiny  = 100.0 * float(np.mean(g < 0.01))
-        pct_small = 100.0 * float(np.mean(g < 0.05))
-        flag = "  <-- NEGATIVE G" if pct_neg > 0 else ("  <-- NEAR ZERO" if pct_tiny > 0 else "")
+        pct_tiny  = 100.0 * float(np.mean(np.abs(g) < 0.01))
+        pct_small = 100.0 * float(np.mean(np.abs(g) < 0.05))
+        # Flag near-zero |G| (ODE denominator risk), not sign of G
+        flag = "  <-- |G| NEAR ZERO (ODE risk)" if pct_tiny > 0 else ""
         print(f"{tau_val:>5.0f}  {g_mean:>8.4f}  {g_std:>8.4f}  {g_min:>8.4f}  "
               f"{g_max:>8.4f}  {pct_neg:>6.1f}  {pct_tiny:>7.1f}  {pct_small:>7.1f}{flag}")
         rows.append({"tau": tau_val, "G_mean": g_mean, "G_std": g_std,
                      "G_min": g_min, "G_max": g_max,
-                     "pct_neg": pct_neg, "pct_lt001": pct_tiny, "pct_lt005": pct_small})
+                     "pct_neg": pct_neg, "pct_abs_lt001": pct_tiny, "pct_abs_lt005": pct_small})
 
     df = pd.DataFrame(rows)
     any_neg  = df["pct_neg"].max() > 0
-    any_tiny = df["pct_lt001"].max() > 0
+    any_tiny = df["pct_abs_lt001"].max() > 0
     overall_min = float(G_all[:, 1:].min())
+    overall_abs_min = float(np.abs(G_all[:, 1:]).min())
 
-    first_neg  = df.loc[df["pct_neg"] > 0,    "tau"]
-    first_tiny = df.loc[df["pct_lt001"] > 0,  "tau"]
+    first_tiny = df.loc[df["pct_abs_lt001"] > 0, "tau"]
     print()
-    print(f"  Global G min (tau >= 1)      : {overall_min:.6f}")
-    if not first_neg.empty:
-        print(f"  First tau with G < 0         : {first_neg.iloc[0]:.0f}Y  --> ODE unstable")
+    print(f"  Global G min  (tau >= 1)     : {overall_min:.6f}  (informational -- sign not constrained)")
+    print(f"  Global |G| min (tau >= 1)    : {overall_abs_min:.6f}")
     if not first_tiny.empty:
-        print(f"  First tau with G < 0.01      : {first_tiny.iloc[0]:.0f}Y  --> beta spike")
-    print(f"  G > 0 everywhere             : {status_str(not any_neg)}")
-    print(f"  G > 0.01 everywhere          : {status_str(not any_tiny)}")
+        print(f"  First tau with |G| < 0.01    : {first_tiny.iloc[0]:.0f}Y  --> eps-clamp fires, check ODE quality")
+    print(f"  |G| > 0.01 everywhere        : {status_str(not any_tiny)}  (ODE denominator stability)")
+    print(f"  % G < 0 (informational)      : {df['pct_neg'].max():.2f}% at worst tau")
 
     G0 = G_all[:, 0]
     pct_neg_G0 = 100.0 * float(np.mean(G0 < 0.0))
+    abs_min_G0 = float(np.abs(G0).min())
     print(f"\n  G(z,0) boundary: min={G0.min():.6f}  mean={G0.mean():.6f}  "
-          f"%<0={pct_neg_G0:.2f}%  {status_str(pct_neg_G0 == 0.0)}")
+          f"%G0<0={pct_neg_G0:.2f}%  |G(z,0)| min={abs_min_G0:.6f}  "
+          f"ODE-denom status: {status_str(abs_min_G0 >= 0.01)}")
 
     return {
         "G_all": G_all, "tau_grid": tau_np, "G_by_tau_df": df,
-        "overall_min": overall_min, "any_neg": any_neg, "any_tiny": any_tiny,
+        "overall_min": overall_min, "overall_abs_min": overall_abs_min,
+        "any_neg": any_neg, "any_tiny": any_tiny,
         "G0": G0, "pct_neg_G0": pct_neg_G0,
     }
 
@@ -402,7 +428,7 @@ def _cholesky_inside_terms(rhos: torch.Tensor, d: int) -> dict:
     Recomputes the sqrt arguments from the analytic Cholesky WITHOUT clamping.
 
     A negative value means the eps clamp fired in L_from_sigmas_rhos for that
-    observation — the rhos formed a geometrically invalid correlation matrix
+    observation -- the rhos formed a geometrically invalid correlation matrix
     and L was silently distorted. This is only possible for d >= 3.
 
     Returns a dict of (N,) tensors, one per inside term:
@@ -462,7 +488,10 @@ def check_sigma_rho(model: FullModel, z_test: torch.Tensor) -> dict:
     rhos_np   = rhos.detach().cpu().numpy()
     N         = sigmas.shape[0]
 
-    L   = L_from_sigmas_rhos(sigmas, rhos)
+    # Use validate=False so we can report PSD violations ourselves rather than crashing.
+    # The _cholesky_inside_terms check below detects when the rhos form a non-PD
+    # correlation matrix (and thus when the eps-clamp in L_from_sigmas_rhos fires).
+    L   = L_from_sigmas_rhos(sigmas, rhos, validate=False)
     cov = L @ L.transpose(-1, -2)
     eigs         = torch.linalg.eigvalsh(cov)       # (N, d)
     cov_min_eigs = eigs[:, 0].detach().cpu().numpy()
@@ -484,7 +513,7 @@ def check_sigma_rho(model: FullModel, z_test: torch.Tensor) -> dict:
     pct_sigma_high = 100.0 * (sigmas_np > SIGMA_MAX_EXPECTED + 1e-8).mean()
     min_cov_eig    = float(cov_min_eigs.min())
 
-    # Cholesky inside terms (raw, no clamp) — d>=3 only
+    # Cholesky inside terms (raw, no clamp) -- d>=3 only
     inside = _cholesky_inside_terms(rhos, d)
     inside_np = {k: v.numpy() for k, v in inside.items()}
 
@@ -592,7 +621,7 @@ def check_r_tilde(model: FullModel, z_test: torch.Tensor) -> dict:
     print(f"  max           : {r_max:.6f}  ({r_max*1e4:.1f} bp)")
     print(f"  p5            : {r_p5:.6f}  ({r_p5*1e4:.1f} bp)")
     print(f"  p95           : {r_p95:.6f}  ({r_p95*1e4:.1f} bp)")
-    print(f"  % r < 0       : {pct_neg:.2f}%  (negative rates — valid for NIRP currencies)")
+    print(f"  % r < 0       : {pct_neg:.2f}%  (negative rates -- valid for NIRP currencies)")
     print(f"  % r < {R_NEG_WARN*1e4:.0f}bp : {pct_very_neg:.2f}%  {status_str(pct_very_neg == 0.0)}")
     print(f"  % r > {R_HIGH_WARN*1e4:.0f}bp  : {pct_high:.2f}%  {status_str(pct_high == 0.0)}")
 
@@ -611,7 +640,7 @@ def check_r_tilde(model: FullModel, z_test: torch.Tensor) -> dict:
 
 
 # =============================================================================
-# Check 4c: K drift matrix — mean-reversion eigenvalue check
+# Check 4c: K drift matrix -- mean-reversion eigenvalue check
 # =============================================================================
 @torch.no_grad()
 def check_K_eigenvalues(model: FullModel) -> dict:
@@ -619,8 +648,8 @@ def check_K_eigenvalues(model: FullModel) -> dict:
     Paper constraint: the drift matrix M must have all strictly negative
     eigenvalues to guarantee mean-reversion of the latent process.
 
-    Stable variant:  M = -(V^T V + eps*I)  → negative definite by construction.
-    Baseline variant: M = weight matrix of K.lin — may or may not be stable.
+    Stable variant:  M = -(V^T V + eps*I)  -> negative definite by construction.
+    Baseline variant: M = weight matrix of K.lin -- may or may not be stable.
 
     We verify this numerically and report PASS/WARN.
     """
@@ -632,7 +661,7 @@ def check_K_eigenvalues(model: FullModel) -> dict:
         variant_label = "baseline (M = K.lin.weight)"
     else:
         print("\n" + "=" * 72)
-        print("Check 4c: K drift eigenvalues — SKIPPED (unknown K variant)")
+        print("Check 4c: K drift eigenvalues -- SKIPPED (unknown K variant)")
         print("=" * 72)
         return {"skipped": True}
 
@@ -646,7 +675,7 @@ def check_K_eigenvalues(model: FullModel) -> dict:
     has_imag = bool(np.any(np.abs(eig_imags) > 1e-10))
 
     print("\n" + "=" * 72)
-    print("Check 4c: K drift matrix — mean-reversion eigenvalue check")
+    print("Check 4c: K drift matrix -- mean-reversion eigenvalue check")
     print("=" * 72)
     print(f"  variant             : {variant_label}")
     print(f"  M shape             : {tuple(M.shape)}")
@@ -658,7 +687,7 @@ def check_K_eigenvalues(model: FullModel) -> dict:
 
     if not all_negative:
         print("  WARNING: drift matrix has non-negative eigenvalue(s).")
-        print("           Latent process is NOT mean-reverting → simulation unstable.")
+        print("           Latent process is NOT mean-reverting -> simulation unstable.")
 
     return {
         "skipped":       False,
@@ -968,8 +997,9 @@ def save_outputs(
                 "g0_mean":        float(g0_res["G0"].mean()),
                 "g0_pct_neg":     g0_res["pct_neg_G0"],
                 "G_global_min":   g0_res["overall_min"],
+                "G_global_abs_min": g0_res["overall_abs_min"],
                 "G_any_neg":      int(g0_res["any_neg"]),
-                "G_any_tiny":     int(g0_res["any_tiny"]),
+                "G_any_abs_tiny": int(g0_res["any_tiny"]),
                 "sigma_min": sigma_res["sigma_min"],
                 "sigma_max": sigma_res["sigma_max"],
                 "pct_sigma_nonpos": sigma_res["pct_sigma_nonpos"],
@@ -1148,27 +1178,30 @@ def make_summary_plot(
 
     summary_rows = [
         ["Metric", "Value", "Status"],
-        ["max |P(0)-1|",  f"{discount_res['p0_err'].max():.2e}",  status_str(discount_res["p0_err"].max() < P0_TOL)],
-        ["max P",         f"{discount_res['max_p']:.6f}",          status_str(discount_res["max_p"] <= 1.0 + P_LEQ1_TOL)],
-        ["% P<=0",        f"{discount_res['pct_nonpos']:.4f}%",    status_str(discount_res["pct_nonpos"] == 0.0)],
-        ["max uptick",    f"{discount_res['max_uptick']:.2e}",     status_str(discount_res["max_uptick"] <= MONO_TOL)],
-        ["% G0<0",        f"{g0_res['pct_neg_G0']:.4f}%",          status_str(g0_res["pct_neg_G0"] == 0.0)],
-        ["G global min",  f"{g0_res['overall_min']:.4f}",          status_str(not g0_res["any_neg"])],
-        ["K mean-revert",
+        # --- Article Constraint 1: PSD ---
+        ["[C1] Sigma PSD (min eig)",  f"{sigma_res['min_cov_eig']:.2e}",   status_str(sigma_res["min_cov_eig"] >= -1e-10)],
+        ["[C1] Chol clamp fired", "YES" if sigma_res["chol_any_neg"] else "NO", status_str(not sigma_res["chol_any_neg"])],
+        # --- Article Constraint 2: K mean-reversion ---
+        ["[C2] K mean-revert",
          f"max Re(eig)={k_res['max_real_eig']:.2e}" if not k_res.get("skipped", True) else "SKIP",
          status_str(k_res.get("all_negative", False)) if not k_res.get("skipped", True) else "N/A"],
-        ["A(0)=B(0)=0",  f"{ode_res['max_a0']:.1e}/{ode_res['max_b0']:.1e}",  status_str(ode_res["ok"])],
-        ["gamma >= 0",    f"min={gamma_res['gamma_min']:.2e}",     status_str(gamma_res["gamma_nonneg"])],
-        ["Sigma symm",    f"err={gamma_res['max_sym_err']:.2e}",   status_str(gamma_res["sym_ok"])],
-        ["min cov eig",   f"{sigma_res['min_cov_eig']:.2e}",       status_str(sigma_res["min_cov_eig"] >= -1e-10)],
-        ["diag(Sigma)=σ²", f"{sigma_res['diag_err_max']:.2e}",        status_str(sigma_res["diag_err_max"] < 1e-4)],
-        ["chol clamp",    "YES" if sigma_res["chol_any_neg"] else "NO", status_str(not sigma_res["chol_any_neg"])],
-        ["r mean",        f"{r_res['r_mean']*1e4:.1f} bp",         ""],
-        ["% r < -200bp",  f"{r_res['pct_very_neg']:.2f}%",        status_str(r_res["pct_very_neg"] == 0.0)],
-        ["% r > 1000bp",  f"{r_res['pct_high']:.2f}%",            status_str(r_res["pct_high"] == 0.0)],
-        ["max |SR|",      f"{sharpe_res['max_abs_sr']:.2e}" if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A",
-         status_str(np.isfinite(sharpe_res["max_abs_sr"]) and sharpe_res["max_abs_sr"] < SHARPE_TOL) if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A"],
-        ["avg RMSE",      f"{rmse_df['rmse_bps'].mean():.2f} bp" if rmse_df is not None else "N/A", ""],
+        # --- Health checks ---
+        ["max |P(0)-1|",   f"{discount_res['p0_err'].max():.2e}",  status_str(discount_res["p0_err"].max() < P0_TOL)],
+        ["% P<=0",         f"{discount_res['pct_nonpos']:.4f}%",   status_str(discount_res["pct_nonpos"] == 0.0)],
+        ["% P>1 (info)",   f"{discount_res['pct_above_one']:.2f}%", "INFO"],
+        ["max uptick",     f"{discount_res['max_uptick']:.2e}",    status_str(discount_res["max_uptick"] <= MONO_TOL)],
+        ["|G|>0.01 (ODE)", f"absmin={g0_res['overall_abs_min']:.4f}", status_str(not g0_res["any_tiny"])],
+        ["G<0 (info)",     f"{g0_res['pct_neg_G0']:.2f}% at tau=0", "INFO"],
+        ["A(0)=B(0)=0",    f"{ode_res['max_a0']:.1e}/{ode_res['max_b0']:.1e}", status_str(ode_res["ok"])],
+        ["gamma >= 0",     f"min={gamma_res['gamma_min']:.2e}",    status_str(gamma_res["gamma_nonneg"])],
+        ["diag(Sigma)=sigma^2",     f"{sigma_res['diag_err_max']:.2e}",     status_str(sigma_res["diag_err_max"] < 1e-4)],
+        ["r mean",         f"{r_res['r_mean']*1e4:.1f} bp",        ""],
+        ["% r<-200bp",     f"{r_res['pct_very_neg']:.2f}%",        status_str(r_res["pct_very_neg"] == 0.0)],
+        ["max |SR|",
+         f"{sharpe_res['max_abs_sr']:.2e}" if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A",
+         status_str(np.isfinite(sharpe_res["max_abs_sr"]) and sharpe_res["max_abs_sr"] < SHARPE_TOL)
+         if np.isfinite(sharpe_res["max_abs_sr"]) else "N/A"],
+        ["avg RMSE",       f"{rmse_df['rmse_bps'].mean():.2f} bp" if rmse_df is not None else "N/A", ""],
     ]
 
     x0, x1, x2 = 0.02, 0.55, 0.86
@@ -1180,11 +1213,11 @@ def make_summary_plot(
         ax.text(x1, y, row[1], transform=ax.transAxes, va="top", fontweight=fw, fontsize=8)
         ax.text(
             x2, y, row[2], transform=ax.transAxes, va="top", fontweight=fw, fontsize=8,
-            color=("green" if row[2] == "PASS" else "crimson" if row[2] == "WARN" else "black")
+            color=("green" if row[2] == "PASS" else "crimson" if row[2] == "WARN" else "steelblue" if row[2] == "INFO" else "black")
         )
         y -= dy
 
-    fig.suptitle(f"Post-training diagnostics — {cp_label}", fontsize=15)
+    fig.suptitle(f"Post-training diagnostics -- {cp_label}", fontsize=15)
     plt.tight_layout()
 
     out_path = os.path.join(out_dir, "post_training_diagnostics.png")
@@ -1200,15 +1233,17 @@ def make_summary_plot(
 # =============================================================================
 # Main
 # =============================================================================
-def main():
+def run_diagnostics_single(checkpoint_path: str, latent_dim: int, device: torch.device):
+    """Run full diagnostic suite on a single checkpoint."""
     set_seeds(SEED)
-    device = get_device()
-    out_dir = get_output_dir(CHECKPOINT_PATH)
+    out_dir = get_output_dir(checkpoint_path)
 
-    print(f"Using device: {device}")
-    print(f"Checkpoint: {CHECKPOINT_PATH}")
+    print(f"\n{'='*72}")
+    print(f"Checkpoint: {checkpoint_path}")
+    print(f"Output dir: {out_dir}")
+    print(f"{'='*72}")
 
-    model = load_model(CHECKPOINT_PATH, LATENT_DIM, device)
+    model = load_model(checkpoint_path, latent_dim, device)
     dtype = next(model.parameters()).dtype
 
     meta, X_tensor, tenors, scale_is_percent = load_training_data(
@@ -1255,9 +1290,56 @@ def main():
         rmse_df=rmse_df,
     )
 
+    # -------------------------------------------------------------------------
+    # Article-constraint summary (Poulsen / Rolf Poulsen autoencoder paper)
+    # -------------------------------------------------------------------------
+    print("\n" + "=" * 72)
+    print("ARTICLE CONSTRAINT SUMMARY")
+    print("=" * 72)
+
+    # Constraint 1: Sigma = LL^T must be PSD  (paper section on diffusion / Ito formula)
+    psd_ok = sigma_res["min_cov_eig"] >= -1e-10
+    print(f"  [Constraint 1]  Sigma = LL^T is PSD (min eigenvalue >= 0)")
+    print(f"                  min eigenvalue = {sigma_res['min_cov_eig']:.4e}  "
+          f"chol-clamp fired: {'YES' if sigma_res['chol_any_neg'] else 'NO'}  "
+          f"-> {status_str(psd_ok)}")
+
+    # Constraint 2: drift K must have all eigenvalues with negative real parts
+    #               (mean-reversion guarantee from the paper)
+    if not k_res.get("skipped", True):
+        k_ok = k_res["all_negative"]
+        print(f"  [Constraint 2]  K drift matrix: all Re(eigenvalues) < 0 (mean-reversion)")
+        print(f"                  max Re(eig) = {k_res['max_real_eig']:.4e}  "
+              f"-> {status_str(k_ok)}")
+        if not k_ok:
+            print("                  WARNING: non-negative eigenvalue -- latent process NOT mean-reverting!")
+    else:
+        print("  [Constraint 2]  K drift matrix: SKIPPED (unknown K variant)")
+
+    # Additional numerical health checks (not article constraints, but operationally important)
+    print()
+    print("  [Health] P(z,0)=1            :", status_str(discount_res["p0_err"].max() < P0_TOL),
+          f"  max err = {discount_res['p0_err'].max():.2e}")
+    print("  [Health] P > 0 everywhere    :", status_str(discount_res["pct_nonpos"] == 0.0),
+          f"  % P<=0 = {discount_res['pct_nonpos']:.4f}%")
+    print("  [Health] P monotone non-incr :", status_str(discount_res["max_uptick"] <= MONO_TOL),
+          f"  max uptick = {discount_res['max_uptick']:.2e}")
+    print(f"  [Health] P > 1 (informational): {discount_res['pct_above_one']:.2f}% of entries "
+          "(expected when r_tilde < 0 -- NOT a constraint)")
+    print("  [Health] |G| > 0.01 (ODE denom):", status_str(not g0_res["any_tiny"]),
+          f"  % |G|<0.01 = {g0_res['G_by_tau_df']['pct_abs_lt001'].max():.2f}% at worst tau")
+    print(f"           G sign is NOT constrained by article -- G < 0 is informational only")
+    print("  [Health] gamma >= 0           :", status_str(gamma_res["gamma_nonneg"]),
+          f"  min = {gamma_res['gamma_min']:.2e}")
+    print("  [Health] A(0)=B(0)=0          :", status_str(ode_res["ok"]))
+    print("  [Health] Sharpe residual (no-arb):", status_str(
+        np.isfinite(sharpe_res["max_abs_sr"]) and sharpe_res["max_abs_sr"] < SHARPE_TOL),
+          f"  max|SR| = {sharpe_res['max_abs_sr']:.2e}" if np.isfinite(sharpe_res["max_abs_sr"]) else "  N/A")
+    print("=" * 72)
+
     make_summary_plot(
         out_dir=out_dir,
-        checkpoint_path=CHECKPOINT_PATH,
+        checkpoint_path=checkpoint_path,
         debug_res=debug_res,
         p_full=p_full,
         tau_grid=tau_grid,
@@ -1273,8 +1355,47 @@ def main():
         rmse_df=rmse_df,
     )
 
+    print(f"\nOutputs saved in: {out_dir}")
+    return out_dir
+
+
+def main():
+    device = get_device()
+    print(f"Using device: {device}")
+    print(f"THESIS_ROOT: {THESIS_ROOT}")
+    print(f"Variant: {VARIANT}, Epochs: {EPOCHS}\n")
+    
+    # Batch mode: run over multiple dimensions
+    if DIMENSIONS is not None:
+        out_dirs = []
+        for dim in DIMENSIONS:
+            cp = os.path.join(
+                THESIS_ROOT, "Figures", "TrainingResults",
+                f"dim{dim}_{VARIANT}", f"ep{EPOCHS}",
+                f"checkpoint_dim{dim}_ep{EPOCHS}.pt"
+            )
+            if not os.path.exists(cp):
+                print(f"\n[SKIP] Checkpoint not found: {cp}")
+                continue
+            try:
+                out_dir = run_diagnostics_single(cp, dim, device)
+                out_dirs.append(out_dir)
+            except Exception as e:
+                print(f"\n[ERROR] Failed for dim {dim}: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        print(f"\n{'='*72}")
+        print(f"BATCH PROCESSING COMPLETE")
+        print(f"{'='*72}")
+        print(f"Processed {len(out_dirs)} checkpoint(s):")
+        for d in out_dirs:
+            print(f"  {d}")
+    else:
+        # Single mode
+        run_diagnostics_single(CHECKPOINT_PATH, LATENT_DIM, device)
+    
     print("\nDone.")
-    print(f"Outputs saved in: {out_dir}")
 
 
 if __name__ == "__main__":

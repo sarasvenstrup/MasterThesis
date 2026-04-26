@@ -87,12 +87,22 @@ C_GREY = "#888888"
 # =============================================================================
 def _load_model(variant: str, ckpt_path: str, latent_dim: int, device: str, dtype):
     """Construct FullModel under *variant* and load checkpoint weights."""
-    if variant == "stable":
-        from Code.model.full_model_stable import FullModel
-    else:
-        from Code.model.full_model import FullModel
-
-    model = FullModel(latent_dim=latent_dim).to(device)
+    from Code import config as _cfg
+    import importlib
+    _orig = _cfg.VARIANT
+    _cfg.VARIANT = variant          # must be set BEFORE FullModel is constructed
+    try:
+        if variant == "stable":
+            import Code.model.full_model_stable as _m
+            importlib.reload(_m)
+            FullModel = _m.FullModel
+        else:
+            import Code.model.full_model as _m
+            importlib.reload(_m)
+            FullModel = _m.FullModel
+        model = FullModel(latent_dim=latent_dim).to(device)  # build INSIDE try, while VARIANT is set
+    finally:
+        _cfg.VARIANT = _orig        # restore after construction
     sd = torch.load(ckpt_path, map_location=device, weights_only=False)
     if isinstance(sd, dict) and "model_state_dict" in sd:
         sd = sd["model_state_dict"]
@@ -355,24 +365,35 @@ def main():
     print(f"  Saved {p}")
 
     # =================================================================
-    # FIG 4: Short-rate percentile fan
+    # FIG 4: Short-rate percentile fan — SEPARATE panels per model
+    # Overlaying both on one axis makes the stable model invisible when
+    # the baseline saturates at large values. Separate panels allow each
+    # model to use its own y-scale so both are actually readable.
     # =================================================================
     print("\n── Fig 4: Short-rate fan ──")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for arr, col, lbl in [(rb, C_BASE, "Baseline"), (rs, C_STAB, "Stable")]:
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=False)
+    for ax, arr, col, lbl in [
+        (axes[0], rb, C_BASE, "Baseline"),
+        (axes[1], rs, C_STAB, "Stable"),
+    ]:
         med = np.nanmedian(arr, axis=0) * 100
-        p5  = np.nanpercentile(arr, 5, axis=0) * 100
+        p5  = np.nanpercentile(arr,  5, axis=0) * 100
         p95 = np.nanpercentile(arr, 95, axis=0) * 100
         p25 = np.nanpercentile(arr, 25, axis=0) * 100
         p75 = np.nanpercentile(arr, 75, axis=0) * 100
-        ax.fill_between(times, p5, p95, color=col, alpha=0.10)
-        ax.fill_between(times, p25, p75, color=col, alpha=0.20)
-        ax.plot(times, med, color=col, linewidth=1.8, label=f"{lbl} median")
-    ax.set_xlabel("Time (years)")
-    ax.set_ylabel("Short rate (%)")
-    ax.set_title(f"Short-rate percentile fan  (5/25/50/75/95)  —  N={N_PATHS}")
-    ax.legend(fontsize=9, frameon=False)
-    ax.grid(True, alpha=0.3)
+        ax.fill_between(times, p5, p95, color=col, alpha=0.12, label="5–95%")
+        ax.fill_between(times, p25, p75, color=col, alpha=0.25, label="25–75%")
+        ax.plot(times, med, color=col, linewidth=1.8, label="Median")
+        ax.axhline(0, color="black", linewidth=0.7, linestyle="--", alpha=0.4)
+        ax.set_xlabel("Time (years)")
+        ax.set_ylabel("Short rate (%)")
+        ax.set_title(f"{lbl} short-rate fan")
+        ax.legend(fontsize=8, frameon=False)
+        ax.grid(True, alpha=0.3)
+    fig.suptitle(
+        f"Short-rate percentile fan  (5/25/50/75/95)  —  N={N_PATHS}",
+        fontsize=11,
+    )
     fig.tight_layout()
     p = os.path.join(OUT_DIR, "fig_short_rate_fan.png")
     fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
@@ -380,34 +401,53 @@ def main():
 
     # =================================================================
     # FIG 5: Terminal distributions
+    # The baseline z is at ~1e20 so cannot be shown on the same scatter
+    # as the stable model. Instead:
+    #   - Left panel:  stable terminal (z1, z2) scatter with training cloud
+    #   - Middle panel: stable terminal r histogram (economically realistic)
+    #   - Right panel:  baseline terminal r histogram (bimodal saturation)
+    # The baseline z scale is reported as a text annotation.
     # =================================================================
     print("\n── Fig 5: Terminal distributions ──")
     if LATENT_DIM >= 2:
         fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
 
-        # z scatter
-        axes[0].scatter(zb[:, -1, 0], zb[:, -1, 1], s=8, alpha=0.4,
-                        color=C_BASE, label="Baseline")
-        axes[0].scatter(zs[:, -1, 0], zs[:, -1, 1], s=8, alpha=0.4,
-                        color=C_STAB, label="Stable")
+        # Left: stable z scatter only — baseline is off-scale
+        with torch.no_grad():
+            z_train_stab_np = _np(z_train_stab)
+        zmean_s = z_train_stab_np.mean(axis=0)
+        zstd_s  = z_train_stab_np.std(axis=0)
+        axes[0].axhspan(zmean_s[1] - 2*zstd_s[1], zmean_s[1] + 2*zstd_s[1],
+                        color=C_GREY, alpha=0.12, zorder=0)
+        axes[0].axvspan(zmean_s[0] - 2*zstd_s[0], zmean_s[0] + 2*zstd_s[0],
+                        color=C_GREY, alpha=0.12, zorder=0, label="Training ±2σ")
+        axes[0].scatter(zs[:, -1, 0], zs[:, -1, 1], s=8, alpha=0.5,
+                        color=C_STAB, label="Stable", zorder=2)
+        axes[0].annotate(
+            f"Baseline z₁ mean: {np.nanmean(zb[:,-1,0]):.1e}\n"
+            f"(off-scale by ~{max(np.log10(abs(np.nanmean(zb[:,-1,0]))+1),0):.0f} orders)",
+            xy=(0.03, 0.97), xycoords="axes fraction",
+            ha="left", va="top", fontsize=7, color=C_BASE,
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.8),
+        )
         axes[0].set_xlabel("$z_1$"); axes[0].set_ylabel("$z_2$")
-        axes[0].set_title(f"Terminal latent state  t = {times[-1]:.0f} yr")
+        axes[0].set_title(f"Stable terminal $(z_1, z_2)$ — $t={times[-1]:.0f}$ yr")
         axes[0].legend(fontsize=8, frameon=False)
         axes[0].grid(True, alpha=0.3)
 
-        # z1 hist
-        axes[1].hist(zb[:, -1, 0], bins=40, alpha=0.5, color=C_BASE, label="Baseline", density=True)
-        axes[1].hist(zs[:, -1, 0], bins=40, alpha=0.5, color=C_STAB, label="Stable", density=True)
-        axes[1].set_xlabel("$z_1$")
-        axes[1].set_title("Terminal $z_1$")
+        # Middle: stable r histogram
+        axes[1].hist(rs[:, -1] * 100, bins=40, alpha=0.75, color=C_STAB,
+                     label="Stable", density=True)
+        axes[1].set_xlabel("Short rate (%)")
+        axes[1].set_title("Stable terminal $r(T)$")
         axes[1].legend(fontsize=8, frameon=False)
         axes[1].grid(True, alpha=0.3)
 
-        # r hist
-        axes[2].hist(rb[:, -1] * 100, bins=40, alpha=0.5, color=C_BASE, label="Baseline", density=True)
-        axes[2].hist(rs[:, -1] * 100, bins=40, alpha=0.5, color=C_STAB, label="Stable", density=True)
+        # Right: baseline r histogram (bimodal saturation)
+        axes[2].hist(rb[:, -1] * 100, bins=40, alpha=0.75, color=C_BASE,
+                     label="Baseline", density=True)
         axes[2].set_xlabel("Short rate (%)")
-        axes[2].set_title("Terminal short rate")
+        axes[2].set_title("Baseline terminal $r(T)$ — saturation")
         axes[2].legend(fontsize=8, frameon=False)
         axes[2].grid(True, alpha=0.3)
 

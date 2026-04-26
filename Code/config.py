@@ -12,7 +12,7 @@
 import os
 import sys
 
-VARIANT = "stable"
+VARIANT = "baseline"  # Change to "stable" to switch variants
 
 
 def confirm_variant():
