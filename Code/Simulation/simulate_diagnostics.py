@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
 import warnings
@@ -19,7 +20,7 @@ for p in [THESIS_ROOT, PROJECT_ROOT, SCRIPT_DIR]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from Code.Pricing.simulate_model import run_simulation
+from Code.Simulation.simulate_model import run_simulation
 from Code.Pricing.pricing import (
     time0_forward_swap_and_annuity,
     swap_from_discount_curve_at_expiry,
@@ -33,7 +34,7 @@ from Code.utils.helpers import PlotConfig, save_figure, instantaneous_forward
 # =============================================================================
 CHECKPOINT_PATH = (
     r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults"
-    r"\dim2_stable\ep200\checkpoint_dim2_ep200.pt"
+    r"\dim2_stable\ep5000\checkpoint_dim2_ep5000.pt"
 )
 CCY_FILTER   = "EUR"
 AS_OF_DATE   = "2014-12-31"
@@ -44,7 +45,8 @@ DT           = 1 / 12
 EXPIRIES     = [1, 5, 10]
 TENORS       = [1, 5, 10]
 
-OUT_DIR      = os.path.join(SCRIPT_DIR, "diag_out")
+OUT_DIR      = os.path.join(THESIS_ROOT, "Figures", "Simulation")
+os.makedirs(OUT_DIR, exist_ok=True)
 TOL_P0       = 1e-6
 TOL_MONOTONE = 1e-10        # fix 3: avoid fp noise false-positives
 

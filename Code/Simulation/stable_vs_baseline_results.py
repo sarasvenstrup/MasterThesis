@@ -47,7 +47,7 @@ from Code.utils.common import set_paper_theme
 # USER SETTINGS
 # =============================================================================
 LATENT_DIM      = 2
-EPOCHS          = 200
+EPOCHS          = 5000
 
 BASELINE_CKPT = os.path.join(
     THESIS_ROOT, "Figures", "TrainingResults",
@@ -73,7 +73,7 @@ DTYPE           = torch.float64
 
 N_SIGMA_GRID    = 2000          # extra random states for sigma-bound test
 
-OUT_DIR = os.path.join(THESIS_ROOT, "Figures", "Pricing")
+OUT_DIR = os.path.join(THESIS_ROOT, "Figures", "Simulation")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # Colours

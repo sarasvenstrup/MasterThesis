@@ -46,7 +46,7 @@ from Code.utils.common import set_paper_theme
 # USER SETTINGS
 # =============================================================================
 LATENT_DIM     = 2
-EPOCHS = 3500
+EPOCHS = 5000
 BASELINE_CKPT  = os.path.join(
     THESIS_ROOT, "Figures", "TrainingResults",
     f"dim{LATENT_DIM}_baseline", f"ep{EPOCHS}",
@@ -70,7 +70,7 @@ DEVICE         = "cpu"
 DTYPE          = torch.float64
 
 N_PATHS_PLOT   = 30
-OUT_DIR        = os.path.join(SCRIPT_DIR, "compare_out", f"dim{LATENT_DIM}_ep{EPOCHS}")
+OUT_DIR        = os.path.join(THESIS_ROOT, "Figures", "Simulation")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # Colours
