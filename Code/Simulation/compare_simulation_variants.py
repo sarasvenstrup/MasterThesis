@@ -24,8 +24,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-
-# ── paths ────────────────────────────────────────────────────────────────
 try:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -41,6 +39,7 @@ from Code import config
 from Code.load_swapdata import my_data
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.utils.common import set_paper_theme
+from Code.Simulation.simulate_model import simulate_latent_paths, compute_discount_paths
 
 # =============================================================================
 # USER SETTINGS
@@ -111,39 +110,6 @@ def _load_model(variant, ckpt_path, latent_dim, device, dtype):
     return model
 
 
-@torch.no_grad()
-def _simulate(model, z0, n_paths, n_steps, dt, device, dtype, dW_all):
-    """Euler-Maruyama with pre-generated Brownian increments *dW_all*."""
-    d = z0.shape[1]
-    sqrt_dt = math.sqrt(dt)
-    z = z0.repeat(n_paths, 1).to(device=device, dtype=dtype)
-
-    z_paths = torch.empty(n_paths, n_steps + 1, d, device=device, dtype=dtype)
-    r_paths = torch.empty(n_paths, n_steps + 1, device=device, dtype=dtype)
-
-    z_paths[:, 0, :] = z
-    r_val = model.R(z)
-    if r_val.ndim == 2 and r_val.shape[-1] == 1:
-        r_val = r_val.squeeze(-1)
-    r_paths[:, 0] = r_val
-
-    for t in range(n_steps):
-        mu = model.K(z)
-        sigmas, rhos = model.H(z)
-        L = L_from_sigmas_rhos(sigmas, rhos, validate=False)
-
-        dW = dW_all[:, t, :].to(device=device, dtype=dtype) * sqrt_dt
-        shock = torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
-        z = z + mu * dt + shock
-
-        z_paths[:, t + 1, :] = z
-        r_val = model.R(z)
-        if r_val.ndim == 2 and r_val.shape[-1] == 1:
-            r_val = r_val.squeeze(-1)
-        r_paths[:, t + 1] = r_val
-
-    return z_paths, r_paths
-
 
 def _np(t):
     return t.detach().cpu().numpy() if hasattr(t, "detach") else np.asarray(t)
@@ -192,17 +158,32 @@ def main():
     torch.manual_seed(SEED)
     dW_all = torch.randn(N_PATHS, N_STEPS, LATENT_DIM)
 
-    # ── simulate ──────────────────────────────────────────────────────
+    # ── simulate using simulate_model.simulate_latent_paths ───────────
+    # simulate_latent_paths draws its own noise internally, so we pass the
+    # pre-drawn dW_all by seeding manually and relying on shared increments.
+    # For a controlled paired comparison we re-seed before each call so both
+    # models use identical Brownian increments.
     print("Simulating ...")
     t0 = time.time()
-    z_base, r_base = _simulate(model_base, z0_base, N_PATHS, N_STEPS, DT, DEVICE, DTYPE, dW_all)
-    z_stab, r_stab = _simulate(model_stab, z0_stab, N_PATHS, N_STEPS, DT, DEVICE, DTYPE, dW_all)
+
+    torch.manual_seed(SEED)
+    z_base_t, r_base_t, _, _ = simulate_latent_paths(
+        model=model_base, z0=z0_base,
+        n_paths=N_PATHS, n_steps=N_STEPS, dt=DT,
+        device=DEVICE, diffusion_scale=DIFFUSION_SCALE,
+    )
+    torch.manual_seed(SEED)
+    z_stab_t, r_stab_t, _, _ = simulate_latent_paths(
+        model=model_stab, z0=z0_stab,
+        n_paths=N_PATHS, n_steps=N_STEPS, dt=DT,
+        device=DEVICE, diffusion_scale=DIFFUSION_SCALE,
+    )
     print(f"Done in {time.time()-t0:.1f}s")
 
-    zb = _np(z_base)   # (N, T+1, d)
-    zs = _np(z_stab)
-    rb = _np(r_base)    # (N, T+1)
-    rs = _np(r_stab)
+    zb = _np(z_base_t)   # (N, T+1, d)
+    zs = _np(z_stab_t)
+    rb = _np(r_base_t)    # (N, T+1)
+    rs = _np(r_stab_t)
 
     # ── console summary ───────────────────────────────────────────────
     SEP = "=" * 65
