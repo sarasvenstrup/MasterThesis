@@ -5,10 +5,9 @@
 \clearpage
 
 \chapter{Additional Material}
-Appendix text.
 
-\section{PDE Derivations (TITLE?)}
-\label{sec:PDE Derivations Helper}
+\section{Derivatives Used in the Bond-Pricing PDE}
+\label{app:pde_derivatives}
 
 Define for convenience
 \[
@@ -50,8 +49,8 @@ B_z\,\partial_\tau G
 \]
 
 \textbf{(ii) Gradient in $z$.}
-Assuming $A_z(\tau)$ and $B_z(\tau)$ are treated as functions of $\tau$ only (i.e. no $z$-derivatives),
-the $z$-dependence of $\Phi$ comes only through $G(z,\tau)$:
+Following the state-wise derivation used in the main text, \(A_z(\tau)\) and \(B_z(\tau)\) are treated as maturity-dependent coefficient paths for a fixed state \(z\). Hence their \(z\)-derivatives are not included in this calculation.
+The $z$-dependence of $\Phi$ comes only through $G(z,\tau)$:
 \[
 \nabla_z \Phi = -B_z(\tau)\,\nabla_z G(z,\tau).
 \]
@@ -94,7 +93,7 @@ B_z^2\,\nabla_z G\,\nabla_z G^\top
 
 
 
-\section{Cholesky Parameterization of the Volatility Matrix in Dimensions 2--4}
+\section{Cholesky Parameterization of the Volatility Matrix}
 \label{sec:cholesky_volatility}
 
 To ensure that the instantaneous covariance matrix is positive semidefinite, we parameterize it through a lower-triangular Cholesky factor. Let
@@ -482,8 +481,7 @@ c_{44}
 
 \subsection{Remark}
 
-This construction guarantees that \(\Sigma = L L^\top\) is positive semidefinite whenever the implied correlation matrix \(R\) is itself valid. In dimension \(2\), the condition \(|\rho_{12}| \leq 1\) is sufficient. In dimensions \(3\) and \(4\), however, bounding each pairwise correlation in \([-1,1]\) is not enough: the full correlation matrix must also be positive semidefinite.
-
+The formulas above give the Cholesky factor associated with a valid correlation matrix \(R\). In dimension \(2\), \(|\rho_{12}|<1\) is sufficient for positive definiteness. In dimensions \(3\) and \(4\), the pairwise bounds \(\rho_{ij}\in(-1,1)\) are not sufficient; the full matrix \(R\) must also be positive definite. Thus, for \(\ell>2\), additional validation or a positive-definite parameterization is required.
 
 \section{Numerical Solution of the ODE System Using the Runge--Kutta 3/8 Method}
 \label{app:rk38}
@@ -549,10 +547,11 @@ In the implementation of the affine-inspired encoder--decoder model, the Runge--
 
 Because the scheme is explicit and differentiable, it integrates naturally with modern deep learning frameworks such as PyTorch. Automatic differentiation can therefore propagate gradients through the numerical solver during model training.
 
-The use of the Runge--Kutta 3/8 method ensures stable and accurate numerical solutions of the ODE system while maintaining compatibility with gradient-based optimization.
+The Runge--Kutta 3/8 method provides a fourth-order explicit approximation to the ODE solution while remaining compatible with gradient-based optimization.
 
 
-\section{Model Parameter Dynamics}
+\section{Estimated Model Parameter Dynamics}
+\label{app:model_parameter_dynamics}
 
 \begin{figure}[H]
     \centering
