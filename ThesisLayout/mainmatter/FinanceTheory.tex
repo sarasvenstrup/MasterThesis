@@ -357,10 +357,10 @@ This result will be central in the pricing theory developed below. In particular
 \section{Arbitragefree Pricing}
 
 We work on a filtered probability space $(\Omega, \mathcal{F}, 
-\{\mathcal{F}_t\}_{t \geq 0}, \mathbb{P})$ supporting a $d$-dimensional standard Brownian motion $W = (W^1, \ldots, W^d)^\top$ with independent components, \textcolor{red}{where correlation between assets is captured through the volatility matrix $\sigma^{ij}$.}  We allow the filtrations to be larger than the natural filtration of $W$, that is \ $\mathcal{F}_t^W \subseteq \mathcal{F}_t$, so that the coefficient processes may depend on additional sources of randomness beyond $W$, such as hidden state variables.
+\{\mathcal{F}_t\}_{t \geq 0}, \textcolor{red}{\mathbb{P}})$ supporting a $d$-dimensional standard Brownian motion $W = (W^1, \ldots, W^d)^\top$ with independent components, \textcolor{red}{where correlation between assets is captured through the volatility matrix $\sigma^{ij}$.}  We allow the filtrations to be larger than the natural filtration of $W$, that is \ $\mathcal{F}_t^W \subseteq \mathcal{F}_t$, so that the coefficient processes may depend on additional sources of randomness beyond $W$, \textcolor{red}{such as hidden state variables.}
 
 
-We consider a market consisting of $N$ risky assets $S^1, \ldots, S^N$ and a risk-free bank account $B$, whose dynamics under $P$ are given by
+We consider a market consisting of $N$ risky assets $S^1, \ldots, S^N$ and a risk-free bank account $B$, whose dynamics under \textcolor{red}{$P$} are given by
 \begin{equation}
     \begin{cases}
         dS_t^i = \mu_t^i \, dt + \displaystyle\sum_{j=1}^{d} 
@@ -372,26 +372,19 @@ We consider a market consisting of $N$ risky assets $S^1, \ldots, S^N$ and a ris
 where $\mu^i$, $\sigma^{ij}$, and $r$ are $\{\mathcal{F}_t\}$-adapted 
 processes. We interpret $\mu^i_t$ as the \emph{local mean rate of return} 
 and $\sigma^{ij}_t$ as the \emph{volatility} of $S^i$, while $r_t$ denotes 
-the short rate. No distributional assumptions are imposed beyond adaptedness, 
-allowing for stochastic volatility and path-dependent coefficients. 
-Note that $d$ need not equal $N$.
-
+the short rate. \textcolor{red}{No distributional assumptions are imposed beyond adaptedness, 
+allowing for stochastic volatility and path-dependent coefficients. Note that $d$ need not equal $N$.
 The bank account has solution $B_t = \exp\!\left(\int_0^t r_s\, ds\right)$ 
-with $B_0 = 1$, and serves as our \emph{numeraire}. We associate to it an 
-equivalent martingale measure $Q \sim P$, under which 
-discounted prices $S^i_t / B_t$ are local martingales. The existence of 
-$Q$, and its equivalence to the absence of arbitrage, is 
-guaranteed by the First Fundamental Theorem of Asset Pricing.
-
-
+with $B_0 = 1$, and serves as our \emph{numeraire} throughout. 
+The conditions under which this market is arbitrage-free are characterized by the following theorem.}
 
 % I starten af kapitel 11, fortæller forfatteren hvordan man kan læse kaputlet. Ifølge denne paragraf, kan man erstatte udtrykket NFLVR med "No Arbitrage" og ignorere betingelsen "locally bounded", da dette er altid opfyldt for wiener drevne modeller.
 
 \begin{theorem}[The First Fundamental Theorem]
-    Consider the market model $S^0,S^1,...,S^N$ where we assume that $S_t^0>0$, $P$-a.s. for all $t\geq0$. Then the following conditions are equivalent:
+    Consider the market model $B,S^1,...,S^N$ where we assume that $B>0$, \textcolor{red}{$P$-a.s.} for all $t\geq0$. Then the following conditions are equivalent:
     \begin{itemize}
         \item The model is arbitragefree
-        \item There exists a measure $Q\sim P$ such that the processes $\frac{S^0}{S^0},\frac{S^1}{S^0},...,\frac{S^N}{S^0},$
+        \item There exists a measure $Q\sim P$ such that the processes $\frac{B}{B},\frac{S^1}{B},...,\frac{S^N}{B},$
         are (local) martingales under $Q$.
     \end{itemize}
 \end{theorem}
@@ -401,9 +394,7 @@ With this established, we turn to the pricing of contingent claims.
 Given an arbitrage-free market, the task is to assign a \emph{reasonable}, 
 that is, arbitrage-free, price process to a $T$-claim $X$. 
 Taking the bank account $B_t = \exp\!\left(\int_0^t r_s\, ds\right)$ 
-as numeraire, Theorem 11.14 guarantees the existence of an associated 
-equivalent martingale measure $\mathbb{Q}$, under which the risk-neutral 
-valuation formula takes the following form.
+as numeraire, Theorem 11.14 guarantees the existence of an associated equivalent martingale measure $Q$, under which the risk-neutral valuation formula takes the following form.
 
 
 \begin{theorem}[Risk-Neutral Valuation Formula]
@@ -426,7 +417,7 @@ generally yield different price processes for non-attainable claims.
 
 
 As a standard example, consider a zero-coupon bond (ZCB) with maturity 
-$T$, henceforth called a $T$-bond, which is a contract paying one unit 
+$T$, which is a contract paying one unit 
 of currency at time $T$. Being the trivial claim $X \equiv 1$, 
 Theorem \ref{thm:riskneutral} immediately gives
 \begin{equation}
