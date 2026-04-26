@@ -1,9 +1,21 @@
 \chapter{Simulation and Stability Analysis}
 \label{chap:simulation}
 
-This chapter conducts a simulation experiment based on the trained neural encoder--decoder model. Whereas the previous chapters focused on reconstructing observed swap curves, the purpose here is to examine whether the learned model can also generate stable future yield-curve scenarios. This requires simulating the latent state forward in time and decoding each simulated state into a full zero-coupon bond curve.
+This chapter conducts a simulation experiment based on the trained neural
+encoder--decoder model. Whereas the previous chapters focused on reconstructing
+observed swap curves, the purpose here is to examine whether the learned model
+can also generate stable future yield-curve scenarios. This requires simulating
+the latent state forward in time and decoding each simulated state into a full
+zero-coupon bond curve.
 
-The experiment addresses an important practical question: is accurate curve reconstruction sufficient for simulation-based pricing? To answer this, we compare two model variants. The first is the baseline model, whose latent dynamics are learned without explicit stability constraints. The second is a stable parameterisation designed to produce well-behaved simulated paths. The comparison focuses on whether the simulated latent states remain in meaningful regions and whether the resulting short rates and zero-coupon bond curves are suitable for pricing applications.
+The experiment addresses an important practical question: is accurate curve
+reconstruction sufficient for simulation-based pricing? To answer this, we
+compare two model variants. The first is the baseline model, whose latent
+dynamics are learned without explicit stability constraints. The second is a
+stable parameterisation designed to produce well-behaved simulated paths. The
+comparison focuses on whether the simulated latent states remain in meaningful
+regions and whether the resulting short rates and zero-coupon bond curves are
+suitable for pricing applications.
 
 %========================================================
 \section{Simulation of Latent Dynamics and Curve Reconstruction}
@@ -58,10 +70,14 @@ L(z_{t_n})\,\Delta W_n,
 \]
 
 From the simulated short-rate path
-\(r_{t_0},r_{t_1},\ldots,r_{t_N}\),
+\[
+r_{t_0},r_{t_1},\ldots,r_{t_N},
+\]
 the corresponding money-market discount process is constructed. In continuous
 time,
-\(D_t=\exp\!\left(-\int_0^t r_s\,ds\right)\).
+\[
+D_t=\exp\!\left(-\int_0^t r_s\,ds\right).
+\]
 Since the short rate is only observed on the simulation grid, the integral is
 approximated using the trapezoidal rule, giving
 \[
@@ -77,9 +93,9 @@ D_{t_n}
 For each simulated latent state \(z_{t_n}\), the corresponding zero-coupon bond
 curve is obtained through the decoder described in
 Chapter~\ref{chap:encoderdecodermodel}. For each realised state
-\(z_{t_n}\), the functions \(A_{z_{t_n}}(\tau)\) and \(B_{z_{t_n}}(\tau)\) are
-obtained by solving the no-arbitrage ODE system numerically, and bond prices are
-recovered from
+\(z_{t_n}\), the functions \(A_{z_{t_n}}(\tau)\) and
+\(B_{z_{t_n}}(\tau)\) are obtained by solving the no-arbitrage ODE system
+numerically, and bond prices are recovered from
 \[
 P(z_{t_n},\tau)
 =
@@ -108,7 +124,8 @@ the pricing horizon.
 This section compares the baseline model with a stable parameterisation. The
 baseline model has an unconstrained affine drift and therefore does not
 guarantee mean reversion. In contrast, the stable model imposes a Hurwitz drift,
-bounded volatilities and positive-definite correlation matrices by construction.
+bounded volatilities, positive-definite correlation matrices and a bounded
+short-rate parameterisation by construction.
 
 %========================================================
 \subsection{Well-Posedness and Simulation Stability}
@@ -116,12 +133,21 @@ bounded volatilities and positive-definite correlation matrices by construction.
 %========================================================
 
 The latent simulation model is an SDE of the form
-\(dz_t = \mu(z_t)\,dt + L(z_t)\,dW_t^{\mathbb{Q}}\).
+\[
+dz_t = \mu(z_t)\,dt + L(z_t)\,dW_t^{\mathbb{Q}}.
+\]
 As discussed in Proposition~\ref{prop:sde_existence}, Lipschitz continuity and
 linear growth of the drift and diffusion coefficients are sufficient for the
-existence of a unique non-explosive solution. Both model variants satisfy these
-conditions: the affine drift is globally Lipschitz, and the bounded activation
-functions in \(\mathcal{H}\) confine the diffusion outputs to a compact range.
+existence of a unique non-explosive solution.
+
+In the two-dimensional simulations considered here, the baseline model satisfies
+these regularity conditions under the learned parameter values. The affine drift
+is globally Lipschitz, and the bounded activation functions in
+\(\mathcal{H}\) imply bounded pre-transformation outputs for fixed trained
+weights. Since \(\ell=2\), the single correlation parameter is mapped through
+\(\tanh\), which is sufficient to produce a valid \(2\times2\) correlation
+matrix. The stable model satisfies the same type of regularity conditions by
+construction.
 
 However, mathematical well-posedness is weaker than practical simulation
 stability. A process may have a unique finite-time solution while still moving
@@ -139,37 +165,64 @@ but on whether simulated paths remain usable for pricing.
 When the baseline model is used for forward simulation, three related failure
 modes can arise.
 
-\paragraph{Unstable drift.}
-The baseline drift is given by
-\(\mathcal{K}(z)=Mz+N\),
-where \(M\in\mathbb{R}^{\ell\times\ell}\) is learned without restrictions on
-its eigenvalues. Mean reversion toward the fixed point \(z^*=-M^{-1}N\)
-requires \(M\) to be Hurwitz. If \(M\) has an eigenvalue with non-negative real
-part, the corresponding latent direction does not revert to the fixed point, and
-a forward simulation will push the latent state far away from the region covered
-by the encoded training data.
-
 \begin{definition}[Hurwitz matrix]
 A square matrix \(M\in\mathbb{R}^{\ell\times\ell}\) is called Hurwitz if all
-eigenvalues of \(M\) have strictly negative real parts, i.e.\
-\(\operatorname{Re}(\lambda_i(M))<0\) for all \(i=1,\ldots,\ell\).
+eigenvalues of \(M\) have strictly negative real parts, i.e.
+\[
+\operatorname{Re}(\lambda_i(M))<0,
+\qquad i=1,\ldots,\ell.
+\]
 \end{definition}
 
+\paragraph{Unstable drift.}
+The baseline drift is given by
+\[
+\mathcal{K}(z)=Mz+N,
+\qquad
+M\in\mathbb{R}^{\ell\times\ell},
+\]
+where \(M\) is learned without restrictions on its eigenvalues. If \(M\) is
+invertible, the fixed point of the deterministic drift is
+\[
+z^*=-M^{-1}N.
+\]
+For the deterministic system \(\dot z_t=Mz_t+N\), the deviation from the fixed
+point satisfies
+\[
+z_t-z^*=e^{Mt}(z_0-z^*).
+\]
+Mean reversion toward \(z^*\) therefore requires \(M\) to be Hurwitz. If
+\(M\) has an eigenvalue with non-negative real part, the corresponding latent
+direction does not revert to the fixed point. In a forward simulation, this can
+push the latent state far away from the region covered by the encoded training
+data.
+
 \paragraph{Short-rate saturation.}
-The short-rate network \(\mathcal{R}(z)=W_2\psi(W_1z)\) uses the centered
-soft-step activation \(\psi(x)=\operatorname{sigmoid}(x)-\tfrac12\), which is
-bounded in \((-\tfrac12,\tfrac12)\). The output therefore satisfies
-\(|\tilde r(z)|\leq\tfrac12\|W_2\|_1\) for all \(z\).
+The baseline short-rate network has the form
+\[
+\tilde r(z)=W_2\psi(W_1z),
+\qquad
+\psi(x)=\operatorname{sigmoid}(x)-\frac12.
+\]
+Since \(\psi(x)\in(-1/2,1/2)\), the output satisfies
+\[
+|\tilde r(z)|\leq \frac12\|W_2\|_1
+\qquad
+\forall z.
+\]
 Thus the short rate cannot become infinite at any single time step. However,
-when the latent state becomes very large, the activation saturates and the
-short rate is pinned close to artificial output limits. The resulting paths are
-bounded but economically uninformative.
+if the latent state becomes very large, then \(W_1z\) becomes large in
+magnitude and the centered soft-step activation is pushed close to its bounds
+\(\pm 1/2\). The short-rate network then becomes almost insensitive to further
+changes in \(z\), so the simulated short rate is effectively pinned near an
+artificial upper or lower limit. It remains finite, but the resulting path is
+no longer economically meaningful.
 
 \paragraph{Decoder extrapolation.}
 Once the latent state leaves the region covered by the encoded training data,
 the decoder \(\mathcal{G}\) is evaluated out of distribution. The resulting
-bond prices and swap rates may bear little relation to observed market behaviour,
-even if the model reconstructs the training data accurately.
+bond prices and swap rates may bear little relation to observed market
+behaviour, even if the model reconstructs the training data accurately.
 
 %========================================================
 \subsection{Stable Parameterisation}
@@ -193,36 +246,120 @@ V\in\mathbb{R}^{\ell\times\ell},
 \]
 Since \(V^\top V\) is positive semi-definite and \(\varepsilon I_\ell\) is
 strictly positive definite, all eigenvalues of \(M\) satisfy
-\(\lambda_i\leq -\varepsilon<0\).
+\[
+\lambda_i\leq -\varepsilon<0.
+\]
 The drift is therefore Hurwitz by construction for any trainable matrix \(V\),
-and the latent factors are pulled back toward the equilibrium \(z^*=-M^{-1}N\).
+and the latent factors are pulled back toward the equilibrium
+\[
+z^*=-M^{-1}N.
+\]
+This parameterisation is sufficient but not necessary for mean reversion: a
+general Hurwitz matrix need not be symmetric. The restriction is nevertheless
+useful because it guarantees stability for any value of the trainable matrix
+\(V\).
 
 \paragraph{Bounded volatilities.}
-The stable model replaces the \(\exp\)-link with a sigmoid-bounded parameterisation,
+In the baseline parameterisation, individual volatilities are recovered as
+\[
+\sigma_i(z)=\exp([\mathcal{H}(z)]_i).
+\]
+Although this is positive and bounded for fixed trained weights, the practical
+upper bound depends on the learned parameters. The stable model instead uses
+the sigmoid-bounded parameterisation
 \[
 \log\sigma_i(z)
 =
 \log\sigma_{\min}
 +
-\bigl(\log\sigma_{\max}-\log\sigma_{\min}\bigr)\,
+\bigl(\log\sigma_{\max}-\log\sigma_{\min}\bigr)
 \operatorname{sigmoid}\bigl(h_i(z)+b_i\bigr),
 \]
-ensuring \(\sigma_i(z)\in(\sigma_{\min},\sigma_{\max})\) for all
-\(z\in\mathbb{R}^{\ell}\), with user-specified bounds
-\(0<\sigma_{\min}<\sigma_{\max}\).
+where \(h_i(z)\) is the \(i\)-th network output before the volatility
+transformation, \(b_i\) is a learnable offset, and
+\[
+0<\sigma_{\min}<\sigma_{\max}
+\]
+are user-specified bounds. Since the sigmoid takes values in \((0,1)\), this
+ensures
+\[
+\sigma_i(z)\in(\sigma_{\min},\sigma_{\max})
+\qquad
+\forall z\in\mathbb{R}^{\ell}.
+\]
+The diffusion scale therefore remains controlled even when the latent state is
+outside the region observed during training.
 
 \paragraph{Positive-definite correlations.}
-The stable model uses a hyperspherical Cholesky parameterisation
-\citep{Pinheiro1996}, mapping \(\ell(\ell-1)/2\) free angles
-\(\theta_k(z)=\pi\,\operatorname{sigmoid}(g_k(z))\in(0,\pi)\)
-into a lower triangular factor \(L_R\) such that
-\(R=L_RL_R^\top\)
-is positive definite by construction for any input \(z\).
+The baseline network parameterises pairwise correlations as
+\[
+\rho_{ij}(z)=\tanh([\mathcal{H}(z)]_k),
+\]
+which ensures that each individual correlation lies in \((-1,1)\). For
+\(\ell=2\), this is sufficient to define a valid \(2\times2\) correlation
+matrix. For \(\ell\geq3\), however, valid pairwise correlations do not
+necessarily form a positive-definite correlation matrix.
 
-Together, these modifications ensure that the drift always pulls the latent
-state back toward equilibrium, the diffusion scale remains within a controlled
-range, and the correlation matrix is always well-defined. The empirical
-comparison below shows the practical effect on simulated paths.
+The stable model instead uses a hyperspherical Cholesky parameterisation
+\citep{Pinheiro1996}. It maps \(\ell(\ell-1)/2\) free angles into a lower
+triangular factor \(L_R\), such that
+\[
+R=L_RL_R^\top
+\]
+is a valid correlation matrix. The angles are generated by
+\[
+\theta_k(z)=\pi\,\operatorname{sigmoid}(g_k(z)),
+\]
+where \(g_k(z)\) is a network output. Since
+\(\operatorname{sigmoid}(g_k(z))\in(0,1)\), the angles satisfy
+\[
+\theta_k(z)\in(0,\pi)
+\qquad
+\forall z.
+\]
+The resulting Cholesky factor has strictly positive diagonal entries, and
+therefore \(R=L_RL_R^\top\) is positive definite by construction.
+
+\paragraph{Bounded short-rate network.}
+The short-rate network is also modified in the stable variant. Instead of using
+only the centered soft-step output, the stable model uses
+\[
+r(z)
+=
+r_{\mathrm{center}}
++
+r_{\mathrm{scale}}\tanh(f(z)),
+\]
+where \(f(z)\) is a neural network, \(r_{\mathrm{center}}\) is a learnable
+centre parameter, and \(r_{\mathrm{scale}}>0\) is a learnable scale parameter.
+In the implementation, positivity of the scale is enforced by
+\[
+r_{\mathrm{scale}}
+=
+\operatorname{softplus}(\eta)+r_{\min},
+\]
+where \(\eta\) is an unconstrained trainable parameter and \(r_{\min}>0\) is a
+small lower bound. Since \(\tanh(f(z))\in(-1,1)\), the short rate satisfies
+\[
+r(z)
+\in
+\bigl(
+r_{\mathrm{center}}-r_{\mathrm{scale}},
+\;
+r_{\mathrm{center}}+r_{\mathrm{scale}}
+\bigr).
+\]
+Thus the stable short-rate network keeps the output within a learnable bounded
+range, rather than allowing simulated rates to be determined by the saturation
+limits of the baseline network.
+
+Together, these modifications make the stable model more restrictive than the
+baseline model, but better suited for forward simulation. The drift pulls the
+latent state back toward its equilibrium, the volatility functions remain within
+user-specified bounds, the correlation matrix is positive definite by
+construction, and the short rate remains within a learnable bounded range. The
+empirical comparison below shows the practical effect of these changes on
+simulated paths.
 
 %========================================================
 \subsection{Empirical Evidence from Simulated Paths}
@@ -231,174 +368,166 @@ comparison below shows the practical effect on simulated paths.
 
 To demonstrate the practical effect of the stable parameterisation, we run
 paired Euler--Maruyama simulations from the baseline and stable ep5000
-checkpoints. Both models are started from the same observed EUR swap curve
-(first available date). Each model encodes this curve using its own encoder to
-obtain \(z_0\), and the two simulations then use identical Brownian increments.
-This isolates the effect of the network architecture from Monte Carlo variation.
+checkpoints. Both models are started from the same observed EUR swap curve,
+using the first available date in the dataset. Each model encodes this curve
+using its own encoder to obtain its initial latent state, and the two
+simulations then use identical Brownian increments. This isolates the effect of
+the network architecture from Monte Carlo variation.
+
 All figures use \(N=500\) paths, monthly steps \(\Delta t=1/12\), a 10-year
 horizon and shared seed 1234.
 
 \paragraph{Root cause: drift-matrix eigenvalues.}
-
 The fundamental difference between the two variants is visible in the
 eigenvalues of the learned drift matrix \(M\), shown in
 Figure~\ref{fig:drift_eigenvalues}. Both eigenvalues of the baseline matrix
-\(M\) are positive (\(\lambda_1\approx+5.57\), \(\lambda_2\approx+0.12\)),
-meaning no eigenvalue provides a restoring force. In contrast, both eigenvalues
-of the stable matrix are strictly negative
-(\(\lambda_1\approx-1.33\), \(\lambda_2\approx-10.85\)),
-guaranteeing mean reversion toward \(z^*\).
+are positive, approximately
+\[
+\lambda_1\approx+5.57,
+\qquad
+\lambda_2\approx+0.12,
+\]
+meaning that no latent direction provides a restoring force. In contrast, both
+eigenvalues of the stable matrix are strictly negative, approximately
+\[
+\lambda_1\approx-1.33,
+\qquad
+\lambda_2\approx-10.85,
+\]
+which guarantees mean reversion toward \(z^*\).
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.65\textwidth]{Figures/Simulation/fig_eigenvalues.png}
     \caption{Eigenvalues of the learned drift matrix \(M\) for the baseline
-    (blue) and stable (red) variants (\(\ell=2\), ep5000). The baseline has
-    two positive eigenvalues, making the drift explosive. The stable
-    parameterisation guarantees all eigenvalues are strictly negative.}
+    and stable variants (\(\ell=2\), ep5000). The baseline has two positive
+    eigenvalues, while the stable parameterisation guarantees strictly negative
+    eigenvalues.}
     \label{fig:drift_eigenvalues}
 \end{figure}
 
-\paragraph{Consequence on individual latent paths.}
-
+\paragraph{Consequence for individual latent paths.}
 Figure~\ref{fig:comp_latent_paths} shows 30 individual simulated paths for
 both latent factors. The most immediate signal is the scale of the vertical
-axis in the top row. The baseline paths reach values of order \(10^{20}\) within
-the 10-year horizon, while the stable paths (bottom row) remain within a compact
-range comparable to the encoded training data, shown as the grey \(\pm2\sigma\)
-band. The baseline paths look flat only because the axis must accommodate the
-extreme divergence; in reality every path has diverged far beyond the training
-region.
+axis in the top row. The baseline paths reach values of order \(10^{20}\)
+within the 10-year horizon, while the stable paths remain within a compact
+range comparable to the encoded training data. The stable panels also show the
+\(\pm2\sigma\) training support, illustrating that the stable simulation
+remains close to the region where the decoder was trained.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig1_latent_paths.png}
-    \caption{Individual Euler--Maruyama paths for \(z_1(t)\) (left) and
-    \(z_2(t)\) (right) over 10 years. \textbf{Top row}: baseline (blue), on
-    its own diverging scale; each panel annotates the maximum absolute value
-    reached. \textbf{Bottom row}: stable (red), with the grey band showing the
-    \(\pm2\sigma\) training support. The stable paths revert toward the
-    training cloud throughout the horizon.}
+    \caption{Individual Euler--Maruyama paths for \(z_1(t)\) and \(z_2(t)\)
+    over 10 years. Top row: baseline. Bottom row: stable. The baseline paths
+    diverge to extreme values, while the stable paths remain close to the
+    encoded training cloud.}
     \label{fig:comp_latent_paths}
 \end{figure}
 
-\paragraph{Rate of divergence: exponential vs.\ bounded growth.}
-
+\paragraph{Rate of divergence.}
 Figure~\ref{fig:log_growth} makes the divergence quantitative by plotting
-\(\log_{10}(\text{mean}\,|z_d(t)|)\) over time. Under the baseline model, the
-curve is nearly linear on the log scale, consistent with exponential growth at
-rate \(\lambda_{\max}\approx5.6\). After 10 years, the mean absolute value
-exceeds \(10^{20}\). Under the stable model, the curve flattens after the first
-year and stabilises close to the dashed training-support level, consistent with
-convergence to the stationary distribution of the SDE.
+\(\log_{10}(\mathrm{mean}|z_d(t)|)\) over time. Under the baseline model, the
+curve is nearly linear on the log scale, consistent with exponential growth
+driven by the positive eigenvalue. Under the stable model, the curve flattens
+after the initial diffusion phase and remains close to the training-support
+level, consistent with mean-reverting dynamics.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig6_log_growth.png}
-    \caption{Mean \(|z_d(t)|\) on a \(\log_{10}\) scale for baseline (blue)
-    and stable (red). The baseline grows linearly on this scale (exponential
-    growth), while the stable model flattens near the training-support level
-    (dashed grey), indicating convergence to stationarity.}
+    \caption{Mean \(|z_d(t)|\) on a \(\log_{10}\) scale for the baseline and
+    stable models. The baseline grows approximately linearly on this scale,
+    indicating exponential divergence. The stable model remains bounded near
+    the training-support level.}
     \label{fig:log_growth}
 \end{figure}
 
 \paragraph{Percentile fan charts for the latent factors.}
-
-Figure~\ref{fig:comp_fans} shows percentile fan charts (5/25/50/75/95) for
-each latent factor. The top row (baseline) shows fans that diverge
-exponentially. The 5--95 band grows without bound, reflecting paths pulled in
-opposite directions by the unstable drift directions. The bottom row (stable)
-displays the expected pattern of a mean-reverting process: the uncertainty grows
-briefly and then stabilises as the Hurwitz drift dominates. With
-state-dependent diffusion, the long-run distribution is not exactly Gaussian,
-but the stabilising effect of the negative eigenvalues is clearly visible.
+Figure~\ref{fig:comp_fans} shows percentile fan charts for each latent factor.
+The top row shows the baseline simulation, where the percentile bands diverge
+rapidly. The bottom row shows the stable simulation, where the bands widen
+initially and then stabilise. With state-dependent diffusion, the long-run
+distribution is not exactly Gaussian, but the stabilising effect of the
+negative drift eigenvalues is clearly visible.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig4_percentile_fans.png}
-    \caption{Percentile fan charts (5/25/50/75/95) for \(z_1\) (left) and
-    \(z_2\) (right). \textbf{Top row}: baseline — bands diverge exponentially.
-    \textbf{Bottom row}: stable — bands widen briefly and then stabilise; grey
-    shading shows the \(\pm2\sigma\) training support.}
+    \caption{Percentile fan charts for \(z_1(t)\) and \(z_2(t)\). Bands show
+    the 5--95 and 25--75 percentile ranges across 500 paths. Top row:
+    baseline. Bottom row: stable.}
     \label{fig:comp_fans}
 \end{figure}
 
-\paragraph{Short-rate paths and fan.}
-
+\paragraph{Short-rate paths and fan charts.}
 Figure~\ref{fig:comp_short_rate_paths} shows individual short-rate paths.
-Because the short-rate network is bounded, the baseline short rate does not
-diverge numerically. Instead, once \(\|z\|\) grows large, the centered
-soft-step activation saturates and the short rate is pinned near \(\pm123\%\),
-the hard output limits of the network. The stable short rate, by contrast,
-starts near the observed initial level and evolves smoothly within a range that
-is economically interpretable.
+Because the baseline short-rate network is bounded, the baseline short rate
+does not diverge numerically. Instead, once \(\|z\|\) grows large, the centered
+soft-step activation saturates and the short rate is pinned near the hard output
+limits of the network. The stable short rate, by contrast, evolves within a
+learnable bounded range and remains economically interpretable over the
+simulation horizon.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig2_short_rate.png}
-    \caption{Short-rate paths \(r(t)\) for baseline (left) and stable (right),
-    each on its own scale. The baseline immediately saturates at the hard
-    output limits of the centered soft-step network. The stable short rate
-    evolves smoothly within an economically interpretable range.}
+    \caption{Short-rate paths \(r(t)\) for the baseline and stable models,
+    each shown on its own scale. The baseline saturates at the output limits of
+    the centered soft-step network, while the stable short rate evolves within
+    a controlled range.}
     \label{fig:comp_short_rate_paths}
 \end{figure}
 
 Figure~\ref{fig:comp_short_rate_fan} shows the corresponding percentile fan
-charts. The baseline fan is almost perfectly flat after the first step — every
-path is at a saturation limit. The stable fan has the expected OU shape:
-expanding briefly and then stabilising within a bounded range.
+charts. The baseline fan becomes almost flat after the first simulation steps,
+reflecting saturation at the network limits. The stable fan widens initially
+and then remains bounded.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig5_short_rate_fan.png}
-    \caption{Short-rate percentile fan charts (5/25/50/75/95) for baseline
-    (left) and stable (right), each on its own scale. The baseline fan
-    saturates immediately. The stable fan is smooth and bounded.}
+    \caption{Short-rate percentile fan charts for the baseline and stable
+    models. The baseline fan saturates rapidly, while the stable fan remains
+    smooth and bounded.}
     \label{fig:comp_short_rate_fan}
 \end{figure}
 
 \paragraph{Terminal distributions.}
-
 Figure~\ref{fig:comp_terminal} compares the distributions at the 10-year
-terminal date. The stable terminal cloud (left panel) forms a compact ellipse
-within the training support, reflecting the mean-reverting drift. The baseline
-latent cloud is entirely off any reasonable axis scale; its mean values are of
-order \(10^{16}\) and are indicated by the text annotation. The right two panels
-show the terminal short-rate histograms separately. The stable model produces
-a unimodal, approximately Gaussian distribution centred near positive rates,
-while the baseline produces a bimodal distribution concentrated at the
-saturation limits \(\pm123\%\).
+terminal date. The stable terminal latent cloud forms a compact region close to
+the training support. The baseline latent cloud is far outside any comparable
+axis scale and is therefore reported through the annotation. The short-rate
+histograms show the same distinction: the stable model produces a single,
+smooth terminal distribution, while the baseline produces a distribution
+concentrated at the saturation limits of the short-rate network.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig3_terminal_distributions.png}
-    \caption{\textit{Left}: terminal latent-state scatter at \(t=10\) yr for
-    the stable model (red), with the grey band showing the \(\pm2\sigma\)
-    training support; the baseline is off-scale (annotated). \textit{Centre}:
-    stable terminal short-rate histogram. \textit{Right}: baseline terminal
-    short-rate histogram, showing the bimodal saturation pattern.}
+    \caption{Terminal distributions at \(t=10\) years. Left: stable terminal
+    latent-state scatter with training-support shading and baseline off-scale
+    annotation. Centre: stable terminal short-rate histogram. Right: baseline
+    terminal short-rate histogram, showing saturation.}
     \label{fig:comp_terminal}
 \end{figure}
 
 \paragraph{Volatility bounds.}
-
 Figure~\ref{fig:sigma_bounds} compares the distribution of the individual
-volatilities \(\sigma_i(z)\) evaluated both on the training latent cloud
-(solid) and on an expanded grid sampled at \(\pm3\sigma\) beyond the training
-range (dashed). Within the training cloud the two variants produce similar
-volatility levels. On the expanded grid, the baseline volatilities can reach
-substantially larger values, while the stable volatilities remain within the
-prescribed bounds \((\sigma_{\min},\sigma_{\max})\) regardless of the latent
-state. This confirms that the sigmoid-bounded parameterisation provides a
-meaningful safety margin for out-of-distribution inputs.
+volatilities \(\sigma_i(z)\), evaluated both on the encoded training cloud and
+on an expanded grid sampled around the training region. Within the training
+cloud, the two variants may produce comparable volatility levels. Away from the
+training region, the baseline volatilities can become substantially larger,
+while the stable volatilities remain within the prescribed bounds
+\((\sigma_{\min},\sigma_{\max})\). This confirms that the sigmoid-bounded
+parameterisation provides a safety margin for out-of-distribution inputs.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig_sigma_bounds.png}
-    \caption{Distribution of \(\sigma_i(z)\) for baseline (blue) and stable
-    (red), evaluated on the training cloud (solid fill) and an expanded grid at
-    \(\pm3\sigma\) beyond the training range (dashed step). The stable model
-    respects the bounds \(\sigma_{\min}\) and \(\sigma_{\max}\) everywhere.}
+    \caption{Distribution of \(\sigma_i(z)\) for the baseline and stable
+    models, evaluated on the training cloud and an expanded grid around the
+    training region. The stable model respects the prescribed volatility bounds.}
     \label{fig:sigma_bounds}
 \end{figure}
 
@@ -424,38 +553,40 @@ paired simulation.
 \(\operatorname{Re}(\lambda_2)\) of \(M\) & \(+0.120\) & \(-10.846\) \\
 \midrule
 \(z_1\) mean at \(T=10\) yr & \(-5.6\times10^{16}\) & \(-0.20\) \\
-\(z_1\) std (all \(t\))     & \(4.2\times10^{18}\)  & \(0.64\)  \\
-\(z_1\) range               & \([-1.8\times10^{20},\;1.8\times10^{20}]\) & \([-2.68,\;3.38]\) \\
+\(z_1\) std over all \(t\)  & \(4.2\times10^{18}\)  & \(0.64\)  \\
+\(z_1\) range               & \([-1.8\times10^{20},\;1.8\times10^{20}]\)
+                            & \([-2.68,\;3.38]\) \\
 \midrule
 \(z_2\) mean at \(T=10\) yr & \(-5.2\times10^{16}\) & \(-0.06\) \\
-\(z_2\) std (all \(t\))     & \(3.9\times10^{18}\)  & \(0.10\)  \\
-\(z_2\) range               & \([-1.7\times10^{20},\;1.6\times10^{20}]\) & \([-0.56,\;0.40]\) \\
+\(z_2\) std over all \(t\)  & \(3.9\times10^{18}\)  & \(0.10\)  \\
+\(z_2\) range               & \([-1.7\times10^{20},\;1.6\times10^{20}]\)
+                            & \([-0.56,\;0.40]\) \\
 \midrule
-\(r\) mean (\%) & \(+34.5\) & \(+2.31\) \\
-\(r\) std (\%)  & \(115.4\) & \(5.61\) \\
-\(r\) range (\%) & \([-123,\;+123]\) & \([-11,\;+11\)\,] \\
+\(r\) mean (\%)             & \(+34.5\) & \(+2.31\) \\
+\(r\) std (\%)              & \(115.4\) & \(5.61\) \\
+\(r\) range (\%)            & \([-123,\;+123]\) & \([-11,\;+11]\) \\
 \midrule
-\(\sigma_1\) range (train cloud)    & \([0.51,\;1.09]\) & \([0.03,\;1.73]\) \\
-\(\sigma_1\) range (expanded grid)  & \([0.16,\;4.49]\) & \([0.00,\;2.00]\) \\
-\midrule
-Paths usable for pricing & \textbf{No} & \textbf{Yes} \\
+\(\sigma_1\) range, training cloud   & \([0.51,\;1.09]\) & \([0.03,\;1.73]\) \\
+\(\sigma_1\) range, expanded grid    & \([0.16,\;4.49]\) & \([0.00,\;2.00]\) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The diagnostics confirm what the figures show. The baseline model is
-mathematically finite but economically unusable: the latent factors diverge to
-\(10^{20}\), the eigenvalues of \(M\) are positive, and the short rate saturates
-at its network output limits. The stable model keeps the latent state in a
-compact region, the eigenvalues are both negative, and the short-rate
-distribution is centred near realistic levels throughout the horizon.
+mathematically finite in the simulation, but economically unusable: the latent
+factors diverge to values of order \(10^{20}\), the drift matrix has positive
+eigenvalues, and the short rate saturates at the network output limits. The
+stable model keeps the latent state in a compact region, has strictly negative
+drift eigenvalues, and produces a short-rate distribution that remains within a
+controlled range over the simulation horizon.
 
-The central conclusion is that the three structural constraints of the stable
-parameterisation --- Hurwitz drift, sigmoid-bounded volatilities and
-hyperspherical positive-definite correlations --- are not merely theoretical
-refinements. They are necessary for producing simulated paths that are usable
-for derivative pricing. Good reconstruction accuracy is a necessary but far from
-sufficient condition for a simulation-based pricing model.
+The central conclusion is that the structural constraints of the stable
+parameterisation --- Hurwitz drift, sigmoid-bounded volatilities,
+hyperspherical positive-definite correlations and a learnable bounded
+short-rate network --- are not merely theoretical refinements. They are
+necessary for producing simulated paths that are usable for derivative pricing.
+Good reconstruction accuracy is therefore a necessary but far from sufficient
+condition for a simulation-based pricing model.
 
 For this reason, the stable checkpoint is used as the starting point for the
 simulation-based pricing analysis in the following chapter.

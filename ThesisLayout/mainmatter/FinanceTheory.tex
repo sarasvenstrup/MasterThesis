@@ -416,52 +416,16 @@ generally yield different price processes for non-attainable claims.
 %A claim X is attainable if there exists a self-financing portfolio h in the traded assets that replicates it perfectly. A claim is non-attainable if no such replicating portfolio exists.
 
 
-As a standard example, consider a zero-coupon bond (ZCB) with maturity 
-$T$, which is a contract paying one unit 
-of currency at time $T$. Being the trivial claim $X \equiv 1$, 
-Theorem \ref{thm:riskneutral} immediately gives
+As a standard example, the price of a contract paying one unit of currency at time $T$, being the trivial claim $X \equiv 1$, is immediately given by
+Theorem \ref{thm:riskneutral} as
 \begin{equation}
     P(t,T) = \mathbb{E}^{\mathbb{Q}}\!\left[
     e^{-\int_t^T r_s\, ds} \,\bigg|\, \mathcal{F}_t \right],
     \label{eq:zcb}
 \end{equation}
-with $P(T,T) = 1$. Once the $\mathbb{Q}$-dynamics of $r$ are specified, 
-\eqref{eq:zcb} determines the entire term structure of interest rates, 
-and will serve as the fundamental building block throughout the remainder 
-of this thesis.
-
+with $P(T,T) = 1$. This object, and the term structure $\{P(t,T)\}_{T\geq t}$ that this generates will be the central object of our interest rate modelling. 
 
 \textcolor{red}{Skal det tilføjes hvad Q-dynamikkerne er for markedsprocesserne?}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 \section{Interest Rate Theory}
@@ -480,6 +444,7 @@ We assume the existence of a \textcolor{red}{frictionless} and arbitrage-free bo
     \label{ZCBprice}
 \end{equation}
 where $r_t$ denotes the short rate process governing the instantaneous cost of borrowing at time $t$. 
+
 
 \begin{assumption}[\textit{Single Curve}]
 A single discount curve, determined entirely by the ZCB prices $\{P(t,T)\}_{T\geq t}$, is used for both discountig and forwarding. Under this assumption, the forward rate over the accrual period $[T_{i-1},T_i]$ satisfies
