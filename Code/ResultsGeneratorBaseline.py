@@ -941,33 +941,27 @@ for _nf in [2, 3, 4]:
     if _avg is not None:
         ekf_roll_avgs[_nf] = _avg
 
-if len(roll_avgs) >= 2 or len(is_avgs) >= 2:
+if len(roll_avgs) >= 1 or len(is_avgs) >= 1:
     _dims = [d for d in [2, 3, 4] if d in roll_avgs or d in is_avgs]
     _x    = np.arange(len(_dims))
-    _w    = 0.25
+    _w    = 0.35
 
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = plt.subplots(figsize=(7, 4))
 
     # IS bars
     _is_vals  = [is_avgs.get(d, np.nan) for d in _dims]
-    _is_bars  = ax.bar(_x - _w, _is_vals,
+    _is_bars  = ax.bar(_x - _w/2, _is_vals,
                        width=_w, color=[DIM_COLORS[d] for d in _dims],
-                       edgecolor="none", label="AE In-Sample (rolling avg)")
+                       edgecolor="none")
 
     # OOS rolling bars
     _oos_vals = [roll_avgs.get(d, np.nan) for d in _dims]
-    _oos_bars = ax.bar(_x, _oos_vals,
+    _oos_bars = ax.bar(_x + _w/2, _oos_vals,
                        width=_w, color=[DIM_COLORS[d] for d in _dims],
-                       edgecolor="none", alpha=0.5, label="AE OOS Rolling (ep2500)")
-
-    # EKF DNS bars
-    _ekf_vals = [ekf_roll_avgs.get(d, np.nan) for d in _dims]
-    _ekf_bars = ax.bar(_x + _w, _ekf_vals,
-                       width=_w, color="lightgray",
-                       edgecolor="none", label="EKF DNS")
+                       edgecolor="none", alpha=0.5)
 
     # value labels
-    for bars, vals in [(_is_bars, _is_vals), (_oos_bars, _oos_vals), (_ekf_bars, _ekf_vals)]:
+    for bars, vals in [(_is_bars, _is_vals), (_oos_bars, _oos_vals)]:
         for bar, val in zip(bars, vals):
             if np.isfinite(val):
                 ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
@@ -980,7 +974,7 @@ if len(roll_avgs) >= 2 or len(is_avgs) >= 2:
     fig.tight_layout()
     save_fig(fig, "Q2b_rolling_oos_vs_dim")
 else:
-    print(f"  SKIPPED — no IS or OOS rolling results available.")
+    print("  SKIPPED — no IS or OOS rolling results available.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1089,12 +1083,11 @@ else:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Q4a — Table: Autoencoder d=3 vs EKF DNS 1f/2f/3f/4f, OOS RMSE per currency
+# Q4a — Table: AE IS vs AE OOS RMSE per currency (dims 2, 3, 4)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q4a: AE vs Kalman table ──")
+print("\n── Q4a: AE IS vs OOS table ──")
 
 rows_q4 = {}
-# interleave: (AE IS l=2, AE OOS l=2, EKF 2f), (AE IS l=3, AE OOS l=3, EKF 3f), ...
 for dim in [2, 3, 4]:
     is_ae_dim = load_is_rmse_for_rolling(dim)
     if is_ae_dim is not None:
@@ -1103,10 +1096,6 @@ for dim in [2, 3, 4]:
     if oos_ae_dim is not None:
         oos_ae_dim["Time (min)"] = load_rolling_train_time_min(dim)
         rows_q4[rf"AE OOS $\ell$={dim}"] = oos_ae_dim
-    oos_k = load_ekf_rolling_oos_per_ccy(dim)
-    if oos_k is not None:
-        oos_k["Time (min)"] = load_ekf_rolling_train_time_min(dim)
-        rows_q4[rf"EKF DNS $\ell$={dim}"] = oos_k
 
 table_q4a = pd.DataFrame(rows_q4).T
 table_q4a = table_q4a[[c for c in CCY_ORDER + ["Average", "Time (min)"] if c in table_q4a.columns]]
