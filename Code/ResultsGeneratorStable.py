@@ -1,14 +1,19 @@
 # ResultsGeneratorStable.py
-# Generates thesis result figures and tables from STABLE variant rolling OOS CSVs.
+# Generates thesis result figures and tables for the STABLE variant.
 # Run from repo root: python Code/ResultsGeneratorStable.py
 #
 # Outputs:
-#   Figures/thesis_results/AutoencoderPerformanceStable/   → all .png figures + .csv tables
+#   Figures/thesis_results/AutoencoderPerformanceStable/   → figures + tables
+#     Q2b_rolling_oos_vs_dim_stable.png        — avg rolling OOS RMSE bar chart (stable AE vs baseline AE, dims 2,3,4)
+#     Q3b_rolling_rmse_over_time_stable.png    — rolling OOS RMSE over time (dims 2,3,4)
+#     Q4a_AE_stable_vs_baseline_OOS.csv        — OOS RMSE per currency (stable AE vs baseline AE, dims 2,3,4)
+#     Q7_sharpe_ratio_IS_stable_dim2.png       — IS Sharpe ratio by tenor (stable dim=2)
 #
-# Figures generated:
-#   Q2b_stable  — Average rolling OOS RMSE bar chart (stable AE vs EKF DNS)
-#   Q3b_stable  — Rolling OOS RMSE over time (stable dims 2, 3, 4)
-#   Q4a_stable  — AE stable vs EKF DNS OOS RMSE table
+#   Figures/TrainingResults/dim{N}_stable/ep5000/parameters/   → per dim (2,3,4)
+#     mu_1.png, mu_2.png, ...                  — mu parameter plots
+#     sigma_1.png, sigma_2.png, ...            — sigma parameter plots
+#     rho_12.png, ...                          — rho parameter plots
+#     r_tilde.png                              — short rate parameter plot
 
 import os
 import sys
@@ -97,39 +102,30 @@ def load_rolling_df(dim):
     return df
 
 def load_rolling_avg(dim):
-    """Average OOS RMSE across valid stable rolling windows."""
+    """Average OOS RMSE across all stable rolling windows."""
     df = load_rolling_df(dim)
-    if df is None:
+    if df is None or len(df) == 0:
         return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
-        return None
-    return float(valid["avg_rmse_bps"].mean())
+    return float(df["avg_rmse_bps"].mean())
 
 def load_rolling_oos_per_ccy(dim):
-    """Average per-currency OOS RMSE across valid stable rolling windows."""
+    """Average per-currency OOS RMSE across all stable rolling windows."""
     df = load_rolling_df(dim)
-    if df is None:
-        return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
+    if df is None or len(df) == 0:
         return None
     result = pd.Series({
-        ccy: float(valid[f"rmse_bps_{ccy}"].mean())
-        for ccy in CCY_ORDER if f"rmse_bps_{ccy}" in valid.columns
+        ccy: float(df[f"rmse_bps_{ccy}"].mean())
+        for ccy in CCY_ORDER if f"rmse_bps_{ccy}" in df.columns
     })
-    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    result["Average"] = float(df["avg_rmse_bps"].mean())
     return result
 
 def load_rolling_train_time_min(dim):
     """Average training time (minutes) per stable rolling window."""
     df = load_rolling_df(dim)
-    if df is None or "time_train_sec" not in df.columns:
+    if df is None or "time_train_sec" not in df.columns or len(df) == 0:
         return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
-        return None
-    return float(valid["time_train_sec"].mean()) / 60.0
+    return float(df["time_train_sec"].mean()) / 60.0
 
 def load_baseline_rolling_df(dim):
     """Return full rolling CSV DataFrame for baseline dim."""
@@ -148,30 +144,31 @@ def load_baseline_rolling_df(dim):
     df["test_start"] = pd.to_datetime(df["test_start"])
     return df
 
-def load_baseline_rolling_oos_per_ccy(dim):
-    """Average per-currency OOS RMSE across valid baseline rolling windows."""
+def load_baseline_rolling_avg(dim):
+    """Average OOS RMSE across all baseline rolling windows."""
     df = load_baseline_rolling_df(dim)
-    if df is None:
+    if df is None or len(df) == 0:
         return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
+    return float(df["avg_rmse_bps"].mean())
+
+def load_baseline_rolling_oos_per_ccy(dim):
+    """Average per-currency OOS RMSE across all baseline rolling windows."""
+    df = load_baseline_rolling_df(dim)
+    if df is None or len(df) == 0:
         return None
     result = pd.Series({
-        ccy: float(valid[f"rmse_bps_{ccy}"].mean())
-        for ccy in CCY_ORDER if f"rmse_bps_{ccy}" in valid.columns
+        ccy: float(df[f"rmse_bps_{ccy}"].mean())
+        for ccy in CCY_ORDER if f"rmse_bps_{ccy}" in df.columns
     })
-    result["Average"] = float(valid["avg_rmse_bps"].mean())
+    result["Average"] = float(df["avg_rmse_bps"].mean())
     return result
 
 def load_baseline_rolling_train_time_min(dim):
     """Average training time (minutes) per baseline rolling window."""
     df = load_baseline_rolling_df(dim)
-    if df is None or "time_train_sec" not in df.columns:
+    if df is None or "time_train_sec" not in df.columns or len(df) == 0:
         return None
-    valid = df[df["avg_rmse_bps"] <= ROLL_DIVERGE_THRESHOLD]
-    if len(valid) == 0:
-        return None
-    return float(valid["time_train_sec"].mean()) / 60.0
+    return float(df["time_train_sec"].mean()) / 60.0
 
 # ── EKF rolling helpers (shared — same as baseline) ────────────────────────────
 def load_ekf_rolling_df(n_factors):
@@ -217,34 +214,37 @@ def load_ekf_rolling_train_time_min(dim):
     return float(valid["time_train_sec"].mean()) / 60.0
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Q2b_stable — Bar chart: average rolling OOS RMSE by dim (stable AE vs EKF)
+# Q2b_stable — Bar chart: average rolling OOS RMSE by dim (stable AE vs baseline AE)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q2b_stable: Average rolling OOS RMSE bar chart ──")
+print("\n── Q2b_stable: Average rolling OOS RMSE bar chart (stable vs baseline) ──")
 
-roll_avgs     = {d: load_rolling_avg(d)    for d in [2, 3, 4]}
-ekf_roll_avgs = {d: load_ekf_rolling_avg(d) for d in [2, 3, 4]}
-roll_avgs     = {d: v for d, v in roll_avgs.items()     if v is not None}
-ekf_roll_avgs = {d: v for d, v in ekf_roll_avgs.items() if v is not None}
+roll_avgs          = {d: load_rolling_avg(d)          for d in [2, 3, 4]}
+baseline_roll_avgs = {d: load_baseline_rolling_avg(d) for d in [2, 3, 4]}
+roll_avgs          = {d: v for d, v in roll_avgs.items()          if v is not None}
+baseline_roll_avgs = {d: v for d, v in baseline_roll_avgs.items() if v is not None}
 
-if len(roll_avgs) >= 2:
-    _dims = [d for d in [2, 3, 4] if d in roll_avgs]
+if len(roll_avgs) >= 1 or len(baseline_roll_avgs) >= 1:
+    _dims = [d for d in [2, 3, 4] if d in roll_avgs or d in baseline_roll_avgs]
     _x    = np.arange(len(_dims))
     _w    = 0.35
 
     fig, ax = plt.subplots(figsize=(7, 4))
 
-    _ae_bars = ax.bar(_x - _w/2, [roll_avgs[d] for d in _dims],
-                      width=_w, color=[DIM_COLORS[d] for d in _dims],
-                      edgecolor="none", label="Autoencoder (stable)")
-    _ekf_vals = [ekf_roll_avgs.get(d, np.nan) for d in _dims]
-    _ekf_bars = ax.bar(_x + _w/2, _ekf_vals,
-                       width=_w, color="lightgray",
-                       edgecolor="none", label="EKF DNS")
+    _stable_vals   = [roll_avgs.get(d, np.nan)          for d in _dims]
+    _baseline_vals = [baseline_roll_avgs.get(d, np.nan) for d in _dims]
 
-    for bar, val in zip(_ae_bars, [roll_avgs[d] for d in _dims]):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
-                f"{val:.1f}", ha="center", va="bottom", fontsize=9)
-    for bar, val in zip(_ekf_bars, _ekf_vals):
+    _stable_bars   = ax.bar(_x - _w/2, _stable_vals,
+                            width=_w, color=[DIM_COLORS[d] for d in _dims],
+                            edgecolor="none", label="AE stable")
+    _baseline_bars = ax.bar(_x + _w/2, _baseline_vals,
+                            width=_w, color="lightgray",
+                            edgecolor="none", label="AE baseline")
+
+    for bar, val in zip(_stable_bars, _stable_vals):
+        if np.isfinite(val):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                    f"{val:.1f}", ha="center", va="bottom", fontsize=9)
+    for bar, val in zip(_baseline_bars, _baseline_vals):
         if np.isfinite(val):
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
                     f"{val:.1f}", ha="center", va="bottom", fontsize=9)
@@ -257,7 +257,7 @@ if len(roll_avgs) >= 2:
     fig.tight_layout()
     save_fig(fig, "Q2b_rolling_oos_vs_dim_stable")
 else:
-    print(f"  SKIPPED — only {len(roll_avgs)}/3 rolling results available.")
+    print("  SKIPPED — no rolling OOS results available for stable or baseline.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Q3b_stable — Rolling OOS RMSE over time (dims 2, 3, 4)
@@ -319,9 +319,9 @@ else:
     save_fig(fig, "Q3b_rolling_rmse_over_time_stable")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Q4a_stable — Table: stable AE vs EKF DNS, rolling OOS RMSE per currency
+# Q4a_stable — Table: stable AE vs baseline AE, rolling OOS RMSE per currency
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q4a_stable: Stable AE vs EKF DNS OOS table ──")
+print("\n── Q4a_stable: Stable AE vs baseline AE OOS table ──")
 
 rows_q4 = {}
 for dim in [2, 3, 4]:
@@ -333,20 +333,16 @@ for dim in [2, 3, 4]:
     if oos_stable is not None:
         oos_stable["Time (min)"] = load_rolling_train_time_min(dim)
         rows_q4[rf"AE stable $\ell$={dim}"] = oos_stable
-    oos_k = load_ekf_rolling_oos_per_ccy(dim)
-    if oos_k is not None:
-        oos_k["Time (min)"] = load_ekf_rolling_train_time_min(dim)
-        rows_q4[rf"EKF DNS $\ell$={dim}"] = oos_k
 
 if rows_q4:
     table_q4a = pd.DataFrame(rows_q4).T
     table_q4a = table_q4a[[c for c in CCY_ORDER + ["Average", "Time (min)"]
                             if c in table_q4a.columns]]
     table_q4a = table_q4a.round(2)
-    save_table(table_q4a, "Q4a_AE_vs_Kalman_OOS_stable")
+    save_table(table_q4a, "Q4a_AE_stable_vs_baseline_OOS")
     print(table_q4a.to_string())
 else:
-    print("  SKIPPED — no rolling OOS data found for stable variant.")
+    print("  SKIPPED — no rolling OOS data found for stable or baseline variant.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Load stable model for a given dim + ep

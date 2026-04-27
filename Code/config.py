@@ -12,7 +12,8 @@
 import os
 import sys
 
-VARIANT = "stable"
+# Can be overridden by the MODEL_VARIANT env var (used by run_all_dims.py).
+VARIANT = os.environ.get("MODEL_VARIANT", "stable")
 
 
 def confirm_variant():

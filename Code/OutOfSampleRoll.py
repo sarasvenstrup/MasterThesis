@@ -23,9 +23,11 @@ if REPO_ROOT not in sys.path:
 
 from Code.utils import helpers as H
 from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS
-from Code.model.full_model import FullModel
+from Code import config
+config.confirm_variant()
+from Code.model.full_model_stable import FullModel
 
-VARIANT = "baseline"  # frozen — no config dependency
+VARIANT = config.VARIANT
 
 torch.set_num_threads(4)
 torch.set_num_interop_threads(2)
@@ -50,7 +52,7 @@ EPOCHS = 3500
 BATCH_SIZE = 32
 EVAL_BATCH_SIZE = 256
 TARGET_MSE = -1          # set >0 if you want early stop
-LOG_EVERY = 10          # training printouts inside each window
+LOG_EVERY = 100          # training printouts inside each window
 
 max_lr = 1e-3
 final_div_factor = 3000.0
@@ -68,6 +70,9 @@ FIGURES_DIR = os.path.join(
     f"ep{EPOCHS}"
 )
 os.makedirs(FIGURES_DIR, exist_ok=True)
+
+ROLLS_DIR = os.path.join(FIGURES_DIR, "rolls")
+os.makedirs(ROLLS_DIR, exist_ok=True)
 
 oos_csv_path = os.path.join(
     FIGURES_DIR,
@@ -248,6 +253,117 @@ def train_one_window(X_train: torch.Tensor):
 
     return model, np.array(train_mse_hist), np.array(lr_hist)
 
+# ============================= Per-roll saving helpers ===============================
+@torch.no_grad()
+def get_latent(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    model.eval()
+    zs = []
+    for i in range(0, len(X), batch_size):
+        zs.append(model.encoder(X[i:i+batch_size].to(device)).cpu())
+    return torch.cat(zs, dim=0)
+
+def _param_label(name):
+    if name.startswith("mu_"):
+        k = name.split("_")[1]; return r"$\mu_{" + k + r"}$"
+    if name.startswith("sigma_"):
+        k = name.split("_")[1]; return r"$\sigma_{" + k + r"}$"
+    if name.startswith("rho_"):
+        ij = name.split("_")[1]; return r"$\rho_{" + ",".join(ij) + r"}$"
+    if name == "r_tilde":
+        return r"$\tilde{r}$"
+    return name
+
+@torch.no_grad()
+def extract_parameters(model: nn.Module, X: torch.Tensor, meta_sub: pd.DataFrame) -> pd.DataFrame:
+    model.eval()
+    mask = row_finite_mask(X)
+    X_m  = X[mask].to(device)
+    z       = model.encoder(X_m)
+    mu      = model.K(z)
+    sigmas, rhos = model.H(z)
+    r_til   = model.R(z).squeeze(-1)
+    d = model.latent_dim
+    rec = meta_sub.loc[mask.numpy()].copy().reset_index(drop=True)
+    rec["as_of_date"] = pd.to_datetime(rec["as_of_date"])
+    for k in range(d):
+        rec[f"mu_{k+1}"]    = mu[:, k].cpu().numpy()
+        rec[f"sigma_{k+1}"] = sigmas[:, k].cpu().numpy()
+    idx = 0
+    for i in range(d):
+        for j in range(i + 1, d):
+            rec[f"rho_{i+1}{j+1}"] = rhos[:, idx].cpu().numpy()
+            idx += 1
+    rec["r_tilde"] = r_til.cpu().numpy()
+    return rec
+
+def save_roll_outputs(model: nn.Module, X_train: torch.Tensor, meta_train_sub: pd.DataFrame,
+                      roll_dir: str, lr_hist, train_mse_hist,
+                      avg_in_rmse_bps: float, avg_rmse_bps: float, k: int, test_start):
+    """Save all per-roll outputs: LR curve, train RMSE curve, latent CSV, parameters CSV + plots."""
+    os.makedirs(roll_dir, exist_ok=True)
+    params_dir = os.path.join(roll_dir, "parameters")
+    os.makedirs(params_dir, exist_ok=True)
+
+    # LR curve
+    fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
+    ax.plot(np.arange(len(lr_hist)), lr_hist, linewidth=1.0)
+    ax.set_xlabel("Epoch"); ax.set_ylabel("Learning rate")
+    ax.set_title(f"LR — roll {k+1:02d} test_start={test_start.date()}")
+    fig.tight_layout()
+    fig.savefig(os.path.join(roll_dir, "lr_curve.png"), dpi=300)
+    plt.close(fig)
+
+    # Train RMSE curve
+    fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
+    ax.plot(np.arange(len(train_mse_hist)), np.sqrt(train_mse_hist), linewidth=1.0, label="Train RMSE")
+    ax.axhline(avg_in_rmse_bps / 10_000, color="steelblue", linestyle="--", linewidth=1.0,
+               label=f"IS RMSE (bps): {avg_in_rmse_bps:.2f}")
+    ax.axhline(avg_rmse_bps / 10_000, color="tomato", linestyle="--", linewidth=1.0,
+               label=f"OOS RMSE (bps): {avg_rmse_bps:.2f}")
+    ax.set_xlabel("Epoch"); ax.set_ylabel("Train RMSE")
+    ax.set_title(f"Train RMSE — roll {k+1:02d} test_start={test_start.date()}")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(roll_dir, "train_rmse.png"), dpi=300)
+    plt.close(fig)
+
+    # Latent vectors
+    Z = get_latent(model, X_train)
+    df_z = meta_train_sub.copy().reset_index(drop=True)
+    for ki in range(LATENT_DIM):
+        df_z[f"z_{ki+1}"] = Z[:, ki].numpy()
+    df_z.to_csv(os.path.join(roll_dir, "latent_z.csv"), index=False)
+
+    # Parameters CSV + plots
+    df_p = extract_parameters(model, X_train, meta_train_sub)
+    df_p.to_csv(os.path.join(roll_dir, "parameters.csv"), index=False)
+
+    d = LATENT_DIM
+    mu_cols   = [f"mu_{ki+1}"    for ki in range(d)]
+    sig_cols  = [f"sigma_{ki+1}" for ki in range(d)]
+    rho_cols  = [f"rho_{i+1}{j+1}" for i in range(d) for j in range(i+1, d)]
+    param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
+
+    _ccy_colors = {ccy: custom_palette[i] for i, ccy in enumerate(ccy_order)}
+    for col in param_cols:
+        if col not in df_p.columns:
+            continue
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+        for ccy in ccy_order:
+            sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
+            if sub.empty:
+                continue
+            ax.plot(sub["as_of_date"], sub[col],
+                    color=_ccy_colors[ccy], linewidth=0.8, alpha=0.75)
+        ax.set_title(_param_label(col), fontsize=11)
+        ax.tick_params(axis="x", rotation=30, labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        fig.tight_layout()
+        fig.savefig(os.path.join(params_dir, f"{col}.png"), dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
 # ============================= Build rolling schedule ===============================
 date_min = max(meta["as_of_date"].min(), pd.Timestamp("2010-01-01"))
 date_max = meta["as_of_date"].max()
@@ -406,30 +522,11 @@ for k, test_start in enumerate(roll_starts):
     print(f"  IS  avg_in_rmse_bps={avg_in_rmse_bps:.3f} | OOS avg_rmse_bps={avg_rmse_bps:.3f} | time_train={time_train/60:.1f}min time_test={time_test:.1f}s")
 
     if SAVE_PER_ROLL_PLOTS:
-        # Per-roll LR plot
-        fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-        ax.plot(np.arange(len(lr_hist)), lr_hist, linewidth=1.0)
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("Learning rate")
-        ax.set_title(f"LR — roll {k+1:02d} test_start={test_start.date()}")
-        fig.tight_layout()
-        fig.savefig(os.path.join(FIGURES_DIR, f"lr_roll{k+1:02d}_{test_start.date()}.png"), dpi=300)
-        plt.close(fig)
-
-        # Per-roll train RMSE plot (with IS and OOS RMSE as horizontal reference lines)
-        fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-        ax.plot(np.arange(len(train_mse_hist)), np.sqrt(train_mse_hist), linewidth=1.0, label="Train RMSE")
-        ax.axhline(avg_in_rmse_bps / 10_000, color="steelblue", linestyle="--", linewidth=1.0,
-                   label=f"IS RMSE (bps): {avg_in_rmse_bps:.2f}")
-        ax.axhline(avg_rmse_bps / 10_000, color="tomato", linestyle="--", linewidth=1.0,
-                   label=f"OOS RMSE (bps): {avg_rmse_bps:.2f}")
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("Train RMSE")
-        ax.set_title(f"Train RMSE — roll {k+1:02d} test_start={test_start.date()}")
-        ax.legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(os.path.join(FIGURES_DIR, f"train_rmse_roll{k+1:02d}_{test_start.date()}.png"), dpi=300)
-        plt.close(fig)
+        roll_dir = os.path.join(ROLLS_DIR, f"roll{k+1:02d}_{test_start.date()}")
+        save_roll_outputs(model, X_train, meta_train_sub, roll_dir,
+                          lr_hist, train_mse_hist,
+                          avg_in_rmse_bps, avg_rmse_bps, k, test_start)
+        print(f"  Saved roll outputs → {roll_dir}")
 
 manifest["run_finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 with open(manifest_path, "w") as f:

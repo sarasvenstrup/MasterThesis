@@ -1,11 +1,8 @@
 """
-Runner script: runs Training.py and Training_stable.py sequentially for each latent dim.
+Runner script: runs OutOfSampleRoll.py for selected dims and variants.
 
-  Stage 1 — Training.py (baseline): LATENT_DIM = 3, 2, 4, 1  ep=5000
-  Stage 2 — Training_stable.py (stable): LATENT_DIM = 2, 3, 4  ep=5000
-
-Baseline uses a frozen model file (full_model.py) so that stable
-development can never affect baseline results.
+  Stage 1 — OOS roll (stable):   LATENT_DIM = 4
+  Stage 2 — OOS roll (baseline): LATENT_DIM = 2
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -21,22 +18,20 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
-TRAINING_BASELINE_PATH = os.path.join(REPO_ROOT, "Code", "Training.py")
-TRAINING_STABLE_PATH   = os.path.join(REPO_ROOT, "Code", "Training_stable.py")
+OOS_ROLL_PATH = os.path.join(REPO_ROOT, "Code", "OutOfSampleRoll.py")
 
 STAGES = [
     {
-        "name":    "Training (baseline)",
-        "script":  TRAINING_BASELINE_PATH,
-        "dims":    [3, 2, 4, 1],
-        "epochs":  5000,
+        "name":    "OOS roll (stable)",
+        "script":  OOS_ROLL_PATH,
+        "dims":    [4],
+        "model_variant": "stable",
     },
     {
-        "name":    "Training (stable)",
-        "script":  TRAINING_STABLE_PATH,
-        "dims":    [2, 3, 4],
-        "epochs":  5000,
-        "skip_variant_confirm": True,
+        "name":    "OOS roll (baseline)",
+        "script":  OOS_ROLL_PATH,
+        "dims":    [2],
+        "model_variant": "baseline",
     },
 ]
 
@@ -46,15 +41,6 @@ def patch_latent_dim(script_path: str, dim: int) -> str:
     with open(script_path, "r") as f:
         original = f.read()
     patched = re.sub(r"^(LATENT_DIM\s*=\s*)\d+", rf"\g<1>{dim}", original, flags=re.MULTILINE)
-    with open(script_path, "w") as f:
-        f.write(patched)
-    return original
-
-def patch_epochs(script_path: str, epochs: int) -> str:
-    """Replace EPOCHS = <any int> in script. Returns original source."""
-    with open(script_path, "r") as f:
-        original = f.read()
-    patched = re.sub(r"^(EPOCHS\s*=\s*)\d+", rf"\g<1>{epochs}", original, flags=re.MULTILINE)
     with open(script_path, "w") as f:
         f.write(patched)
     return original
@@ -75,14 +61,11 @@ for stage in STAGES:
         print(f"{'='*60}\n")
 
         original_script = patch_latent_dim(stage["script"], dim)
-        original_epochs = None
-        if "epochs" in stage:
-            original_epochs = patch_epochs(stage["script"], stage["epochs"])
 
         env = os.environ.copy()
-        env["PYTHONPATH"] = REPO_ROOT
-        if stage.get("skip_variant_confirm"):
-            env["SKIP_VARIANT_CONFIRM"] = "1"
+        env["PYTHONPATH"]        = REPO_ROOT
+        env["SKIP_VARIANT_CONFIRM"] = "1"
+        env["MODEL_VARIANT"]     = stage["model_variant"]
 
         try:
             result = subprocess.run(
@@ -93,8 +76,6 @@ for stage in STAGES:
             )
         finally:
             restore_source(stage["script"], original_script)
-            if original_epochs is not None:
-                restore_source(stage["script"], original_epochs)
 
         if result.returncode != 0:
             print(f"\n[ERROR] {stage['name']} failed for LATENT_DIM={dim} "

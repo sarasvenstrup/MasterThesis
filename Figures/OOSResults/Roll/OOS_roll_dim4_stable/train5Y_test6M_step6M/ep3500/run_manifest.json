@@ -1,0 +1,544 @@
+{
+  "window_seed": 0,
+  "latent_dim": 4,
+  "variant": "stable",
+  "epochs": 3500,
+  "batch_size": 32,
+  "max_lr": 0.001,
+  "pct_start": 0.3,
+  "final_div_factor": 3000.0,
+  "mkldnn_enabled": false,
+  "train_years": 5,
+  "test_months": 6,
+  "step_months": 6,
+  "n_windows": 18,
+  "torch_version": "2.11.0",
+  "python_version": "3.12.6",
+  "numpy_version": "2.2.2",
+  "run_started": "2026-04-26T21:05:13",
+  "window_results": {
+    "2015-01-01": {
+      "avg_rmse_bps": 12.4228,
+      "avg_in_rmse_bps": 8.1163,
+      "per_ccy_bps": {
+        "AUD": 6.4751,
+        "CAD": 4.1277,
+        "DKK": 21.4588,
+        "EUR": 18.1676,
+        "JPY": 13.7175,
+        "NOK": 6.3181,
+        "SEK": 14.549,
+        "GBP": 12.797,
+        "USD": 14.1941
+      },
+      "in_per_ccy_bps": {
+        "AUD": 9.1317,
+        "CAD": 5.9829,
+        "DKK": 7.3832,
+        "EUR": 6.728,
+        "JPY": 9.5798,
+        "NOK": 6.9062,
+        "SEK": 8.324,
+        "GBP": 9.6368,
+        "USD": 9.3737
+      },
+      "train_minutes": 17.07,
+      "n_train": 522,
+      "n_test": 54
+    },
+    "2015-07-01": {
+      "avg_rmse_bps": 8.1602,
+      "avg_in_rmse_bps": 7.5089,
+      "per_ccy_bps": {
+        "AUD": 8.4837,
+        "CAD": 3.0886,
+        "DKK": 7.1868,
+        "EUR": 6.7063,
+        "JPY": 11.018,
+        "NOK": 4.6742,
+        "SEK": 11.2238,
+        "GBP": 11.6505,
+        "USD": 9.4096
+      },
+      "in_per_ccy_bps": {
+        "AUD": 9.0959,
+        "CAD": 5.1335,
+        "DKK": 6.9751,
+        "EUR": 6.1631,
+        "JPY": 8.3803,
+        "NOK": 5.9741,
+        "SEK": 6.7665,
+        "GBP": 9.5598,
+        "USD": 9.5319
+      },
+      "train_minutes": 17.53,
+      "n_train": 528,
+      "n_test": 54
+    },
+    "2016-01-01": {
+      "avg_rmse_bps": 24.2185,
+      "avg_in_rmse_bps": 7.7226,
+      "per_ccy_bps": {
+        "AUD": 9.5502,
+        "CAD": 9.0769,
+        "DKK": 7.0986,
+        "EUR": 24.6938,
+        "JPY": 125.2632,
+        "NOK": 7.0944,
+        "SEK": 20.3115,
+        "GBP": 7.6528,
+        "USD": 7.2248
+      },
+      "in_per_ccy_bps": {
+        "AUD": 7.0752,
+        "CAD": 6.6155,
+        "DKK": 7.1532,
+        "EUR": 6.1266,
+        "JPY": 6.4546,
+        "NOK": 6.8894,
+        "SEK": 8.0822,
+        "GBP": 11.3563,
+        "USD": 9.7506
+      },
+      "train_minutes": 17.74,
+      "n_train": 534,
+      "n_test": 53
+    },
+    "2016-07-01": {
+      "avg_rmse_bps": 10.968,
+      "avg_in_rmse_bps": 7.2645,
+      "per_ccy_bps": {
+        "AUD": 7.6892,
+        "CAD": 6.4783,
+        "DKK": 6.7297,
+        "EUR": 6.862,
+        "JPY": 23.9979,
+        "NOK": 7.8427,
+        "SEK": 18.1585,
+        "GBP": 11.8126,
+        "USD": 9.1414
+      },
+      "in_per_ccy_bps": {
+        "AUD": 7.901,
+        "CAD": 5.0833,
+        "DKK": 6.2079,
+        "EUR": 6.6869,
+        "JPY": 10.4402,
+        "NOK": 4.9064,
+        "SEK": 7.639,
+        "GBP": 8.3523,
+        "USD": 8.1632
+      },
+      "train_minutes": 17.15,
+      "n_train": 537,
+      "n_test": 54
+    },
+    "2017-01-01": {
+      "avg_rmse_bps": 7.4696,
+      "avg_in_rmse_bps": 7.7091,
+      "per_ccy_bps": {
+        "AUD": 6.0728,
+        "CAD": 3.6768,
+        "DKK": 4.975,
+        "EUR": 5.932,
+        "JPY": 18.2621,
+        "NOK": 4.9158,
+        "SEK": 8.0767,
+        "GBP": 6.617,
+        "USD": 8.698
+      },
+      "in_per_ccy_bps": {
+        "AUD": 9.0156,
+        "CAD": 4.292,
+        "DKK": 6.0744,
+        "EUR": 6.7531,
+        "JPY": 13.1361,
+        "NOK": 4.7785,
+        "SEK": 7.5402,
+        "GBP": 9.0066,
+        "USD": 8.7852
+      },
+      "train_minutes": 16.25,
+      "n_train": 539,
+      "n_test": 54
+    },
+    "2017-07-01": {
+      "avg_rmse_bps": 7.0934,
+      "avg_in_rmse_bps": 6.9872,
+      "per_ccy_bps": {
+        "AUD": 5.6516,
+        "CAD": 7.6022,
+        "DKK": 4.3388,
+        "EUR": 5.0543,
+        "JPY": 15.3381,
+        "NOK": 5.2344,
+        "SEK": 6.2265,
+        "GBP": 6.8769,
+        "USD": 7.5184
+      },
+      "in_per_ccy_bps": {
+        "AUD": 7.5015,
+        "CAD": 4.4375,
+        "DKK": 5.3032,
+        "EUR": 6.111,
+        "JPY": 12.6781,
+        "NOK": 5.7402,
+        "SEK": 6.6127,
+        "GBP": 7.0869,
+        "USD": 7.4134
+      },
+      "train_minutes": 16.12,
+      "n_train": 539,
+      "n_test": 54
+    },
+    "2018-01-01": {
+      "avg_rmse_bps": 9.8667,
+      "avg_in_rmse_bps": 8.0986,
+      "per_ccy_bps": {
+        "AUD": 6.5197,
+        "CAD": NaN,
+        "DKK": 6.9369,
+        "EUR": 8.0463,
+        "JPY": 14.2634,
+        "NOK": 7.5998,
+        "SEK": 9.0096,
+        "GBP": 9.1974,
+        "USD": 17.3605
+      },
+      "in_per_ccy_bps": {
+        "AUD": 8.552,
+        "CAD": 4.7056,
+        "DKK": 6.065,
+        "EUR": 7.0457,
+        "JPY": 14.07,
+        "NOK": 6.6354,
+        "SEK": 8.0737,
+        "GBP": 8.7584,
+        "USD": 8.9813
+      },
+      "train_minutes": 15.83,
+      "n_train": 539,
+      "n_test": 48
+    },
+    "2018-07-01": {
+      "avg_rmse_bps": 7.9869,
+      "avg_in_rmse_bps": 7.0614,
+      "per_ccy_bps": {
+        "AUD": 5.5265,
+        "CAD": 10.0849,
+        "DKK": 4.2112,
+        "EUR": 5.1209,
+        "JPY": 8.6198,
+        "NOK": 5.4109,
+        "SEK": 4.5201,
+        "GBP": 8.2993,
+        "USD": 20.0886
+      },
+      "in_per_ccy_bps": {
+        "AUD": 7.0049,
+        "CAD": 4.767,
+        "DKK": 4.8067,
+        "EUR": 6.0512,
+        "JPY": 12.0308,
+        "NOK": 5.2115,
+        "SEK": 7.4871,
+        "GBP": 7.7231,
+        "USD": 8.47
+      },
+      "train_minutes": 15.85,
+      "n_train": 533,
+      "n_test": 54
+    },
+    "2019-01-01": {
+      "avg_rmse_bps": 6.9722,
+      "avg_in_rmse_bps": 7.3214,
+      "per_ccy_bps": {
+        "AUD": 6.3533,
+        "CAD": 6.3026,
+        "DKK": 5.7644,
+        "EUR": 9.3221,
+        "JPY": 11.7486,
+        "NOK": 3.8686,
+        "SEK": 3.328,
+        "GBP": 7.3683,
+        "USD": 8.6938
+      },
+      "in_per_ccy_bps": {
+        "AUD": 7.296,
+        "CAD": 5.5125,
+        "DKK": 5.0702,
+        "EUR": 6.245,
+        "JPY": 13.2781,
+        "NOK": 5.0071,
+        "SEK": 7.2098,
+        "GBP": 7.8415,
+        "USD": 8.4326
+      },
+      "train_minutes": 15.98,
+      "n_train": 533,
+      "n_test": 54
+    },
+    "2019-07-01": {
+      "avg_rmse_bps": 9.049,
+      "avg_in_rmse_bps": 7.0566,
+      "per_ccy_bps": {
+        "AUD": 3.7344,
+        "CAD": 4.7481,
+        "DKK": 13.6742,
+        "EUR": 17.1066,
+        "JPY": 15.4788,
+        "NOK": 4.4083,
+        "SEK": 6.9746,
+        "GBP": 8.5144,
+        "USD": 6.802
+      },
+      "in_per_ccy_bps": {
+        "AUD": 8.3487,
+        "CAD": 4.9666,
+        "DKK": 5.2903,
+        "EUR": 6.0564,
+        "JPY": 12.0394,
+        "NOK": 5.8325,
+        "SEK": 5.9319,
+        "GBP": 7.1621,
+        "USD": 7.882
+      },
+      "train_minutes": 15.67,
+      "n_train": 533,
+      "n_test": 54
+    },
+    "2020-01-01": {
+      "avg_rmse_bps": 11.129,
+      "avg_in_rmse_bps": 7.3475,
+      "per_ccy_bps": {
+        "AUD": 6.014,
+        "CAD": 3.1743,
+        "DKK": 20.2495,
+        "EUR": 15.6157,
+        "JPY": 17.4177,
+        "NOK": 5.2315,
+        "SEK": 13.0111,
+        "GBP": 14.115,
+        "USD": 5.3321
+      },
+      "in_per_ccy_bps": {
+        "AUD": 7.0439,
+        "CAD": 4.9704,
+        "DKK": 5.7351,
+        "EUR": 8.0479,
+        "JPY": 11.5083,
+        "NOK": 6.1169,
+        "SEK": 6.761,
+        "GBP": 8.0225,
+        "USD": 7.9212
+      },
+      "train_minutes": 15.69,
+      "n_train": 533,
+      "n_test": 54
+    },
+    "2020-07-01": {
+      "avg_rmse_bps": 9.0334,
+      "avg_in_rmse_bps": 7.71,
+      "per_ccy_bps": {
+        "AUD": 5.437,
+        "CAD": 3.0929,
+        "DKK": 12.0036,
+        "EUR": 22.1304,
+        "JPY": 11.4671,
+        "NOK": 5.3604,
+        "SEK": 8.7994,
+        "GBP": 9.0311,
+        "USD": 3.979
+      },
+      "in_per_ccy_bps": {
+        "AUD": 7.7933,
+        "CAD": 5.5338,
+        "DKK": 6.9701,
+        "EUR": 8.6333,
+        "JPY": 11.5125,
+        "NOK": 6.5352,
+        "SEK": 7.0835,
+        "GBP": 7.2129,
+        "USD": 8.1155
+      },
+      "train_minutes": 15.45,
+      "n_train": 533,
+      "n_test": 54
+    },
+    "2021-01-01": {
+      "avg_rmse_bps": 9.0124,
+      "avg_in_rmse_bps": 7.8364,
+      "per_ccy_bps": {
+        "AUD": 10.003,
+        "CAD": 11.0115,
+        "DKK": 6.0719,
+        "EUR": 7.5602,
+        "JPY": 7.8989,
+        "NOK": 16.014,
+        "SEK": 4.1502,
+        "GBP": 9.5627,
+        "USD": 8.8389
+      },
+      "in_per_ccy_bps": {
+        "AUD": 8.0671,
+        "CAD": 5.6336,
+        "DKK": 7.4248,
+        "EUR": 9.569,
+        "JPY": 9.436,
+        "NOK": 7.1591,
+        "SEK": 7.1955,
+        "GBP": 8.2122,
+        "USD": 7.8302
+      },
+      "train_minutes": 15.65,
+      "n_train": 533,
+      "n_test": 54
+    },
+    "2021-07-01": {
+      "avg_rmse_bps": 13.7867,
+      "avg_in_rmse_bps": 8.6934,
+      "per_ccy_bps": {
+        "AUD": 18.8061,
+        "CAD": 15.8312,
+        "DKK": 8.6978,
+        "EUR": 15.9738,
+        "JPY": 10.7752,
+        "NOK": 17.7584,
+        "SEK": 7.7828,
+        "GBP": 14.8245,
+        "USD": 13.6309
+      },
+      "in_per_ccy_bps": {
+        "AUD": 7.8552,
+        "CAD": 6.201,
+        "DKK": 9.2666,
+        "EUR": 12.1111,
+        "JPY": 10.9447,
+        "NOK": 7.6129,
+        "SEK": 9.0524,
+        "GBP": 7.0823,
+        "USD": 8.1149
+      },
+      "train_minutes": 15.52,
+      "n_train": 534,
+      "n_test": 53
+    },
+    "2022-01-01": {
+      "avg_rmse_bps": 17.6016,
+      "avg_in_rmse_bps": 8.2639,
+      "per_ccy_bps": {
+        "AUD": 26.1487,
+        "CAD": 12.4436,
+        "DKK": 20.1735,
+        "EUR": 20.3349,
+        "JPY": 7.1299,
+        "NOK": 18.8278,
+        "SEK": 20.0413,
+        "GBP": NaN,
+        "USD": 15.7132
+      },
+      "in_per_ccy_bps": {
+        "AUD": 9.3749,
+        "CAD": 7.1195,
+        "DKK": 8.3668,
+        "EUR": 10.7536,
+        "JPY": 9.7526,
+        "NOK": 7.6003,
+        "SEK": 6.8488,
+        "GBP": 6.2718,
+        "USD": 8.2872
+      },
+      "train_minutes": 15.51,
+      "n_train": 533,
+      "n_test": 48
+    },
+    "2022-07-01": {
+      "avg_rmse_bps": 23.7051,
+      "avg_in_rmse_bps": 10.0538,
+      "per_ccy_bps": {
+        "AUD": 25.242,
+        "CAD": 41.0236,
+        "DKK": 15.112,
+        "EUR": 15.1783,
+        "JPY": 9.851,
+        "NOK": 25.1517,
+        "SEK": 14.2032,
+        "GBP": NaN,
+        "USD": 43.8787
+      },
+      "in_per_ccy_bps": {
+        "AUD": 12.1441,
+        "CAD": 7.9225,
+        "DKK": 11.0874,
+        "EUR": 13.7482,
+        "JPY": 10.6084,
+        "NOK": 8.6132,
+        "SEK": 9.746,
+        "GBP": 7.3443,
+        "USD": 9.2703
+      },
+      "train_minutes": 15.31,
+      "n_train": 527,
+      "n_test": 48
+    },
+    "2023-01-01": {
+      "avg_rmse_bps": 16.8868,
+      "avg_in_rmse_bps": 10.7019,
+      "per_ccy_bps": {
+        "AUD": 19.7712,
+        "CAD": 27.8786,
+        "DKK": 10.266,
+        "EUR": 10.4077,
+        "JPY": 7.2164,
+        "NOK": 18.5983,
+        "SEK": 11.285,
+        "GBP": NaN,
+        "USD": 29.6715
+      },
+      "in_per_ccy_bps": {
+        "AUD": 13.0632,
+        "CAD": 9.9199,
+        "DKK": 11.6923,
+        "EUR": 14.226,
+        "JPY": 10.5562,
+        "NOK": 8.8794,
+        "SEK": 10.438,
+        "GBP": 6.9636,
+        "USD": 10.5785
+      },
+      "train_minutes": 15.28,
+      "n_train": 521,
+      "n_test": 48
+    },
+    "2023-07-01": {
+      "avg_rmse_bps": 13.0909,
+      "avg_in_rmse_bps": 9.5885,
+      "per_ccy_bps": {
+        "AUD": 28.4937,
+        "CAD": 15.2944,
+        "DKK": 9.1478,
+        "EUR": 9.0433,
+        "JPY": 7.6223,
+        "NOK": 15.0892,
+        "SEK": 6.9457,
+        "GBP": NaN,
+        "USD": NaN
+      },
+      "in_per_ccy_bps": {
+        "AUD": 12.3064,
+        "CAD": 8.251,
+        "DKK": 9.6124,
+        "EUR": 12.4758,
+        "JPY": 9.6968,
+        "NOK": 8.9955,
+        "SEK": 8.6052,
+        "GBP": 7.2729,
+        "USD": 9.0804
+      },
+      "train_minutes": 15.59,
+      "n_train": 521,
+      "n_test": 42
+    }
+  },
+  "run_finished": "2026-04-27T01:56:06"
+}
