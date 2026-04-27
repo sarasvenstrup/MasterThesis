@@ -24,7 +24,7 @@ if PROJECT_ROOT not in sys.path:
 if THESIS_ROOT not in sys.path:
     sys.path.insert(0, THESIS_ROOT)
 
-from Code.Pricing.simulate_model import run_simulation
+from Code.Simulation.simulate_model import run_simulation
 
 
 def get_grid_index_for_value(grid, value, tol=1e-10):

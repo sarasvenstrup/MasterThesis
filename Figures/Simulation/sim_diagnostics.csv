@@ -1,0 +1,12 @@
+Metric,Baseline,Stable
+Paths finite (%),100.0%,100.0%
+Max |z| across all paths,272450670275622043648.00,3.51
+Terminal r mean,37.97%,2.30%
+Terminal r std,117.29%,5.82%
+Terminal z std,z1=32979361770808078336.000; z2=30319574794572312576.000,z1=0.668; z2=0.107
+Re(lambda_1) of M,5.571446,-1.326504
+Re(lambda_2) of M,0.119691,-10.845960
+sigma_1 range (train cloud),"[0.5101, 1.0873]","[0.0288, 1.7269]"
+sigma_2 range (train cloud),"[0.4847, 1.0975]","[0.2598, 0.3483]"
+sigma_1 range (expanded grid),"[0.1563, 4.4862]","[0.0003, 1.9949]"
+sigma_2 range (expanded grid),"[0.1384, 4.9840]","[0.1596, 0.4955]"

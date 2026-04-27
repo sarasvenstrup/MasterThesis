@@ -34,3 +34,188 @@ This representation provides a tractable way of modeling the term structure thro
 
 
 
+Correlation theory:
+
+
+
+
+
+The setup above assumes independent Brownian motions. \textcolor{red}{In many applications (måske specificere til denne opgave)}, however, the driving disturbance terms are correlated, and we therefore extend the framework to accommodate this. Given the independent Brownian motions $\bar{W}^1,...,\bar{W}^d$ and a deterministic constant matrix
+$$\delta = \begin{bmatrix}
+\delta_{11} & \delta_{12} & \dots  & \delta_{1d} \\
+\delta_{21} & \delta_{22} & \dots  & \delta_{2d} \\
+\vdots      & \vdots      & \ddots & \vdots      \\
+\delta_{n1} & \delta_{n2} & \dots  & \delta_{nd}
+\end{bmatrix}$$
+we define the $n$-dimensional process $W=(W_1,...,W^n)^\top$ by $W=\delta \bar{W}$, or componentwise
+$$W_t^i=\sum_{j=1}^d \delta_{ij}\bar{W}_t^j,\;\;\;i=1,\dots,n$$
+
+Assuming that the rows of $\delta$ have unit length, i.e.
+$$||\delta_i||=\sqrt{\sum_{j=1}^d \delta_{ij}^2}=1,\;\;\;\;\;i=1,...,n,$$
+each component $W^i$ is itself a standard Brownian motion with unit variance. The instantaneous correlation structure between the components is captures by the correlation matrix $\rho$, defined by
+$$\rho_{ij}\,dt=\text{Cov}[dW_t^i,dW_t^j],$$
+which can be shown to satisfy $\rho=\delta\delta^\top$. The process $W$ is then called a vector of correlated Brownian motions with correlation matrix $\rho$.
+
+
+\begin{definition}[Correlated Brownian Motions]
+The process $W=(W^1,...,W^n)^\top$, constructed as above, is called a vector of correlated Brownian motions with correlation matrix $\rho=\delta\delta^\top$.
+\end{definition}
+
+The multiplication table from the independent case stated in Remark \ref{rem:multitable} is then modified, the only change being that
+$$dW_t^i\cdot dW_t^j=\rho_{ij}\,dt,$$
+replacing the earlier rule $dW_t^i\cdot dW_t^j=0$ for $i\neq j$.
+
+
+THe old subsection of the generator
+
+\subsection{The Infinitesimal Generator}
+
+
+Examining the drift term in Itô's formula, we observe that the dynamics $f(t,X_t)$ are governed by two components: the explicit time derivative $\partial_t f$ and a purely spatial part determined by the coefficients $\mu$ and $\sigma$ of the SDE \eqref{eq:SDE}. This spatial part appears repeatedly in the analysis and it is therefore convenient to give it a name.
+
+\begin{definition}[Infinitesimal Generator]
+Given the SDE defined in \eqref{eq:SDE}, the infinitesimal generator $\mathcal{P}$ is defined for any $f\in C^2(\mathbb{R}^n)$ by
+\begin{equation}
+    \mathcal{P}f(x) = \sum_{i=1}^n \mu_i(t,x) \frac{\partial f}{\partial x_i}(x) + \frac{1}{2} \sum_{i,j=1}^n (\sigma\sigma^\top)_{ij}(t,x) \frac{\partial^2 f}{\partial x_i \partial x_j}(x).
+\end{equation}
+The operator $\mathcal{P}$ differentiates with respect to $x$ only with time entering through the coefficients $\mu(t,x)$ and $\sigma(t,x)$.
+\label{def:generator}
+\end{definition}
+
+In terms of $\mathcal{P}$, Itô's formula for a time-dependent function $f(t,X_t)$ takes the compact form 
+\begin{equation}
+    df(t, X_t) = \left(\partial_t f + \mathcal{P}f\right)dt + \nabla_x f \cdot \sigma\, dW_t.
+\end{equation}
+In particular, recalling Corollary \ref{cor:SImartingale}, $f(t,X_t)$ is a martingale if and only if $\partial_t f+\mathcal{P}f=0$, which is a partial differential equation (PDE) in $(t,x)$. \textcolor{red}{This connection between the probabilistic dynamics of $X$ and the theory of PDEs is the foundation of analysis carried on later on.}
+
+
+
+Fredes foreslag til itos formel afsntitet med ændret struktur ift correleret BMs:
+
+\subsection{Itô's Formula}
+
+Having established the stochastic integral, we now ask how to 
+differentiate a smooth function $f(t, X_t)$ of a diffusion process. 
+In ordinary calculus, the chain rule gives 
+$df = \partial_t f\,dt + \nabla_x f\,dX$. However, this fails for 
+stochastic processes: because Brownian motion has non-zero quadratic 
+variation, $(dW_t)^2 = dt$, the second-order term in the Taylor 
+expansion does not vanish and must be retained. Itô's formula is the 
+stochastic analogue of the chain rule that accounts for this correction.
+
+We work in the general setting of an $n$-dimensional process 
+$X = (X^1, \ldots, X^n)^\top$ driven by $d$ Brownian motions 
+$W = (W^1, \ldots, W^d)^\top$ with instantaneous correlation structure
+\begin{equation}
+    dW^i_t \cdot dW^j_t = \rho_{ij}\,dt,
+\end{equation}
+where $\rho$ is the correlation matrix. The dynamics of $X$ are given by
+\begin{equation}
+    dX_t = \mu_t\,dt + \sigma_t\,dW_t,
+
+\end{equation}
+where $\mu_t \in \mathbb{R}^n$ is the drift vector and 
+$\sigma_t \in \mathbb{R}^{n \times d}$ is the diffusion matrix.
+
+\begin{theorem}[Itô's Formula]
+Let $X$ have dynamics given by \eqref{eq:multiSDE} and let 
+$f \in C^{1,2}(\mathbb{R}_+ \times \mathbb{R}^n)$. Then $f(t,X_t)$ 
+is itself an Itô process with stochastic differential
+\begin{equation}
+    df(t,X_t) = \left\{
+        \frac{\partial f}{\partial t}
+        + \sum_{i=1}^n \mu_t^i \frac{\partial f}{\partial x^i}
+        + \frac{1}{2}\,\mathrm{tr}\!\left[\sigma_t^\top H_f \sigma_t\right]
+    \right\}dt
+    + \sum_{i=1}^n \frac{\partial f}{\partial x^i}\,\sigma_t^i\,dW_t,
+\end{equation}
+where $H_f$ denotes the Hessian with entries 
+$[H_f]_{ij} = \partial^2 f / \partial x^i \partial x^j$, and $\sigma_t^i$ 
+denotes the $i$-th row of $\sigma_t$. Compared to the ordinary chain 
+rule, the additional term $\frac{1}{2}\,\mathrm{tr}[\sigma_t^\top H_f 
+\sigma_t]\,dt$ arises precisely from the non-zero quadratic variation 
+of $W$, and is the defining correction of Itô calculus. The formula 
+follows from the formal multiplication rules
+\begin{equation}
+\begin{cases}
+    (dt)^2 = 0,\\
+    dt \cdot dW^i_t = 0,\\
+    dW^i_t \cdot dW^j_t = \rho_{ij}\,dt,
+\end{cases}
+\end{equation}
+where the last rule reduces to $dW^i_t \cdot dW^j_t = 0$ for $i \neq j$ 
+in the independent case.
+\end{theorem}
+
+\begin{remark}[Infinitesimal Generator]
+The drift in \eqref{eq:Ito} decomposes naturally into an explicit time 
+derivative $\partial_t f$ and a purely spatial part determined by 
+$\mu$ and $\sigma$. Defining the latter as the infinitesimal generator
+\begin{equation}
+    \mathcal{A}f(x) = \sum_{i=1}^n \mu_i\frac{\partial f}{\partial x_i}
+    + \frac{1}{2}\sum_{i,j=1}^n (\sigma\sigma^\top)_{ij}
+    \frac{\partial^2 f}{\partial x_i \partial x_j},
+\end{equation}
+Itô's formula takes the compact form 
+$df = (\partial_t f + \mathcal{A}f)\,dt + \nabla_x f \cdot \sigma\,dW_t$.
+In particular, since the stochastic integral has zero mean by 
+Proposition~\ref{prop:SIproperties}, $f(t,X_t)$ is a martingale if and 
+only if $\partial_t f + \mathcal{A}f = 0$. This connection between the 
+dynamics of $X$ and the theory of PDEs will resurface in 
+Section~\ref{sec:pricing}.
+\end{remark}
+
+
+
+Old plan for Cauchy problem generalisation:
+
+
+\subsection{Placeholder for Cauchy problem for now}
+
+Now we know what the SDE is, when a solution exists, but the biggest question of them all, is how to find it. This is where Feynman Kac comes into the picture. However in a very specific setup of Cauchy problems that we will now introduce.
+
+
+Still considering the $n$-dimensional SDE, we are in need of \textcolor{red}{write the motivation for looking at the operator theory here!}
+
+Through the Itô formula, the process above is closely connected to a \textbf{partial differential operator} $\mathcal{P}$, which we define below
+
+\begin{definition}
+    Given the SDE in \textcolor{red}{reference to the sde above} the partial differential operator $\mathcal{P}$, referred to as the infinitesimal operator of $X$, is defined, for any function $h$ with $h\in C^2(\mathbb{R}^n)$, by
+
+    \begin{equation}
+        \mathcal{P} h(t,x)= \sum_{i=1}^{n} \mu_i(t,x) \frac{\partial h}{\partial x_i} (x) + \frac{1}{2} \sum_{i,j=1}^{n} (\sigma \sigma^\top)_{ij}(t,x) \frac{\partial^2 h}{\partial x_i \partial x_j}(x)
+    \end{equation}
+
+    \begin{equation}
+        \mathcal{P} = \mu(t,x)\frac{\partial}{\partial x} + \frac{1}{2}\sigma^2(t,x)\frac{\partial^2}{\partial x^2}
+    \end{equation}
+\end{definition}
+\textcolor{red}{why does h depend only on x in some parts?}
+
+we note that in terms of the infinitesimal generator, the Itô formula takes the form
+... (page 72)
+
+
+This is an important result in order to define the problem we intend to selv with the modeling of yield curves, which we will start of formulating in a purely mathematical sense and afterwards.
+
+Now we know what the SDE is, when a solution exists, but the biggest question of them all, is how to find it. This is where Feynman Kac comes into the picture. However in a very specific setup of Cauchy problems that we will now introduce.
+
+We will define and example of the so called \textbf{Cauchy Problem} which is a \textbf{boundary value problem}
+
+
+\textcolor{red}{so we need define the problem that is what we will essentially solve}
+
+and then how Feynman Kac is way to find one of the "nice" solutions.
+
+
+
+
+
+From the article FredNilsLuca we have the more general:
+
+We start by defining the parabolic Cauchy Problem from \textcolor{red}{FredNilsLuca}, which follow Friedman \textcolor{red}{(1975)}.
+
+We are interested in solving the following backward parabolic Cauchy problem in $\mathbb{R}^n$
+
+\textcolor{write up there problem but in our framework of pricing perspectiv, but still purelty matehatmical. Then after the ML section, we can introduce the final problem, that we intent to solve with neural networks and hereof write about the benchmarks in the same section.}
+

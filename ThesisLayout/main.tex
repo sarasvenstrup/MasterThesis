@@ -16,7 +16,7 @@
 % *********************************************************
 \documentclass[
   paper=A4,
-  10pt,
+  11pt,
   twoside=true,
   %openright,
   parskip=full,
@@ -81,7 +81,7 @@
 % *********************************************************
 % THESIS METADATA
 % *********************************************************
-\newcommand{\thesisTitle}{Encoder--Decoder Approaches to Affine Term Structure Models}
+\newcommand{\thesisTitle}{Arbitrage--Free Term Structure Modeling Using Neural Encoder--Decoder Architectures}
 \newcommand{\thesisName}{Frederikke R{\o}n Nielsen \\ Sara Friis Svenstrup}
 \newcommand{\thesisSubject}{MSc in Mathematics \& Economics}
 \newcommand{\thesisDate}{June 2026}
@@ -331,7 +331,7 @@ Just write text... for now.
 \listoffigures
 \clearpage
 
-\listoftables
+%\listoftables
 \clearpage
 
 % --------------------------
@@ -341,43 +341,37 @@ Just write text... for now.
 \setcounter{page}{1}
 
 
+% ------- PART I -------------
+
 %\input{ThesisLayout/mainmatter/introduction}
 
-\input{ThesisLayout/mainmatter/theory}
+\input{ThesisLayout/mainmatter/FinanceTheory}
 
-%\input{ThesisLayout/mainmatter/motivation}
+\input{ThesisLayout/mainmatter/MLTheory}
+
+\input{ThesisLayout/mainmatter/Method}
 
 \input{ThesisLayout/mainmatter/data}
 
-\input{ThesisLayout/mainmatter/RolfsMethod}
+\input{ThesisLayout/mainmatter/Model}
 
-%\input{ThesisLayout/mainmatter/NumericalImplementation}
+% \input{ThesisLayout/mainmatter/results}
 
-\input{ThesisLayout/mainmatter/results}
+% DISCUSSION?
 
-\input{ThesisLayout/mainmatter/Stable}
-
-
-\input{ThesisLayout/mainmatter/ResultsStable}
-
-\input{ThesisLayout/mainmatter/SimulationComparison}
+% ------- PART II ------ 
 
 \input{ThesisLayout/mainmatter/Simulation}
 
+%\input{ThesisLayout/mainmatter/Pricing}
 
+%\input{ThesisLayout/mainmatter/BenthTheory}
 
-\input{ThesisLayout/mainmatter/PricingMotivation}
+% -------- PART III ---------
 
-\input{ThesisLayout/mainmatter/PricingMethodology}
-
-
+% DISCUSSION?
 
 %\input{ThesisLayout/mainmatter/conclusion}
-
-
-
-
-
 
 % --------------------------
 % BIBLIOGRAPHY
@@ -385,7 +379,7 @@ Just write text... for now.
 \clearpage
 \printbibliography
 
-\input{ThesisLayout/mainmatter/appendix}
+%\input{ThesisLayout/mainmatter/appendix}
 
 
 
