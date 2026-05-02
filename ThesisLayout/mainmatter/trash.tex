@@ -219,3 +219,123 @@ We are interested in solving the following backward parabolic Cauchy problem in 
 
 \textcolor{write up there problem but in our framework of pricing perspectiv, but still purelty matehatmical. Then after the ML section, we can introduce the final problem, that we intent to solve with neural networks and hereof write about the benchmarks in the same section.}
 
+
+
+
+
+% infinisteaml cases:
+
+
+\textcolor{red}{
+\begin{remark}[Infinitesimal Generator \textcolor{red}{(1dim)}]
+The drift in \eqref{eq:Ito} decomposes naturally into an explicit time 
+derivative $\partial_t f$ and a purely spatial part determined by 
+$\mu$ and $\sigma$. Defining the latter as the infinitesimal generator
+\begin{equation}
+    \mathcal{A}f(x) = \sum_{i=1}^n \mu_i\frac{\partial f}{\partial x_i}
+    + \frac{1}{2}\sum_{i,j=1}^n (\sigma\sigma^\top)_{ij}
+    \frac{\partial^2 f}{\partial x_i \partial x_j},
+\end{equation}
+Itô's formula takes the compact form 
+$df = (\partial_t f + \mathcal{A}f)\,dt + \nabla_x f \cdot \sigma\,dW_t$.
+In particular, since the stochastic integral has zero mean by 
+Proposition~\ref{prop:SIproperties}, $f(t,X_t)$ is a martingale if and 
+only if $\partial_t f + \mathcal{A}f = 0$. This connection between the dynamics of $X$ and the theory of partial differential equations is made precise by the Feynman-Kac formula of Section~\ref{subsec:fk}, and underlies the pricing framework developed in later chapters.
+\end{remark}
+}
+
+\textcolor{red}{
+\begin{remark}[Infinitesimal Generator \textcolor{red}{(multidim)}]
+The drift in \eqref{eq:Ito} decomposes naturally into an explicit 
+time derivative $\partial_t f$ and a purely spatial part determined by 
+$\mu_t$ and $\sigma_t$. Defining the latter as the infinitesimal generator
+\begin{equation}
+    \mathcal{A}f(x) = \sum_{i=1}^n \mu_t^i \frac{\partial f}{\partial x^i}
+    + \frac{1}{2}\operatorname{tr}\!\left[\sigma_t^\top H_f \sigma_t\right],
+\end{equation}
+where $H_f$ denotes the Hessian matrix with entries 
+$[H_f]_{ij} = \frac{\partial^2 f}{\partial x^i \partial x^j}$, 
+Itô's formula takes the compact form
+\begin{equation}
+    df = \left(\partial_t f + \mathcal{A}f\right)dt 
+    + \sum_{i=1}^n \frac{\partial f}{\partial x^i}\sigma_t^i\, dW_t.
+\end{equation}
+In particular, $f(t, X_t)$ is a martingale if and only if 
+$\partial_t f + \mathcal{A}f = 0$, which is a partial differential 
+equation in $(t,x)$ whose coefficients are exactly those of the 
+SDE \eqref{eq:multiSDE}. This connection between the dynamics of $X$ 
+and the theory of partial differential equations is the foundation 
+of the subsequent analysis.
+\end{remark}
+}
+
+
+
+
+
+
+% OLD FEYNMAN KAC SECTION
+
+
+
+
+
+
+\newpage
+
+\subsection{The Feynman--Kac Formula}
+\label{subsec:fk}
+
+Remark~\ref{rem:generator} established one direction of the link between diffusion processes and partial differential equations: if $f(t,X_t)$ is a martingale, then its drift must vanish, which leads to the equation
+\[
+\partial_t f + \mathcal{A}f = 0.
+\]
+In financial applications, the converse direction is particularly important. Prices are typically expressed as conditional expectations under a pricing measure, and one then seeks the differential equation satisfied by that expectation. For Markov diffusion processes, the Feynman--Kac formula provides precisely this connection between conditional expectations and parabolic PDEs.
+
+We state a version that allows for a zeroth-order term in the PDE. This is the form relevant for asset-pricing applications, where the quantity of interest is a discounted conditional expectation and the discounting enters through the additional term $-k\,u$.
+
+\begin{theorem}[Feynman--Kac, {\citealp[Prop.~5.6]{Bjork2020}}]
+\label{thm:fk}
+Let $\varphi : \mathbb{R}^n \to \mathbb{R}$ be continuous and satisfy a polynomial growth condition, let $k : [0,T] \times \mathbb{R}^n \to \mathbb{R}$ be bounded and continuous, and suppose that
+\[
+u \in C([0,T]\times\mathbb{R}^n)\cap C^{1,2}([0,T)\times\mathbb{R}^n)
+\]
+solves the terminal-value problem
+\begin{equation}
+\begin{cases}
+    \partial_t u(t,x)+\mathcal{A}u(t,x)-k(t,x)\,u(t,x)=0,
+    & (t,x)\in[0,T)\times\mathbb{R}^n, \\[4pt]
+    u(T,x)=\varphi(x),
+    & x\in\mathbb{R}^n,
+\end{cases}
+\label{eq:fk_pde}
+\end{equation}
+where $\mathcal{A}$ is the infinitesimal generator defined in \eqref{eq:generator}. Then $u$ admits the probabilistic representation
+\begin{equation}
+u(t,x)
+=
+\mathbb{E}\!\left[
+    \exp\!\left(-\int_t^T k(s,X_s)\,ds\right)\varphi(X_T)
+    \,\middle|\,
+    X_t=x
+\right],
+\label{eq:fk_formula}
+\end{equation}
+where $X$ is the diffusion process with dynamics \eqref{eq:multiSDE}.
+\end{theorem}
+
+\begin{proof}
+See \citet[Prop.~5.6]{Bjork2020}. A version under weaker regularity conditions is given in \citet[Thm.~5.3]{Friedman1975}.
+\end{proof}
+
+Two aspects of \eqref{eq:fk_formula} are particularly important. First, the representation depends on the past only through the current state $(t,x)$, reflecting the Markov property from Definition~\ref{def:markov}. Second, if $k\equiv 0$, then \eqref{eq:fk_formula} reduces to
+\[
+u(t,x)=\mathbb{E}\!\left[\varphi(X_T)\mid X_t=x\right],
+\]
+while \eqref{eq:fk_pde} reduces to
+\[
+\partial_t u+\mathcal{A}u=0,
+\]
+which is exactly the drift condition from Remark~\ref{rem:generator}. The Feynman--Kac formula can therefore be viewed as the natural extension of the martingale relation to the case where the conditional expectation is weighted by an exponential discount factor.
+
+This result will be central in the pricing theory developed below. In particular, when the discount factor is generated by the short rate, the Feynman--Kac formula yields the PDE representation of arbitrage-free bond prices.

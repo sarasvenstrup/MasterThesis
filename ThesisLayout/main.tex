@@ -29,6 +29,8 @@
   abstract=on
 ]{scrreprt}
 
+\usepackage[section]{placeins}
+
 % --------------------------------------------------
 % Language & typography
 % --------------------------------------------------
@@ -55,9 +57,6 @@
 %\singlespacing
 \setstretch{1.2}
 
-
-
-
 % --------------------------------------------------
 % Neural Network Visualization
 % --------------------------------------------------
@@ -65,8 +64,6 @@
 \usetikzlibrary{positioning}
 \usetikzlibrary{decorations.pathreplacing}
 \usetikzlibrary{calc}
-
-
 
 % --------------------------------------------------
 % Links
@@ -327,10 +324,10 @@ Later.
 Just write text... for now.
 \clearpage
 
-\tableofcontents
+%\tableofcontents
 \clearpage
 
-\listoffigures
+%\listoffigures
 \clearpage
 
 %\listoftables
@@ -347,25 +344,28 @@ Just write text... for now.
 
 %\input{ThesisLayout/mainmatter/introduction}
 
-%\input{ThesisLayout/mainmatter/FinanceTheory}
+\input{ThesisLayout/mainmatter/FinanceTheory}
 
-%\input{ThesisLayout/mainmatter/MLTheory}
+\input{ThesisLayout/mainmatter/MLTheory}
 
-%\input{ThesisLayout/mainmatter/Method}
+\input{ThesisLayout/mainmatter/Method}
 
-%\input{ThesisLayout/mainmatter/data}
+\input{ThesisLayout/mainmatter/data}
 
-%\input{ThesisLayout/mainmatter/Model}
+\input{ThesisLayout/mainmatter/Model}
 
 \input{ThesisLayout/mainmatter/results}
+
+%\input{ThesisLayout/mainmatter/ResultsStable}
+
 
 % DISCUSSION?
 
 % ------- PART II ------ 
 
-%\input{ThesisLayout/mainmatter/Simulation}
+\input{ThesisLayout/mainmatter/Simulation}
 
-%\input{ThesisLayout/mainmatter/Pricing}
+\input{ThesisLayout/mainmatter/Pricing}
 
 %\input{ThesisLayout/mainmatter/BenthTheory}
 
@@ -379,7 +379,7 @@ Just write text... for now.
 % BIBLIOGRAPHY
 % --------------------------
 \clearpage
-\printbibliography
+%\printbibliography
 
 %\input{ThesisLayout/mainmatter/appendix}
 

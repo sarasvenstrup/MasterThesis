@@ -4,7 +4,7 @@
 
 % This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}. While the original paper is formulated for two latent factors, the notation below is written for a general number \(\ell\) of latent factors. In the implementation, special care is required for \(\ell>2\) to ensure that the volatility correlation matrix remains positive definite.
 
-This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}, formulated here in a generalized framework that accommodates an arbitrary number of latent factors and currencies. The model combines a low-dimensional latent representation with an arbitrage-free bond-pricing structure in order to reconstruct observed par swap rate curves while enforcing the risk-neutral no-arbitrage condition by construction. In contrast to autoencoder models that decode directly into swap rates, the decoder in this framework generates zero-coupon bond prices, from which swap rates are recovered through fixed-income pricing relations. This makes the zero-coupon bond curve the central object of the model.
+This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}, formulated here in a generalized framework that accommodates an arbitrary number of latent factors and currencies. The model combines a low-dimensional latent representation with an arbitrage-free bond-pricing structure in order to reconstruct observed par swap rate curves while enforcing the risk-neutral no-arbitrage condition by construction. 
 
 The encoder maps observed swap rates into a low-dimensional latent state representation. The decoder then transforms this latent state into a continuous zero-coupon bond price curve consistent with arbitrage-free term structure dynamics. Since par swap rates are deterministic functions of zero-coupon bond prices, the reconstructed swap rates are arbitrage-free whenever the underlying bond prices satisfy the no-arbitrage condition. Figure~\ref{fig:rolf_architecture} provides a graphical overview of the architecture.
 
@@ -18,7 +18,7 @@ We consider observed par swap rates at time $t$ on the discrete maturity grid
 \[
 \{\tau_1,\tau_2,\dots,\tau_M\}, \qquad 0<\tau_1<\tau_2<\dots<\tau_M,
 \]
-where $S_t^{(i)}:=S(t,\tau_i)$ denotes the par swap rate for tenor $\tau_i$. These are collected in the input vector
+where $S_t^{(i)}:=S(t,\tau_i)$ denotes the par swap rate for maturity $\tau_i$. These are collected in the input vector
 \[
 %\mathbf{S}_t=(S_1(t),\dots,S_M(t))^\top \in \mathbb{R}^M.
 \mathbf{S}_t=(S_t^{(1)},\dots,S_t^{(M)})^\top \in \mathbb{R}^M.
@@ -37,7 +37,7 @@ Thus, the encoder compresses the observed swap curve into an $\ell$-dimensional 
 
 \section{Decoder}
 
-With the latent state $z_t$ in hand, the decoder is constructed to map it directly to zero-coupon bond prices $P(z_t,\tau)$. In the Markovian setting imposed below, bond prices depend on calendar time only through the current latent state and time to maturity. We therefore write
+With the latent state $z_t$ as input, the decoder is constructed to map it directly to zero-coupon bond prices $P(z_t,\tau)$. In the Markovian setting imposed below, bond prices depend on calendar time only through the current latent state and time to maturity. We therefore write
 \[
 P(t,T)=P(z_t,\tau), \qquad \tau=T-t.
 \]
@@ -65,6 +65,8 @@ where the sum runs over all maturities on the specified grid less than or equal 
 \subsection{The Decoder Network}
 %--------------------------------------------------------
 Having specified the input and output of the model, we now describe the internal structure of the decoder in detail. Figure~\ref{fig:rolf_architecture} illustrates the overall mapping from latent factors to bond prices, however the decoder consists of additional components not explicitly shown in this high-level representation. As illustrated in the more detailed Figure~\ref{fig:rolf_architecture_details}, latent factors branch into four neural networks. Three of these, $\mathcal{K},\mathcal{H}$ and $\mathcal{R}$, are used for parameter modelling and are discussed in Section~\ref{subsec:neural-modelling-dynamics}. Here we focus on $\mathcal{G}$, which together with the affine-inspired representation described in the following section produces ZCB prices.
+
+\input{ThesisLayout/figures/Fig_RolfsMethodVisual2}
 
 The network $\mathcal{G}$ takes as input the augmented vector $(z_t^\top,\tau)^\top\in\mathbb{R}^{\ell+1}$ and consists of one hidden layer of dimension 10, with hidden units $h_1,...,h_{10}$ as illustrated in Figure \ref{fig:rolf_architecture_details}, where the hidden-layer dimension follows the empirical specification in \citet{MatinWanPoulsen2025}.
 
@@ -102,6 +104,7 @@ The derivation of this ODE system, which ensures that the resulting zero-coupon 
 
 %--------------------------------------------------------
 \subsection{Derivation of the No-Arbitrage ODE System}
+\label{subsec:no_arbitrage_ode_system}
 %--------------------------------------------------------
 
 %To guarantee that the generated bond price curve satisfies the no-arbitrage condition by construction, we parameterize bond prices in an affine-inspired form and derive a system of ordinary differential equations (ODEs) that must be satisfied for each realized latent state $z_t$. These ODEs arise directly from the risk-neutral pricing condition and enforce arbitrage-freeness at the level of zero-coupon bond prices.
@@ -222,6 +225,7 @@ Setting the drift to zero and using $r(t)=\tilde{r}(z_t)$ from \eqref{shortrated
 \tilde r(z_t)\,P
 =
 0
+\label{eq:bond_pricing_pde}
 \]
 
 with boundary condition $P(z_t,0)=1$. 
@@ -277,7 +281,7 @@ For this to hold for all $\tau\geq0$, a sufficient choice is
 \end{align}
 where the boundary condition follows from $P(z_t,0)=\exp(A_{z_t}(0)-B_{z_t}(0)\mathcal{G}(z_t,0))=1$.
 
-The coupled ODEs can be written compactly as a two-dimensional ODE system by introducing the vector $X_{z_t}(\tau)=(A_{z_t}(\tau),B_{z_t}(\tau))^\top$ where $X_{z_t}(0)=(0,0)^\top$,
+The coupled ODEs can be reduced to a single ODE by introducing the vector $X_{z_t}(\tau)=(A_{z_t}(\tau),B_{z_t}(\tau))^\top$ where $X_{z_t}(0)=(0,0)^\top$,
 \begin{align*}
     \partial_{\tau}X_{z_t}(\tau)&=
     \begin{pmatrix}
@@ -310,12 +314,8 @@ The coupled ODEs can be written compactly as a two-dimensional ODE system by int
 \end{align*}
 where $\odot$ denotes elementwise multiplication. This system is solved numerically for each realized latent state $z_t$ using a fourth-order Runge--Kutta scheme (3/8-rule), yielding $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ such that the resulting bond prices \eqref{affineinspiredzcbprices} satisfy the no-arbitrage condition for all maturities $\tau$.
 
-The following verification assumes in particular that
-\(\mathcal G(z_t,0)\neq 0\), so that \(\beta_{z_t}(0)\) and
-\(\partial_\tau B_{z_t}(0)\) are well defined.
 
-\input{ThesisLayout/figures/Fig_RolfsMethodVisual2}
-\textcolor{red}{Find uaf hvor denne figur skal placeres!}
+
 
 The derivation of the ODE system is only complete once we verify that the \textit{hard constraint} \eqref{hardconstraint} holds. From \eqref{eq:instantforwardrate}, the short rate is
 $$\lim_{\tau\rightarrow0}f(t,\tau)=\lim_{\tau\rightarrow0}\bigg(-\partial_{\tau}A_{z_t}(\tau)+\partial_{\tau}B_{z_t}(\tau)\mathcal{G}(z_t,\tau)+\partial_{\tau}\mathcal{G}(z_t,\tau)B_{z_t}(\tau)\bigg)$$
@@ -323,7 +323,7 @@ To evaluate this limit, we note that setting $\tau=0$ in \eqref{ODEB} and \eqref
 \begin{align}
 \partial_\tau B_{z_t}(\tau=0) &=\beta_{z_t}(\tau=0)=\frac{\tilde{r}(z_t)}{\mathcal{G}(z_t,\tau=0)}
 \label{boundcondB}\\
-\partial_\tau A_{z_t}(\tau=0) &= 0
+\partial_\tau A_{z_t}(\tau=0) &= 0.
 \label{boundcondA}
 \end{align}
 Since $B_{z_t}(\tau=0)=0$, we conclude that
