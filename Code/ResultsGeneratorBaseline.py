@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import matplotlib.dates as mdates
 import torch
 
 # ── path setup ─────────────────────────────────────────────────────────────────
@@ -948,17 +949,18 @@ if len(roll_avgs) >= 1 or len(is_avgs) >= 1:
 
     fig, ax = plt.subplots(figsize=(7, 4))
 
-    # IS bars
+    # IS bars (solid)
     _is_vals  = [is_avgs.get(d, np.nan) for d in _dims]
     _is_bars  = ax.bar(_x - _w/2, _is_vals,
                        width=_w, color=[DIM_COLORS[d] for d in _dims],
                        edgecolor="none")
 
-    # OOS rolling bars
+    # OOS rolling bars (hatched)
     _oos_vals = [roll_avgs.get(d, np.nan) for d in _dims]
     _oos_bars = ax.bar(_x + _w/2, _oos_vals,
                        width=_w, color=[DIM_COLORS[d] for d in _dims],
-                       edgecolor="none", alpha=0.5)
+                       edgecolor=[DIM_COLORS[d] for d in _dims],
+                       alpha=0.5, hatch="////")
 
     # value labels
     for bars, vals in [(_is_bars, _is_vals), (_oos_bars, _oos_vals)]:
@@ -1034,27 +1036,57 @@ for _dim, _col in _Q3b_COLORS.items():
         continue
     _any_plotted = True
 
-    # average line (clipped)
-    avg_clipped = _df["avg_rmse_bps"].where(_df["avg_rmse_bps"] <= CLIP)
-    valid_avg   = avg_clipped.notna()
-    ax.plot(_df.loc[valid_avg, "test_start"], avg_clipped[valid_avg],
+    # average line (clipped at CLIP)
+    avg_clipped = _df["avg_rmse_bps"].clip(upper=CLIP)
+    ax.plot(_df["test_start"], avg_clipped,
             linewidth=1.8, color=_col, label=f"$\\ell={_dim}$", zorder=5)
 
-    # explosion bars colored to match this model's line
-    ccy_cols     = [f"rmse_bps_{c}" for c in CCY_ORDER if f"rmse_bps_{c}" in _df.columns]
-    explode_max  = _df[ccy_cols].max(axis=1)
-    explode_mask = explode_max > CLIP
-    _bar_added   = False
+    # text annotations alongside spike, rotated to match spike angle
+    _ANNOT_Y = {2: 97, 3: 88, 4: 79}   # staggered y per dim
+    explode_mask = _df["avg_rmse_bps"] > CLIP
     for _, row in _df[explode_mask].iterrows():
-        max_val  = explode_max[row.name]
-        bar_date = row["test_start"] + DIM_OFFSETS[_dim]
-        ax.bar(bar_date, CLIP, width=BAR_WIDTH,
-               color=_col, alpha=0.30, zorder=3,
-               label=f"$\\ell={_dim}$ exploded" if not _bar_added else "_nolegend_")
-        ax.text(bar_date, CLIP * 0.97,
-                f"{max_val:.0f}", fontsize=7, ha="center", va="top",
-                rotation=90, color=_col, fontweight="bold", zorder=4)
-        _bar_added = True
+        true_val = row["avg_rmse_bps"]
+        idx = _df.index.get_loc(row.name)
+
+        # check if another dim has a spike within one step of this date
+        _window = pd.Timedelta(days=200)
+        _other_spike_nearby = any(
+            (load_rolling_df(d) is not None and
+             ((load_rolling_df(d)["avg_rmse_bps"] > CLIP) &
+              (abs(load_rolling_df(d)["test_start"] - row["test_start"]) <= _window)).any())
+            for d in [2, 3, 4] if d != _dim
+        )
+        _use_left = (_dim == 4 and _other_spike_nearby)
+
+        if _use_left and idx > 0:
+            # ascending side: previous point → spike
+            prev_r = _df.iloc[idx - 1]
+            x0 = mdates.date2num(prev_r["test_start"])
+            y0 = min(prev_r["avg_rmse_bps"], CLIP)
+            x1 = mdates.date2num(row["test_start"])
+            y1 = CLIP
+            p0 = ax.transData.transform((x0, y0))
+            p1 = ax.transData.transform((x1, y1))
+            angle = np.degrees(np.arctan2(p1[1] - p0[1], p1[0] - p0[0]))
+            angle = 0.2 * angle + 0.8 * 90    # blend toward vertical upward
+        elif idx < len(_df) - 1:
+            # descending side: spike → next point
+            next_r = _df.iloc[idx + 1]
+            x0 = mdates.date2num(row["test_start"])
+            y0 = CLIP
+            x1 = mdates.date2num(next_r["test_start"])
+            y1 = min(next_r["avg_rmse_bps"], CLIP)
+            p0 = ax.transData.transform((x0, y0))
+            p1 = ax.transData.transform((x1, y1))
+            angle = np.degrees(np.arctan2(p1[1] - p0[1], p1[0] - p0[0]))
+            angle = 0.2 * angle + 0.8 * (-90)  # blend toward vertical downward
+        else:
+            angle = -90
+
+        ax.text(row["test_start"], _ANNOT_Y[_dim],
+                f"{true_val:.0f}", fontsize=7, ha="center", va="bottom",
+                color=_col, fontweight="bold", zorder=6,
+                rotation=angle, rotation_mode="anchor")
 
 if not _any_plotted:
     print("  Q3b SKIPPED — no rolling CSVs found for any dim")
@@ -1149,6 +1181,127 @@ for _dim in [2, 3, 4]:
     fig.tight_layout()
     save_fig(fig, f"Q4b_per_currency_bar_chart_dim{_dim}")
     print(f"  Saved Q4b dim={_dim}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q4c — Tables: OOS rolling RMSE by curve regime (inverted / negative rates)
+# Pools predictions_test.csv across all roll windows for LATENT_DIM baseline
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q4c: OOS rolling RMSE by curve regime (inverted / negative rates) ──")
+
+_rolls_dir = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                           f"OOS_roll_dim{LATENT_DIM}_baseline",
+                           ROLL_SUBDIR, f"ep{ROLL_EPOCHS}", "rolls")
+
+if not os.path.exists(_rolls_dir):
+    print(f"  ⚠️  Q4c skipped — rolls folder not found: {_rolls_dir}")
+else:
+    _pred_frames = []
+    for _roll_folder in sorted(os.listdir(_rolls_dir)):
+        _pred_path = os.path.join(_rolls_dir, _roll_folder, "predictions_test.csv")
+        if os.path.exists(_pred_path):
+            _pred_frames.append(pd.read_csv(_pred_path))
+
+    if len(_pred_frames) == 0:
+        print("  ⚠️  Q4c skipped — no predictions_test.csv files found in roll folders.")
+    else:
+        _df_oos = pd.concat(_pred_frames, ignore_index=True)
+
+        # identify actual and fitted tenor columns
+        _actual_cols = [c for c in _df_oos.columns if c.startswith("actual_tenor_")]
+        _fitted_cols = [c for c in _df_oos.columns if c.startswith("fitted_tenor_")]
+
+        _X_oos = _df_oos[_actual_cols].values
+        _S_oos = _df_oos[_fitted_cols].values
+
+        # per-observation RMSE in bps
+        _rmse_oos = np.sqrt(np.mean((_X_oos - _S_oos) ** 2, axis=1)) * 10_000
+
+        # regime flags
+        _inv_oos = _X_oos[:, 0] > _X_oos[:, -1]
+        _neg_oos = (_X_oos < 0).any(axis=1)
+
+        _df_oos_regime = pd.DataFrame({
+            "ccy":      _df_oos["ccy"].values,
+            "rmse_bps": _rmse_oos,
+            "inverted": _inv_oos,
+            "negative": _neg_oos,
+        })
+
+        def _regime_table_oos(df, flag_col, label_true, label_false):
+            rows = {}
+            for lbl, mask in [(label_true, df[flag_col]), (label_false, ~df[flag_col])]:
+                for stat, fn in [("N",               lambda x: len(x)),
+                                  ("Avg RMSE (bps)", lambda x: round(x.mean(), 2)),
+                                  ("Std RMSE (bps)", lambda x: round(x.std(),  2))]:
+                    row = {}
+                    for ccy in CCY_ORDER:
+                        sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                        row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                    sub_all = df.loc[mask, "rmse_bps"]
+                    row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                    rows[f"{lbl} — {stat}"] = row
+            return pd.DataFrame(rows).T
+
+        tbl_inv_oos = _regime_table_oos(_df_oos_regime, "inverted", "Inverted", "Normal")
+        save_table(tbl_inv_oos, "Q4c_oos_rmse_inverted")
+        print("\n  Inverted vs Normal (OOS):")
+        print(tbl_inv_oos.to_string())
+
+        tbl_neg_oos = _regime_table_oos(_df_oos_regime, "negative", "Negative rates", "Non-negative rates")
+        save_table(tbl_neg_oos, "Q4c_oos_rmse_negative")
+        print("\n  Negative vs Non-negative rates (OOS):")
+        print(tbl_neg_oos.to_string())
+
+        # combined 4-regime table
+        def _combined_regime_table_oos(df):
+            groups = [
+                ("Normal, Non-negative",   ~df["inverted"] & ~df["negative"]),
+                ("Inverted, Non-negative",  df["inverted"] & ~df["negative"]),
+                ("Normal, Negative",       ~df["inverted"] &  df["negative"]),
+                ("Inverted, Negative",      df["inverted"] &  df["negative"]),
+            ]
+            rows = {}
+            for lbl, mask in groups:
+                for stat, fn in [("N",              lambda x: len(x)),
+                                 ("Avg RMSE (bps)", lambda x: round(x.mean(), 2)),
+                                 ("Std RMSE (bps)", lambda x: round(x.std(),  2))]:
+                    row = {}
+                    for ccy in CCY_ORDER:
+                        sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                        row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                    sub_all = df.loc[mask, "rmse_bps"]
+                    row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                    rows[f"{lbl} — {stat}"] = row
+            return pd.DataFrame(rows).T
+
+        tbl_combined_oos = _combined_regime_table_oos(_df_oos_regime)
+        save_table(tbl_combined_oos, "Q4c_oos_rmse_combined")
+        print("\n  Combined regime (inverted × negative) (OOS):")
+        print(tbl_combined_oos.to_string())
+
+        # scatter over time: colour encodes regime (negative = red family)
+        _df_oos_regime["as_of_date"] = pd.to_datetime(_df_oos["as_of_date"].values)
+        fig, ax = plt.subplots(figsize=(11, 4))
+        _oos_scatter_groups = [
+            (~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Normal, Non-negative",     "steelblue"),
+            ( _df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Inverted, Non-negative",   "orange"),
+            (~_df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Normal, Negative rates",   "tomato"),
+            ( _df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Inverted, Negative rates", "darkred"),
+        ]
+        for _mask, _lbl, _col in _oos_scatter_groups:
+            _sub = _df_oos_regime[_mask]
+            if len(_sub) == 0:
+                continue
+            ax.scatter(_sub["as_of_date"], _sub["rmse_bps"],
+                       s=4, alpha=0.4, color=_col, marker="o", label=_lbl, zorder=3)
+        ax.set_ylabel("RMSE (bps)")
+        ax.legend(fontsize=8, frameon=False, markerscale=3, ncol=2)
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        save_fig(fig, "Q4c_oos_scatter_regime")
+
+        print(f"  Pooled {len(_pred_frames)} roll windows, {len(_df_oos)} test observations.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1507,9 +1660,179 @@ else:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Q6e — Tables: IS RMSE by curve regime (inverted vs normal, negative vs non-neg)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q6e: RMSE by curve regime (inverted / negative rates) ──")
+
+if not _has_main_model:
+    print(f"  ⚠️  Q6e skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    # ── build per-observation dataframe ──────────────────────────────────────
+    _X  = X_train[mask_train].numpy()          # (N, n_tenors) actual rates
+    _S  = S_hat_train[mask_train].numpy()      # (N, n_tenors) fitted rates
+    _m  = meta_train.loc[mask_train.numpy()].reset_index(drop=True)
+
+    # per-observation RMSE in bps
+    _rmse_obs = np.sqrt(np.mean((_X - _S) ** 2, axis=1)) * 10_000
+
+    # regime flags (on actual rates)
+    _inverted = _X[:, 0] > _X[:, -1]          # short end > long end
+    _negative = (_X < 0).any(axis=1)          # any tenor negative
+
+    _df_regime = pd.DataFrame({
+        "ccy":      _m["ccy"].values,
+        "rmse_bps": _rmse_obs,
+        "inverted": _inverted,
+        "negative": _negative,
+    })
+
+    def _regime_table(df, flag_col, label_true, label_false):
+        """Build transposed regime table: rows = stats, cols = currencies + All."""
+        rows = {}
+        for lbl, mask in [(label_true, df[flag_col]), (label_false, ~df[flag_col])]:
+            for stat, fn in [("N", lambda x: len(x)),
+                             ("Avg RMSE (bps)", lambda x: round(x.mean(), 2)),
+                             ("Std RMSE (bps)", lambda x: round(x.std(), 2))]:
+                row = {}
+                for ccy in CCY_ORDER:
+                    sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                    row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                sub_all = df.loc[mask, "rmse_bps"]
+                row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                rows[f"{lbl} — {stat}"] = row
+        return pd.DataFrame(rows).T
+
+    # inverted table
+    tbl_inv = _regime_table(_df_regime, "inverted", "Inverted", "Normal")
+    save_table(tbl_inv, "Q6e_rmse_inverted")
+    print("\n  Inverted vs Normal:")
+    print(tbl_inv.to_string())
+
+    # negative rates table
+    tbl_neg = _regime_table(_df_regime, "negative", "Negative rates", "Non-negative rates")
+    save_table(tbl_neg, "Q6e_rmse_negative")
+    print("\n  Negative vs Non-negative rates:")
+    print(tbl_neg.to_string())
+
+    # combined 4-regime table
+    def _combined_regime_table(df):
+        groups = [
+            ("Normal, Non-negative",   ~df["inverted"] & ~df["negative"]),
+            ("Inverted, Non-negative",  df["inverted"] & ~df["negative"]),
+            ("Normal, Negative",       ~df["inverted"] &  df["negative"]),
+            ("Inverted, Negative",      df["inverted"] &  df["negative"]),
+        ]
+        rows = {}
+        for lbl, mask in groups:
+            for stat, fn in [("N",              lambda x: len(x)),
+                             ("Avg RMSE (bps)", lambda x: round(x.mean(), 2)),
+                             ("Std RMSE (bps)", lambda x: round(x.std(),  2))]:
+                row = {}
+                for ccy in CCY_ORDER:
+                    sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                    row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                sub_all = df.loc[mask, "rmse_bps"]
+                row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                rows[f"{lbl} — {stat}"] = row
+        return pd.DataFrame(rows).T
+
+    tbl_combined = _combined_regime_table(_df_regime)
+    save_table(tbl_combined, "Q6e_rmse_combined")
+    print("\n  Combined regime (inverted × negative):")
+    print(tbl_combined.to_string())
+
+    _df_regime["as_of_date"] = pd.to_datetime(_m["as_of_date"].values)
+
+    # ── 1. Bar chart: avg RMSE ± std per currency ─────────────────────────────
+    for flag_col, labels, fname in [
+        ("inverted", ("Inverted", "Normal"),               "Q6e_bar_inverted"),
+        ("negative", ("Negative rates", "Non-negative"),   "Q6e_bar_negative"),
+    ]:
+        fig, ax = plt.subplots(figsize=(9, 4))
+        _x = np.arange(len(CCY_ORDER))
+        _w = 0.35
+        for offset, (lbl, mask) in zip([-_w/2, _w/2],
+                                        [(labels[0], _df_regime[flag_col]),
+                                         (labels[1], ~_df_regime[flag_col])]):
+            _means = [_df_regime.loc[mask & (_df_regime["ccy"]==c), "rmse_bps"].mean() for c in CCY_ORDER]
+            _stds  = [_df_regime.loc[mask & (_df_regime["ccy"]==c), "rmse_bps"].std()  for c in CCY_ORDER]
+            ax.bar(_x + offset, _means, width=_w, label=lbl, yerr=_stds,
+                   capsize=3, error_kw=dict(lw=0.8))
+        ax.set_xticks(_x); ax.set_xticklabels(CCY_ORDER, fontsize=9)
+        ax.set_ylabel("Avg RMSE (bps)"); ax.legend(fontsize=9, frameon=False)
+        fig.tight_layout()
+        save_fig(fig, fname)
+
+    # ── 2. Box plot: RMSE distribution per currency ───────────────────────────
+    for flag_col, labels, fname in [
+        ("inverted", ("Inverted", "Normal"),               "Q6e_box_inverted"),
+        ("negative", ("Negative rates", "Non-negative"),   "Q6e_box_negative"),
+    ]:
+        fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
+        for ax, (lbl, mask) in zip(axes, [(labels[0], _df_regime[flag_col]),
+                                           (labels[1], ~_df_regime[flag_col])]):
+            _data = [_df_regime.loc[mask & (_df_regime["ccy"]==c), "rmse_bps"].dropna().values
+                     for c in CCY_ORDER]
+            ax.boxplot(_data, labels=CCY_ORDER, patch_artist=True,
+                       boxprops=dict(facecolor="steelblue", alpha=0.5),
+                       medianprops=dict(color="navy", lw=1.5),
+                       flierprops=dict(marker=".", markersize=3, alpha=0.4))
+            ax.set_title(lbl, fontsize=10)
+            ax.set_ylabel("RMSE (bps)")
+            ax.tick_params(axis="x", labelsize=8)
+        fig.tight_layout()
+        save_fig(fig, fname)
+
+    # ── 3. Scatter over time: colour encodes regime (negative = red family)
+    fig, ax = plt.subplots(figsize=(11, 4))
+    _scatter_groups = [
+        (~_df_regime["inverted"] & ~_df_regime["negative"], "Normal, Non-negative",     "steelblue"),
+        ( _df_regime["inverted"] & ~_df_regime["negative"], "Inverted, Non-negative",   "orange"),
+        (~_df_regime["inverted"] &  _df_regime["negative"], "Normal, Negative rates",   "tomato"),
+        ( _df_regime["inverted"] &  _df_regime["negative"], "Inverted, Negative rates", "darkred"),
+    ]
+    for mask, lbl, col in _scatter_groups:
+        sub = _df_regime[mask]
+        if len(sub) == 0:
+            continue
+        ax.scatter(sub["as_of_date"], sub["rmse_bps"],
+                   s=4, alpha=0.4, color=col, marker="o", label=lbl, zorder=3)
+    ax.set_ylabel("RMSE (bps)")
+    ax.legend(fontsize=8, frameon=False, markerscale=3, ncol=2)
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    save_fig(fig, "Q6e_scatter_regime")
+
+    # ── 4. Heatmap: avg RMSE — currencies × regime ────────────────────────────
+    _regimes = {
+        "Inverted":        _df_regime["inverted"],
+        "Normal":         ~_df_regime["inverted"],
+        "Negative":        _df_regime["negative"],
+        "Non-negative":   ~_df_regime["negative"],
+    }
+    _hmap = pd.DataFrame({
+        lbl: {ccy: _df_regime.loc[mask & (_df_regime["ccy"]==ccy), "rmse_bps"].mean()
+              for ccy in CCY_ORDER}
+        for lbl, mask in _regimes.items()
+    })
+    fig, ax = plt.subplots(figsize=(7, 4))
+    im = ax.imshow(_hmap.values.T, aspect="auto", cmap="YlOrRd")
+    ax.set_xticks(range(len(CCY_ORDER))); ax.set_xticklabels(CCY_ORDER, fontsize=9)
+    ax.set_yticks(range(len(_hmap.columns))); ax.set_yticklabels(_hmap.columns, fontsize=9)
+    for i, ccy in enumerate(CCY_ORDER):
+        for j, lbl in enumerate(_hmap.columns):
+            val = _hmap.loc[ccy, lbl]
+            if np.isfinite(val):
+                ax.text(i, j, f"{val:.1f}", ha="center", va="center", fontsize=7,
+                        color="white" if val > _hmap.values[np.isfinite(_hmap.values)].mean() else "black")
+    fig.colorbar(im, ax=ax, label="Avg RMSE (bps)")
+    fig.tight_layout()
+    save_fig(fig, "Q6e_heatmap")
+    print("  Saved Q6e figures.")
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Q6b — Plot: RMSE over time (monthly average IS)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q6b: RMSE over time ──")
 if not _has_main_model:
     print(f"  ⚠️  Q6b skipped — no checkpoint for dim={LATENT_DIM}")
 else:

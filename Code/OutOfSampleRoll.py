@@ -31,7 +31,7 @@ VARIANT = config.VARIANT
 
 torch.set_num_threads(4)
 torch.set_num_interop_threads(2)
-torch.backends.mkldnn.enabled = False  # IMPORTANT: Disable MKLDNN for numerical stability
+torch.backends.mkldnn.enabled = True
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Using device:", device)
@@ -39,7 +39,9 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 
 # ============================= Config ===============================
 USE = "bbg"
-LATENT_DIM = 4
+LATENT_DIM = 2
+
+#
 
 # Recommended rolling window setup (baseline OOS)
 TRAIN_YEARS = 5
@@ -298,8 +300,10 @@ def extract_parameters(model: nn.Module, X: torch.Tensor, meta_sub: pd.DataFrame
 
 def save_roll_outputs(model: nn.Module, X_train: torch.Tensor, meta_train_sub: pd.DataFrame,
                       roll_dir: str, lr_hist, train_mse_hist,
-                      avg_in_rmse_bps: float, avg_rmse_bps: float, k: int, test_start):
-    """Save all per-roll outputs: LR curve, train RMSE curve, latent CSV, parameters CSV + plots."""
+                      avg_in_rmse_bps: float, avg_rmse_bps: float, k: int, test_start,
+                      X_test: torch.Tensor = None, meta_test: pd.DataFrame = None):
+    """Save all per-roll outputs: LR curve, train RMSE curve, latent CSV, parameters CSV + plots,
+    and predictions CSV (actual vs fitted) for both train and test windows."""
     os.makedirs(roll_dir, exist_ok=True)
     params_dir = os.path.join(roll_dir, "parameters")
     os.makedirs(params_dir, exist_ok=True)
@@ -363,6 +367,25 @@ def save_roll_outputs(model: nn.Module, X_train: torch.Tensor, meta_train_sub: p
         fig.tight_layout()
         fig.savefig(os.path.join(params_dir, f"{col}.png"), dpi=300, bbox_inches="tight")
         plt.close(fig)
+
+    # predictions CSV (actual vs fitted) for train and test windows
+    tenor_cols = [f"tenor_{t}" for t in range(X_train.shape[1])]
+
+    def _save_predictions(X: torch.Tensor, meta_sub: pd.DataFrame, fname: str):
+        S_hat = predict_S_hat(model, X)
+        mask  = row_finite_mask(X) & row_finite_mask(S_hat)
+        X_np  = X[mask].numpy()
+        S_np  = S_hat[mask].numpy()
+        m     = meta_sub.loc[mask.numpy()].reset_index(drop=True)
+        df_pred = m[["as_of_date", "ccy"]].copy()
+        for i, t in enumerate(tenor_cols):
+            df_pred[f"actual_{t}"]  = X_np[:, i]
+            df_pred[f"fitted_{t}"]  = S_np[:, i]
+        df_pred.to_csv(os.path.join(roll_dir, fname), index=False)
+
+    _save_predictions(X_train, meta_train_sub, "predictions_train.csv")
+    if X_test is not None and meta_test is not None:
+        _save_predictions(X_test, meta_test, "predictions_test.csv")
 
 # ============================= Build rolling schedule ===============================
 date_min = max(meta["as_of_date"].min(), pd.Timestamp("2010-01-01"))
@@ -525,7 +548,8 @@ for k, test_start in enumerate(roll_starts):
         roll_dir = os.path.join(ROLLS_DIR, f"roll{k+1:02d}_{test_start.date()}")
         save_roll_outputs(model, X_train, meta_train_sub, roll_dir,
                           lr_hist, train_mse_hist,
-                          avg_in_rmse_bps, avg_rmse_bps, k, test_start)
+                          avg_in_rmse_bps, avg_rmse_bps, k, test_start,
+                          X_test=X_test, meta_test=meta_test)
         print(f"  Saved roll outputs → {roll_dir}")
 
 manifest["run_finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")

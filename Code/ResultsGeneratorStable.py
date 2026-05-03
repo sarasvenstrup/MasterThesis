@@ -59,7 +59,7 @@ STABLE_PARAM_DIMS = [2, 3, 4]  # dims for parameter plots
 ROLL_SUBDIR            = "train5Y_test6M_step6M"
 ROLL_DIVERGE_THRESHOLD = 100.0
 _ROLL_FALLBACK_SUBDIR  = "train3Y_test3M_step6M"
-ROLL_EP                = 2500
+ROLL_EP                = 3500
 
 EVENTS = {
     "GFC\n(15 Sep 2008)":       "2008-09-15",
@@ -90,13 +90,7 @@ def load_rolling_df(dim):
                         ROLL_SUBDIR, f"ep{ROLL_EP}",
                         f"oos_rolling_bbg_dim{dim}_{ROLL_SUBDIR}.csv")
     if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
-                            f"OOS_roll_dim{dim}_stable",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{ROLL_EP}",
-                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
-        if not os.path.exists(path):
-            return None
-        print(f"  [dim={dim}] Using fallback rolling CSV: {_ROLL_FALLBACK_SUBDIR}")
+        return None
     df = pd.read_csv(path)
     df["test_start"] = pd.to_datetime(df["test_start"])
     return df
@@ -134,12 +128,7 @@ def load_baseline_rolling_df(dim):
                         ROLL_SUBDIR, f"ep{ROLL_EP}",
                         f"oos_rolling_bbg_dim{dim}_{ROLL_SUBDIR}.csv")
     if not os.path.exists(path):
-        path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
-                            f"OOS_roll_dim{dim}_baseline",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{ROLL_EP}",
-                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
-        if not os.path.exists(path):
-            return None
+        return None
     df = pd.read_csv(path)
     df["test_start"] = pd.to_datetime(df["test_start"])
     return df
@@ -499,5 +488,166 @@ else:
     fig.tight_layout()
     save_fig(fig, "Q7_sharpe_ratio_IS_stable_dim2")
     print("  done")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q6e_stable — Tables: IS RMSE by curve regime (stable dim=3)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q6e_stable: IS RMSE by curve regime (ℓ=3) ──")
+
+_REGIME_DIM = 2
+_regime_model = load_stable_model(_REGIME_DIM)
+
+if _regime_model is None:
+    print(f"  ⚠️  Q6e_stable skipped — no checkpoint for dim={_REGIME_DIM}")
+else:
+    with torch.no_grad():
+        _S_regime = _regime_model(X_train)
+    _mask_regime = finite_mask(X_train, _S_regime)
+
+    _X_r = X_train[_mask_regime].numpy()
+    _S_r = _S_regime[_mask_regime].numpy()
+    _m_r = meta_train[_mask_regime.numpy()].reset_index(drop=True)
+
+    _rmse_obs   = np.sqrt(np.mean((_X_r - _S_r) ** 2, axis=1)) * 10_000
+    _inverted_r = _X_r[:, 0] > _X_r[:, -1]
+    _negative_r = (_X_r < 0).any(axis=1)
+
+    _df_regime = pd.DataFrame({
+        "ccy":      _m_r["ccy"].values,
+        "rmse_bps": _rmse_obs,
+        "inverted": _inverted_r,
+        "negative": _negative_r,
+    })
+
+    def _regime_table_stable(df, flag_col, label_true, label_false):
+        rows = {}
+        for lbl, mask in [(label_true, df[flag_col]), (label_false, ~df[flag_col])]:
+            for stat, fn in [("N",              lambda x: len(x)),
+                             ("Avg RMSE (bps)", lambda x: round(x.mean(), 2)),
+                             ("Std RMSE (bps)", lambda x: round(x.std(),  2))]:
+                row = {}
+                for ccy in CCY_ORDER:
+                    sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                    row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                sub_all = df.loc[mask, "rmse_bps"]
+                row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                rows[f"{lbl} — {stat}"] = row
+        return pd.DataFrame(rows).T
+
+    def _combined_regime_table_stable(df):
+        groups = [
+            ("Normal, Non-negative",   ~df["inverted"] & ~df["negative"]),
+            ("Inverted, Non-negative",  df["inverted"] & ~df["negative"]),
+            ("Normal, Negative",       ~df["inverted"] &  df["negative"]),
+            ("Inverted, Negative",      df["inverted"] &  df["negative"]),
+        ]
+        rows = {}
+        for lbl, mask in groups:
+            for stat, fn in [("N",              lambda x: len(x)),
+                             ("Avg RMSE (bps)", lambda x: round(x.mean(), 2)),
+                             ("Std RMSE (bps)", lambda x: round(x.std(),  2))]:
+                row = {}
+                for ccy in CCY_ORDER:
+                    sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                    row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                sub_all = df.loc[mask, "rmse_bps"]
+                row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                rows[f"{lbl} — {stat}"] = row
+        return pd.DataFrame(rows).T
+
+    tbl_inv = _regime_table_stable(_df_regime, "inverted", "Inverted", "Normal")
+    save_table(tbl_inv, "Q6e_stable_rmse_inverted")
+    print("\n  Inverted vs Normal (IS):")
+    print(tbl_inv.to_string())
+
+    tbl_neg = _regime_table_stable(_df_regime, "negative", "Negative rates", "Non-negative rates")
+    save_table(tbl_neg, "Q6e_stable_rmse_negative")
+    print("\n  Negative vs Non-negative rates (IS):")
+    print(tbl_neg.to_string())
+
+    tbl_combined = _combined_regime_table_stable(_df_regime)
+    save_table(tbl_combined, "Q6e_stable_rmse_combined")
+    print("\n  Combined regime (inverted × negative) (IS):")
+    print(tbl_combined.to_string())
+
+    print("  Saved Q6e_stable tables.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q4c_stable — Tables + scatter: OOS RMSE by curve regime (stable dim=4 rolling)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q4c_stable: OOS RMSE by curve regime (stable ℓ=2 rolling) ──")
+
+_stable_rolls_dir = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                                 f"OOS_roll_dim2_stable",
+                                 ROLL_SUBDIR, "ep3500", "rolls")
+
+if not os.path.exists(_stable_rolls_dir):
+    print(f"  ⚠️  Q4c_stable skipped — rolls folder not found: {_stable_rolls_dir}")
+else:
+    _stable_pred_frames = []
+    for _roll_folder in sorted(os.listdir(_stable_rolls_dir)):
+        _pred_path = os.path.join(_stable_rolls_dir, _roll_folder, "predictions_test.csv")
+        if os.path.exists(_pred_path):
+            _stable_pred_frames.append(pd.read_csv(_pred_path))
+
+    if len(_stable_pred_frames) == 0:
+        print("  ⚠️  Q4c_stable skipped — no predictions_test.csv files found.")
+    else:
+        _df_oos = pd.concat(_stable_pred_frames, ignore_index=True)
+
+        _actual_cols = [c for c in _df_oos.columns if c.startswith("actual_tenor_")]
+        _fitted_cols = [c for c in _df_oos.columns if c.startswith("fitted_tenor_")]
+
+        _X_oos = _df_oos[_actual_cols].values
+        _S_oos = _df_oos[_fitted_cols].values
+
+        _rmse_oos = np.sqrt(np.mean((_X_oos - _S_oos) ** 2, axis=1)) * 10_000
+        _inv_oos  = _X_oos[:, 0] > _X_oos[:, -1]
+        _neg_oos  = (_X_oos < 0).any(axis=1)
+
+        _df_oos_regime = pd.DataFrame({
+            "ccy":        _df_oos["ccy"].values,
+            "as_of_date": pd.to_datetime(_df_oos["as_of_date"].values),
+            "rmse_bps":   _rmse_oos,
+            "inverted":   _inv_oos,
+            "negative":   _neg_oos,
+        })
+
+        tbl_inv_oos = _regime_table_stable(_df_oos_regime, "inverted", "Inverted", "Normal")
+        save_table(tbl_inv_oos, "Q4c_stable_oos_rmse_inverted")
+        print("\n  Inverted vs Normal (OOS):")
+        print(tbl_inv_oos.to_string())
+
+        tbl_neg_oos = _regime_table_stable(_df_oos_regime, "negative", "Negative rates", "Non-negative rates")
+        save_table(tbl_neg_oos, "Q4c_stable_oos_rmse_negative")
+        print("\n  Negative vs Non-negative rates (OOS):")
+        print(tbl_neg_oos.to_string())
+
+        tbl_combined_oos = _combined_regime_table_stable(_df_oos_regime)
+        save_table(tbl_combined_oos, "Q4c_stable_oos_rmse_combined")
+        print("\n  Combined regime (inverted × negative) (OOS):")
+        print(tbl_combined_oos.to_string())
+
+        # scatter over time: colour encodes regime (negative = red family)
+        fig, ax = plt.subplots(figsize=(11, 4))
+        _oos_scatter_groups = [
+            (~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Normal, Non-negative",     "steelblue"),
+            ( _df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Inverted, Non-negative",   "orange"),
+            (~_df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Normal, Negative rates",   "tomato"),
+            ( _df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Inverted, Negative rates", "darkred"),
+        ]
+        for _mask, _lbl, _col in _oos_scatter_groups:
+            _sub = _df_oos_regime[_mask]
+            if len(_sub) == 0:
+                continue
+            ax.scatter(_sub["as_of_date"], _sub["rmse_bps"],
+                       s=4, alpha=0.4, color=_col, marker="o", label=_lbl, zorder=3)
+        ax.set_ylabel("RMSE (bps)")
+        ax.legend(fontsize=8, frameon=False, markerscale=3, ncol=2)
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        save_fig(fig, "Q4c_stable_oos_scatter_regime")
+
+        print(f"  Pooled {len(_stable_pred_frames)} roll windows, {len(_df_oos)} test observations.")
 
 print("\nResultsGeneratorStable complete.")

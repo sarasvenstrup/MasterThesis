@@ -1,8 +1,8 @@
 """
 Runner script: runs OutOfSampleRoll.py for selected dims and variants.
 
-  Stage 1 — OOS roll (stable):   LATENT_DIM = 4
-  Stage 2 — OOS roll (baseline): LATENT_DIM = 2
+  Stage 1 — OOS roll (stable):   LATENT_DIM = 2, 3, 4
+  Stage 2 — OOS roll (baseline): LATENT_DIM = 2, 3, 4
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -24,13 +24,13 @@ STAGES = [
     {
         "name":    "OOS roll (stable)",
         "script":  OOS_ROLL_PATH,
-        "dims":    [4],
+        "dims":    [2, 3, 4],
         "model_variant": "stable",
     },
     {
         "name":    "OOS roll (baseline)",
         "script":  OOS_ROLL_PATH,
-        "dims":    [2],
+        "dims":    [2, 3, 4],
         "model_variant": "baseline",
     },
 ]
