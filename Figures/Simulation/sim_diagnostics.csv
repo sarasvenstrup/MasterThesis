@@ -1,9 +1,13 @@
 Metric,Baseline,Stable
-Paths finite (%),100.0%,100.0%
 Max |z| across all paths,272450670275622043648.00,3.51
 Terminal r mean,37.97%,2.30%
 Terminal r std,117.29%,5.82%
 Terminal z std,z1=32979361770808078336.000; z2=30319574794572312576.000,z1=0.668; z2=0.107
+Terminal discount D(T) median,0.0000,0.7949
+Terminal discount D(T) range,"[0.0000, 192254.5096]","[0.5015, 1.5184]"
+r range (%),"[-123.28, 123.28]","[-11.09, 11.05]"
+Fraction with |z_T| < 10,0.0%,100.0%
+In-sample reconstruction RMSE (bps),17.61,8.49
 Re(lambda_1) of M,5.571446,-1.326504
 Re(lambda_2) of M,0.119691,-10.845960
 sigma_1 range (train cloud),"[0.5101, 1.0873]","[0.0288, 1.7269]"

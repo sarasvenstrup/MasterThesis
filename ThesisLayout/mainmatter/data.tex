@@ -1,7 +1,7 @@
 \chapter{Data}
 \label{chap:datadescription}
 
-This chapter describes the panel of par swap rates used throughout the thesis. The dataset forms the empirical foundation for both model training and evaluation, and its characteristics are essential for interpreting the results in later chapters. The chapter proceeds by first presenting the data source and coverage, before outlining the modelling choices made prior to estimation.
+This chapter describes the panel of par swap rates used throughout the thesis. The dataset is used for both model training and evaluation, and its characteristics are essential for interpreting the results in later chapters. The chapter proceeds by first presenting the data source and coverage, before outlining the modeling choices made prior to application.
 
 \section{Data Description}
 
@@ -91,23 +91,26 @@ These events are relevant for the model evaluation in later chapters, as they re
 
 \section{Modelling Choices}
 
-\textcolor{red}{Having described the data, we outline two modelling choices made prior to training: the subset of maturities used as input and the training period. [skal nok opdateres, når vi har skrevet afsnittene før dette færdigt]}
+Having described the data, we outline two modelling choices prior to application.
 
-\subsection{Maturity Grid}
+\begin{description}
+    \item[Maturity Grid]
+    For each observation date, swap rates are available on the maturity grid
+    \[
+    \{1\text{Y},2\text{Y},3\text{Y},5\text{Y},7\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\}.
+    \]
+    Although the raw data contain swap rates at nine maturities, the model is fitted to the subset
+    \[
+    \{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
+    \]
+    
+    Thus, the 7-year maturity is excluded. This is not because the 7-year rate is considered unreliable, but to maintain consistency with \citet{MatinWanPoulsen2025} and to ensure comparability with the existing autoencoder literature on yield curves.
 
-For each observation date, swap rates are available on the maturity grid
-\[
-\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},7\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\}.
-\]
-Although the raw data contain swap rates at nine maturities, the model is fitted to the subset
-\[
-\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
-\]
+    \item[Training Period]
+    Following \citet{MatinWanPoulsen2025}, the model is trained on data from 2010 onwards. \textcolor{red}{[Argumenter for hvorfor vi vælger at gøre det samme udover blot for at være sammenlignlig]}
 
-Thus, the 7-year maturity is excluded. This is not because the 7-year rate is considered unreliable, but to maintain consistency with \citet{MatinWanPoulsen2025} and to ensure comparability with the existing autoencoder literature on yield curves.
+    Following \citet{MatinWanPoulsen2025}, the model is trained on observations from 2010 onwards. This choice also improves the balance of the pooled cross-currency sample. Since JPY and USD only enter the dataset in 2009 and GBP begins in 2011, including the full pre-2010 sample would add observations primarily for the currencies with longer histories. In a pooled encoder--decoder model, this could give disproportionate weight to the early histories of a subset of currencies. Starting the training sample in 2010 therefore provides a more comparable cross-currency panel while retaining the main interest-rate regimes relevant for the empirical analysis, including the post-crisis low-rate period, the negative-rate environment, the COVID-19 shock, and the subsequent rate-hiking cycle.
+    
+\end{description}
 
-\subsection{Training Period}
 
-Following \citet{MatinWanPoulsen2025}, the model is trained on data from 2010 onwards. \textcolor{red}{[Argumenter for hvorfor vi vælger at gøre det samme udover blot for at være sammenlignlig]}
-
-Following \citet{MatinWanPoulsen2025}, the model is trained on observations from 2010 onwards. This choice also improves the balance of the pooled cross-currency sample. Since JPY and USD only enter the dataset in 2009 and GBP begins in 2011, including the full pre-2010 sample would add observations primarily for the currencies with longer histories. In a pooled encoder--decoder model, this could give disproportionate weight to the early histories of a subset of currencies. Starting the training sample in 2010 therefore provides a more comparable cross-currency panel while retaining the main interest-rate regimes relevant for the empirical analysis, including the post-crisis low-rate period, the negative-rate environment, the COVID-19 shock, and the subsequent rate-hiking cycle.

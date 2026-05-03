@@ -3,39 +3,30 @@
 \label{chap:pricing_methodology}
 %=========================================================
 
-%========================================================
-\section{Motivation for Simulation-Based Derivative Pricing}
-\label{sec:pricing_motivation}
-%========================================================
+The previous chapter examined whether the trained encoder--decoder model can be used as a stable forward scenario generator. We now use the same simulation framework for derivative pricing. In fixed-income applications, accurate reconstruction of the current swap curve is not sufficient: the value of an interest-rate derivative depends on the distribution of future discount factors, swap rates and short rates under the pricing measure.
 
-The empirical results above show that the proposed encoder--decoder framework is able to reproduce observed swap curves with high accuracy while maintaining the no-arbitrage structure embedded in the decoder. This is an important first step, since an economically meaningful term-structure model must be capable of representing the observed cross section of interest rates without generating static inconsistencies. However, accurate reconstruction of observed curves does not in itself imply that the model is useful for valuation purposes. A model may fit today's term structure very well and still fail to provide a sensible description of how the curve evolves over time. For applications in fixed-income pricing, this distinction is fundamental.
+The encoder--decoder framework provides a natural simulation-based pricing setup. Starting from an observed swap curve, the encoder gives an initial latent state. The learned risk-neutral dynamics are then simulated forward, and the decoder maps each simulated latent state into an arbitrage-free zero-coupon bond curve. This makes it possible to compute pathwise swap rates, annuities and discounted payoffs.
 
-The value of a derivative written on interest rates depends not only on the current yield curve, but on the distribution of future curves under the pricing measure. Instruments such as caplets, swaptions and options on yields derive their value from future realisations of discount factors, forward rates or swap rates at the exercise date and beyond. Accordingly, a model intended as more than a purely descriptive compression device must define both a current cross-sectional representation of the term structure and a dynamically coherent law of motion for its future evolution. This requirement is naturally expressed in a simulation framework: if the latent state process can be simulated forward and mapped into future arbitrage-free yield curves, then the model can be used to generate model-implied derivative prices through risk-neutral valuation.
-
-This perspective is particularly relevant in the present setting. The proposed framework is built around a low-dimensional latent state variable, inferred from observed swap curves by the encoder, and an arbitrage-free decoder that transforms the latent state into discount factors and derived curve quantities. The architecture therefore suggests an interpretation that goes beyond dimensionality reduction. If the learned latent variables are viewed as state variables in a term-structure model, and if their dynamics under the pricing measure are sufficiently well specified by the trained networks, then the model may be interpreted as a latent-factor pricing model rather than merely an autoencoder. Under this interpretation, simulation from the latent dynamics provides a direct way of assessing whether the trained system contains enough information to support valuation of contingent claims.
-
-Simulation-based pricing also serves as a stringent diagnostic of the dynamic content of the model. Because the decoder is designed to satisfy the no-arbitrage restrictions linking bond prices and the short rate, the remaining question is whether the learned latent dynamics interact with this decoder in a way that yields plausible distributions of future term structures. If this is the case, then derivative pricing becomes possible through standard risk-neutral expectations. If not, the experiment is still informative, since it reveals that strong reconstruction performance alone is not sufficient for pricing applications. In this sense, derivative pricing is not introduced merely as an additional application, but as a way of evaluating how far the trained model can legitimately be interpreted as a term-structure model under the pricing measure.
-
-The objective is not necessarily to claim that the model is calibrated to market option prices in the same way as a dedicated derivatives model, but rather to examine whether the learned latent-state dynamics and arbitrage-free decoder together define a coherent framework for pricing yield-dependent claims. This provides a sharper assessment of the financial relevance of the proposed architecture and clarifies whether it should be viewed solely as a reconstruction tool or as a genuine pricing model.
-
-The remainder of this chapter develops the technical framework. Section~\ref{sec:swaption_pricing_methodology} describes the Monte Carlo swaption pricing methodology. Section~\ref{sec:bachelier_model} describes the Bachelier normal model and its two roles in the pipeline: converting market normal volatilities into price targets for the second-stage calibration and converting model prices back into implied normal volatilities for reporting. Section~\ref{sec:bachelier_greeks} collects the analytic Greeks of the Bachelier price. Section~\ref{sec:second_stage_calibration} presents the second-stage calibration procedure. Section~\ref{sec:pricing_diagnostics} summarises the pricing diagnostics.
+The purpose of this chapter is therefore twofold. First, we describe how European swaptions are priced by Monte Carlo using the simulated latent paths and decoded bond curves. Second, we introduce a second-stage calibration step, in which selected dynamic components of the trained model are adjusted to better match observed swaption normal volatilities. This calibration is not intended to replace the first-stage reconstruction objective, but to assess whether the trained term-structure model can also be made informative for option pricing.
 
 %=========================================================
-\section{Monte Carlo Pricing of Swaptions}
+\section{Monte Carlo Swaption Pricing}
 \label{sec:swaption_pricing_methodology}
 %=========================================================
 
-Having generated simulated latent paths and the associated zero-coupon bond curves from the trained encoder--decoder model, we can now price interest-rate derivatives by Monte Carlo under the risk-neutral measure. In this section, we present the general methodology for pricing European swaptions.
+\subsection{Swaption payoff and pathwise swap rate}
+\label{subsec:swaption_payoff}
 
-Let \(T_e\) denote the option expiry, let \(n\) denote the number of fixed-leg payments of the underlying swap, and let \(\delta>0\) denote the accrual period. In the implementation, we use annual accrual, so \(\delta=1\). The payment dates of the underlying swap are therefore
+Having generated simulated latent paths and decoded zero-coupon bond curves, we can price interest-rate derivatives by Monte Carlo under the risk-neutral measure. This section presents the methodology for European swaptions.
+
+Let \(T_e\) denote the option expiry, let \(T_s=n\delta\) denote the tenor of the underlying swap, and let \(\delta>0\) denote the fixed-leg accrual period. In the implementation, we use annual accrual, so \(\delta=1\). The fixed-leg payment dates are therefore
 \[
 T_e+\delta,\; T_e+2\delta,\; \dots,\; T_e+n\delta.
 \]
-The corresponding swap tenor is \(n\delta\).
 
-The initial strike is determined from the time-zero discount curve. Given the decoded bond prices \(P(0,T)\), the swap annuity at time \(0\) is
+The strike is determined from the time-zero discount curve. Given the decoded bond prices \(P(0,T)\), the swap annuity at time \(0\) is
 \[
-A_0
+\mathcal A_0
 =
 \delta \sum_{j=1}^{n} P(0,T_e+j\delta),
 \]
@@ -43,7 +34,7 @@ and the corresponding forward swap rate is
 \[
 F_0
 =
-\frac{P(0,T_e)-P(0,T_e+n\delta)}{A_0}.
+\frac{P(0,T_e)-P(0,T_e+n\delta)}{\mathcal A_0}.
 \]
 For an at-the-money swaption, the strike is chosen as
 \[
@@ -60,7 +51,7 @@ The payment dates of the underlying swap correspond to the maturities
 \]
 measured from \(T_e\). The pathwise annuity at expiry is therefore
 \[
-A^{(m)}(T_e)
+\mathcal A^{(m)}(T_e)
 =
 \delta \sum_{j=1}^{n} P^{(m)}(T_e,j\delta),
 \]
@@ -68,23 +59,31 @@ and the corresponding spot-starting swap rate is
 \[
 S^{(m)}(T_e)
 =
-\frac{1-P^{(m)}(T_e,n\delta)}{A^{(m)}(T_e)}.
+\frac{1-P^{(m)}(T_e,n\delta)}
+{\mathcal A^{(m)}(T_e)}.
 \]
 
 Let \(\mathcal N>0\) denote the notional. The payer swaption payoff on path \(m\) is
 \[
 X^{(m),\mathrm{pay}}_{T_e}
 =
-\mathcal N\,A^{(m)}(T_e)\max\bigl(S^{(m)}(T_e)-K,0\bigr),
+\mathcal N\,\mathcal A^{(m)}(T_e)
+\max\bigl(S^{(m)}(T_e)-K,0\bigr),
 \]
 while the receiver swaption payoff is
 \[
 X^{(m),\mathrm{rec}}_{T_e}
 =
-\mathcal N\,A^{(m)}(T_e)\max\bigl(K-S^{(m)}(T_e),0\bigr).
+\mathcal N\,\mathcal A^{(m)}(T_e)
+\max\bigl(K-S^{(m)}(T_e),0\bigr).
 \]
 
-The payoff is discounted back to time \(0\) using the pathwise money-market discount factor computed during simulation. Denoting this factor on path \(m\) by
+\textcolor{red}{we forgot to define N}
+
+\subsection{Monte Carlo estimator and implied normal volatility}
+\label{subsec:mc_estimator_implied_vol}
+
+The payoff is discounted back to time \(0\) using the pathwise money-market \textcolor{red}{call it bank account and not money market} discount factor computed during simulation. Denoting this factor on path \(m\) by
 \[
 D^{(m)}_{T_e}
 =
@@ -92,7 +91,9 @@ D^{(m)}_{T_e}
 \]
 the discounted present value on path \(m\) is
 \[
-V_0^{(m)} = D^{(m)}_{T_e} X^{(m)}_{T_e}.
+V_0^{(m)}
+=
+D^{(m)}_{T_e} X^{(m)}_{T_e}.
 \]
 The time-zero swaption price is then estimated by the Monte Carlo average
 \[
@@ -119,32 +120,51 @@ and the associated Monte Carlo standard error
 \frac{\widehat \sigma_{\mathrm{MC}}}{\sqrt{N_{\mathrm{MC}}}}.
 \]
 
-Finally, the Monte Carlo price is converted into a model-implied normal volatility using the Bachelier swaption formula. This volatility is not an additional model input; it is only a market-standard way of reporting the model price. The model-implied normal volatility is obtained by numerically inverting the Bachelier formula so that the analytical price matches the Monte Carlo estimate \(\widehat V_0\).
+Finally, the Monte Carlo price is converted into a model-implied normal volatility using the Bachelier swaption formula. This volatility is not an additional model input; it is a market-standard way of reporting the model price. In the at-the-money case considered below, the inversion is explicit, while for non-ATM strikes it can be performed numerically.
 
-In the implementation, the time-zero quantities \(F_0\) and \(A_0\) are computed directly from the decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and \(A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry on each simulated path. Because the pricing routine extracts bond prices directly from the model grids, the option expiry \(T_e\) must lie on the simulation time grid, while the payment dates \(j\delta\) must lie on the decoder maturity grid. In the numerical examples below, we consider in particular at-the-money payer swaptions, for which the strike is set equal to the time-zero forward swap rate.
+\textcolor{red}{the above is refereing forward? cant we wait with this to introduce in the next section?}
 
-Overall, the pricing pipeline can be summarised schematically as
+In the implementation, the time-zero quantities \(F_0\) and \(\mathcal A_0\) are computed directly from the decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and \(\mathcal A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry on each simulated path. Because the pricing routine extracts bond prices directly from the model grids, the option expiry \(T_e\) must lie on the simulation time grid, while the payment dates \(j\delta\) must lie on the decoder maturity grid. In the numerical examples below, we consider in particular at-the-money payer swaptions, for which the strike is set equal to the time-zero forward swap rate.
+
+We can finally summarise the pricing pipeline schematically as
 \[
-z \;\longrightarrow\; P \;\longrightarrow\; (F_0,A_0) \;\longrightarrow\; (S(T_e),A(T_e)) \;\longrightarrow\; X(T_e) \;\longrightarrow\; V_0 \;\longrightarrow\; \sigma_N.
+S_0
+\;\longrightarrow\;
+z_0
+\;\longrightarrow\;
+z^{(m)}_{T_e}
+\;\longrightarrow\;
+P^{(m)}(T_e,\tau)
+\;\longrightarrow\;
+\bigl(S^{(m)}(T_e),\mathcal A^{(m)}(T_e)\bigr)
+\;\longrightarrow\;
+X^{(m)}_{T_e}
+\;\longrightarrow\;
+\widehat V_0
+\;\longrightarrow\;
+\widehat\sigma_N.
 \]
 
 %=========================================================
-\section{The Bachelier Normal Swaption Pricing Model}
+\section{Bachelier Normal Volatility Framework}
 \label{sec:bachelier_model}
 %=========================================================
 
-A European payer swaption with option expiry \(T_e\) and swap tenor \(T_s\) gives the holder the right to enter a fixed-for-floating swap at expiry. Under the annuity measure \(\mathbb{Q}^A\), the forward swap rate \(F(t)\) is a martingale. In the Bachelier normal model \citep{Bachelier1900}, it evolves as
+\subsection{Bachelier swaption formula}
+\label{subsec:bachelier_formula}
+
+A European payer swaption with option expiry \(T_e\) and swap tenor \(T_s\) gives the holder the right to enter a fixed-for-floating swap at expiry. Under the annuity measure \(\mathbb{Q}^{\mathcal A}\), the forward swap rate \(F(t)\) is a martingale. In the Bachelier normal model \citep{Bachelier1900}, it evolves as
 \begin{equation}
-    dF(t) = \sigma_N\, dW^A(t),
+    dF(t) = \sigma_N\, dW^{\mathcal A}(t),
     \label{eq:bachelier_sde}
 \end{equation}
-where \(\sigma_N>0\) is the normal volatility. The normal model is particularly convenient in low- and negative-rate environments because it allows the forward swap rate to take negative values.
+where \(\sigma_N>0\) is the normal volatility. The normal model is convenient in low- and negative-rate environments because it allows the forward swap rate to take negative values.
 
-Under~\eqref{eq:bachelier_sde}, the time-zero price of a payer swaption with notional \(\mathcal N\) and strike \(K\) is
+Under~\eqref{eq:bachelier_sde}, the time-zero price of a payer swaption with notional \(\mathcal N\), strike \(K\), expiry \(T_e\), forward swap rate \(F_0\), and swap annuity \(\mathcal A_0\) is
 \begin{equation}
     V^{\mathrm{pay}}
     =
-    \mathcal N A_0
+    \mathcal N \mathcal A_0
     \Bigl[
         (F_0 - K)\,\Phi(d)
         +
@@ -158,7 +178,7 @@ where \(\Phi\) and \(\phi\) denote the standard normal distribution function and
 \begin{equation}
     V^{\mathrm{rec}}
     =
-    \mathcal N A_0
+    \mathcal N \mathcal A_0
     \Bigl[
         (K - F_0)\,\Phi(-d)
         +
@@ -171,39 +191,40 @@ For an at-the-money swaption, \(K=F_0\), and hence \(d=0\). The payer and receiv
 \begin{equation}
     V^{\mathrm{ATM}}
     =
-    \mathcal N A_0
+    \mathcal N \mathcal A_0
     \frac{\sigma_N\sqrt{T_e}}{\sqrt{2\pi}}.
     \label{eq:bachelier_atm}
 \end{equation}
 
-\paragraph{Two roles of the Bachelier formula.}
+\subsection{Market price targets and implied-volatility reporting}
+\label{subsec:bachelier_two_roles}
+
 The Bachelier formula serves two distinct roles in the implementation.
 
 \begin{enumerate}
     \item \textbf{Pricing target for the second-stage calibration.}
-    Market data are distributed as at-the-money normal volatilities \(\sigma^{(i)}_{\mathrm{mkt}}\), typically quoted in basis points. Before applying the formula, these are converted to decimal rate units. The market volatility is then converted into a price using the ATM formula~\eqref{eq:bachelier_atm}:
+    Market swaption data are quoted as at-the-money normal volatilities \(\sigma^{(i)}_{\mathrm{mkt}}\), typically in basis points. Before applying the formula, these volatilities are converted to decimal rate units. The market volatility is then converted into a price using the ATM formula~\eqref{eq:bachelier_atm}:
     \begin{equation}
         V^{(i)}_{\mathrm{mkt}}
         =
-        \mathcal N A^{(i)}_0
+        \mathcal N \mathcal A^{(i)}_0
         \frac{\sigma^{(i)}_{\mathrm{mkt}}\sqrt{T_e^{(i)}}}{\sqrt{2\pi}}.
         \label{eq:stage2_target}
     \end{equation}
-    This is a fixed target computed once per market observation from the annuity \(A_0^{(i)}\) associated with the corresponding quote date. The model Monte Carlo price \(\widehat V_{\mathrm{MC}}^{(i)}\) is then trained to match this price target.
+    This gives a fixed price target computed once per market observation, using the annuity \(\mathcal A_0^{(i)}\) associated with the corresponding quote date. The model Monte Carlo price \(\widehat V_{\mathrm{MC}}^{(i)}\) is then trained to match this target.
 
     \item \textbf{Implied-volatility inversion for reporting.}
-    After pricing, the model price is inverted back to a normal implied volatility for comparison with market quotes. In the at-the-money case, the inversion is explicit:
+    After pricing, the model price is converted back into a normal implied volatility for comparison with market quotes. In the at-the-money case, the inversion is explicit:
     \begin{equation}
-        \widehat{\sigma}_{\mathrm{mod}}
+        \widehat{\sigma}_{N,\mathrm{mod}}
         =
         \frac{\widehat V_{\mathrm{MC}}\sqrt{2\pi}}
-        {\mathcal N A_0\sqrt{T_e}}.
+        {\mathcal N \mathcal A_0\sqrt{T_e}}.
         \label{eq:implied_vol}
     \end{equation}
-    For off-ATM strikes, the Bachelier formula is inverted numerically. Reporting in basis-point normal-volatility space makes model errors directly comparable to market quoting conventions.
+    For off-ATM strikes, the Bachelier formula can instead be inverted numerically. Reporting prices in basis-point normal-volatility space makes model errors directly comparable to market quoting conventions.
 \end{enumerate}
 
-\paragraph{Monte Carlo price.}
 For a payer swaption, the model-implied Monte Carlo price is estimated by
 \begin{equation}
     \widehat{V}^{\mathrm{pay}}_{\mathrm{MC}}
@@ -212,16 +233,14 @@ For a payer swaption, the model-implied Monte Carlo price is estimated by
     \sum_{m=1}^{N_{\mathrm{MC}}}
     D^{(m)}_{T_e}\,
     \mathcal N\,
-    A^{(m)}_{T_e}
-    \max\!\bigl(F^{(m)}_{T_e} - K,\; 0\bigr).
+    \mathcal A^{(m)}(T_e)
+    \max\!\bigl(S^{(m)}(T_e) - K,\; 0\bigr).
     \label{eq:mc_price}
 \end{equation}
-Here \(D^{(m)}_{T_e}\) is the pathwise money-market discount factor, while \(A^{(m)}_{T_e}\) and \(F^{(m)}_{T_e}\) are the annuity and forward swap rate decoded from the bond curve at expiry.
+Here \(D^{(m)}_{T_e}\) is the pathwise money-market discount factor, while \(\mathcal A^{(m)}(T_e)\) and \(S^{(m)}(T_e)\) are the annuity and swap rate decoded from the bond curve at expiry. The implied normal volatility \(\widehat{\sigma}_{N,\mathrm{mod}}\) is then obtained by inserting \(\widehat{V}^{\mathrm{pay}}_{\mathrm{MC}}\) into~\eqref{eq:implied_vol}.
 
-%=========================================================
-\section{Analytic Greeks in the Bachelier Model}
+\subsection{Analytic Greeks}
 \label{sec:bachelier_greeks}
-%=========================================================
 
 The following proposition collects the closed-form sensitivities of the Bachelier payer price~\eqref{eq:bachelier_payer}. These Greeks are useful both for interpretation and as analytic benchmarks for numerical pricing diagnostics.
 
@@ -231,27 +250,27 @@ Let \(V=V^{\mathrm{pay}}\) be given by~\eqref{eq:bachelier_payer}, and define
 \[
 d=\frac{F_0-K}{\sigma_N\sqrt{T_e}}.
 \]
-Then:
+With the remaining variables fixed in each partial derivative, the payer swaption Greeks are
 \begin{align}
     \Delta
     &=
     \frac{\partial V}{\partial F_0}
     =
-    \mathcal N A_0\,\Phi(d),
+    \mathcal N \mathcal A_0\,\Phi(d),
     \label{eq:delta}
     \\
-    \mathcal{V}
+    \mathrm{Vega}
     &=
     \frac{\partial V}{\partial \sigma_N}
     =
-    \mathcal N A_0\sqrt{T_e}\,\phi(d),
+    \mathcal N \mathcal A_0\sqrt{T_e}\,\phi(d),
     \label{eq:vega}
     \\
     \Gamma
     &=
     \frac{\partial^2 V}{\partial F_0^2}
     =
-    \frac{\mathcal N A_0\,\phi(d)}
+    \frac{\mathcal N \mathcal A_0\,\phi(d)}
     {\sigma_N\sqrt{T_e}},
     \label{eq:gamma}
     \\
@@ -259,7 +278,7 @@ Then:
     &=
     \frac{\partial V}{\partial T_e}
     =
-    \frac{\mathcal N A_0\,\sigma_N\,\phi(d)}
+    \frac{\mathcal N \mathcal A_0\,\sigma_N\,\phi(d)}
     {2\sqrt{T_e}},
     \label{eq:theta}
     \\
@@ -267,21 +286,21 @@ Then:
     &=
     \Delta \times 10^{-4}
     =
-    \frac{\mathcal N A_0\,\Phi(d)}{10\,000},
+    \frac{\mathcal N \mathcal A_0\,\Phi(d)}{10\,000},
     \label{eq:dv01}
     \\
     \mathrm{Vanna}
     &=
     \frac{\partial^2 V}{\partial F_0\,\partial\sigma_N}
     =
-    -\frac{\mathcal N A_0\,d\,\phi(d)}{\sigma_N},
+    -\frac{\mathcal N \mathcal A_0\,d\,\phi(d)}{\sigma_N},
     \label{eq:vanna}
     \\
     \mathrm{Volga}
     &=
     \frac{\partial^2 V}{\partial\sigma_N^2}
     =
-    \frac{\mathcal N A_0\sqrt{T_e}\,d^2\phi(d)}
+    \frac{\mathcal N \mathcal A_0\sqrt{T_e}\,d^2\phi(d)}
     {\sigma_N}.
     \label{eq:volga}
 \end{align}
@@ -289,13 +308,13 @@ For the receiver swaption,
 \[
 \Delta^{\mathrm{rec}}
 =
-\mathcal N A_0(\Phi(d)-1)
+\mathcal N \mathcal A_0(\Phi(d)-1)
 =
--\mathcal N A_0\Phi(-d),
+-\mathcal N \mathcal A_0\Phi(-d),
 \]
 while Vega, Gamma, Theta, Vanna and Volga are the same as for the payer. Put-call parity implies
 \[
-\Delta^{\mathrm{pay}}-\Delta^{\mathrm{rec}}=\mathcal N A_0.
+\Delta^{\mathrm{pay}}-\Delta^{\mathrm{rec}}=\mathcal N \mathcal A_0.
 \]
 \end{proposition}
 
@@ -313,19 +332,19 @@ At the money, \(K=F_0\), so \(d=0\). Since \(\Phi(0)=1/2\) and \(\phi(0)=(2\pi)^
 \begin{equation}
 \Delta^{\mathrm{ATM}}
 =
-\frac12\mathcal N A_0,
+\frac12\mathcal N \mathcal A_0,
 \qquad
-\mathcal{V}^{\mathrm{ATM}}
+\mathrm{Vega}^{\mathrm{ATM}}
 =
-\mathcal N A_0\sqrt{\frac{T_e}{2\pi}},
+\mathcal N \mathcal A_0\sqrt{\frac{T_e}{2\pi}},
 \qquad
 \Gamma^{\mathrm{ATM}}
 =
-\frac{\mathcal N A_0}{\sigma_N\sqrt{2\pi T_e}},
+\frac{\mathcal N \mathcal A_0}{\sigma_N\sqrt{2\pi T_e}},
 \qquad
 \Theta^{\mathrm{ATM}}
 =
-\frac{\mathcal N A_0\sigma_N}{2\sqrt{2\pi T_e}}.
+\frac{\mathcal N \mathcal A_0\sigma_N}{2\sqrt{2\pi T_e}}.
 \label{eq:atm_greeks}
 \end{equation}
 Vanna and Volga vanish at the money.
@@ -336,7 +355,7 @@ Combining~\eqref{eq:gamma} and~\eqref{eq:theta} gives
     \Theta = \frac12\sigma_N^2\Gamma.
     \label{eq:theta_gamma}
 \end{equation}
-This identity holds for the partial derivative with respect to time to expiry, holding \(F_0\), \(A_0\), \(K\), and \(\sigma_N\) fixed. It provides a useful analytic consistency check for the Bachelier formulas, although it is not a full calendar-time theta for a dynamic term-structure model, where the annuity and forward swap rate also evolve.
+This identity holds for the partial derivative with respect to time to expiry, holding \(F_0\), \(\mathcal A_0\), \(K\), and \(\sigma_N\) fixed. It provides a useful analytic consistency check for the Bachelier formulas, although it is not a full calendar-time theta for a dynamic term-structure model, where the annuity and forward swap rate also evolve.
 
 %=========================================================
 \section{Second-Stage Calibration}
@@ -345,49 +364,49 @@ This identity holds for the partial derivative with respect to time to expiry, h
 
 The first-stage training objective is based on swap-rate reconstruction. It therefore determines a model that fits observed curves and enforces no-arbitrage through the decoder, but it does not use option prices. The purpose of the second-stage calibration is to adjust selected dynamic components of the model so that simulated swaption prices better match observed market swaption volatilities.
 
-\subsection{Calibration Objective}
+\subsection{Calibration objective}
 \label{subsec:calib_objective}
 
 For each market at-the-money swaption quote
 \[
 (\sigma^{(i)}_{\mathrm{mkt}}, T_e^{(i)}, T_s^{(i)}, t^{(i)}),
 \]
-the fixed price target is \(V^{(i)}_{\mathrm{mkt}}\) from~\eqref{eq:stage2_target}. Let \(\Omega_2\) denote the second-stage trainable parameter set. For a mini-batch \(\mathcal{B}\), the second-stage loss is
+the fixed price target is \(V^{(i)}_{\mathrm{mkt}}\) from~\eqref{eq:stage2_target}. Let \(\Omega_2\) denote the second-stage trainable parameter set. For a mini-batch \(\mathcal B\), the second-stage loss is
 \begin{equation}
     \mathcal{L}_2(\Omega_2)
     =
-    \frac{1}{|\mathcal{B}|}
-    \sum_{i \in \mathcal{B}}
+    \frac{1}{|\mathcal B|}
+    \sum_{i \in \mathcal B}
     \left(
         10\,000\cdot
         \bigl(\widehat{V}^{(i)}_{\mathrm{MC}} - V^{(i)}_{\mathrm{mkt}}\bigr)
     \right)^2
     +
     \lambda_G
-    \sum_{p \in \theta_{\mathcal{G}}}
+    \sum_{p \in \theta_{\mathcal G}}
     \|p-p_0\|^2
     +
     \lambda_K
     \|N_K-N_{K,0}\|^2.
     \label{eq:stage2_loss}
 \end{equation}
-The factor \(10\,000\) rescales prices to basis-point units for numerical conditioning. The \(L^2\) penalties keep the decoder parameters \(\theta_{\mathcal{G}}\) and the drift intercept \(N_K\) close to their first-stage values. This regularisation is included to avoid destroying the reconstruction and stability properties obtained in the first stage.
+The factor \(10\,000\) rescales prices to basis-point units for numerical conditioning. The \(L^2\) penalties keep the decoder parameters \(\theta_{\mathcal G}\) and the drift intercept \(N_K\) close to their first-stage values. This regularisation is included to avoid destroying the reconstruction and stability properties obtained in the first stage.
 
-\subsection{Trainable Parameter Groups}
+\subsection{Trainable parameter groups}
 \label{subsec:param_groups}
 
 Only selected parameter groups are updated in the second stage:
 \begin{itemize}
-    \item \textbf{\(\mathcal{H}\):} the diffusion network is always trained and uses the full learning rate \(\eta\). It controls the volatility of simulated latent paths and is therefore the primary mechanism for fitting swaption prices.
+    \item \textbf{\(\mathcal H\):} the diffusion network is always trained and uses the full learning rate \(\eta\). It controls the volatility of simulated latent paths and is therefore the primary mechanism for fitting swaption prices.
 
-    \item \textbf{\(\mathcal{G}\):} the decoder network may optionally be updated at a reduced learning rate \(0.1\eta\), with regularisation toward its first-stage parameters. Small decoder updates allow the forward curve at expiry to adjust while preserving the first-stage bond-pricing structure.
+    \item \textbf{\(\mathcal G\):} the decoder network may optionally be updated at a reduced learning rate \(0.1\eta\), with regularisation toward its first-stage parameters. Small decoder updates allow the forward curve at expiry to adjust while preserving the first-stage bond-pricing structure.
 
-    \item \textbf{\(\mathcal{K}.N\):} the drift intercept may optionally be updated at a reduced learning rate \(0.1\eta\), with regularisation. This allows the mean-reversion equilibrium \(z^*=-M^{-1}N\) to shift without breaking the Hurwitz constraint.
+    \item \textbf{\(N_K\):} the drift intercept may optionally be updated at a reduced learning rate \(0.1\eta\), with regularisation. This allows the mean-reversion equilibrium \(z^*=-M^{-1}N_K\) to shift without breaking the Hurwitz constraint.
 
-    \item \textbf{Frozen components:} the encoder, the Hurwitz drift matrix parameter \(\mathcal{K}.V\), and the short-rate network \(\mathcal{R}\) are frozen. This preserves the encoded representation, the stable mean-reversion structure and the short-rate mapping obtained from the first stage.
+    \item \textbf{Frozen components:} the encoder, the Hurwitz drift matrix parameter \(V\), and the short-rate network \(\mathcal R\) are frozen. This preserves the encoded representation, the stable mean-reversion structure and the short-rate mapping obtained from the first stage.
 \end{itemize}
 
-\subsection{Variance Reduction and Gradient Flow}
+\subsection{Variance reduction and gradient flow}
 \label{subsec:antithetic}
 
 The second-stage objective is simulation-based and therefore subject to Monte Carlo noise. To reduce variance, antithetic variates are used. The \(N_{\mathrm{MC}}/2\) pre-drawn noise realisations \(\varepsilon\) and \(-\varepsilon\) are paired. This reduces Monte Carlo variance by introducing negative dependence between paired paths while preserving the marginal distribution of the Brownian increments.
@@ -400,14 +419,14 @@ z_t
 +
 \mu(z_t)\Delta t
 +
-L(z_t;\mathcal{H})\varepsilon_t\sqrt{\Delta t}.
+L(z_t;\mathcal H)\varepsilon_t\sqrt{\Delta t}.
 \]
-Conditional on the sampled noise \(\varepsilon_t\), this is a deterministic differentiable transformation of the model parameters. Gradients therefore propagate through the simulated latent path and through the diffusion matrix \(L(z_t;\mathcal{H})\) at each time step.
+Conditional on the sampled noise \(\varepsilon_t\), this is a deterministic differentiable transformation of the model parameters. Gradients therefore propagate through the simulated latent path and through the diffusion matrix \(L(z_t;\mathcal H)\) at each time step.
 
-Since the short-rate network \(\mathcal{R}\) is frozen during second-stage calibration, changes in the Monte Carlo price primarily arise through the simulated latent paths and the diffusion network \(\mathcal{H}\). Gradients are clipped separately by parameter group: the diffusion network uses a maximum norm of \(1.0\), while the optional decoder and drift-intercept updates use a maximum norm of \(0.5\).
+Since the short-rate network \(\mathcal R\) is frozen during second-stage calibration, changes in the Monte Carlo price primarily arise through the simulated latent paths and the diffusion network \(\mathcal H\). Gradients are clipped separately by parameter group: the diffusion network uses a maximum norm of \(1.0\), while the optional decoder and drift-intercept updates use a maximum norm of \(0.5\).
 
-\subsection{Hyperparameters}
-\label{subsec:hyperparams}
+\subsection{Hyperparameters and pricing pipeline}
+\label{subsec:hyperparams_pipeline}
 
 \begin{table}[H]
 \centering
@@ -419,20 +438,17 @@ Since the short-rate network \(\mathcal{R}\) is frozen during second-stage calib
 \midrule
 \(N_{\mathrm{MC}}\)          & 512        & Monte Carlo paths per swaption \\
 \(\Delta t\)                 & \(1/12\) yr & Simulation step, monthly \\
-\(\eta\)                     & \(10^{-4}\) & Base learning rate for \(\mathcal{H}\) \\
-\(0.1\eta\)                  & \(10^{-5}\) & Learning rate for \(\mathcal{G}\) and \(\mathcal{K}.N\) \\
+\(\eta\)                     & \(10^{-4}\) & Base learning rate for \(\mathcal H\) \\
+\(0.1\eta\)                  & \(10^{-5}\) & Learning rate for \(\mathcal G\) and \(N_K\) \\
 \(n_{\mathrm{epochs}}\)      & 300        & Training epochs \\
-\(|\mathcal{B}|\)            & 3          & Mini-batch size \\
+\(|\mathcal B|\)             & 3          & Mini-batch size \\
 \(\lambda_G\)                & 1.0        & Decoder regularisation weight \\
 \(\lambda_K\)                & 0.01       & Drift-intercept regularisation weight \\
-\(\mathrm{clip}_{\mathcal{H}}\) & 1.0     & Gradient clip norm for \(\mathcal{H}\) \\
-\(\mathrm{clip}_{\mathcal{G},\mathcal{K}.N}\) & 0.5 & Gradient clip norm for \(\mathcal{G}\) and \(\mathcal{K}.N\) \\
+\(\mathrm{clip}_{\mathcal H}\) & 1.0      & Gradient clip norm for \(\mathcal H\) \\
+\(\mathrm{clip}_{\mathcal G,N_K}\) & 0.5   & Gradient clip norm for \(\mathcal G\) and \(N_K\) \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\subsection{Full Pricing Pipeline}
-\label{subsec:pricing_pipeline}
 
 The pricing pipeline consists of three steps. First, the first-stage checkpoint is used to generate pre-calibration model-implied normal volatilities, which are compared with market quotes. Second, the second-stage calibration updates the selected parameter groups by minimising~\eqref{eq:stage2_loss}. Third, the calibrated checkpoint is used to compute post-calibration model-implied normal volatilities. The main reported error metrics are the mean absolute error and root mean squared error in basis points of normal volatility.
 
@@ -441,7 +457,7 @@ The pricing pipeline consists of three steps. First, the first-stage checkpoint 
 \label{sec:pricing_diagnostics}
 %=========================================================
 
-\subsection{ATM Greeks: Analytic Benchmark Table}
+\subsection{ATM Greeks benchmark}
 \label{subsec:greeks_table}
 
 Table~\ref{tab:atm_greeks} reports analytic ATM Bachelier Greeks for a representative swaption grid. The table is included as a benchmark for interpreting model-implied sensitivities. Delta gives the swap-rate hedge ratio, DV01 gives the sensitivity to a one-basis-point change in the forward swap rate, and Vega gives the sensitivity to the normal volatility.
@@ -449,12 +465,11 @@ Table~\ref{tab:atm_greeks} reports analytic ATM Bachelier Greeks for a represent
 \begin{table}[H]
 \centering
 \caption{ATM Bachelier Greeks for a representative swaption grid
-(\(\mathcal N=1\), \(\sigma_N=60\) bp, \(A_0\) computed from a flat 3\% curve).
-Delta and DV01 depend only on \(A_0\); Vega, Gamma and Theta depend additionally on \(\sigma_N\) and \(T_e\).}
+(\(\mathcal N=1\), \(\sigma_N=60\) bp, \(\mathcal A_0\) computed from a flat 3\% curve).}
 \label{tab:atm_greeks}
 \begin{tabular}{@{}ccrrrrr@{}}
 \toprule
-\(T_e\) & \(T_s\) & \(A_0\) & \(\Delta\) & \(\mathcal{V}\) (\(\times10^4\)) & \(\Gamma\) (\(\times10^6\)) & \(\Theta\) (\(\times10^4\)) \\
+\(T_e\) & \(T_s\) & \(\mathcal A_0\) & \(\Delta\) & Vega & \(\Gamma\) & \(\Theta\) \\
 \midrule
 1Y & 5Y  & 4.580 & 2.290 & 1.090 & 303.6 & 0.913 \\
 2Y & 5Y  & 4.580 & 2.290 & 1.541 & 214.7 & 0.463 \\
@@ -467,12 +482,12 @@ Delta and DV01 depend only on \(A_0\); Vega, Gamma and Theta depend additionally
 \end{table}
 
 \noindent
-\textit{Notes.} The annuities are computed from annual discount factors on a flat 3\% curve. At the money, \(\Delta=\frac12\mathcal N A_0\), while Vanna and Volga are zero. Model-implied Greeks for the calibrated model are obtained by applying the same formulas using the model's \(F_0\), \(A_0\), and Monte Carlo implied normal volatility \(\widehat{\sigma}_{\mathrm{mod}}\).
+\textit{Notes.} The annuities are computed from annual discount factors on a flat 3\% curve. At the money, \(\Delta=\frac12\mathcal N\mathcal A_0\), while Vanna and Volga are zero. Model-implied Greeks for the calibrated model are obtained by applying the same formulas using the model's \(F_0\), \(\mathcal A_0\), and Monte Carlo implied normal volatility \(\widehat{\sigma}_{N,\mathrm{mod}}\).
 
-\subsection{Terminal Latent Distribution and Short Rate}
+\subsection{Terminal latent distribution and short rate}
 \label{subsec:terminal_dist}
 
-Figure~\ref{fig:terminal_dist} shows the terminal distribution of the latent state and the short rate at \(t=T_e=2\) years under the stable model. A compact, unimodal terminal cloud is a necessary condition for economically meaningful swaption prices: if the latent state disperses widely, the decoded discount curves at expiry become implausible, biasing the Monte Carlo estimator~\eqref{eq:mc_price}.
+Figure~\ref{fig:terminal_dist} shows the terminal distribution of the latent state and the short rate at \(t=T_e=2\) years under the stable model. A compact terminal cloud is a useful diagnostic for economically meaningful swaption prices: if the latent state disperses widely, the decoded discount curves at expiry may become implausible, biasing the Monte Carlo estimator~\eqref{eq:mc_price}.
 
 \begin{figure}[H]
     \centering
@@ -481,7 +496,7 @@ Figure~\ref{fig:terminal_dist} shows the terminal distribution of the latent sta
     \label{fig:terminal_dist}
 \end{figure}
 
-\subsection{Swaption Volatility Comparison: Pre- and Post-Calibration}
+\subsection{Swaption volatility comparison}
 \label{subsec:vol_comparison}
 
 Table~\ref{tab:vol_comparison} provides a template for comparing market normal volatilities with model-implied normal volatilities. For each quote date, expiry and tenor, the columns report the market volatility, the model volatility and the error in basis points. The last two rows report the mean absolute error and root mean squared error across all valid observations.
@@ -492,7 +507,7 @@ Table~\ref{tab:vol_comparison} provides a template for comparing market normal v
 \label{tab:vol_comparison}
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-Date & \(T_e\) & \(T_s\) & \(\sigma_{\mathrm{mkt}}\) (bp) & \(\widehat\sigma_{\mathrm{mod}}\) (bp) & Error (bp) \\
+Date & \(T_e\) & \(T_s\) & \(\sigma_{\mathrm{mkt}}\) (bp) & \(\widehat\sigma_{N,\mathrm{mod}}\) (bp) & Error (bp) \\
 \midrule
 \multicolumn{6}{c}{\textit{[values populated from the pricing results]}} \\
 \midrule
@@ -503,7 +518,7 @@ Date & \(T_e\) & \(T_s\) & \(\sigma_{\mathrm{mkt}}\) (bp) & \(\widehat\sigma_{\m
 \end{table}
 
 \noindent
-The percentage of vol error removed by the second-stage calibration is measured by
+The percentage of volatility error removed by the second-stage calibration is measured by
 \[
     \text{Improvement}
     =
@@ -512,4 +527,4 @@ The percentage of vol error removed by the second-stage calibration is measured 
     \frac{\mathrm{RMSE}_{\mathrm{post}}}
     {\mathrm{RMSE}_{\mathrm{pre}}}.
 \]
-This is the headline metric for assessing the value of the second-stage calibration. A positive value indicates that the calibration improves the fit to market normal volatilities relative to the first-stage model, while a value close to zero indicates that the second stage provides little additional pricing information.
+A positive value indicates that the calibration improves the fit to market normal volatilities relative to the first-stage model, while a value close to zero indicates that the second stage provides little additional pricing information.

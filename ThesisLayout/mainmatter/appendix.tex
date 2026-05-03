@@ -483,6 +483,67 @@ c_{44}
 
 The formulas above give the Cholesky factor associated with a valid correlation matrix \(R\). In dimension \(2\), \(|\rho_{12}|<1\) is sufficient for positive definiteness. In dimensions \(3\) and \(4\), the pairwise bounds \(\rho_{ij}\in(-1,1)\) are not sufficient; the full matrix \(R\) must also be positive definite. Thus, for \(\ell>2\), additional validation or a positive-definite parameterization is required.
 
+\section{Hyperspherical Cholesky Parameterisation}
+\label{app:hyperspherical_cholesky}
+
+The standard Cholesky factorisation constructs a lower-triangular factor from a correlation matrix that is already positive definite. In the stable model, we instead need a parameterisation that guarantees positive definiteness by construction. This can be achieved by constructing the Cholesky factor directly using hyperspherical coordinates.
+
+Let \(R\in\mathbb{R}^{\ell\times\ell}\) denote a correlation matrix. We construct a lower-triangular matrix \(L_R\) such that
+\[
+R=L_RL_R^\top.
+\]
+The rows of \(L_R\) are parameterised as unit vectors. For \(\ell=3\), for example, we set
+\[
+L_R
+=
+\begin{pmatrix}
+1 & 0 & 0 \\
+\cos\theta_{21} & \sin\theta_{21} & 0 \\
+\cos\theta_{31} &
+\sin\theta_{31}\cos\theta_{32} &
+\sin\theta_{31}\sin\theta_{32}
+\end{pmatrix},
+\]
+where \(\theta_{21},\theta_{31},\theta_{32}\in(0,\pi)\). Each row has Euclidean norm one, so the diagonal entries of \(R=L_RL_R^\top\) are equal to one. Moreover, since all diagonal entries of \(L_R\) are strictly positive, \(L_R\) has full rank and \(R\) is positive definite.
+
+More generally, for \(i=1,\ldots,\ell\), the \(i\)-th row of \(L_R\) is constructed using \(i-1\) angles. The first row is
+\[
+(L_R)_{11}=1.
+\]
+For \(i\geq2\), the nonzero entries are
+\[
+(L_R)_{i1}=\cos\theta_{i1},
+\]
+\[
+(L_R)_{ij}
+=
+\left(\prod_{k=1}^{j-1}\sin\theta_{ik}\right)
+\cos\theta_{ij},
+\qquad
+j=2,\ldots,i-1,
+\]
+and
+\[
+(L_R)_{ii}
+=
+\prod_{k=1}^{i-1}\sin\theta_{ik}.
+\]
+All entries above the diagonal are zero. If all angles satisfy
+\[
+\theta_{ij}\in(0,\pi),
+\]
+then all sine terms are strictly positive. Hence the diagonal entries of \(L_R\) are strictly positive, so \(L_R\) is full rank. Therefore
+\[
+R=L_RL_R^\top
+\]
+is positive definite. Since each row of \(L_R\) has unit norm, \(R\) has ones on the diagonal and is therefore a valid correlation matrix.
+
+In the neural implementation, the angles are generated from unconstrained network outputs \(g_{ij}(z)\) by
+\[
+\theta_{ij}(z)=\pi\,\operatorname{sigmoid}(g_{ij}(z)).
+\]
+This maps every network output into \((0,\pi)\), ensuring that the resulting correlation matrix is positive definite for every latent state \(z\).
+
 \section{Numerical Solution of the ODE System Using the Runge--Kutta 3/8 Method}
 \label{app:rk38}
 
