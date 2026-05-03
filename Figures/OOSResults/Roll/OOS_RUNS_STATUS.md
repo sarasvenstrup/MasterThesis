@@ -1,6 +1,6 @@
 # OOS Rolling Run Status
 
-_Generated: 2026-05-03 09:16 -- re-run `python Code/gen_oos_status.py` after pulling to refresh._
+_Generated: 2026-05-03 09:17 -- re-run `python Code/gen_oos_status.py` after pulling to refresh._
 
 ## train5Y / test6M / step6M (main comparison)
 
