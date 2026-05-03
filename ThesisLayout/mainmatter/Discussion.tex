@@ -6,3 +6,16 @@ Long and short end are hard to fit, maybe to do with no dates for tenors less th
 
 
 Specific currencies are struggling
+
+
+
+
+% ─────────────────────────────────────────────────────────────
+\section{Summary}
+% ─────────────────────────────────────────────────────────────
+
+The evaluation yields three main findings. First, the autoencoder achieves reasonable in-sample reconstruction accuracy once at least two latent factors are used, while the one-factor specification is too restrictive. Increasing the number of latent factors improves the in-sample fit, but with diminishing marginal gains and higher computational cost.
+
+Second, the no-arbitrage diagnostic confirms that the generated zero-coupon bond prices satisfy the bond-pricing PDE up to numerical approximation error. The residuals are close to zero across maturities and currencies, indicating that the arbitrage-free construction is preserved in practice.
+
+Third, the rolling-window analysis reveals a substantial generalization gap. Although the higher-dimensional specifications fit the training windows well, their out-of-sample performance deteriorates markedly, especially for $\ell=3$ and $\ell=4$. The $\ell=2$ model is less accurate in-sample but more stable on unseen data. This suggests that additional latent flexibility improves reconstruction within the estimation sample, but weakens out-of-sample robustness in the rolling-window setting.

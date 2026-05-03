@@ -19,6 +19,27 @@ import pandas as pd
 import torch
 
 
+
+# ── Save output to file ──────────────────────────────────────
+import sys
+
+class Tee:
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush()
+    def flush(self):
+        for f in self.files:
+            f.flush()
+
+log_file = open("check_machine_output_sara_stable.txt", "w")
+sys.stdout = Tee(sys.stdout, log_file)
+sys.stderr = Tee(sys.stderr, log_file)
+# ─────────────────────────────────────────────────────────────
+
+
 # ============================================================
 # 1. Find repo root
 # ============================================================

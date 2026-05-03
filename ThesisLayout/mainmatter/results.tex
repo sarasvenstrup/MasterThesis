@@ -140,6 +140,51 @@ In the calmer period, the observed curves are generally reconstructed well, alth
 
 The in-sample results show that the autoencoder reconstructs swap rate curves with reasonable accuracy once at least two latent factors are used. Increasing the latent dimension improves the fit, but with diminishing marginal gains. The remaining reconstruction errors are concentrated at the short and long ends of the curve, during periods of abrupt market movements, and especially for low- or negative-rate curves such as EUR and JPY during the COVID-19 shock. Having assessed reconstruction accuracy, we now turn to the second in-sample criterion: whether the implied zero-coupon bond prices satisfy the no-arbitrage restriction.
 
+
+
+%INSERT HER REGION ANALYSIS
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6e_scatter_regime.png}
+    \caption{Per-observation in-sample RMSE (bps) over time for the baseline autoencoder ($\ell = 3$), coloured by interest rate regime. Each point represents one curve observation; observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero. The regime with the highest density of observations is Normal, Non-negative (red), while the negative-rate periods (2015--2022) are highlighted in the darker shades.}
+    \label{fig:q6e_scatter_regime}
+\end{figure}
+
+
+
+
+\begin{table}[H]
+\centering
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q6e_rmse_combined_display.csv}\datqsixe
+\resizebox{\textwidth}{!}{%
+\pgfplotstabletypeset[
+  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, All},
+  columns/index/.style={column name={Regime}, string type, column type=l},
+  columns/AUD/.style={string type, column type=r},
+  columns/CAD/.style={string type, column type=r},
+  columns/DKK/.style={string type, column type=r},
+  columns/EUR/.style={string type, column type=r},
+  columns/JPY/.style={string type, column type=r},
+  columns/NOK/.style={string type, column type=r},
+  columns/SEK/.style={string type, column type=r},
+  columns/GBP/.style={string type, column type=r},
+  columns/USD/.style={string type, column type=r},
+  columns/All/.style={column name={\textbf{All}}, string type, column type=r},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every row no 1/.style={after row=\midrule},
+  every row no 3/.style={after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datqsixe}}
+}
+\caption{In-sample RMSE (bps) by interest rate regime for the baseline autoencoder with $\ell=3$ latent factors. Observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero. $N$ denotes the number of curve observations in each regime. The \textit{Inverted, Negative} regime contains no observations in the estimation sample.}
+\label{tab:q6e_combined}
+\end{table}
+
+
+
+
 \subsection{No-Arbitrage PDE Residual Diagnostic}
 
 Reconstruction accuracy alone is not sufficient if the implied zero-coupon bond prices violate the no-arbitrage restriction. We therefore evaluate the residual of the arbitrage-free bond-pricing PDE in \eqref{eq:bond_pricing_pde}. As shown in Section~\ref{subsec:no_arbitrage_ode_system}, the decoder constructs zero-coupon bond prices by solving the ODE system derived from this PDE. The residual should therefore be close to zero, up to numerical approximation error, if the no-arbitrage restriction is satisfied numerically.
@@ -244,12 +289,19 @@ The figure shows that out-of-sample performance varies substantially across roll
 
 The $\ell=2$ specification, though less accurate in-sample, exhibits more stable out-of-sample behaviour.
 
-% ─────────────────────────────────────────────────────────────
-\section{Summary}
-% ─────────────────────────────────────────────────────────────
 
-The evaluation yields three main findings. First, the autoencoder achieves reasonable in-sample reconstruction accuracy once at least two latent factors are used, while the one-factor specification is too restrictive. Increasing the number of latent factors improves the in-sample fit, but with diminishing marginal gains and higher computational cost.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_oos_scatter_regime.png}
+    \caption{Per-observation out-of-sample RMSE (bps) over time for the baseline autoencoder with $\ell=3$ latent factors, coloured by interest rate regime. Each point represents one curve observation from the rolling test windows. Observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero. The large spikes in 2016 and 2022--2023 correspond to windows where the model was exposed to yield curve dynamics outside the training distribution.}
+    \label{fig:q4c_oos_scatter_regime}
+\end{figure}
 
-Second, the no-arbitrage diagnostic confirms that the generated zero-coupon bond prices satisfy the bond-pricing PDE up to numerical approximation error. The residuals are close to zero across maturities and currencies, indicating that the arbitrage-free construction is preserved in practice.
 
-Third, the rolling-window analysis reveals a substantial generalization gap. Although the higher-dimensional specifications fit the training windows well, their out-of-sample performance deteriorates markedly, especially for $\ell=3$ and $\ell=4$. The $\ell=2$ model is less accurate in-sample but more stable on unseen data. This suggests that additional latent flexibility improves reconstruction within the estimation sample, but weakens out-of-sample robustness in the rolling-window setting.
+We clearly see that the model struggles with inverted curves in ...
+
+
+
+
+
+
