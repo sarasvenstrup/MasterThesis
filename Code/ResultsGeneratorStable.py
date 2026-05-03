@@ -513,10 +513,11 @@ else:
     _negative_r = (_X_r < 0).any(axis=1)
 
     _df_regime = pd.DataFrame({
-        "ccy":      _m_r["ccy"].values,
-        "rmse_bps": _rmse_obs,
-        "inverted": _inverted_r,
-        "negative": _negative_r,
+        "ccy":        _m_r["ccy"].values,
+        "as_of_date": pd.to_datetime(_m_r["as_of_date"].values),
+        "rmse_bps":   _rmse_obs,
+        "inverted":   _inverted_r,
+        "negative":   _negative_r,
     })
 
     def _regime_table_stable(df, flag_col, label_true, label_false):
@@ -572,13 +573,34 @@ else:
 
     print("  Saved Q6e_stable tables.")
 
+    # scatter over time: colour encodes regime (negative = red family)
+    fig, ax = plt.subplots(figsize=(11, 4))
+    _is_scatter_groups = [
+        (~_df_regime["inverted"] & ~_df_regime["negative"], "Normal, Non-negative",     custom_palette[2]),
+        ( _df_regime["inverted"] & ~_df_regime["negative"], "Inverted, Non-negative",   "black"),
+        (~_df_regime["inverted"] &  _df_regime["negative"], "Normal, Negative rates",   "indianred"),
+        ( _df_regime["inverted"] &  _df_regime["negative"], "Inverted, Negative rates", custom_palette[8]),
+    ]
+    for _mask, _lbl, _col in _is_scatter_groups:
+        _sub = _df_regime[_mask]
+        if len(_sub) == 0:
+            continue
+        ax.scatter(_sub["as_of_date"], _sub["rmse_bps"],
+                   s=4, alpha=0.4, color=_col, marker="o", label=_lbl, zorder=3)
+    ax.set_ylabel("RMSE (bps)")
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
+              ncol=1, fontsize=7, frameon=False, markerscale=3)
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    save_fig(fig, "Q6e_stable_scatter_regime")
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Q4c_stable — Tables + scatter: OOS RMSE by curve regime (stable dim=4 rolling)
+# Q4c_stable — Tables + scatter: OOS RMSE by curve regime (stable ℓ=4 rolling)
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q4c_stable: OOS RMSE by curve regime (stable ℓ=2 rolling) ──")
+print("\n── Q4c_stable: OOS RMSE by curve regime (stable ℓ=4 rolling) ──")
 
 _stable_rolls_dir = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
-                                 f"OOS_roll_dim2_stable",
+                                 f"OOS_roll_dim4_stable",
                                  ROLL_SUBDIR, "ep3500", "rolls")
 
 if not os.path.exists(_stable_rolls_dir):
@@ -631,10 +653,10 @@ else:
         # scatter over time: colour encodes regime (negative = red family)
         fig, ax = plt.subplots(figsize=(11, 4))
         _oos_scatter_groups = [
-            (~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Normal, Non-negative",     "steelblue"),
-            ( _df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Inverted, Non-negative",   "orange"),
-            (~_df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Normal, Negative rates",   "tomato"),
-            ( _df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Inverted, Negative rates", "darkred"),
+            (~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Normal, Non-negative",     custom_palette[2]),
+            ( _df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Inverted, Non-negative",   "black"),
+            (~_df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Normal, Negative rates",   "indianred"),
+            ( _df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Inverted, Negative rates", custom_palette[8]),
         ]
         for _mask, _lbl, _col in _oos_scatter_groups:
             _sub = _df_oos_regime[_mask]
@@ -643,7 +665,8 @@ else:
             ax.scatter(_sub["as_of_date"], _sub["rmse_bps"],
                        s=4, alpha=0.4, color=_col, marker="o", label=_lbl, zorder=3)
         ax.set_ylabel("RMSE (bps)")
-        ax.legend(fontsize=8, frameon=False, markerscale=3, ncol=2)
+        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
+                  ncol=1, fontsize=7, frameon=False, markerscale=3)
         fig.autofmt_xdate()
         fig.tight_layout()
         save_fig(fig, "Q4c_stable_oos_scatter_regime")
