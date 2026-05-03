@@ -1,0 +1,276 @@
+Repo root: /Users/sarasvenstrup/PycharmProjects/MasterThesis
+Repo root: /Users/sarasvenstrup/PycharmProjects/MasterThesis
+
+================================================================================
+MACHINE / ENVIRONMENT
+================================================================================
+Repo root: /Users/sarasvenstrup/PycharmProjects/MasterThesis
+Platform: darwin
+Platform full: macOS-26.3.1-arm64-arm-64bit
+Machine: arm64
+Processor: arm
+Python: 3.12.6 (v3.12.6:a4a2d2b0d85, Sep  6 2024, 16:08:03) [Clang 13.0.0 (clang-1300.0.29.30)]
+Torch: 2.11.0
+NumPy: 2.2.2
+Pandas: 2.3.0
+CUDA available: False
+MPS built: True
+MPS available: True
+Device according to main script: cpu
+Default dtype: torch.float32
+PYTORCH_ENABLE_MPS_FALLBACK: <not set>
+MKLDNN enabled: False
+
+Torch build config:
+PyTorch built with:
+  - GCC 4.2
+  - C++ Version: 201703
+  - clang 15.0.0
+  - OpenMP 201811
+  - LAPACK is enabled (usually provided by MKL)
+  - NNPACK is enabled
+  - CPU capability usage: DEFAULT
+  - Build settings: BLAS_INFO=accelerate, BUILD_TYPE=Release, COMMIT_SHA=70d99e998b4955e0049d13a98d77ae1b14db1f45, CXX_COMPILER=/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOCUPTI -DLIBKINETO_NOROCTRACER -DLIBKINETO_NOXPUPTI=ON -DUSE_PYTORCH_QNNPACK -DAT_BUILD_ARM_VEC256_WITH_SLEEF -DUSE_XNNPACK -DUSE_PYTORCH_METAL_EXPORT -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -DUSE_COREML_DELEGATE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=braced-scalar-init -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wvla-extension -Wsuggest-override -Wnewline-eof -Winconsistent-missing-override -Winconsistent-missing-destructor-override -Wno-pass-failed -Wno-error=old-style-cast -Wconstant-conversion -Qunused-arguments -faligned-new -fno-math-errno -fno-trapping-math -Werror=format -DUSE_MPS -Wno-missing-braces, LAPACK_INFO=accelerate, TORCH_VERSION=2.11.0, USE_CUDA=OFF, USE_CUDNN=OFF, USE_CUSPARSELT=OFF, USE_EIGEN_FOR_BLAS=ON, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=OFF, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, 
+
+
+================================================================================
+GIT / CONFIG
+================================================================================
+Git commit: d66865bb2a253abfd431f268ab4bf3f8ec5c3de4
+Git status:
+m .claude/worktrees/charming-jang
+ m .claude/worktrees/quizzical-euclid
+ M Code/Check_Machine.py
+?? Code/check_machine_output.txt
+
+Config variant is set to: 'stable' — proceed? [y/n]: Config variant: stable
+
+================================================================================
+DATA LOAD / HASHES
+================================================================================
+USE: bbg
+TARGET_TENORS: [1, 2, 3, 5, 10, 15, 20, 30]
+tenors returned: [ 1.  2.  3.  5. 10. 15. 20. 30.]
+SCALE_IS_PERCENT: True
+df_wide shape: (1470, 10)
+df_wide_all shape: (1889, 10)
+X_tensor shape: (1889, 8)
+X_tensor dtype: torch.float32
+X_tensor all finite: True
+X_tensor bad rows: 0
+X_tensor finite min: -0.0057219997979700565
+X_tensor finite max: 0.07984000444412231
+X_tensor finite mean: 0.023151900619268417
+X_tensor sha256: 22b5d9018a6e987cabe2b7d6ca6e619d1f92d3cb4d5e98e7bf87f00253b9728f
+meta shape: (1889, 2)
+meta columns: ['as_of_date', 'ccy']
+meta first rows:
+as_of_date ccy
+2004-03-31 AUD
+2004-04-30 AUD
+2004-05-31 AUD
+2004-06-30 AUD
+2004-07-30 AUD
+meta last rows:
+as_of_date ccy
+2023-02-28 USD
+2023-03-31 USD
+2023-04-28 USD
+2023-05-31 USD
+2023-06-30 USD
+meta sha256: 111e5979e023818acd1a85ea49f9fb84ec17bcd5f6e433058c6ca9fe618b1767
+
+================================================================================
+FIRST ROLLING WINDOW CHECK
+================================================================================
+Overall date range: 2010-01-01 to 2024-02-29
+Train window: 2010-01-01 to 2014-12-31
+Test window: 2015-01-01 to 2015-06-30
+n_train: 522
+n_test: 54
+X_train_first_window shape: (522, 8)
+X_train_first_window dtype: torch.float32
+X_train_first_window all finite: True
+X_train_first_window bad rows: 0
+X_train_first_window finite min: 0.0004500000213738531
+X_train_first_window finite max: 0.06239999830722809
+X_train_first_window finite mean: 0.023122677579522133
+X_train_first_window sha256: dee5056089d76eaa41e480723e30dee69d93de63f0bd20ddeb7d2de62f708cec
+X_test_first_window shape: (54, 8)
+X_test_first_window dtype: torch.float32
+X_test_first_window all finite: True
+X_test_first_window bad rows: 0
+X_test_first_window finite min: -0.0024250000715255737
+X_test_first_window finite max: 0.03792500123381615
+X_test_first_window finite mean: 0.013314275071024895
+X_test_first_window sha256: 8fcf9ce686d89489601cf14566f9d73f04c0e28f64ed6e0d98af8a48ba174103
+meta_train_first_window shape: (522, 2)
+meta_train_first_window columns: ['as_of_date', 'ccy']
+meta_train_first_window first rows:
+as_of_date ccy
+2010-01-29 AUD
+2010-02-26 AUD
+2010-03-31 AUD
+2010-04-30 AUD
+2010-05-31 AUD
+meta_train_first_window last rows:
+as_of_date ccy
+2014-08-29 USD
+2014-09-30 USD
+2014-10-31 USD
+2014-11-28 USD
+2014-12-31 USD
+meta_train_first_window sha256: 3530156b9dd97769380895a7f1acd2113556e1ecd5e65e7b5d0e1d1501ae5aaa
+
+================================================================================
+MODEL FORWARD SMOKE TEST
+================================================================================
+Smoke batch shape: (32, 8)
+Smoke batch finite: True
+Smoke batch sha256: 3bc8224ce64c194097366cb7ad48439c078567f123bed16fe6c1346ced85bd51
+
+--- Smoke test device: cpu ---
+Requested device: cpu
+Model parameter device: cpu
+Batch device: cpu
+Output shape: (32, 8)
+Output finite: True
+Output finite min: 0.009814349934458733
+Output finite max: 0.010138075798749924
+Output finite mean: 0.009945450350642204
+Output sha256: 33761f85e27aadeb0c0643ab60c47135ce61e391ccb72722755da11ecba14577
+
+--- Smoke test device: mps ---
+Requested device: mps
+Model parameter device: mps:0
+Batch device: mps:0
+Output shape: (32, 8)
+Output finite: True
+Output finite min: 0.009814349934458733
+Output finite max: 0.010138075798749924
+Output finite mean: 0.009945455938577652
+Output sha256: bcde0634daafd843b164af8db708e711aacfe4c5b40900996cce4cd471670725
+
+================================================================================
+MINI TRAINING STRESS TEST
+================================================================================
+
+--- Mini training on: cpu ---
+Requested device: cpu
+Model parameter device before training: cpu
+First batch device: cpu
+Model parameter device first batch: cpu
+epoch=   0 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=0.00023195575195689367 lr=1.00e-03
+epoch=   9 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=6.988642528636196e-05 lr=1.00e-03
+epoch=  19 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=5.8925049983846356e-05 lr=1.00e-03
+epoch=  29 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=5.507357584685444e-05 lr=1.00e-03
+epoch=  39 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.831021764249652e-05 lr=9.50e-04
+epoch=  49 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.589458123198265e-05 lr=8.11e-04
+epoch=  59 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.5297957892784796e-05 lr=6.10e-04
+epoch=  69 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.1787034143485e-05 lr=3.88e-04
+epoch=  79 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.104510424377654e-05 lr=1.87e-04
+epoch=  89 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=3.8395724551749084e-05 lr=4.93e-05
+epoch=  99 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=3.8228990595744945e-05 lr=3.35e-07
+Mini stress test finished. Total NaN batches: 0
+
+--- Mini training on: mps ---
+Requested device: mps
+Model parameter device before training: mps:0
+First batch device: mps:0
+Model parameter device first batch: mps:0
+epoch=   0 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=0.00023195578830880452 lr=1.00e-03
+epoch=   9 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=6.988651427048725e-05 lr=1.00e-03
+epoch=  19 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=5.892498751096891e-05 lr=1.00e-03
+epoch=  29 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=5.507365460003551e-05 lr=1.00e-03
+epoch=  39 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.83102197890434e-05 lr=9.50e-04
+epoch=  49 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.589460195870481e-05 lr=8.11e-04
+epoch=  59 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.52979722495594e-05 lr=6.10e-04
+epoch=  69 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.1787019507938076e-05 lr=3.88e-04
+epoch=  79 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=4.104511903264824e-05 lr=1.87e-04
+epoch=  89 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=3.839574619841992e-05 lr=4.93e-05
+epoch=  99 used_batches= 17 nan_batches=  0 total_nan_batches=  0 final_loss=3.822898334766456e-05 lr=3.35e-07
+Mini stress test finished. Total NaN batches: 0
+
+================================================================================
+SUMMARY
+================================================================================
+{
+  "platform": "darwin",
+  "platform_full": "macOS-26.3.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "processor": "arm",
+  "python": "3.12.6",
+  "torch": "2.11.0",
+  "numpy": "2.2.2",
+  "pandas": "2.3.0",
+  "cuda_available": false,
+  "mps_built": true,
+  "mps_available": true,
+  "device_main": "cpu",
+  "mkldnn_enabled": false,
+  "pytorch_enable_mps_fallback": "<not set>",
+  "git_commit": "d66865bb2a253abfd431f268ab4bf3f8ec5c3de4",
+  "git_status": "m .claude/worktrees/charming-jang\n m .claude/worktrees/quizzical-euclid\n M Code/Check_Machine.py\n?? Code/check_machine_output.txt",
+  "config_variant": "stable",
+  "scale_is_percent": true,
+  "x_shape": [
+    1889,
+    8
+  ],
+  "x_sha256": "22b5d9018a6e987cabe2b7d6ca6e619d1f92d3cb4d5e98e7bf87f00253b9728f",
+  "meta_sha256": "111e5979e023818acd1a85ea49f9fb84ec17bcd5f6e433058c6ca9fe618b1767",
+  "first_train_shape": [
+    522,
+    8
+  ],
+  "first_train_sha256": "dee5056089d76eaa41e480723e30dee69d93de63f0bd20ddeb7d2de62f708cec",
+  "smoke_batch_sha256": "3bc8224ce64c194097366cb7ad48439c078567f123bed16fe6c1346ced85bd51",
+  "smoke_results": [
+    {
+      "device": "cpu",
+      "success": true,
+      "output_finite": true,
+      "output_sha256": "33761f85e27aadeb0c0643ab60c47135ce61e391ccb72722755da11ecba14577",
+      "error": null
+    },
+    {
+      "device": "mps",
+      "success": true,
+      "output_finite": true,
+      "output_sha256": "bcde0634daafd843b164af8db708e711aacfe4c5b40900996cce4cd471670725",
+      "error": null
+    }
+  ],
+  "mini_train_results": [
+    {
+      "device": "cpu",
+      "epochs_requested": 100,
+      "batch_size": 32,
+      "max_lr": 0.001,
+      "success": true,
+      "total_nan_batches": 0,
+      "first_failure": null,
+      "final_epoch": 99,
+      "final_loss": 3.8228990595744945e-05,
+      "error": null
+    },
+    {
+      "device": "mps",
+      "epochs_requested": 100,
+      "batch_size": 32,
+      "max_lr": 0.001,
+      "success": true,
+      "total_nan_batches": 0,
+      "first_failure": null,
+      "final_epoch": 99,
+      "final_loss": 3.822898334766456e-05,
+      "error": null
+    }
+  ]
+}
+
+Compare these values between machines:
+x_sha256: 22b5d9018a6e987cabe2b7d6ca6e619d1f92d3cb4d5e98e7bf87f00253b9728f
+meta_sha256: 111e5979e023818acd1a85ea49f9fb84ec17bcd5f6e433058c6ca9fe618b1767
+first_train_sha256: dee5056089d76eaa41e480723e30dee69d93de63f0bd20ddeb7d2de62f708cec
+smoke_batch_sha256: 3bc8224ce64c194097366cb7ad48439c078567f123bed16fe6c1346ced85bd51
