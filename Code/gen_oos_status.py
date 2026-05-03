@@ -15,19 +15,13 @@ ROLL_ROOT = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll")
 OUT_PATH  = os.path.join(ROLL_ROOT, "OOS_RUNS_STATUS.md")
 
 RUNS_5Y6M = [
-    ("dim2_baseline", 2500), ("dim2_baseline", 3500),
-    ("dim2_stable",   2500), ("dim2_stable",   3500),
-    ("dim3_baseline", 2500), ("dim3_baseline", 3500),
-    ("dim3_stable",   2500), ("dim3_stable",   3500),
-    ("dim4_baseline", 2500), ("dim4_baseline", 3500),
-    ("dim4_stable",   2500), ("dim4_stable",   3500),
+    ("dim2_baseline", 3500),
+    ("dim2_stable",   3500),
+    ("dim3_baseline", 3500),
+    ("dim3_stable",   3500),
+    ("dim4_baseline", 3500),
+    ("dim4_stable",   3500),
 ]
-
-RUNS_3Y3M = [
-    ("dim1_baseline", 2500),
-    ("dim2_baseline", 2500),
-]
-
 
 def load(model, subdir, ep):
     p = os.path.join(ROLL_ROOT, f"OOS_roll_{model}", subdir, f"ep{ep}", "run_manifest.json")
@@ -39,7 +33,7 @@ def load(model, subdir, ep):
 
 def make_row(model, subdir, ep):
     m = load(model, subdir, ep)
-    ep_str = f"**{ep}**" if ep == 3500 else str(ep)
+    ep_str = f"**{ep}**"
     if m is None:
         return f"| {model} | {ep_str} | - | - | MISSING |"
     started  = m.get("run_started", "?")
@@ -68,15 +62,6 @@ lines = [
 for model, ep in RUNS_5Y6M:
     lines.append(make_row(model, "train5Y_test6M_step6M", ep))
 
-lines += [
-    "",
-    "## train3Y / test3M / step6M (early experiments)",
-    "",
-    "| Model | Epochs | Started | Finished | Windows |",
-    "|---|---|---|---|---|",
-]
-for model, ep in RUNS_3Y3M:
-    lines.append(make_row(model, "train3Y_test3M_step6M", ep))
 
 missing = [
     f"{model} ep{ep}"
@@ -91,7 +76,6 @@ lines += [
 ]
 if missing:
     lines.append(f"- MISSING: {', '.join(missing)}")
-    lines.append("- To run missing: `python Code/run_stable_ep3500.py`")
 else:
     lines.append("- All main runs complete!")
 
