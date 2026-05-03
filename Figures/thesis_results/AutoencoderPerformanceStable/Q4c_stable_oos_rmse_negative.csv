@@ -1,0 +1,7 @@
+index,AUD,CAD,DKK,EUR,JPY,NOK,SEK,GBP,USD,All
+Negative rates — N,,,64.0,78.0,78.0,,67.0,,,287.0
+Negative rates — Avg RMSE (bps),,,9.51,400.52,115.35,,166.9,,,181.29
+Negative rates — Std RMSE (bps),,,5.05,1364.39,638.1,,781.26,,,878.99
+Non-negative rates — N,108.0,102.0,37.0,30.0,28.0,108.0,41.0,83.0,102.0,639.0
+Non-negative rates — Avg RMSE (bps),52.4,32.97,15.86,17.61,12.39,21.27,16.44,155.01,92.33,55.93
+Non-negative rates — Std RMSE (bps),262.03,70.09,11.68,9.7,7.78,42.3,14.7,587.33,394.87,289.42
