@@ -12,7 +12,10 @@ Outputs (saved to Figures/Simulation/):
   fig_terminal_dist.png    -- Terminal distributions of z and r
   fig_log_growth.png       -- Log10 mean|z| growth over time
   fig_yield_curves.png     -- Decoded swap / yield curves at t=1,5,10 yr
-  sim_diagnostics.csv      -- Summary table loaded by LaTeX
+  sim_diagnostics.csv         -- Summary table (raw values)
+  sim_diagnostics_table.tex   -- Summary table formatted as a LaTeX
+                                 ``tabular`` fragment, ready to be
+                                 ``\\input{}``-ed inside the thesis chapter.
 """
 
 import importlib
@@ -662,6 +665,23 @@ def main():
     p = os.path.join(OUT_DIR, "sim_diagnostics.csv")
     df_diag.to_csv(p, index=False)
     print(f"  Saved {p}")
+
+    # ── LaTeX tabular fragment for the thesis chapter ────────────────────
+    # Built from the same ``rows`` we just wrote — no CSV round-trip needed.
+    # If make_diagnostics_table.py is missing for any reason, fall through
+    # gracefully so the rest of the simulation output is unaffected.
+    try:
+        from make_diagnostics import build_rows, render  # local module
+        d = {r["Metric"]: (r["Baseline"], r["Stable"]) for r in rows}
+        tex_path = os.path.join(OUT_DIR, "sim_diagnostics_table.tex")
+        with open(tex_path, "w", encoding="utf-8") as fh:
+            fh.write(render(build_rows(d)))
+        print(f"  Saved {tex_path}")
+    except ImportError:
+        print("  [tex] make_diagnostics.py not found — skipping .tex fragment")
+    except Exception as e:
+        print(f"  [tex] failed to write .tex fragment: {e}")
+
     print(df_diag.to_string(index=False))
 
     # -- console summary --------------------------------------------------
@@ -686,4 +706,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
