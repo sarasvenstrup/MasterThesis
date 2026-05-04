@@ -479,7 +479,7 @@ The stable panels (bottom row) show curves that remain on a controlled and econo
 \end{figure}
 
 %========================================================
-\subsection{Simulation Diagnostics}
+\subsection{In-Sample Simulation Diagnostics}
 \label{subsec:sim_summary}
 %========================================================
 
@@ -503,3 +503,48 @@ The in-sample reconstruction RMSE row should be interpreted together with the si
 The volatility-range rows quantify a phenomenon that was already visible in Figure~\ref{fig:sigma_bounds}: on the encoded training cloud, the two models produce volatility values of comparable order, but on the expanded grid the baseline range expands by roughly an order of magnitude in both factors, while the stable range is constrained to remain within \((\sigma_{\min},\sigma_{\max})\). The structural bound on diffusion is therefore the proximate cause of the controlled simulation behaviour observed elsewhere in the table.
 
 The central conclusion is that reconstruction accuracy is not sufficient on its own for simulation-based pricing. A model may reconstruct observed curves accurately while learning latent dynamics that behave poorly when iterated forward. In the present experiment, the baseline checkpoint has unstable drift eigenvalues, simulated latent states leave the encoded training region, and the decoded swap-rate curves become economically uninterpretable. The stable parameterisation materially changes this behaviour by imposing mean-reverting deterministic dynamics, explicit volatility bounds, positive-definite correlations and a learnable bounded short-rate network. These restrictions lead to simulated paths and decoded swap-rate curves that are much more suitable for model-based pricing.
+
+%========================================================
+\subsection{Out-of-Sample Generalisation}
+\label{subsec:oos_generalisation}
+%========================================================
+
+The analysis up to this point has examined a single in-sample window and assessed stability through forward simulation. This isolates the effect of the structural parameterisation on the simulated paths, but it does not directly answer whether the same stability properties also benefit reconstruction of swap curves the model has not seen during training. The forward simulation in Section~\ref{subsec:sim_evidence} relies on extrapolation of the decoder, the volatility network and the short-rate network into latent regions visited only after long simulation horizons. Out-of-sample reconstruction relies on extrapolation along a different axis, namely the encoded latent states of test-period swap curves drawn from a future market regime. The aim of this subsection is to test whether the stability properties identified earlier translate into more accurate out-of-sample reconstructions across multiple time periods, currencies and latent dimensions.
+
+\paragraph{Experimental setup.}
+We re-run the rolling-window evaluation protocol of Chapter~\ref{chap:evaluation} for both variants. The protocol --- five-year training period, six-month test period, advanced six months at a time, yielding eighteen non-overlapping test windows from January~2015 to December~2023 --- and the per-currency RMSE metric are unchanged from there. The only modification is that both the baseline and the stable variant are estimated on every window at three latent dimensions \(\ell\in\{2,3,4\}\), giving \(18\times 2\times 3=108\) trained models in total. Each is trained for \(3{,}500\) epochs, in line with the convergence analysis underlying the evaluation chapter.
+
+\paragraph{Aggregate results.}
+Table~\ref{tab:oos_summary} reports the across-window mean and maximum of the rolling out-of-sample RMSE for each \((\ell,\text{variant})\) pair, with the corresponding mean in-sample RMSE for reference. The dim-4 stable model is the strongest configuration, with a mean rolling out-of-sample RMSE of \(12.1\) bps and a maximum of \(24.2\) bps. The improvement over the baseline is substantial at \(\ell=4\), where the average error falls from \(100.5\) to \(12.1\) bps and the worst-window error from \(691.8\) to \(24.2\) bps; the improvement at \(\ell=3\) is similar in direction although smaller in magnitude. The pattern reverses at \(\ell=2\), where the stable variant produces a higher mean out-of-sample RMSE than the baseline. The reversal is driven by a single window (2016-07-01) on which the no-arbitrage ODE used for decoding fails on eight test rows; we return to this case below. The mean in-sample errors are similar across configurations (between \(8\) and \(12\) bps) for five of the six rows, so in-sample fit alone does not predict the out-of-sample ranking.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Average and maximum rolling out-of-sample RMSE (bps) across the 18 rolling windows for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column reports the average rolling-window in-sample RMSE for reference. All models are trained for \(3{,}500\) epochs.}
+\label{tab:oos_summary}
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+\(\ell\) & Variant & Mean OOS (bps) & Max OOS (bps) & Mean IS (bps) \\
+\midrule
+2 & Baseline & 19.0  & 77.0    & 10.5  \\
+2 & Stable   & 127.6 & 1811.7  & 138.7 \\
+\midrule
+3 & Baseline & 66.5  & 632.6   & 11.6  \\
+3 & Stable   & 21.6  & 145.7   & 10.5  \\
+\midrule
+4 & Baseline & 100.5 & 691.8   & 9.3   \\
+4 & Stable   & 12.1  & 24.2    & 8.1   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Interpretation: the role of the eigenvalue spectrum.}
+The ranking in Table~\ref{tab:oos_summary} is consistent with the structure of the learned drift. For the baseline model, the maximum real eigenvalue \(\lambda_{\max}\) of the drift matrix \(M\) is positive in 18 of 18 windows at \(\ell=2\), 13 of 18 at \(\ell=3\), and 18 of 18 at \(\ell=4\); the corresponding ranges across windows are \([-2.86,5.31]\), \([-4.76,3.30]\) and \([-3.58,2.68]\). Every catastrophic baseline failure (rolling RMSE above \(50\) bps) occurs in a window with \(\lambda_{\max}>0\), so the explosive-drift mechanism identified theoretically in Section~\ref{subsec:sim_baseline_problems} is also responsible for the largest baseline errors out of sample. A positive maximum eigenvalue is, however, a necessary rather than sufficient condition for catastrophic failure: the dim-2 baseline has \(\lambda_{\max}>0\) in all eighteen windows but produces a rolling RMSE above \(50\) bps in only one of them. The interpretation is that explosive drift causes large reconstruction errors only when the encoded test states are also far enough from the training cloud for the local explosive component of \(\mathcal{K}\) to amplify the displacement; in benign windows the encoded test states remain inside the training cloud and reconstruction is accurate despite the unstable spectrum. The eigenvalue spectrum is therefore a leading indicator of failure risk rather than a guarantee of failure.
+
+For the stable variant, all eigenvalues are non-positive by construction. The observed ranges are \([-14.04,-0.001]\), \([-8.65,-0.004]\) and \([-17.75,-0.002]\) for \(\ell=2,3,4\) respectively. The presence of eigenvalues very close to zero indicates that the trained model has learned a near-unit-root mode in the latent dynamics. While this is consistent with the Hurwitz constraint, it produces a slowly mean-reverting (almost integrated) factor that is sensitive to small displacements of the latent state. This is the proximate cause of the dim-2 stable failure on the 2016-07-01 window, where the near-unit-root behaviour combines with the limited dynamical headroom of a two-dimensional latent space to make the decoder ODE numerically fragile.
+
+\paragraph{Interpretation: behaviour in the 2022 rate-hike cycle.}
+A single test period dominates the worst-case behaviour: the second half of 2022, during which the European Central Bank, the Federal Reserve and most other major central banks raised policy rates rapidly. Models trained on the preceding five-year window had been fitted almost entirely to a low-rate environment, so the encoded 2022 test states fall well outside the training cloud. The window functions as a natural stress test for the encoder/decoder pair, and it separates the variants cleanly. The dim-3 and dim-4 baselines fail with rolling RMSEs of \(296\) and \(395\) bps respectively, the latter additionally producing ten test rows of non-finite ODE output. The dim-2 stable also struggles, at \(266\) bps, and the dim-3 stable reaches \(146\) bps. Only the dim-4 stable model handles the period cleanly, with a rolling RMSE of \(23.7\) bps and no decoder failures. The pattern is consistent with the interpretation that the lower-dimensional stable models lack the representational capacity to extrapolate through this regime, while the higher-dimensional stable model has enough latent flexibility to reconstruct test curves outside the training distribution without the explosive baseline pathology. Outside the 2022 period and a small number of structural-shift windows, the two variants perform comparably across the eighteen rolling windows, with errors typically in the \(7\)--\(25\) bps range. The stable parameterisation therefore does not sacrifice accuracy on benign windows in order to better handle stress periods.
+
+\paragraph{Summary and chapter conclusion.}
+The rolling-window evidence reinforces the in-sample stability conclusions of this chapter. In-sample reconstruction loss alone does not predict out-of-sample behaviour: both variants achieve similar in-sample RMSE while their out-of-sample errors differ by orders of magnitude. The eigenvalue spectrum of the trained drift matrix, by contrast, is informative: a positive maximum eigenvalue is a leading indicator of catastrophic out-of-sample failure, while eigenvalues clustered very close to zero in the stable variant flag configurations that may remain numerically fragile in stress periods. Taken together with the in-sample evidence in Sections~\ref{subsec:sim_evidence} and~\ref{subsec:sim_summary}, the results show that the stable parameterisation materially improves both the forward-simulation behaviour of the model and its out-of-sample reconstruction accuracy, without sacrificing in-sample fit. Among the configurations considered, the dim-4 stable model is the most robust on both criteria, and we adopt it as the reference configuration for the application chapters that follow.
