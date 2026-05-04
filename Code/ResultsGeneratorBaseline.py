@@ -1280,6 +1280,19 @@ else:
         print("\n  Combined regime (inverted × negative) (OOS):")
         print(tbl_combined_oos.to_string())
 
+        # display version: N + Avg only, no Std, no Inverted Negative
+        _oos_display_rows = [r for r in tbl_combined_oos.index
+                             if "Std" not in r and "Inverted, Negative" not in r]
+        _disp_oos = tbl_combined_oos.loc[_oos_display_rows].copy().astype(object)
+        for _idx in _disp_oos.index:
+            if _idx.endswith("— N"):
+                _disp_oos.loc[_idx] = _disp_oos.loc[_idx].apply(
+                    lambda v: str(int(v)) if pd.notna(v) else "---")
+            else:
+                _disp_oos.loc[_idx] = _disp_oos.loc[_idx].apply(
+                    lambda v: f"{v:.2f}" if pd.notna(v) else "---")
+        save_table(_disp_oos, "Q4c_oos_rmse_combined_display")
+
         # scatter over time: colour encodes regime (negative = red family)
         _df_oos_regime["as_of_date"] = pd.to_datetime(_df_oos["as_of_date"].values)
         fig, ax = plt.subplots(figsize=(11, 4))
