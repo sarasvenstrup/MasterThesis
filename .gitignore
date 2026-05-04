@@ -16,5 +16,4 @@ env/
 .DS_Store
 
 # Large output folders (kept locally, not needed in git/Overleaf)
-Figures/TrainingResults/
 Figures/KalmanBenchmarkResults/
