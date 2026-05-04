@@ -148,7 +148,8 @@ def time0_forward_swap_and_annuity(P_full_0, tau_grid, expiry, tenor, accrual=1.
     }
 
 
-def quote_swaption_time0(ctx, expiry, tenor, strike=None, strike_atm=False, payer=True, accrual=1.0):
+def quote_swaption_time0(ctx, expiry, tenor, strike=None, strike_atm=False, payer=True, accrual=1.0,
+                         verbose=False):
     P_full_0 = ctx["P_full_0"].detach().cpu().numpy()
     tau_grid = ctx["tau_grid"].detach().cpu().numpy()
 
@@ -179,13 +180,14 @@ def quote_swaption_time0(ctx, expiry, tenor, strike=None, strike_atm=False, paye
         "intrinsic_lower_bound": intrinsic_lb,
     }
 
-    print("\nTime-0 swaption quote")
-    print(f"  Expiry            : {expiry}Y")
-    print(f"  Tenor             : {tenor}Y")
-    print(f"  Forward swap F0   : {out['forward_swap']:.6f}  ({out['forward_swap']*10000:.1f} bp)")
-    print(f"  Annuity A0        : {out['annuity']:.10f}")
-    print(f"  Strike K          : {out['strike']:.10f}")
-    print(f"  Intrinsic lb      : {out['intrinsic_lower_bound']:.10f}")
+    if verbose:
+        print("\nTime-0 swaption quote")
+        print(f"  Expiry            : {expiry}Y")
+        print(f"  Tenor             : {tenor}Y")
+        print(f"  Forward swap F0   : {out['forward_swap']:.6f}  ({out['forward_swap']*10000:.1f} bp)")
+        print(f"  Annuity A0        : {out['annuity']:.10f}")
+        print(f"  Strike K          : {out['strike']:.10f}")
+        print(f"  Intrinsic lb      : {out['intrinsic_lower_bound']:.10f}")
 
     return out
 
@@ -243,6 +245,7 @@ def swaption_payoff_from_simulation(
     payer=True,
     accrual=1.0,
     notional=1.0,
+    verbose=False,
 ):
     """
     Compute pathwise swaption payoff at expiry, without discounting back to time 0.
@@ -295,13 +298,14 @@ def swaption_payoff_from_simulation(
 
     mean_payoff = float(np.mean(payoff_paths[valid_mask]))
 
-    print("\nSwaption payoff from simulation")
-    print(f"  Expiry            : {expiry}Y")
-    print(f"  Tenor             : {tenor}Y")
-    print(f"  Strike            : {strike:.10f}")
-    print(f"  Payer             : {payer}")
-    print(f"  Valid paths       : {n_valid}/{n_paths}")
-    print(f"  Mean payoff @ Te  : {mean_payoff:.10f}")
+    if verbose:
+        print("\nSwaption payoff from simulation")
+        print(f"  Expiry            : {expiry}Y")
+        print(f"  Tenor             : {tenor}Y")
+        print(f"  Strike            : {strike:.10f}")
+        print(f"  Payer             : {payer}")
+        print(f"  Valid paths       : {n_valid}/{n_paths}")
+        print(f"  Mean payoff @ Te  : {mean_payoff:.10f}")
 
     return {
         "expiry": expiry,
@@ -325,6 +329,7 @@ def swaption_mc_price_from_simulation(
     payer=True,
     accrual=1.0,
     notional=1.0,
+    verbose=False,
 ):
     """
     Full Monte Carlo time-0 swaption price:
@@ -340,6 +345,7 @@ def swaption_mc_price_from_simulation(
         payer=payer,
         accrual=accrual,
         notional=notional,
+        verbose=verbose,
     )
 
     exp_idx = payoff_res["expiry_index"]
@@ -361,14 +367,15 @@ def swaption_mc_price_from_simulation(
     mc_std = float(np.std(pv_paths[valid_mask], ddof=1)) if n_valid > 1 else 0.0
     mc_se = mc_std / np.sqrt(n_valid)
 
-    print("\nMonte Carlo swaption price")
-    print(f"  Expiry            : {expiry}Y")
-    print(f"  Tenor             : {tenor}Y")
-    print(f"  Strike            : {strike:.10f}")
-    print(f"  Valid paths       : {n_valid}/{len(payoff_paths)}")
-    print(f"  MC price          : {mc_price:.10f}")
-    print(f"  MC std            : {mc_std:.10f}")
-    print(f"  MC stderr         : {mc_se:.10f}")
+    if verbose:
+        print("\nMonte Carlo swaption price")
+        print(f"  Expiry            : {expiry}Y")
+        print(f"  Tenor             : {tenor}Y")
+        print(f"  Strike            : {strike:.10f}")
+        print(f"  Valid paths       : {n_valid}/{len(payoff_paths)}")
+        print(f"  MC price          : {mc_price:.10f}")
+        print(f"  MC std            : {mc_std:.10f}")
+        print(f"  MC stderr         : {mc_se:.10f}")
 
     return {
         **payoff_res,
@@ -513,23 +520,39 @@ def implied_bachelier_vol(
     notional=1.0,
     payer=True,
     tol=1e-12,
+    _return_failure_reason=False,
 ):
+    """
+    Invert market_price → normal (Bachelier) volatility via Brent's method.
+
+    Parameters
+    ----------
+    _return_failure_reason : bool
+        If True, return (vol_or_nan, reason_str) instead of just the vol.
+        reason_str is None on success, a short string on failure.
+    """
     intrinsic = notional * annuity * (
         max(forward - strike, 0.0) if payer else max(strike - forward, 0.0)
     )
 
+    def _ret(val, reason=None):
+        return (val, reason) if _return_failure_reason else val
+
     if expiry <= 0.0 or annuity <= 0.0 or notional <= 0.0:
-        return np.nan
+        reason = f"degenerate inputs: expiry={expiry}, annuity={annuity}, notional={notional}"
+        warnings.warn(f"implied_bachelier_vol: {reason}", RuntimeWarning)
+        return _ret(np.nan, reason)
 
     if market_price < intrinsic - tol:
-        warnings.warn(
-            f"Price {market_price:.12f} below intrinsic {intrinsic:.12f}; cannot infer normal vol.",
-            RuntimeWarning,
+        reason = (
+            f"price {market_price:.6g} below intrinsic {intrinsic:.6g} "
+            f"(F={forward:.6g}, K={strike:.6g})"
         )
-        return np.nan
+        warnings.warn(f"implied_bachelier_vol: {reason}", RuntimeWarning)
+        return _ret(np.nan, reason)
 
     if abs(market_price - intrinsic) <= tol:
-        return 0.0
+        return _ret(0.0, None)
 
     def objective(sigma):
         return bachelier_price(
@@ -549,9 +572,16 @@ def implied_bachelier_vol(
         upper *= 2.0
 
     if objective(upper) < 0.0:
-        return np.nan
+        reason = (
+            f"bracket exhausted at upper={upper:.3g}: "
+            f"price {market_price:.6g} may be too large "
+            f"(F={forward:.6g}, K={strike:.6g}, T={expiry})"
+        )
+        warnings.warn(f"implied_bachelier_vol: {reason}", RuntimeWarning)
+        return _ret(np.nan, reason)
 
-    return brentq(objective, lower, upper, xtol=1e-12, rtol=1e-10, maxiter=200)
+    vol = brentq(objective, lower, upper, xtol=1e-12, rtol=1e-10, maxiter=200)
+    return _ret(vol, None)
 
 def atm_swaption_mc_price_from_simulation(
     ctx,
@@ -560,6 +590,7 @@ def atm_swaption_mc_price_from_simulation(
     payer=True,
     accrual=1.0,
     notional=1.0,
+    verbose=False,
 ):
     quote = quote_swaption_time0(
         ctx=ctx,
@@ -568,6 +599,7 @@ def atm_swaption_mc_price_from_simulation(
         strike_atm=True,
         payer=payer,
         accrual=accrual,
+        verbose=verbose,
     )
 
     res = swaption_mc_price_from_simulation(
@@ -578,9 +610,10 @@ def atm_swaption_mc_price_from_simulation(
         payer=payer,
         accrual=accrual,
         notional=notional,
+        verbose=verbose,
     )
 
-    iv = implied_bachelier_vol(
+    iv, iv_fail = implied_bachelier_vol(
         market_price=res["mc_price"],
         forward=quote["forward_swap"],
         strike=quote["strike"],
@@ -588,14 +621,18 @@ def atm_swaption_mc_price_from_simulation(
         annuity=quote["annuity"],
         notional=notional,
         payer=payer,
+        _return_failure_reason=True,
     )
 
     res["quote"] = quote
     res["implied_normal_vol"] = iv
+    res["implied_normal_vol_failure"] = iv_fail
 
-    print("\nModel-implied normal vol")
-    print(f"  Vol (abs)         : {iv:.10f}")
-    print(f"  Vol (bp)          : {iv * 10000:.2f}")
+    if verbose:
+        print("\nModel-implied normal vol")
+        iv_display = iv if (iv is not None and np.isfinite(iv)) else float("nan")
+        print(f"  Vol (abs)         : {iv_display:.10f}")
+        print(f"  Vol (bp)          : {iv_display * 10000:.2f}")
 
     return res
 
