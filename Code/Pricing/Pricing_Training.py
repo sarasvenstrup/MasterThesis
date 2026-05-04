@@ -117,7 +117,7 @@ def swaption_price_loss_single(
     # ── Logging: invert MC price → implied Bachelier vol ─────────────────────
     #   V_ATM = A_0 · σ · √T · φ(0)   =>   σ = V_MC / (A_0 · √T · φ(0))
     phi0         = 1.0 / math.sqrt(2.0 * math.pi)
-    denom        = A_0 * math.sqrt(expiry) * phi0
+    denom        = A_0 * math.sqrt(expiry) * phi0 + 1e-8
     sigma_mod_bp = float(V_MC.detach()) / max(denom, 1e-12) * 10_000
     V_market_bp  = sigma_market * 10_000
 
@@ -204,7 +204,8 @@ def calibrate_second_stage(
     np.random.seed(seed)
 
     # ── Load model ────────────────────────────────────────────────────────────
-    state  = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    ckpt   = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    state  = ckpt.get("model_state_dict", ckpt)   # backwards compatible
 
     # Infer latent_dim from the checkpoint so the pipeline is dimension-agnostic
     latent_dim = None
@@ -463,19 +464,11 @@ if __name__ == "__main__":
     # SETTINGS  — edit here
     # =========================================================================
 
-    # Stage-1 checkpoint to warm-start from
-    STAGE1_CKPT = os.path.join(
-        THESIS_ROOT, "Figures", "TrainingResults",
-        "dim4_stable", "ep3500", "checkpoint_dim4_ep3500.pt"
-    )
-
-    # Output directory  (Figures/Pricing/stage2_checkpoints — NOT TrainingResults)
-    OUT_DIR  = os.path.join(THESIS_ROOT, "Figures", "Pricing", "stage2_checkpoints")
-
-    DIM_TAG    = "dim4"       # update if you change STAGE1_CKPT to a different dim
-    EPOCHS     = 500
+    LATENT_DIM = 3       # match the stage-1 checkpoint you are using
+    STAGE1_EP  = 3500    # epoch tag of the stage-1 checkpoint
+    EPOCHS     = 500     # stage-2 calibration epochs
     CCY        = "EUR"
-    N_PATHS    = 1024         # MC paths (antithetic → effective 2×)
+    N_PATHS    = 1024    # MC paths during training (antithetic → effective 2×)
     DT         = 1 / 12
     LR         = 1e-4
     BATCH_SIZE = 4
@@ -490,10 +483,21 @@ if __name__ == "__main__":
     SPLIT_DATE = "2018-12-31"
 
     # =========================================================================
+    # Derived paths  — nothing to edit below this line
+    # =========================================================================
 
-    CKPT_NAME = f"checkpoint_stage2_{DIM_TAG}_ep{EPOCHS}.pt"
+    _DIM_TAG = f"dim{LATENT_DIM}"
+
+    STAGE1_CKPT = os.path.join(
+        THESIS_ROOT, "Figures", "TrainingResults",
+        f"{_DIM_TAG}_stable", f"ep{STAGE1_EP}",
+        f"checkpoint_{_DIM_TAG}_ep{STAGE1_EP}.pt"
+    )
+
+    OUT_DIR   = os.path.join(THESIS_ROOT, "Figures", "Pricing", "stage2_checkpoints")
+    CKPT_NAME = f"checkpoint_stage2_{_DIM_TAG}_ep{EPOCHS}.pt"
     CKPT_PATH = os.path.join(OUT_DIR, CKPT_NAME)
-    CSV_NAME  = f"training_log_stage2_{DIM_TAG}_ep{EPOCHS}.csv"
+    CSV_NAME  = f"training_log_stage2_{_DIM_TAG}_ep{EPOCHS}.csv"
     CSV_PATH  = os.path.join(OUT_DIR, CSV_NAME)
 
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -504,8 +508,8 @@ if __name__ == "__main__":
     print(f"  Stage-1 checkpoint : {STAGE1_CKPT}")
     print(f"  Output dir         : {OUT_DIR}")
     print(f"  Checkpoint         : {CKPT_NAME}")
-    print(f"  Epochs / CCY       : {EPOCHS} / {CCY}")
-    print(f"  Split date         : {SPLIT_DATE}")
+    print(f"  Latent dim / CCY   : {LATENT_DIM} / {CCY}")
+    print(f"  Epochs / split     : {EPOCHS} / {SPLIT_DATE}")
     print(f"  n_paths / dt       : {N_PATHS} / {DT:.4f}")
     print(f"  lr / batch         : {LR} / {BATCH_SIZE}")
     print(f"  train_G={TRAIN_G}  train_K_N={TRAIN_K_N}")
@@ -556,10 +560,10 @@ if __name__ == "__main__":
     ax.plot(loss_history, linewidth=1.2, color="steelblue")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss (scaled price²)")
-    ax.set_title(f"Stage-2 Calibration Loss  ({DIM_TAG}, {EPOCHS} epochs)")
+    ax.set_title(f"Stage-2 Calibration Loss  ({_DIM_TAG}, {EPOCHS} epochs)")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    loss_fig = os.path.join(OUT_DIR, f"calibration_loss_stage2_{DIM_TAG}_ep{EPOCHS}.png")
+    loss_fig = os.path.join(OUT_DIR, f"calibration_loss_stage2_{_DIM_TAG}_ep{EPOCHS}.png")
     fig.savefig(loss_fig, dpi=150)
     plt.close(fig)
     print(f"  Loss plot  → {loss_fig}")
@@ -577,11 +581,11 @@ if __name__ == "__main__":
                         color=colours.get(group))
         ax.set_xlabel("Epoch")
         ax.set_ylabel("Gradient norm (post-clip)")
-        ax.set_title(f"Stage-2 Gradient Norms  ({DIM_TAG}, {EPOCHS} epochs)")
+        ax.set_title(f"Stage-2 Gradient Norms  ({_DIM_TAG}, {EPOCHS} epochs)")
         ax.legend()
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
-        grad_fig = os.path.join(OUT_DIR, f"gradient_norms_stage2_{DIM_TAG}_ep{EPOCHS}.png")
+        grad_fig = os.path.join(OUT_DIR, f"gradient_norms_stage2_{_DIM_TAG}_ep{EPOCHS}.png")
         fig.savefig(grad_fig, dpi=150)
         plt.close(fig)
         print(f"  Grad plot  → {grad_fig}")
@@ -596,3 +600,4 @@ if __name__ == "__main__":
     print("=" * 70)
     print("DONE")
     print("=" * 70)
+
