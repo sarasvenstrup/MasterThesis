@@ -78,12 +78,10 @@ X^{(m),\mathrm{rec}}_{T_e}
 \max\bigl(K-S^{(m)}(T_e),0\bigr).
 \]
 
-\textcolor{red}{we forgot to define N}
-
 \subsection{Monte Carlo estimator and implied normal volatility}
 \label{subsec:mc_estimator_implied_vol}
 
-The payoff is discounted back to time \(0\) using the pathwise money-market \textcolor{red}{call it bank account and not money market} discount factor computed during simulation. Denoting this factor on path \(m\) by
+The payoff is discounted back to time \(0\) using the pathwise bank account discount factor computed during simulation. Denoting this factor on path \(m\) by
 \[
 D^{(m)}_{T_e}
 =
@@ -120,11 +118,7 @@ and the associated Monte Carlo standard error
 \frac{\widehat \sigma_{\mathrm{MC}}}{\sqrt{N_{\mathrm{MC}}}}.
 \]
 
-Finally, the Monte Carlo price is converted into a model-implied normal volatility using the Bachelier swaption formula. This volatility is not an additional model input; it is a market-standard way of reporting the model price. In the at-the-money case considered below, the inversion is explicit, while for non-ATM strikes it can be performed numerically.
-
-\textcolor{red}{the above is refereing forward? cant we wait with this to introduce in the next section?}
-
-In the implementation, the time-zero quantities \(F_0\) and \(\mathcal A_0\) are computed directly from the decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and \(\mathcal A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry on each simulated path. Because the pricing routine extracts bond prices directly from the model grids, the option expiry \(T_e\) must lie on the simulation time grid, while the payment dates \(j\delta\) must lie on the decoder maturity grid. In the numerical examples below, we consider in particular at-the-money payer swaptions, for which the strike is set equal to the time-zero forward swap rate.
+In the implementation, the notional \(\mathcal N\) is set to 1 for simplicity. The time-zero quantities \(F_0\) and \(\mathcal A_0\) are computed directly from the decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and \(\mathcal A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry on each simulated path. Because the pricing routine extracts bond prices directly from the model grids, the option expiry \(T_e\) must lie on the simulation time grid, while the payment dates \(j\delta\) must lie on the decoder maturity grid. In the numerical examples below, we consider in particular at-the-money payer swaptions, for which the strike is set equal to the time-zero forward swap rate.
 
 We can finally summarise the pricing pipeline schematically as
 \[
@@ -436,12 +430,12 @@ Since the short-rate network \(\mathcal R\) is frozen during second-stage calibr
 \toprule
 \textbf{Hyperparameter} & \textbf{Value} & \textbf{Description} \\
 \midrule
-\(N_{\mathrm{MC}}\)          & 512        & Monte Carlo paths per swaption \\
+\(N_{\mathrm{MC}}\)          & 1024       & Monte Carlo paths per swaption \\
 \(\Delta t\)                 & \(1/12\) yr & Simulation step, monthly \\
 \(\eta\)                     & \(10^{-4}\) & Base learning rate for \(\mathcal H\) \\
 \(0.1\eta\)                  & \(10^{-5}\) & Learning rate for \(\mathcal G\) and \(N_K\) \\
-\(n_{\mathrm{epochs}}\)      & 300        & Training epochs \\
-\(|\mathcal B|\)             & 3          & Mini-batch size \\
+\(n_{\mathrm{epochs}}\)      & 500        & Training epochs \\
+\(|\mathcal B|\)             & 4          & Mini-batch size \\
 \(\lambda_G\)                & 1.0        & Decoder regularisation weight \\
 \(\lambda_K\)                & 0.01       & Drift-intercept regularisation weight \\
 \(\mathrm{clip}_{\mathcal H}\) & 1.0      & Gradient clip norm for \(\mathcal H\) \\
