@@ -1,0 +1,18 @@
+# Overleaf sync ignore — keep only ThesisLayout/ and Figures/thesis_results/
+
+# Python code
+Code/
+
+# Raw data
+SwapData/
+
+# All Figures subfolders except thesis_results
+Figures/KalmanBenchmarkResults/
+Figures/KalmanBenchmarkTest/
+Figures/OOSResults/
+Figures/Pricing/
+Figures/Simulation/
+Figures/TrainingResults/
+
+# Reference PDFs (not needed by LaTeX compiler)
+*.pdf
