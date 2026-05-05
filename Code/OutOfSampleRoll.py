@@ -73,15 +73,16 @@ FIGURES_DIR = os.path.join(
 )
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
-ROLLS_DIR = os.path.join(FIGURES_DIR, "rolls")
-os.makedirs(ROLLS_DIR, exist_ok=True)
-
 oos_csv_path = os.path.join(
     FIGURES_DIR,
     f"oos_rolling_{USE}_dim{LATENT_DIM}_train{TRAIN_YEARS}Y_test{TEST_MONTHS}M_step{STEP_MONTHS}M.csv"
 )
 
-SAVE_PER_ROLL_PLOTS = True  # set False if you only want the overall curve plot
+# Combined per-roll CSVs (one file per type, appended window by window)
+PRED_TEST_CSV  = os.path.join(FIGURES_DIR, "predictions_test_all.csv")
+PRED_TRAIN_CSV = os.path.join(FIGURES_DIR, "predictions_train_all.csv")
+LATENT_Z_CSV   = os.path.join(FIGURES_DIR, "latent_z_all.csv")
+PARAMETERS_CSV = os.path.join(FIGURES_DIR, "parameters_all.csv")
 
 # ============================= Load Data ===============================
 meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(use=USE)
@@ -298,94 +299,52 @@ def extract_parameters(model: nn.Module, X: torch.Tensor, meta_sub: pd.DataFrame
     rec["r_tilde"] = r_til.cpu().numpy()
     return rec
 
+def _append_csv(df: pd.DataFrame, path: str):
+    """Append df to path, writing header only if the file doesn't exist yet."""
+    write_header = not os.path.exists(path) or os.path.getsize(path) == 0
+    df.to_csv(path, mode="a", header=write_header, index=False)
+
+
 def save_roll_outputs(model: nn.Module, X_train: torch.Tensor, meta_train_sub: pd.DataFrame,
-                      roll_dir: str, lr_hist, train_mse_hist,
-                      avg_in_rmse_bps: float, avg_rmse_bps: float, k: int, test_start,
+                      test_start,
                       X_test: torch.Tensor = None, meta_test: pd.DataFrame = None):
-    """Save all per-roll outputs: LR curve, train RMSE curve, latent CSV, parameters CSV + plots,
-    and predictions CSV (actual vs fitted) for both train and test windows."""
-    os.makedirs(roll_dir, exist_ok=True)
-    params_dir = os.path.join(roll_dir, "parameters")
-    os.makedirs(params_dir, exist_ok=True)
+    """Append per-roll outputs to combined CSVs (latent, parameters, predictions train/test).
+    Each row is tagged with test_start so windows remain identifiable."""
 
-    # LR curve
-    fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-    ax.plot(np.arange(len(lr_hist)), lr_hist, linewidth=1.0)
-    ax.set_xlabel("Epoch"); ax.set_ylabel("Learning rate")
-    ax.set_title(f"LR — roll {k+1:02d} test_start={test_start.date()}")
-    fig.tight_layout()
-    fig.savefig(os.path.join(roll_dir, "lr_curve.png"), dpi=300)
-    plt.close(fig)
-
-    # Train RMSE curve
-    fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
-    ax.plot(np.arange(len(train_mse_hist)), np.sqrt(train_mse_hist), linewidth=1.0, label="Train RMSE")
-    ax.axhline(avg_in_rmse_bps / 10_000, color="steelblue", linestyle="--", linewidth=1.0,
-               label=f"IS RMSE (bps): {avg_in_rmse_bps:.2f}")
-    ax.axhline(avg_rmse_bps / 10_000, color="tomato", linestyle="--", linewidth=1.0,
-               label=f"OOS RMSE (bps): {avg_rmse_bps:.2f}")
-    ax.set_xlabel("Epoch"); ax.set_ylabel("Train RMSE")
-    ax.set_title(f"Train RMSE — roll {k+1:02d} test_start={test_start.date()}")
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(roll_dir, "train_rmse.png"), dpi=300)
-    plt.close(fig)
+    ts = test_start.date().isoformat()
 
     # Latent vectors
     Z = get_latent(model, X_train)
     df_z = meta_train_sub.copy().reset_index(drop=True)
+    df_z.insert(0, "test_start", ts)
     for ki in range(LATENT_DIM):
         df_z[f"z_{ki+1}"] = Z[:, ki].numpy()
-    df_z.to_csv(os.path.join(roll_dir, "latent_z.csv"), index=False)
+    _append_csv(df_z, LATENT_Z_CSV)
 
-    # Parameters CSV + plots
+    # Parameters CSV
     df_p = extract_parameters(model, X_train, meta_train_sub)
-    df_p.to_csv(os.path.join(roll_dir, "parameters.csv"), index=False)
+    df_p.insert(0, "test_start", ts)
+    _append_csv(df_p, PARAMETERS_CSV)
 
-    d = LATENT_DIM
-    mu_cols   = [f"mu_{ki+1}"    for ki in range(d)]
-    sig_cols  = [f"sigma_{ki+1}" for ki in range(d)]
-    rho_cols  = [f"rho_{i+1}{j+1}" for i in range(d) for j in range(i+1, d)]
-    param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
-
-    _ccy_colors = {ccy: custom_palette[i] for i, ccy in enumerate(ccy_order)}
-    for col in param_cols:
-        if col not in df_p.columns:
-            continue
-        fig, ax = plt.subplots(figsize=(5, 3.5))
-        for ccy in ccy_order:
-            sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
-            if sub.empty:
-                continue
-            ax.plot(sub["as_of_date"], sub[col],
-                    color=_ccy_colors[ccy], linewidth=0.8, alpha=0.75)
-        ax.set_title(_param_label(col), fontsize=11)
-        ax.tick_params(axis="x", rotation=30, labelsize=8)
-        ax.tick_params(axis="y", labelsize=8)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        fig.tight_layout()
-        fig.savefig(os.path.join(params_dir, f"{col}.png"), dpi=300, bbox_inches="tight")
-        plt.close(fig)
-
-    # predictions CSV (actual vs fitted) for train and test windows
+    # Predictions (actual vs fitted) for train and test windows
     tenor_cols = [f"tenor_{t}" for t in range(X_train.shape[1])]
 
-    def _save_predictions(X: torch.Tensor, meta_sub: pd.DataFrame, fname: str):
+    def _save_predictions(X: torch.Tensor, meta_sub: pd.DataFrame, path: str):
         S_hat = predict_S_hat(model, X)
         mask  = row_finite_mask(X) & row_finite_mask(S_hat)
         X_np  = X[mask].numpy()
         S_np  = S_hat[mask].numpy()
         m     = meta_sub.loc[mask.numpy()].reset_index(drop=True)
         df_pred = m[["as_of_date", "ccy"]].copy()
+        df_pred.insert(0, "test_start", ts)
         for i, t in enumerate(tenor_cols):
             df_pred[f"actual_{t}"]  = X_np[:, i]
             df_pred[f"fitted_{t}"]  = S_np[:, i]
-        df_pred.to_csv(os.path.join(roll_dir, fname), index=False)
+        _append_csv(df_pred, path)
 
-    _save_predictions(X_train, meta_train_sub, "predictions_train.csv")
+    _save_predictions(X_train, meta_train_sub, PRED_TRAIN_CSV)
     if X_test is not None and meta_test is not None:
-        _save_predictions(X_test, meta_test, "predictions_test.csv")
+        _save_predictions(X_test, meta_test, PRED_TEST_CSV)
 
 # ============================= Build rolling schedule ===============================
 date_min = max(meta["as_of_date"].min(), pd.Timestamp("2010-01-01"))
@@ -544,13 +503,9 @@ for k, test_start in enumerate(roll_starts):
 
     print(f"  IS  avg_in_rmse_bps={avg_in_rmse_bps:.3f} | OOS avg_rmse_bps={avg_rmse_bps:.3f} | time_train={time_train/60:.1f}min time_test={time_test:.1f}s")
 
-    if SAVE_PER_ROLL_PLOTS:
-        roll_dir = os.path.join(ROLLS_DIR, f"roll{k+1:02d}_{test_start.date()}")
-        save_roll_outputs(model, X_train, meta_train_sub, roll_dir,
-                          lr_hist, train_mse_hist,
-                          avg_in_rmse_bps, avg_rmse_bps, k, test_start,
-                          X_test=X_test, meta_test=meta_test)
-        print(f"  Saved roll outputs → {roll_dir}")
+    save_roll_outputs(model, X_train, meta_train_sub, test_start,
+                      X_test=X_test, meta_test=meta_test)
+    print(f"  Appended window {k+1:02d} to combined CSVs")
 
 manifest["run_finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 with open(manifest_path, "w") as f:

@@ -15,7 +15,7 @@
   "torch_version": "2.11.0",
   "python_version": "3.12.6",
   "numpy_version": "2.2.2",
-  "run_started": "2026-05-02T11:35:17",
+  "run_started": "2026-05-04T23:52:05",
   "window_results": {
     "2015-01-01": {
       "avg_rmse_bps": 9.799,
@@ -42,7 +42,7 @@
         "GBP": 9.8492,
         "USD": 9.8207
       },
-      "train_minutes": 14.76,
+      "train_minutes": 14.88,
       "n_train": 522,
       "n_test": 54
     },
@@ -71,7 +71,7 @@
         "GBP": 8.8693,
         "USD": 11.1474
       },
-      "train_minutes": 15.52,
+      "train_minutes": 14.91,
       "n_train": 528,
       "n_test": 54
     },
@@ -100,7 +100,7 @@
         "GBP": 8.459,
         "USD": 9.2923
       },
-      "train_minutes": 15.21,
+      "train_minutes": 14.91,
       "n_train": 534,
       "n_test": 53
     },
@@ -129,7 +129,7 @@
         "GBP": 11.884,
         "USD": 10.6847
       },
-      "train_minutes": 15.49,
+      "train_minutes": 14.97,
       "n_train": 537,
       "n_test": 54
     },
@@ -158,7 +158,7 @@
         "GBP": 12.0521,
         "USD": 11.2486
       },
-      "train_minutes": 16.81,
+      "train_minutes": 14.98,
       "n_train": 539,
       "n_test": 54
     },
@@ -187,7 +187,7 @@
         "GBP": 11.5293,
         "USD": 11.382
       },
-      "train_minutes": 16.64,
+      "train_minutes": 14.94,
       "n_train": 539,
       "n_test": 54
     },
@@ -216,7 +216,7 @@
         "GBP": 12.7957,
         "USD": 19.2141
       },
-      "train_minutes": 16.33,
+      "train_minutes": 14.9,
       "n_train": 539,
       "n_test": 48
     },
@@ -245,7 +245,7 @@
         "GBP": 11.0079,
         "USD": 19.6573
       },
-      "train_minutes": 17.17,
+      "train_minutes": 14.87,
       "n_train": 533,
       "n_test": 54
     },
@@ -274,7 +274,7 @@
         "GBP": 10.2085,
         "USD": 18.1815
       },
-      "train_minutes": 17.22,
+      "train_minutes": 14.85,
       "n_train": 533,
       "n_test": 54
     },
@@ -303,7 +303,7 @@
         "GBP": 6.9361,
         "USD": 8.9938
       },
-      "train_minutes": 15.42,
+      "train_minutes": 15.21,
       "n_train": 533,
       "n_test": 54
     },
@@ -332,7 +332,7 @@
         "GBP": 11.8152,
         "USD": 13.142
       },
-      "train_minutes": 15.02,
+      "train_minutes": 14.88,
       "n_train": 533,
       "n_test": 54
     },
@@ -361,7 +361,7 @@
         "GBP": 6.4463,
         "USD": 8.1331
       },
-      "train_minutes": 15.04,
+      "train_minutes": 14.84,
       "n_train": 533,
       "n_test": 54
     },
@@ -390,7 +390,7 @@
         "GBP": 7.5833,
         "USD": 9.4139
       },
-      "train_minutes": 14.8,
+      "train_minutes": 14.85,
       "n_train": 533,
       "n_test": 54
     },
@@ -419,7 +419,7 @@
         "GBP": 8.7886,
         "USD": 8.2335
       },
-      "train_minutes": 14.82,
+      "train_minutes": 14.9,
       "n_train": 534,
       "n_test": 53
     },
@@ -448,7 +448,7 @@
         "GBP": 10.0145,
         "USD": 11.9812
       },
-      "train_minutes": 14.43,
+      "train_minutes": 14.88,
       "n_train": 533,
       "n_test": 48
     },
@@ -477,7 +477,7 @@
         "GBP": 8.5394,
         "USD": 8.7896
       },
-      "train_minutes": 14.4,
+      "train_minutes": 14.89,
       "n_train": 527,
       "n_test": 48
     },
@@ -506,7 +506,7 @@
         "GBP": 9.5209,
         "USD": 10.4484
       },
-      "train_minutes": 14.65,
+      "train_minutes": 14.85,
       "n_train": 521,
       "n_test": 48
     },
@@ -535,10 +535,10 @@
         "GBP": 10.484,
         "USD": 12.4763
       },
-      "train_minutes": 15.83,
+      "train_minutes": 14.84,
       "n_train": 521,
       "n_test": 42
     }
   },
-  "run_finished": "2026-05-02T16:15:13"
+  "run_finished": "2026-05-05T04:20:29"
 }

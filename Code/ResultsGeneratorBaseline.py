@@ -1185,27 +1185,18 @@ for _dim in [2, 3, 4]:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Q4c — Tables: OOS rolling RMSE by curve regime (inverted / negative rates)
-# Pools predictions_test.csv across all roll windows for dim=3 baseline
+# Reads combined predictions_test_all.csv for dim=3 baseline
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q4c: OOS rolling RMSE by curve regime (baseline ℓ=3 rolling) ──")
 
-_rolls_dir = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
-                           "OOS_roll_dim3_baseline",
-                           ROLL_SUBDIR, f"ep{ROLL_EPOCHS}", "rolls")
+_pred_all_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                               "OOS_roll_dim3_baseline",
+                               ROLL_SUBDIR, f"ep{ROLL_EPOCHS}", "predictions_test_all.csv")
 
-if not os.path.exists(_rolls_dir):
-    print(f"  ⚠️  Q4c skipped — rolls folder not found: {_rolls_dir}")
+if not os.path.exists(_pred_all_path):
+    print(f"  ⚠️  Q4c skipped — predictions_test_all.csv not found: {_pred_all_path}")
 else:
-    _pred_frames = []
-    for _roll_folder in sorted(os.listdir(_rolls_dir)):
-        _pred_path = os.path.join(_rolls_dir, _roll_folder, "predictions_test.csv")
-        if os.path.exists(_pred_path):
-            _pred_frames.append(pd.read_csv(_pred_path))
-
-    if len(_pred_frames) == 0:
-        print("  ⚠️  Q4c skipped — no predictions_test.csv files found in roll folders.")
-    else:
-        _df_oos = pd.concat(_pred_frames, ignore_index=True)
+    _df_oos = pd.read_csv(_pred_all_path)
 
         # identify actual and fitted tenor columns
         _actual_cols = [c for c in _df_oos.columns if c.startswith("actual_tenor_")]
@@ -2112,10 +2103,10 @@ def _model_src(dim):
 # determine rolling source for each dim
 def _roll_src(dim):
     new_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                            ROLL_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                            ROLL_SUBDIR, f"ep{ROLL_EPOCHS}",
                             f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
     old_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
-                            _ROLL_FALLBACK_SUBDIR, f"ep{SPLIT_EPOCHS}",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{ROLL_EPOCHS}",
                             f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
     if os.path.exists(new_path): return (_OK,   "train5Y_test6M_step6M")
     if os.path.exists(old_path): return (_WARN, "fallback: train3Y_test3M_step6M (rerun OutOfSampleRoll.py)")

@@ -599,23 +599,14 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Q4c_stable: OOS RMSE by curve regime (stable ℓ=4 rolling) ──")
 
-_stable_rolls_dir = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
-                                 f"OOS_roll_dim4_stable",
-                                 ROLL_SUBDIR, "ep3500", "rolls")
+_stable_pred_all_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                                     f"OOS_roll_dim4_stable",
+                                     ROLL_SUBDIR, "ep3500", "predictions_test_all.csv")
 
-if not os.path.exists(_stable_rolls_dir):
-    print(f"  ⚠️  Q4c_stable skipped — rolls folder not found: {_stable_rolls_dir}")
+if not os.path.exists(_stable_pred_all_path):
+    print(f"  ⚠️  Q4c_stable skipped — predictions_test_all.csv not found: {_stable_pred_all_path}")
 else:
-    _stable_pred_frames = []
-    for _roll_folder in sorted(os.listdir(_stable_rolls_dir)):
-        _pred_path = os.path.join(_stable_rolls_dir, _roll_folder, "predictions_test.csv")
-        if os.path.exists(_pred_path):
-            _stable_pred_frames.append(pd.read_csv(_pred_path))
-
-    if len(_stable_pred_frames) == 0:
-        print("  ⚠️  Q4c_stable skipped — no predictions_test.csv files found.")
-    else:
-        _df_oos = pd.concat(_stable_pred_frames, ignore_index=True)
+    _df_oos = pd.read_csv(_stable_pred_all_path)
 
         _actual_cols = [c for c in _df_oos.columns if c.startswith("actual_tenor_")]
         _fitted_cols = [c for c in _df_oos.columns if c.startswith("fitted_tenor_")]
