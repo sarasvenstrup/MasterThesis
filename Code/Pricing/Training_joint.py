@@ -45,6 +45,8 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
+# REPO_ROOT  = .../MasterThesis/Code
+# PROJECT_ROOT = .../MasterThesis   (one level up — where Figures/ lives)
 PROJECT_ROOT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
 
 if PROJECT_ROOT not in sys.path:
@@ -110,7 +112,7 @@ DT_PRICING = 1 / 12  # Time step for simulation
 USE = "bbg"
 CCY_FILTER = "EUR"  # Currency for pricing calibration
 
-FIGURES_DIR = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+FIGURES_DIR = os.path.join(PROJECT_ROOT, "Figures", "TrainingResults",
                            f"dim{LATENT_DIM}_{config.VARIANT}_joint", f"ep{EPOCHS}")
 os.makedirs(FIGURES_DIR, exist_ok=True)
 

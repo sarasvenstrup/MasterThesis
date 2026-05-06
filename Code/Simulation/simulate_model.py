@@ -554,52 +554,15 @@ def simulate_to_expiry_differentiable(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Differentiable Euler-Maruyama simulation for optimization/calibration.
-    
-    Core use case: Compute terminal latent state and discount factor with gradients
-    flowing through volatility model H (and optionally drift K.N) for likelihood-based
-    calibration of pricing models.
-    
-    Architecture
-    ============
-    - Noise is PRE-DRAWN via reparameterization trick: randomness decoupled from 
-      parameters so autograd flows cleanly through L(z_t; H) at every step
-    - Gradients flow through: H (volatility), optionally K.N (drift mean-reversion)
-    - R (short rate) is ALWAYS frozen: needed for discount but not optimized
-    - K.V (drift variance/scaling) is ALWAYS frozen: ensures numerical stability
-    
+
+    Gradients flow through H (diffusion) and K (drift) at every step.
+    R (short rate) is always evaluated under no_grad — it shapes the discount
+    factor but is not optimised by the pricing loss.
+
     Returns
     -------
-    z_T : (n_paths, d)
-        Terminal latent state WITH gradients w.r.t. H and K.N (if freeze_K=False)
-    D_T : (n_paths,)
-        Pathwise money-market discount factor exp(-∫_0^T r_t dt), DETACHED 
-        (R is frozen throughout)
-    
-    Mathematical Details
-    ====================
-    Discount uses trapezoid rule:
-        ∫_0^T r_t dt ≈ Σ_t ½(r_t + r_{t+1}) · dt
-    
-    When freeze_K=False:
-        K.N receives gradients → sensitivity to mean-reversion parameters
-        K.V always frozen     → negative-definiteness of diffusion preserved
-    
-    Parameters
-    ----------
-    model : FullModel
-        Trained model with components: encoder, K (drift), H (volatility), 
-        R (short rate)
-    z0 : torch.Tensor
-        Initial latent state, shape (1, d), typically detached
-    n_steps : int
-        Number of simulation steps
-    dt : float
-        Time step in years
-    n_paths : int
-        Number of Monte Carlo paths
-    eps : torch.Tensor
-        Pre-drawn standard normal noise, shape (n_paths, n_steps, d)
-        Must have requires_grad=False (frozen)
+    z_T : (n_paths, d)  — terminal latent state WITH gradients
+    D_T : (n_paths,)    — pathwise discount factor exp(-∫r dt), detached
     """
     sqrt_dt = math.sqrt(dt)
 
@@ -615,15 +578,8 @@ def simulate_to_expiry_differentiable(
         sigmas, rhos = model.H(z)
         L = L_from_sigmas_rhos(sigmas, rhos, validate=False)    # (n_paths, d, d)
 
-        # Drift — freeze K entirely, or let K.N receive gradients
-        if freeze_K:
-            with torch.no_grad():
-                mu = model.K(z)
-            drift = mu.detach() * dt
-        else:
-            # K.V.requires_grad = False → no grad flows to K.V
-            # K.N.requires_grad = True  → grad flows to K.N
-            drift = model.K(z) * dt
+        # Drift — gradients always flow through K
+        drift = model.K(z) * dt
 
         # Euler step with fixed noise
         dW    = eps[:, t, :] * sqrt_dt          # (n_paths, d)
