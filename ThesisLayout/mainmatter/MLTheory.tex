@@ -3,7 +3,7 @@
 \label{chap:ml_theory}
 %========================================================
 
-This chapter introduces the machine learning concepts that form the second theoretical pillar of this thesis. We review feedforward neural networks, encoder--decoder architectures and the procedures used to train such models.
+This chapter introduces the machine learning concepts that form the second theoretical pillar of this thesis. We cover feedforward neural networks, encoder--decoder architectures and the procedures used to train such models.
 
 %--------------------------------------------------------
 \section{Neural Networks}
@@ -12,8 +12,7 @@ This chapter introduces the machine learning concepts that form the second theor
 
 
 
-
-A neural network is built from neurons and layers, with the full network obtained by composing layers. We introduce each in turn.
+A neural network is built from neurons and layers, with the full network obtained by composing layers, as illustrated in Figure \ref{fig:nn_general}. We introduce each in turn.
 
 \input{ThesisLayout/figures/Fig_NNhelper}
 
@@ -21,17 +20,17 @@ A neural network is built from neurons and layers, with the full network obtaine
 
 \begin{description}
     \item[Neurons]
-A \emph{neuron} is a map from a vector $x \in \mathbb{R}^n$ to a single real number:
+A \emph{neuron} is a map from a vector $x \in \mathbb{R}^n$ to a scalar:
 \begin{equation}
     \mathcal{N}(x)
     = \psi(w^\top x + b),
     \qquad x \in \mathbb{R}^n,
 \label{eq:neuron}
 \end{equation}
-where $w \in \mathbb{R}^n$ is a weight vector, $b \in \mathbb{R}$ is a bias, and $\psi : \mathbb{R} \to \mathbb{R}$ is an \emph{activation function}. If $\psi$ is linear, the neuron reduces to an affine map, and a composition of affine maps remains affine. A network composed only of linear neurons can therefore represent only affine functions of the input, regardless of its depth or width. Choosing $\psi$ to be nonlinear allows networks to represent much more complex input--output relationships, including curved decision boundaries and nonlinear feature interactions. Common choices include the logistic sigmoid $\psi(t) = (1 + e^{-t})^{-1}$, the hyperbolic tangent, and the rectified linear unit $\psi(t) = \max(0,t)$.
+where $w \in \mathbb{R}^n$ is a weight vector, $b \in \mathbb{R}$ is a bias, and $\psi : \mathbb{R} \to \mathbb{R}$ is an \emph{activation function}, with the computation illustrated in the detail panel of Figure \ref{fig:nn_general}. If $\psi$ is linear, the neuron reduces to an affine map, and a composition of affine maps remains affine. A network composed only of linear neurons can therefore represent only affine functions of the input, regardless of its depth or width. Choosing $\psi$ to be nonlinear allows networks to represent more complex input--output relationships. Common choices include the logistic sigmoid $\psi(t) = (1 + e^{-t})^{-1}$, the hyperbolic tangent, and the rectified linear unit $\psi(t) = \max(0,t)$.
     
     \item[Layers]
-A \emph{layer} consists of neurons operating in parallel on the same input vector, each with its own weights and bias. We index the layers by $h = 1,\dotsc,H$, where different layers may have different numbers of neurons. The number of neurons in layer $h$ is denoted $M_h$ and referred to as the \emph{width} of that layer. The outputs of all neurons in the layer are stacked into a vector, which becomes the input to the next layer. Explicitly, a layer computes
+A \emph{layer} consists of neurons operating in parallel on the same input vector, each with its own weights and bias, as shown in Figure \ref{fig:nn_general}. We index the layers by $h = 1,\dotsc,H$, where different layers may have different numbers of neurons. The number of neurons in layer $h$ is denoted $M_h$ and referred to as the \emph{width} of that layer. The outputs of all neurons in the layer are stacked into a vector, which becomes the input to the next layer. Explicitly, a layer computes
 \begin{equation}
     x_h = \psi_h(W_h x_{h-1} + b_h),
 \label{eq:layer}
@@ -46,22 +45,20 @@ A \emph{network} is formed by composing $H$ layers in sequence \citep[Ch.~6]{Goo
       \psi_1(W_1 x + b_1)\cdots) + b_H\bigr),
 \label{eq:network}
 \end{equation}
-with parameter set $\Omega = \{W_h, b_h\}_{h=1}^H$. The number of layers $H$ is called the \emph{depth} of the network, and when $H$ is large the network is referred to as \emph{deep}, giving rise to the term \emph{deep learning}.
-
-
+with parameter set $\Omega = \{W_h, b_h\}_{h=1}^H$. The number of layers $H$ is called the \emph{depth} of the network.
 \end{description}
 
-The networks defined above process information in one direction only: from the input through the intermediate computations to the output. Networks of this kind are called \emph{feedforward} neural networks, also known as \emph{multilayer perceptrons}, and are the class considered throughout this thesis.
 
-The goal of such a network is to approximate some target function $f^*$ by finding the parameters $\Omega$ that minimise the discrepancy between $f(x;\Omega)$ and $f^*(x)$ over the training data.
+Networks that process information in one direction, from input to output, with no connections feeding back to earlier layers, are called \emph{feedforward} neural networks or \emph{multilayer perceptrons}. The network introduced above is of this type, and is the class considered throughout this thesis.
 
-The architecture of a network, meaning the number of layers, the width of each layer, and the activation functions, is fixed before training. The parameters $\Omega = \{W_h, b_h\}_{h=1}^H$ are then free, and each choice of $\Omega$ produces a different function. The full set of functions the network can represent is therefore the class
+
+\section{Neural Networks as Function Approximators}
+
+The goal is to find parameters $\Omega$ such that the neural network $f(x;\Omega)$ approximates some target function $f^*$ well. The parameters $\Omega = \{W_h, b_h\}_{h=1}^H$ each produce a different function, and the full set of functions the network can represent is the class
 \[
     \bigl\{f(\,\cdot\,;\Omega) : \Omega \in \Theta\bigr\},
 \]
-where $\Theta$ denotes the parameter space. Equivalently, after identifying all weights and biases with a vector of parameters, one may regard $\Theta \subseteq \mathbb{R}^p$, where $p$ is the total number of parameters.
-
-Training is the process of searching through this class to find a parameter choice $\Omega$ for which $f(\,\cdot\,;\Omega)$ approximates $f^*$ well on the available data. A natural question is whether this class is rich enough to approximate any target function of interest, or whether the architecture imposes fundamental limitations. The following theorem gives the classical finite-dimensional universal approximation property. We state it in notation consistent with the neural-network framework introduced above. A classical result of this type is due to \citet{Hornik1989}.
+where $\Theta\subseteq\mathbb{R}^p$ denotes the parameter space and $p$ is the total number of parameters. How suitable parameters are found is addressed in Section \ref{sec:training}. A natural prior question is whether this class is rich enough to approximate any target function of interest. The following classical result, due to \citet{Hornik1989}, shows that it is.
 
 \begin{theorem}[Finite-dimensional universal approximation theorem, cf.\ \citealt{Hornik1989}]
 \label{thm:UAT}
@@ -89,9 +86,7 @@ where $\psi$ is applied element-wise, satisfies
 \]
 \end{theorem}
 
-The approximating class in Theorem~\ref{thm:UAT} is a feedforward network with a single hidden layer of width $M_1$ and an identity activation in the output layer, and is therefore a special case of the broader architecture in \eqref{eq:network}. The theorem shows that even this restricted architecture can approximate any continuous scalar-valued function on a compact set to arbitrary accuracy.
-
-However, the theorem is an existence result only. It does not specify how large the width $M_1$ must be, whether deeper architectures can achieve the same approximation more efficiently, or how suitable parameters are to be found in practice. Thus, for a fixed architecture, approximation may still be poor if the network is too narrow, and suitable parameters may remain difficult to obtain through training. In practice, such questions of architecture design and optimisation are therefore addressed empirically, typically through model selection and validation on data not used for training.
+The approximating class in Theorem~\ref{thm:UAT} is a feedforward network with a single hidden layer of width $M_1$ and an identity activation in the output layer, and is therefore a special case of the general architecture in \eqref{eq:network}. The theorem is an existence result only. It does not specify how large the width $M_1$ must be, nor whether deeper architectures can achieve the same approximation more efficiently. For a fixed architecture, approximation may still be poor if the network is too narrow.
 
 %--------------------------------------------------------
 \section{Encoder--Decoder Architectures}
@@ -102,23 +97,22 @@ An encoder--decoder architecture is a neural network consisting of two component
 
 \begin{description}
     \item[Encoder]
-    The encoder $E$ maps an input $x$ to a latent representation $z = E(x)$, often referred to as the \emph{code} or \emph{latent vector}.
+    The encoder $E$ maps an input $x$ to a latent representation $z = E(x)$.
 
     \item[Decoder]
     The decoder $D$ maps the latent representation to an output $y = D(z)$.
 \end{description}
 
-
-
-The latent representation is typically chosen to provide a more compact or more structured description of the input than the original data itself.
-
-When the input and output domains coincide and the objective is to reconstruct the input, the architecture is referred to as an \emph{autoencoder} \citep[Ch.~14]{Goodfellow2016}. In that case, for an input $x \in \mathbb{R}^d$, the model takes the form
+When the input and output domains coincide and the objective is to reconstruct the input, the architecture is referred to as an \emph{autoencoder} \citep[Ch.~14]{Goodfellow2016}. For an input $x \in \mathbb{R}^d$, the model takes the form
 \[
     x \xrightarrow{\;E\;} z \xrightarrow{\;D\;} \hat{x},
 \]
 where $\hat{x}$ denotes the reconstruction of $x$.
 
-If the latent dimension is smaller than the input dimension, that is, if $z \in \mathbb{R}^k$ with $k < d$, the autoencoder is called \emph{undercomplete} \citep[Ch.~14]{Goodfellow2016}. In this case, the latent code has lower dimension than the input, and the network is therefore encouraged to retain only the information most relevant for reconstructing the input. The latent vector $z$ may then be interpreted as a compressed representation of $x$. Such latent representations are often useful for dimensionality reduction and for identifying structure in the data.
+If the latent dimension is smaller than the input dimension, $z \in \mathbb{R}^k$ with $k < d$, the autoencoder is called \emph{undercomplete} \citep[Ch.~14]{Goodfellow2016}. The latent representation is then more compact than the input, and the network retains only the information most relevant for reconstruction. The latent vector $z$ may therefore be interpreted as a compressed representation of $x$, useful for dimensionality reduction.
+
+
+
 
 %--------------------------------------------------------
 \section{Training}
@@ -129,7 +123,7 @@ Training a neural network consists of choosing the parameter set $\Omega$ so tha
 \[
     \min_{\Omega} \mathcal{L}(\Omega),
 \]
-where $\mathcal{L}$ measures how well the network fulfils the learning objective. In general, this problem does not admit a closed-form solution, and one therefore relies on iterative numerical methods. When $\mathcal{L}$ is differentiable with respect to $\Omega$, gradient-based methods are a natural choice, since the gradient $\nabla_\Omega \mathcal{L}$ gives the direction of steepest local increase of the loss. Consequently, moving the parameters in the opposite direction tends to decrease the loss locally \citep[Chs.~6,~8]{Goodfellow2016}.
+where $\mathcal{L}$ quantifies how well the network fulfils the learning objective. In general, this problem does not admit a closed-form solution, and one therefore relies on iterative numerical methods. When $\mathcal{L}$ is differentiable with respect to $\Omega$, gradient-based methods are a natural choice, since the gradient $\nabla_\Omega \mathcal{L}$ gives the direction of steepest local increase of the loss. Consequently, moving the parameters in the opposite direction tends to decrease the loss locally \citep[Chs.~6,~8]{Goodfellow2016}.
 
 \subsection{Loss function}
 
@@ -137,8 +131,8 @@ Given a dataset $\mathcal{D} = \{(x_t,y_t)\}_{t=1}^N$ with $N$ data points, trai
 \begin{equation}
     \mathcal{L}(\Omega)
     =
-    \frac{1}{N} \sum_{t=1}^{N}
-    \ell\bigl(y_t,\, f(x_t;\Omega)\bigr),
+    \frac{1}{N} \sum_{n=1}^{N}
+    \ell\bigl(y_n,\, f(x_n;\Omega)\bigr),
 \label{eq:empirical_risk}
 \end{equation}
 where $\ell$ is a \emph{loss function} measuring the discrepancy between the target $y_t$ and the model output $f(x_t;\Omega)$. The quantity $\mathcal{L}(\Omega)$ is the corresponding \emph{empirical risk}, that is, the average loss over the dataset \citep[Ch.~6]{Goodfellow2016}. A common example is the squared-error loss
