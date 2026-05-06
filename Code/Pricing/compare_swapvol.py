@@ -228,6 +228,15 @@ def comparison_table(
 
     horizon = n_steps * dt
 
+    # Pre-compute the maximum expiry needed per model date so we only simulate
+    # as far as necessary (avoids running 10-year paths just for a 1Y option).
+    max_expiry_per_date: dict = {}
+    for _, row in df_compare.iterrows():
+        d = pd.Timestamp(row["model_as_of_date"]).normalize()
+        exp = int(row["option_maturity"])
+        if exp <= horizon:
+            max_expiry_per_date[d] = max(max_expiry_per_date.get(d, 0), exp)
+
     for idx, row in df_compare.iterrows():
         market_date = pd.Timestamp(row["market_as_of_date"]).normalize()
         model_date  = pd.Timestamp(row["model_as_of_date"]).normalize()
@@ -243,14 +252,17 @@ def comparison_table(
             continue
 
         if model_date not in sim_cache:
-            print(f"\n[{label}] Simulating {model_date.date()} ...")
+            # Only simulate as far as the longest expiry needed for this date.
+            max_exp = max_expiry_per_date.get(model_date, n_steps * dt)
+            steps_needed = max(1, math.ceil(max_exp / dt))
+            print(f"\n[{label}] Simulating {model_date.date()} (max_expiry={max_exp}Y, n_steps={steps_needed}) ...")
 
             sim_cache[model_date] = run_simulation(
                 checkpoint_path=checkpoint_path,
                 ccy_filter=ccy,
                 as_of_date=str(model_date.date()),
                 n_paths=n_paths,
-                n_steps=n_steps,
+                n_steps=steps_needed,
                 dt=dt,
                 show_plot=False,
             )
@@ -480,46 +492,55 @@ def mc_convergence_check(
 
 
 if __name__ == "__main__":
+    import argparse
 
     # =========================================================================
-    # SETTINGS  — edit here
+    # Command-line arguments
     # =========================================================================
+    parser = argparse.ArgumentParser(description="Compare model swaption vols vs market")
+    parser.add_argument("checkpoint", type=str, help="Path to model checkpoint (.pt file)")
+    parser.add_argument("--ccy", type=str, default="EUR", help="Currency (default: EUR)")
+    parser.add_argument("--n_paths", type=int, default=2000, help="MC paths (default: 2000)")
+    parser.add_argument("--n_steps", type=int, default=120, help="Time steps (default: 120)")
+    parser.add_argument("--split_date", type=str, default=None, help="Train/test split date (YYYY-MM-DD)")
+    parser.add_argument("--verbose", action="store_true", help="Verbose output")
+    
+    args = parser.parse_args()
 
-    STAGE1_CKPT = os.path.join(
-        THESIS_ROOT, "Figures", "TrainingResults",
-        "dim4_stable", "ep3500", "checkpoint_dim4_ep3500.pt"
-    )
-    STAGE2_CKPT = os.path.join(
-        THESIS_ROOT, "Figures", "Pricing", "stage2_checkpoints",
-        "checkpoint_stage2_dim4_ep500.pt"
-    )
+    CHECKPOINT = args.checkpoint
+    CCY = args.ccy
+    N_PATHS = args.n_paths
+    N_STEPS = args.n_steps
+    DT = 1 / 12
+    SPLIT_DATE = args.split_date
+    VERBOSE = args.verbose
 
-    OUT_DIR    = os.path.join(CODE_ROOT, "swapvol_results")
-    CCY        = "EUR"
-    N_PATHS    = 2000
-    N_STEPS    = 120        # 10 yr at monthly dt
-    DT         = 1 / 12
-    SPLIT_DATE = "2018-12-31"   # None → no train/test split
-    VERBOSE    = False
+    if not os.path.exists(CHECKPOINT):
+        print(f"ERROR: Checkpoint not found: {CHECKPOINT}")
+        sys.exit(1)
 
-    # =========================================================================
-
+    # Extract checkpoint name for output filename
+    ckpt_name = os.path.splitext(os.path.basename(CHECKPOINT))[0]
+    
+    # Output directory
+    OUT_DIR = os.path.join(THESIS_ROOT, "Figures", "Pricing")
     os.makedirs(OUT_DIR, exist_ok=True)
 
+    # =========================================================================
+
     print("=" * 70)
-    print("SWAPTION VOL COMPARISON  —  Stage-1 vs Stage-2")
+    print("SWAPTION VOL COMPARISON")
     print("=" * 70)
-    print(f"  Stage-1 : {STAGE1_CKPT}")
-    print(f"  Stage-2 : {STAGE2_CKPT}")
-    print(f"  Out dir : {OUT_DIR}")
+    print(f"  Checkpoint: {CHECKPOINT}")
+    print(f"  Out dir   : {OUT_DIR}")
     print(f"  CCY={CCY}  n_paths={N_PATHS}  n_steps={N_STEPS}  split={SPLIT_DATE}")
     print("=" * 70)
 
-    # ── Stage-1 pricing ───────────────────────────────────────────────────────
-    print("\n--- STAGE 1 (pre-calibration) ---")
-    df_pre = comparison_table(
-        checkpoint_path = STAGE1_CKPT,
-        label           = "stage1",
+    # ── Model pricing ─────────────────────────────────────────────────────────
+    print(f"\n--- Pricing with {ckpt_name} ---")
+    df_model = comparison_table(
+        checkpoint_path = CHECKPOINT,
+        label           = ckpt_name,
         out_dir         = OUT_DIR,
         ccy             = CCY,
         n_paths         = N_PATHS,
@@ -532,57 +553,47 @@ if __name__ == "__main__":
         verbose         = VERBOSE,
     )
 
-    # ── Stage-2 pricing ───────────────────────────────────────────────────────
-    print("\n--- STAGE 2 (post-calibration) ---")
-    df_post = comparison_table(
-        checkpoint_path = STAGE2_CKPT,
-        label           = "stage2",
-        out_dir         = OUT_DIR,
-        ccy             = CCY,
-        n_paths         = N_PATHS,
-        n_steps         = N_STEPS,
-        dt              = DT,
-        payer           = True,
-        accrual         = 1.0,
-        notional        = 1.0,
-        split_date      = SPLIT_DATE,
-        verbose         = VERBOSE,
-    )
+    # ── Flat-vol baseline ─────────────────────────────────────────────────────
+    print("\n--- Flat-vol baseline ---")
+    df_flat = flat_vol_baseline(df_model, split_date=SPLIT_DATE, label="flat_vol")
+    
+    # Save flat-vol results
+    flat_xlsx = os.path.join(OUT_DIR, f"swaption_vol_flat_{ckpt_name}.xlsx")
+    df_flat_save = df_flat.copy()
+    df_flat_save["market_as_of_date"] = pd.to_datetime(df_flat_save["market_as_of_date"]).dt.date
+    df_flat_save["model_as_of_date"]  = pd.to_datetime(df_flat_save["model_as_of_date"]).dt.date
+    df_flat_save.to_excel(flat_xlsx, index=False, engine="openpyxl")
+    print(f"[flat_vol] Saved → {flat_xlsx}")
 
-    # ── Side-by-side summary ──────────────────────────────────────────────────
+    # ── Summary ───────────────────────────────────────────────────────────────
     print("\n" + "=" * 70)
-    print("SUMMARY  —  Stage-1 vs Stage-2")
+    print(f"SUMMARY  —  {ckpt_name}")
     print("=" * 70)
 
     splits = (["train", "test"] if SPLIT_DATE else ["all"])
     print(f"  {'Label':<30}  {'MAE (bp)':>8}  {'RMSE (bp)':>9}  {'N':>6}")
     print("  " + "-" * 58)
 
-    for label, df in [("stage1", df_pre), ("stage2", df_post)]:
-        for sp in splits:
-            sub = (df[df["split"] == sp] if "split" in df.columns and sp != "all"
-                   else df).dropna(subset=["model_vol_bp", "vol_error_bp"])
-            if sub.empty:
-                continue
-            mae  = sub["abs_vol_error_bp"].mean()
-            rmse = (sub["vol_error_bp"] ** 2).mean() ** 0.5
-            tag  = f"[{label}|{sp}]" if sp != "all" else f"[{label}]"
-            print(f"  {tag:<30}  {mae:8.1f}  {rmse:9.1f}  {len(sub):6d}")
-
-    print("\n  Improvement (Stage-1 MAE − Stage-2 MAE) per split:")
     for sp in splits:
-        sub1 = (df_pre[df_pre["split"] == sp] if "split" in df_pre.columns and sp != "all"
-                else df_pre).dropna(subset=["abs_vol_error_bp"])
-        sub2 = (df_post[df_post["split"] == sp] if "split" in df_post.columns and sp != "all"
-                else df_post).dropna(subset=["abs_vol_error_bp"])
-        if sub1.empty or sub2.empty:
-            continue
-        delta = sub1["abs_vol_error_bp"].mean() - sub2["abs_vol_error_bp"].mean()
-        sign  = "▼" if delta > 0 else "▲"
-        print(f"  [{sp}]  {sign} {abs(delta):.1f} bp  "
-              f"({'improvement' if delta > 0 else 'degradation'})")
+        # Model results
+        sub_model = (df_model[df_model["split"] == sp] if "split" in df_model.columns and sp != "all"
+                     else df_model).dropna(subset=["model_vol_bp", "vol_error_bp"])
+        if not sub_model.empty:
+            mae  = sub_model["abs_vol_error_bp"].mean()
+            rmse = (sub_model["vol_error_bp"] ** 2).mean() ** 0.5
+            tag  = f"[{ckpt_name}|{sp}]" if sp != "all" else f"[{ckpt_name}]"
+            print(f"  {tag:<30}  {mae:8.1f}  {rmse:9.1f}  {len(sub_model):6d}")
+        
+        # Flat-vol results
+        sub_flat = (df_flat[df_flat["split"] == sp] if "split" in df_flat.columns and sp != "all"
+                    else df_flat).dropna(subset=["market_vol_bp"])
+        if not sub_flat.empty:
+            mae_flat  = sub_flat["abs_flat_error_bp"].mean()
+            rmse_flat = (sub_flat["flat_vol_error_bp"] ** 2).mean() ** 0.5
+            tag  = f"[flat_vol|{sp}]" if sp != "all" else f"[flat_vol]"
+            print(f"  {tag:<30}  {mae_flat:8.1f}  {rmse_flat:9.1f}  {len(sub_flat):6d}")
 
-    print(f"\n  Excels → {OUT_DIR}/")
+    print(f"\n  Results saved to: {OUT_DIR}/")
     print("=" * 70)
     print("DONE")
     print("=" * 70)

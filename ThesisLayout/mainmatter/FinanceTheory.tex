@@ -388,23 +388,8 @@ Then the arbitrage-free price process of a $T$-claim $X$ is given by
 \end{equation}
 \end{theorem}
 
-We remark that $\mathbb{Q}$ need not be unique. By the Second Fundamental 
-Theorem, uniqueness holds if and only if the market is complete. For the 
-remainder of the thesis we fix a $\mathbb{Q}$, acknowledging that the 
-resulting dynamics may not be the unique arbitrage-free specification. 
-Under $\mathbb{Q}$, the market dynamics are given by
-\begin{equation}
-    \begin{cases}
-        dS_t^i = r_t \, dt + \displaystyle\sum_{j=1}^{d} 
-        \sigma_t^{ij} \, dW_t^{\mathbb{Q},j}, & i = 1, \ldots, N, \\[8pt]
-        dB_t = r_t B_t \, dt, & B_0 = 1,
-    \end{cases}
-    \label{eq:Q_dynamics}
-\end{equation}
-where the drift of each risky asset is replaced by the short rate $r_t$, 
-reflecting that the discounted asset prices are martingales under $\mathbb{Q}$.
-
-
+\begin{example}
+\label{ex: ZCB price}
 As a standard example, the price of a contract paying one unit of currency at time $T$, being the trivial claim $X \equiv 1$, is immediately given by
 Theorem \ref{thm:riskneutral} as
 \begin{equation}
@@ -412,48 +397,47 @@ Theorem \ref{thm:riskneutral} as
     e^{-\int_t^T r_s\, ds} \,\bigg|\, \mathcal{F}_t \right],
     \label{eq:zcb}
 \end{equation}
-with $P(T,T) = 1$. 
+with $P(T,T) = 1$.    
+\end{example}
 
-%This object, and the term structure $\{P(t,T)\}_{T\geq t}$ that this generates will be the central object of our interest rate modeling. 
 
+
+
+We close this section by remarking that $\mathbb{Q}$ need not be unique. By the Second Fundamental 
+Theorem, uniqueness holds if and only if the market is complete. As we do not impose completeness, $\mathbb{Q}$ is not unique. For the remainder of the thesis we therefore fix a $\mathbb{Q}$, acknowledging that the 
+resulting dynamics may not be the unique arbitrage-free specification. 
+Under this $\mathbb{Q}$, the market dynamics are given by
+\begin{equation}
+    \begin{cases}
+        dS_t^i = r_t \, dt + \displaystyle\sum_{j=1}^{d} 
+        \sigma_t^{ij} \, dW_t^{\mathbb{Q},j}, & i = 1, \ldots, N, \\[8pt]
+        dB_t = r_t B_t \, dt, & B_0 = 1. 
+    \end{cases}
+    \label{eq:Q_dynamics}
+\end{equation}
 
 
 
 \section{Interest Rate Theory}
 
-We now introduce the financial components to be modeled int the thesis, and do so by following that of \citet{Filipovic2009}.
-The contract
-
-
-
-
-The contract introduced above is known as a zero-coupon bond, which we now define formally. 
+We now introduce the interest rate instruments to be modeled in this thesis, in line with \citet{Filipovic2009}. The contract whose price was introduced in Example \ref{ex: ZCB price} is known as a \textit{zero-coupon bond}, which we now define formally. 
 
 \begin{definition}[\textit{Zero Coupon Bond}]
 A zero coupon bond with maturity $T$, also called a $T$-bond, is a contract guaranteeing the holder one unit of currency at time $T$. The price at time $t\leq T$ is denoted $P(t,T)$, with terminal condition
 $$P(T,T)=1.$$
 \end{definition}
 
-We assume the a \textcolor{red}{frictionless} and arbitrage-free bond market for all maturities $T>0$. By Theorem \ref{thm:riskneutral}, the price of a zero coupon bond price is given by 
+We assume there exists a frictionless market for $T$-bonds for every maturity $T>0$. As shown in Example \ref{ex: ZCB price}, the no-arbitrage price of a $T$-bond at time $t\leq T$ is given by 
 \begin{equation}
     P(t,T)=E^Q\left[e^{-\int_t^T r_s\,ds}\,\middle|\,\mathcal{F}_t\right]
     \label{ZCBprice}
 \end{equation}
-where $r_t$ denotes the short rate at time $t$. 
 
-\begin{assumption}[\textit{Single Curve}]
-A single discount curve, determined entirely by the bond prices $\{P(t,T)\}_{T\geq t}$, is used for both discounting and forwarding. 
-\label{as:singlecurve}
-\end{assumption}
+The mapping $T \mapsto P(t,T)$ is known as the term structure of interest rates. From it, we derive three related quantities.
 
 
-Under this assumption, the family $\{P(t,T)\}_{T\geq t}$ fully encodes the term structure of interest rates, and relevant interest rate quantities may be derived from it. We now introduce three equivalent representations of the term structure.
-
-The first is the continuously compounded yield which expresses the constant rate that would replicate the bond price over the interval $[t,T]$.
-
-
-\begin{definition}[\textit{Yield}]
-    The continuously compounded yield $y(t,T)$ of a $T$-bond at time $t$ is defined by 
+\begin{definition}[\textit{Continuously Compounded Spot Rate}]
+    The continuously compounded spot rate $y(t,T)$ of a $T$-bond at time $t$ is defined by 
     \begin{equation}
         P(t,T)=e^{-y(t,T)(T-t)} 
         \label{eq:yield1}
@@ -465,10 +449,6 @@ The first is the continuously compounded yield which expresses the constant rate
     \end{equation}
 \end{definition}
 
-
-The second is the instantaneous forward rate, \textcolor{red}{which describes the marginal cost of borrowing at a future maturity $T$ as seen at from today.}
-
-
 \begin{definition}[\textit{Instantaneous Forward Rate}]
 The instantaneous forward rate for maturity $T$ observed at time $t$ is defined by
 \begin{equation}
@@ -478,48 +458,63 @@ f(t,T)=-\frac{\partial}{\partial T}\log P(t,T),
 provided the derivative exists. 
 \end{definition}
 
-\textcolor{red}{The third is the simply compounded forward rate, which is the market convention for discrete accrual periods, and will be central to the pricing of interest rate derivatives.}
+The function $T\mapsto f(t,T)$ is called the forward curve. The instantaneous short rate arises as the limit as maturity approaches $t$.
+
+\begin{definition}[Instantaneous Short Rate]
+The instantaneous short rate at time $t$ is defined by
+\begin{equation}
+    r_t=\lim_{T\to t} f(t,T).
+    \label{eq:instshortrate}
+\end{equation}
+\end{definition}
+
 
 \begin{definition}[Simply Compounded Forward Rate]
-The simply compounded forward rate $L(t;T_{i-1},T_i)$ over the accrual period $[T_{i-1},T_i]$, is defined by
+The simply compounded forward rate $F(t;T_{i-1},T_i)$ over the accrual period $[T_{i-1},T_i]$, is defined by
 \begin{equation}
-1+\Delta_i L(t;T_{i-1},T_i)=\frac{P(t,T_{i-1})}{P(t,T_i)},
+1+\Delta_i F(t;T_{i-1},T_i)=\frac{P(t,T_{i-1})}{P(t,T_i)},
 \label{eq:discrete_forward}
 \end{equation}
 where $\Delta_i=T_i-T_{i-1}$ denotes the accrual fraction.
 \end{definition}
 
-%The forward-rate curve provides an equivalent representation of the term structure. In particular, bond prices can be recovered from forward rates through
-%\begin{equation}
-%P(t,T)=\exp\!\left(-\int_t^T f(t,u)\,du\right).
-%\label{eq:bond_from_forward}
-%\end{equation}
-
-Together $y(t,T),f(t,T)$ and $L(t;T_{i-1},T_i)$ provide complementary views of the term structure, all consistent under Assumption \ref{as:singlecurve}. 
+A classic market example is LIBOR (London Interbank Offered Rate), with rate $L(t;T_{i-1},T_i)$. In practice, LIBOR may embed liquidity and credit risk, so the identification $L=F$ need not hold \citep[p. 7]{Filipovic2009}. We therefore adopt the following assumption.
 
 
-\textcolor{red}{ryk single assumption længere ned.}
+
+\begin{assumption}[\textit{Single Curve}]
+A single discount curve, determined entirely by the bond prices $\{P(t,T)\}_{T\geq t}$, is used for both discounting and forwarding. 
+\label{as:singlecurve}
+\end{assumption}
+
+Under Assumption \ref{as:singlecurve} the family $\{P(t,T)\}_{T\geq t}$ fully encodes the term structure, and $y(t,T)$, $f(t,T)$ and $F(t;T_{i-1},T_i)$ may all be derived from it. 
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
 \subsection{Interest Rate Swaps}
 
-With the term structure established, we now turn to the simplest interest rate derivative, the \emph{interest rate swap}, and its pricing.
-
-
-This is the scheme of exchanging a payment stream at a fixed interest, known as the \textbf{swap rate}, for a payment stream at a floating rate. Being many version os interest rate swaps we assess ...
-
-
-Consider a fixed-for-floating interest rate swap initiated at time $t$ and maturing at $T=t+\tau$. Let
+An interest rate swap is an agreement to exchange a fixed payment stream for a floating payment stream \citep{Filipovic2009}. Consider the standard fixed-for-floating interest rate swap initiated at time $t$ and maturing at $T=t+\tau$, where $\tau$ is time to maturity. Let
 \[
-t<T_1<\dots<T_n=T
+T_0=t<T_1<\dots<T_n=T
 \]
 denote the payment dates and define the accrual fractions
 \[
 \Delta_i = T_i-T_{i-1}, \qquad i=1,\dots,n.
 \]
 
-Let $N$ denote the notional. If the fixed rate of the swap is $S(t,\tau)$, the value of the fixed leg at time $t$ is
+Let $N$ denote the notional. For fixed rate $S(t,\tau)$, the value of the fixed leg at time $t$ is
 \begin{equation}
 V_{\mathrm{fix}}(t)
 =
@@ -528,25 +523,27 @@ N S(t,\tau)
 \label{eq:fixed_leg}
 \end{equation}
 
-Under the single-curve assumption (\ref{as:singlecurve}), the forward rate over the accrual period $[T_{i-1},T_i]$ satisfies
+Under Assumption \ref{as:singlecurve}, the floating rate over $[T_{i-1},T_i]$ satisfies
 \[
-1+\Delta_i L(t;T_{i-1},T_i)
+1+\Delta_i F(t;T_{i-1},T_i)
 =
 \frac{P(t,T_{i-1})}{P(t,T_i)}.
 \]
-
-For a standard spot-starting swap, the value of the floating leg follows from the usual telescoping replication argument and is given by
+Using \eqref{eq:discrete_forward}, the floating rate over $[T_{i-1},T_i]$ satisfies
+\[
+N\cdot\Delta_i F(t;T_{i-1},T_i)\cdot P(t,T_i) = N\bigl(P(t,T_{i-1})-P(t,T_i)\bigr).
+\]
+Summing over all payment dates, the value of the floating leg is
 \begin{equation}
-V_{\mathrm{float}}(t)
-=
-N\bigl(1-P(t,T)\bigr).
+V_{\mathrm{float}}(t) = N\sum_{i=1}^{n}\bigl(P(t,T_{i-1})-P(t,T_i)\bigr) = N\bigl(1-P(t,T)\bigr),
 \label{eq:floating_leg}
 \end{equation}
+where the sum telescopes and $P(t,t)=1$ for a spot-starting swap.
 
-The par swap rate is defined as the fixed rate that sets the value of the swap equal to zero. Solving
-\[
+The par swap rate is the fixed rate that sets the value to zero. Solving
+\(
 V_{\mathrm{float}}(t)-V_{\mathrm{fix}}(t)=0
-\]
+\)
 yields
 \begin{equation}
 S(t,\tau)
@@ -556,17 +553,20 @@ S(t,\tau)
 \label{eq:swap_rate}
 \end{equation}
 
-Hence, par swap rates are deterministic nonlinear functions of the underlying discount curve. Once an arbitrage-free discount curve is specified, the corresponding swap curve is determined through \eqref{eq:swap_rate}.
+Hence, under the single-curve assumption, par swap rates are fully determined by the discount curve through \eqref{eq:swap_rate}.
 
 
 
-\subsection{Markovian Models + Affine Term Structure Models}
-\label{sec:Affine TSM Theory}
+
+
+\newpage
+
+%\subsection{Markovian Models + Affine Term Structure Models}
+%\label{sec:Affine TSM Theory}
 
 % Skriv generelt om terms strutcure models men specifict om affine. 
 
-A natural starting point is to assume that the short rate $r_t$ is a Markovian process, meaning its future evolution depends only on its current value and not on its history. This leads to a rich class of tractable models in which bond prices $P(t,T)$ can be expressed as functions of $r_t$ alone. Within this class, the affine term structure 
-models are particularly appealing, as they yield bond prices that are exponentially affine in the state variable, admitting closed-form solutions and straightforward calibration to market data.
+%A natural starting point is to assume that the short rate $r_t$ is a Markovian process, meaning its future evolution depends only on its current value and not on its history. This leads to a rich class of tractable models in which bond prices $P(t,T)$ can be expressed as functions of $r_t$ alone. Within this class, the affine term structure models are particularly appealing, as they yield bond prices that are exponentially affine in the state variable, admitting closed-form solutions and straightforward calibration to market data.
 
 
 
@@ -574,42 +574,42 @@ models are particularly appealing, as they yield bond prices that are exponentia
 
 
 
-In general term structure models will be introduced here (Chap. 22 (p. 298)) where we specifically come with AFfine as example. Markovian factor models
+%In general term structure models will be introduced here (Chap. 22 (p. 298)) where we specifically come with AFfine as example. Markovian factor models
 
 
-Affine term structure models provide a tractable way of representing the term structure in an arbitrage-free setting. Their central idea is that bond prices are driven by a finite-dimensional factor process rather than by an unrestricted infinite-dimensional curve.
+%Affine term structure models provide a tractable way of representing the term structure in an arbitrage-free setting. Their central idea is that bond prices are driven by a finite-dimensional factor process rather than by an unrestricted infinite-dimensional curve.
 
-Let $X_t \in \mathbb{R}^m$ denote an $m$-dimensional factor process under the risk-neutral measure $\mathbb{Q}$. In an affine term structure model, the short rate is assumed to be affine in the factors,
-\begin{equation}
-r(t) = \delta_0 + \delta_1^\top X_t,
-\label{eq:atsm_short_rate}
-\end{equation}
-where $\delta_0 \in \mathbb{R}$ and $\delta_1 \in \mathbb{R}^m$.
+%Let $X_t \in \mathbb{R}^m$ denote an $m$-dimensional factor process under the risk-neutral measure $\mathbb{Q}$. In an affine term structure model, the short rate is assumed to be affine in the factors,
+%\begin{equation}
+%r(t) = \delta_0 + \delta_1^\top X_t,
+%\label{eq:atsm_short_rate}
+%\end{equation}
+%where $\delta_0 \in \mathbb{R}$ and $\delta_1 \in \mathbb{R}^m$.
 
-The defining property of an affine term structure model is that zero-coupon bond prices take an exponential-affine form in the state variables:
-\begin{equation}
-P(t,T)
-=
-\exp \bigl(
-A(T-t) + B(T-t)^\top X_t
-\bigr),
-\label{eq:affine_form}
-\end{equation}
-where $A(\tau) \in \mathbb{R}$ and $B(\tau) \in \mathbb{R}^m$ are deterministic functions of time to maturity $\tau=T-t$.
+%The defining property of an affine term structure model is that zero-coupon bond prices take an exponential-affine form in the state variables:
+%\begin{equation}
+%P(t,T)
+%=
+%\exp \bigl(
+%A(T-t) + B(T-t)^\top X_t
+%\bigr),
+%\label{eq:affine_form}
+%\end{equation}
+%where $A(\tau) \in \mathbb{R}$ and $B(\tau) \in \mathbb{R}^m$ are deterministic functions of time to maturity $\tau=T-t$.
 
-Equivalently, in Musiela parametrization,
-\begin{equation}
-P(t,t+\tau)
-=
-\exp \bigl(
-A(\tau) + B(\tau)^\top X_t
-\bigr).
-\label{eq:affine_form_musiela}
-\end{equation}
+%Equivalently, in Musiela parametrization,
+%\begin{equation}
+%P(t,t+\tau)
+%=
+%\exp \bigl(
+%A(\tau) + B(\tau)^\top X_t
+%\bigr).
+%\label{eq:affine_form_musiela}
+%\end{equation}
 
-This representation implies that the term structure is generated by the factor vector $X_t$. Affine models are therefore attractive both theoretically and empirically, since they combine a structured state representation with arbitrage-free bond pricing.
+%This representation implies that the term structure is generated by the factor vector $X_t$. Affine models are therefore attractive both theoretically and empirically, since they combine a structured state representation with arbitrage-free bond pricing.
 
-Under suitable affine specifications of the factor dynamics under $\mathbb{Q}$, the exponential-affine bond-pricing form leads to a system of ordinary differential equations for the coefficient functions $A(\tau)$ and $B(\tau)$. 
+%Under suitable affine specifications of the factor dynamics under $\mathbb{Q}$, the exponential-affine bond-pricing form leads to a system of ordinary differential equations for the coefficient functions $A(\tau)$ and $B(\tau)$. 
 
 
 

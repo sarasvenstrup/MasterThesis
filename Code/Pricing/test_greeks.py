@@ -69,22 +69,26 @@ print("\nAll checks passed!" if _all_ok else "Some checks FAILED.")
 # =============================================================================
 
 if __name__ == "__main__":
+    import argparse
 
     _THESIS_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
 
-    # ── SETTINGS ─────────────────────────────────────────────────────────────
-    CHECKPOINT = os.path.join(
-        _THESIS_ROOT, "Figures", "Pricing", "stage2_checkpoints",
-        "checkpoint_stage2_dim4_ep500.pt"
-    )
-    # Fallback to stage-1 if stage-2 not yet available
-    if not os.path.exists(CHECKPOINT):
-        CHECKPOINT = os.path.join(
-            _THESIS_ROOT, "Figures", "TrainingResults",
-            "dim4_stable", "ep3500", "checkpoint_dim4_ep3500.pt"
-        )
+    # ── Command-line arguments ───────────────────────────────────────────────
+    parser = argparse.ArgumentParser(description="Compute model-implied Greeks from checkpoint")
+    parser.add_argument("checkpoint", type=str, help="Path to model checkpoint (.pt file)")
+    parser.add_argument("--date", type=str, default="2018-06-29", help="ISO date (default: 2018-06-29)")
+    parser.add_argument("--n_paths", type=int, default=2000, help="Number of MC paths (default: 2000)")
+    parser.add_argument("--n_steps", type=int, default=120, help="Number of time steps (default: 120)")
+    parser.add_argument("--ccy", type=str, default="EUR", help="Currency (default: EUR)")
+    
+    args = parser.parse_args()
 
-    AS_OF_DATE = "2018-06-29"   # ISO date — must be in the swap data
+    CHECKPOINT = args.checkpoint
+    AS_OF_DATE = args.date
+    N_PATHS = args.n_paths
+    N_STEPS = args.n_steps
+    DT = 1 / 12
+    CCY = args.ccy
 
     # (option_maturity_years, swap_tenor_years) cells to evaluate
     CELLS = [
@@ -95,12 +99,18 @@ if __name__ == "__main__":
         (10, 5),
         (10, 10),
     ]
-
-    N_PATHS = 2000
-    N_STEPS = 120       # 10 yr monthly
-    DT      = 1 / 12
-    CCY     = "EUR"
     # ─────────────────────────────────────────────────────────────────────────
+
+    if not os.path.exists(CHECKPOINT):
+        print(f"ERROR: Checkpoint not found: {CHECKPOINT}")
+        sys.exit(1)
+
+    # Extract checkpoint name for output filename
+    ckpt_name = os.path.splitext(os.path.basename(CHECKPOINT))[0]
+    
+    # Output directory
+    OUT_DIR = os.path.join(_THESIS_ROOT, "Figures", "Pricing")
+    os.makedirs(OUT_DIR, exist_ok=True)
 
     print("\n" + "=" * 70)
     print("MODEL-IMPLIED BACHELIER GREEKS")
@@ -108,6 +118,7 @@ if __name__ == "__main__":
     print(f"  Checkpoint : {CHECKPOINT}")
     print(f"  Date       : {AS_OF_DATE}")
     print(f"  n_paths    : {N_PATHS}")
+    print(f"  CCY        : {CCY}")
     print("=" * 70)
 
     ctx = run_simulation(
@@ -130,7 +141,7 @@ if __name__ == "__main__":
             )
             iv = res["implied_normal_vol"]
             if iv is None or not np.isfinite(iv):
-                print(f"  [{expiry}Yx{ten}Y]  implied vol unavailable — skipping")
+                print(f"  [{expiry}Yx{tenor}Y]  implied vol unavailable — skipping")
                 continue
 
             # 2) Time-0 forward & annuity
@@ -172,11 +183,8 @@ if __name__ == "__main__":
         df_gk = pd.DataFrame(rows)
         print("\n" + df_gk.to_string(index=False))
 
-        # save to CSV next to the checkpoint
-        out_csv = os.path.join(
-            os.path.dirname(CHECKPOINT),
-            f"greeks_{AS_OF_DATE}.csv"
-        )
+        # Save to Figures/Pricing with checkpoint name
+        out_csv = os.path.join(OUT_DIR, f"greeks_{ckpt_name}_{AS_OF_DATE}.csv")
         df_gk.to_csv(out_csv, index=False)
         print(f"\n  Saved → {out_csv}")
     else:

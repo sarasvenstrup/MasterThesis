@@ -1,5 +1,5 @@
 %=========================================================
-\chapter{Simulation-Based Swaption Pricing and Second-Stage Calibration}
+\chapter{Simulation-Based Swaption Pricing and Joint Calibration}
 \label{chap:pricing_methodology}
 %=========================================================
 
@@ -7,7 +7,7 @@ The previous chapter examined whether the trained encoder--decoder model can be 
 
 The encoder--decoder framework provides a natural simulation-based pricing setup. Starting from an observed swap curve, the encoder gives an initial latent state. The learned risk-neutral dynamics are then simulated forward, and the decoder maps each simulated latent state into an arbitrage-free zero-coupon bond curve. This makes it possible to compute pathwise swap rates, annuities and discounted payoffs.
 
-The purpose of this chapter is therefore twofold. First, we describe how European swaptions are priced by Monte Carlo using the simulated latent paths and decoded bond curves. Second, we introduce a second-stage calibration step, in which selected dynamic components of the trained model are adjusted to better match observed swaption normal volatilities. This calibration is not intended to replace the first-stage reconstruction objective, but to assess whether the trained term-structure model can also be made informative for option pricing.
+The purpose of this chapter is therefore twofold. First, we describe how European swaptions are priced by Monte Carlo using the simulated latent paths and decoded bond curves. Second, we introduce a joint training step, in which the model is trained simultaneously on swap-curve reconstruction and swaption pricing, allowing the diffusion and drift components to be calibrated to observed swaption normal volatilities while maintaining reconstruction quality.
 
 %=========================================================
 \section{Monte Carlo Swaption Pricing}
@@ -196,14 +196,14 @@ For an at-the-money swaption, \(K=F_0\), and hence \(d=0\). The payer and receiv
 The Bachelier formula serves two distinct roles in the implementation.
 
 \begin{enumerate}
-    \item \textbf{Pricing target for the second-stage calibration.}
+    \item \textbf{Pricing target for the joint calibration.}
     Market swaption data are quoted as at-the-money normal volatilities \(\sigma^{(i)}_{\mathrm{mkt}}\), typically in basis points. Before applying the formula, these volatilities are converted to decimal rate units. The market volatility is then converted into a price using the ATM formula~\eqref{eq:bachelier_atm}:
     \begin{equation}
         V^{(i)}_{\mathrm{mkt}}
         =
         \mathcal N \mathcal A^{(i)}_0
         \frac{\sigma^{(i)}_{\mathrm{mkt}}\sqrt{T_e^{(i)}}}{\sqrt{2\pi}}.
-        \label{eq:stage2_target}
+        \label{eq:pricing_target}
     \end{equation}
     This gives a fixed price target computed once per market observation, using the annuity \(\mathcal A_0^{(i)}\) associated with the corresponding quote date. The model Monte Carlo price \(\widehat V_{\mathrm{MC}}^{(i)}\) is then trained to match this target.
 
@@ -313,11 +313,24 @@ while Vega, Gamma, Theta, Vanna and Volga are the same as for the payer. Put-cal
 \end{proposition}
 
 \begin{proof}
-The result follows by direct differentiation of~\eqref{eq:bachelier_payer}. For Delta, the terms involving \(\phi(d)\partial d/\partial F_0\) cancel by construction of \(d\). The remaining Greeks use
+The result follows by direct differentiation of~\eqref{eq:bachelier_payer}. For Delta, differentiating with respect to \(F_0\) and noting that \(\partial d/\partial F_0 = 1/(\sigma_N\sqrt{T_e})\), the term involving \(\phi(d)\cdot\partial d/\partial F_0\) cancels exactly across the two summands, leaving \(\Delta = \mathcal N\mathcal A_0\Phi(d)\). For Vega, \(\partial d/\partial\sigma_N = -d/\sigma_N\), giving
 \[
-\frac{\partial d}{\partial \sigma_N}=-\frac{d}{\sigma_N},
+\frac{\partial V}{\partial\sigma_N}
+= \mathcal N\mathcal A_0\!\left[\sqrt{T_e}\,\phi(d) + \bigl((F_0-K)\Phi'(d) + \sigma_N\sqrt{T_e}\phi'(d)\bigr)\frac{\partial d}{\partial\sigma_N}\right].
+\]
+Using \(\Phi'(d)=\phi(d)\), \(\phi'(d)=-d\phi(d)\) and \(\partial d/\partial\sigma_N = -d/\sigma_N\), the bracket in the parentheses is
+\(\phi(d)(-d/\sigma_N)(F_0-K) + \sigma_N\sqrt{T_e}(-d\phi(d))(-d/\sigma_N) = 0\),
+leaving \(\mathrm{Vega} = \mathcal N\mathcal A_0\sqrt{T_e}\,\phi(d)\). Gamma and Theta follow from differentiating Delta and from \(\partial d/\partial T_e = -d/(2T_e)\), respectively. Vanna and Volga use the same two identities:
+\[
+\mathrm{Vanna}
+= \frac{\partial\Delta}{\partial\sigma_N}
+= \mathcal N\mathcal A_0\,\phi(d)\frac{\partial d}{\partial\sigma_N}
+= -\frac{\mathcal N\mathcal A_0\,d\,\phi(d)}{\sigma_N},
 \qquad
-\phi'(d)=-d\phi(d).
+\mathrm{Volga}
+= \frac{\partial\,\mathrm{Vega}}{\partial\sigma_N}
+= \mathcal N\mathcal A_0\sqrt{T_e}\,\phi'(d)\frac{\partial d}{\partial\sigma_N}
+= \frac{\mathcal N\mathcal A_0\sqrt{T_e}\,d^2\phi(d)}{\sigma_N}.
 \]
 \end{proof}
 
@@ -352,58 +365,82 @@ Combining~\eqref{eq:gamma} and~\eqref{eq:theta} gives
 This identity holds for the partial derivative with respect to time to expiry, holding \(F_0\), \(\mathcal A_0\), \(K\), and \(\sigma_N\) fixed. It provides a useful analytic consistency check for the Bachelier formulas, although it is not a full calendar-time theta for a dynamic term-structure model, where the annuity and forward swap rate also evolve.
 
 %=========================================================
-\section{Second-Stage Calibration}
-\label{sec:second_stage_calibration}
+\section{Joint Training: Reconstruction and Pricing}
+\label{sec:joint_training}
 %=========================================================
 
-The first-stage training objective is based on swap-rate reconstruction. It therefore determines a model that fits observed curves and enforces no-arbitrage through the decoder, but it does not use option prices. The purpose of the second-stage calibration is to adjust selected dynamic components of the model so that simulated swaption prices better match observed market swaption volatilities.
+The model is trained with a combined objective function that optimizes both swap-curve reconstruction and swaption pricing simultaneously. This section describes the joint training methodology.
 
-\subsection{Calibration objective}
-\label{subsec:calib_objective}
+\subsection{Joint objective function}
+\label{subsec:joint_objective}
 
-For each market at-the-money swaption quote
-\[
-(\sigma^{(i)}_{\mathrm{mkt}}, T_e^{(i)}, T_s^{(i)}, t^{(i)}),
-\]
-the fixed price target is \(V^{(i)}_{\mathrm{mkt}}\) from~\eqref{eq:stage2_target}. Let \(\Omega_2\) denote the second-stage trainable parameter set. For a mini-batch \(\mathcal B\), the second-stage loss is
+The joint training loss combines two components:
 \begin{equation}
-    \mathcal{L}_2(\Omega_2)
+    \mathcal{L}_{\mathrm{total}}(\Omega)
+    =
+    \lambda_{\mathrm{recon}}\,\mathcal{L}_{\mathrm{recon}}(\Omega)
+    +
+    \lambda_{\mathrm{price}}\,\mathcal{L}_{\mathrm{price}}(\Omega),
+    \label{eq:joint_loss}
+\end{equation}
+where \(\Omega\) denotes all trainable parameters, \(\lambda_{\mathrm{recon}}\) and \(\lambda_{\mathrm{price}}\) are weighting hyperparameters, and the two loss terms are defined as follows.
+
+\paragraph{Reconstruction loss.}
+For a mini-batch of observed swap curves \(\{S_i\}_{i \in \mathcal B}\), the reconstruction loss is the mean squared error:
+\begin{equation}
+    \mathcal{L}_{\mathrm{recon}}(\Omega)
     =
     \frac{1}{|\mathcal B|}
     \sum_{i \in \mathcal B}
+    \|\widehat S_i - S_i\|^2,
+    \label{eq:recon_loss}
+\end{equation}
+where \(\widehat S_i\) is the decoded swap curve.
+
+\paragraph{Pricing loss.}
+For each market at-the-money swaption quote \((\sigma^{(j)}_{\mathrm{mkt}}, T_e^{(j)}, T_s^{(j)}, t^{(j)})\) in the pricing mini-batch, the target price is computed from the Bachelier formula~\eqref{eq:bachelier_atm}:
+\begin{equation}
+    V^{(j)}_{\mathrm{mkt}}
+    =
+    \mathcal N \mathcal A^{(j)}_0
+    \frac{\sigma^{(j)}_{\mathrm{mkt}}\sqrt{T_e^{(j)}}}{\sqrt{2\pi}}.
+    \label{eq:joint_target}
+\end{equation}
+The model Monte Carlo price \(\widehat{V}^{(j)}_{\mathrm{MC}}\) is computed via simulation as described in Section~\ref{sec:swaption_pricing_methodology}. The pricing loss is then
+\begin{equation}
+    \mathcal{L}_{\mathrm{price}}(\Omega)
+    =
+    \frac{1}{|\mathcal B_{\mathrm{price}}|}
+    \sum_{j \in \mathcal B_{\mathrm{price}}}
     \left(
         10\,000\cdot
-        \bigl(\widehat{V}^{(i)}_{\mathrm{MC}} - V^{(i)}_{\mathrm{mkt}}\bigr)
-    \right)^2
-    +
-    \lambda_G
-    \sum_{p \in \theta_{\mathcal G}}
-    \|p-p_0\|^2
-    +
-    \lambda_K
-    \|N_K-N_{K,0}\|^2.
-    \label{eq:stage2_loss}
+        \bigl(\widehat{V}^{(j)}_{\mathrm{MC}} - V^{(j)}_{\mathrm{mkt}}\bigr)
+    \right)^2.
+    \label{eq:pricing_loss}
 \end{equation}
-The factor \(10\,000\) rescales prices to basis-point units for numerical conditioning. The \(L^2\) penalties keep the decoder parameters \(\theta_{\mathcal G}\) and the drift intercept \(N_K\) close to their first-stage values. This regularisation is included to avoid destroying the reconstruction and stability properties obtained in the first stage.
+The factor \(10\,000\) rescales prices to basis-point units for numerical conditioning.
+
+\paragraph{Implicit weighting by annuity and expiry.}
+Because the market target is \(V^{(j)}_{\mathrm{mkt}}\approx\mathcal A_0^{(j)}\sigma^{(j)}_{\mathrm{mkt}}\sqrt{T_e^{(j)}}/\sqrt{2\pi}\), the price residual \(\widehat{V}^{(j)}_{\mathrm{MC}}-V^{(j)}_{\mathrm{mkt}}\) scales with \(\mathcal A_0\sqrt{T_e}\). The squared pricing loss~\eqref{eq:pricing_loss} therefore weights vol errors by \(\mathcal A_0^2 T_e\): a 5Y\(\times\)10Y swaption (\(\mathcal A_0\approx 7.36\), \(T_e=5\)) receives roughly \((7.36^2\cdot5)/(4.45^2\cdot1)\approx 13.7\times\) the loss weight of a 1Y\(\times\)5Y swaption, not just \(3.7\times\) as a linear reading might suggest. An alternative formulation that fits the vol-space error \(\widehat\sigma_{N,\mathrm{mod}}^{(j)}-\sigma^{(j)}_{\mathrm{mkt}}\) directly would remove this bias; the price-space formulation is used here because it avoids the numerical inversion step inside the training loop and admits exact gradients.
 
 \subsection{Trainable parameter groups}
 \label{subsec:param_groups}
 
-Only selected parameter groups are updated in the second stage:
+All parameter groups learn from both objectives:
 \begin{itemize}
-    \item \textbf{\(\mathcal H\):} the diffusion network is always trained and uses the full learning rate \(\eta\). It controls the volatility of simulated latent paths and is therefore the primary mechanism for fitting swaption prices.
+    \item \textbf{\(\mathcal H\):} the diffusion network uses the full learning rate \(\eta_H = 10^{-3}\). It controls the volatility of simulated latent paths and is therefore the primary mechanism for fitting swaption prices.
 
-    \item \textbf{\(\mathcal G\):} the decoder network may optionally be updated at a reduced learning rate \(0.1\eta\), with regularisation toward its first-stage parameters. Small decoder updates allow the forward curve at expiry to adjust while preserving the first-stage bond-pricing structure.
+    \item \textbf{\(\mathcal G\):} the decoder network is updated at a reduced learning rate \(\eta_G = 5\times 10^{-4}\). A slower decoder update preserves the bond-pricing structure acquired early in training while still allowing the forward curve at expiry to adjust.
 
-    \item \textbf{\(N_K\):} the drift intercept may optionally be updated at a reduced learning rate \(0.1\eta\), with regularisation. This allows the mean-reversion equilibrium \(z^*=-M^{-1}N_K\) to shift without breaking the Hurwitz constraint.
+    \item \textbf{\(\mathcal K\):} the full drift network (including the drift intercept \(N_K\)) is updated at a reduced learning rate \(\eta_K = 10^{-4}\), ten times slower than the diffusion network. This keeps the mean-reversion equilibrium \(z^*=-M^{-1}N_K\) stable and prevents the drift from being overwhelmed by the larger-magnitude diffusion updates.
 
-    \item \textbf{Frozen components:} the encoder, the Hurwitz drift matrix parameter \(V\), and the short-rate network \(\mathcal R\) are frozen. This preserves the encoded representation, the stable mean-reversion structure and the short-rate mapping obtained from the first stage.
+    \item \textbf{Encoder and \(\mathcal R\):} the encoder and short-rate network are updated at the full learning rate \(\eta = 10^{-3}\). However, within the pricing loss computation, the encoder pass (to obtain the initial latent state \(z_0\)) and the time-zero decoder pass (to obtain \(F_0\) and \(\mathcal A_0\) for the ATM strike and market price target) are evaluated under \texttt{no\_grad}. These two quantities serve as fixed anchors for the pricing target and ATM strike, so it is natural that the pricing loss does not propagate gradients back through them. In practice, the encoder and \(\mathcal R\) receive gradients exclusively from the reconstruction loss, while \(\mathcal H\), \(\mathcal K\), and \(\mathcal G\) (at expiry time) also receive gradients from the pricing loss.
 \end{itemize}
 
 \subsection{Variance reduction and gradient flow}
 \label{subsec:antithetic}
 
-The second-stage objective is simulation-based and therefore subject to Monte Carlo noise. To reduce variance, antithetic variates are used. The \(N_{\mathrm{MC}}/2\) pre-drawn noise realisations \(\varepsilon\) and \(-\varepsilon\) are paired. This reduces Monte Carlo variance by introducing negative dependence between paired paths while preserving the marginal distribution of the Brownian increments.
+The pricing loss component is simulation-based and therefore subject to Monte Carlo noise. To reduce variance, antithetic variates are used. The \(N_{\mathrm{MC}}/2\) pre-drawn noise realisations \(\varepsilon\) and \(-\varepsilon\) are paired. This reduces Monte Carlo variance by introducing negative dependence between paired paths while preserving the marginal distribution of the Brownian increments.
 
 The Euler step can be written as
 \[
@@ -411,40 +448,45 @@ z_{t+\Delta t}
 =
 z_t
 +
-\mu(z_t)\Delta t
+\mu(z_t;\mathcal K)\Delta t
 +
 L(z_t;\mathcal H)\varepsilon_t\sqrt{\Delta t}.
 \]
-Conditional on the sampled noise \(\varepsilon_t\), this is a deterministic differentiable transformation of the model parameters. Gradients therefore propagate through the simulated latent path and through the diffusion matrix \(L(z_t;\mathcal H)\) at each time step.
+Conditional on the sampled noise \(\varepsilon_t\), this is a deterministic differentiable transformation of the model parameters. Gradients therefore propagate through the simulated latent path, through all network components, and through the diffusion matrix \(L(z_t;\mathcal H)\) at each time step.
 
-Since the short-rate network \(\mathcal R\) is frozen during second-stage calibration, changes in the Monte Carlo price primarily arise through the simulated latent paths and the diffusion network \(\mathcal H\). Gradients are clipped separately by parameter group: the diffusion network uses a maximum norm of \(1.0\), while the optional decoder and drift-intercept updates use a maximum norm of \(0.5\).
+All parameters receive gradients from the pricing loss. Gradient clipping with maximum norm of \(1.0\) is applied uniformly across all parameter groups to stabilize training. No path-level validity mask is applied: all simulated paths contribute equally to the Monte Carlo average, so the estimator remains an unconditional sample mean consistent with the Bachelier pricing target.
 
 \subsection{Hyperparameters and pricing pipeline}
 \label{subsec:hyperparams_pipeline}
 
 \begin{table}[H]
 \centering
-\caption{Second-stage calibration hyperparameters.}
-\label{tab:stage2_hyperparams}
+\caption{Joint training hyperparameters for reconstruction and pricing.}
+\label{tab:joint_hyperparams}
 \begin{tabular}{@{}lll@{}}
 \toprule
 \textbf{Hyperparameter} & \textbf{Value} & \textbf{Description} \\
 \midrule
-\(N_{\mathrm{MC}}\)          & 1024       & Monte Carlo paths per swaption \\
-\(\Delta t\)                 & \(1/12\) yr & Simulation step, monthly \\
-\(\eta\)                     & \(10^{-4}\) & Base learning rate for \(\mathcal H\) \\
-\(0.1\eta\)                  & \(10^{-5}\) & Learning rate for \(\mathcal G\) and \(N_K\) \\
-\(n_{\mathrm{epochs}}\)      & 500        & Training epochs \\
-\(|\mathcal B|\)             & 4          & Mini-batch size \\
-\(\lambda_G\)                & 1.0        & Decoder regularisation weight \\
-\(\lambda_K\)                & 0.01       & Drift-intercept regularisation weight \\
-\(\mathrm{clip}_{\mathcal H}\) & 1.0      & Gradient clip norm for \(\mathcal H\) \\
-\(\mathrm{clip}_{\mathcal G,N_K}\) & 0.5   & Gradient clip norm for \(\mathcal G\) and \(N_K\) \\
+\(\lambda_{\mathrm{recon}}\)  & 1.0        & Reconstruction loss weight \\
+\(\lambda_{\mathrm{price}}\)  & 0.3        & Pricing loss weight \\
+\(N_{\mathrm{MC}}\)            & 256        & Monte Carlo paths per swaption \\
+\(\Delta t\)                   & \(1/12\) yr & Simulation step, monthly \\
+\(\eta_H\)                     & \(10^{-3}\) & Learning rate for \(\mathcal H\) (diffusion) \\
+\(\eta_K\)                     & \(10^{-4}\) & Learning rate for \(\mathcal K\) (drift) \\
+\(\eta_G\)                     & \(5 \times 10^{-4}\) & Learning rate for \(\mathcal G\) (decoder) \\
+\(\eta\)                       & \(10^{-3}\) & Learning rate for encoder and \(\mathcal R\) \\
+\(n_{\mathrm{epochs}}\)        & 3500       & Training epochs \\
+\(|\mathcal B|\)               & 32         & Reconstruction batch size \\
+\(|\mathcal B_{\mathrm{price}}|\) & 2       & Swaptions per batch \\
+\(\mathrm{clip}\)              & 1.0        & Gradient clip norm (all groups) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The pricing pipeline consists of three steps. First, the first-stage checkpoint is used to generate pre-calibration model-implied normal volatilities, which are compared with market quotes. Second, the second-stage calibration updates the selected parameter groups by minimising~\eqref{eq:stage2_loss}. Third, the calibrated checkpoint is used to compute post-calibration model-implied normal volatilities. The main reported error metrics are the mean absolute error and root mean squared error in basis points of normal volatility.
+The joint training pipeline consists of two phases. First, the model is trained from scratch using the combined loss~\eqref{eq:joint_loss}. Each training iteration processes one reconstruction batch and samples swaptions for the pricing loss. Second, after training, the checkpoint is evaluated on held-out data to assess both reconstruction quality and pricing accuracy. The main reported metrics are the reconstruction RMSE in basis points and the mean absolute error in swaption normal volatilities.
+
+\paragraph{Scale of the pricing loss.}
+The effective scale of the pricing component should be read together with the \(10\,000\) rescaling in~\eqref{eq:pricing_loss}: a swap-rate price of \(10^{-3}\) (one basis point) becomes \(10\) after rescaling, so the squared term is of order \(100\) per swaption. With \(\lambda_{\mathrm{price}}=0.3\) this contribution is \(30\) per swaption, broadly comparable to a reconstruction MSE of order \(10^{-4}\text{--}10^{-3}\) which is already in squared-rate units. The \(\lambda\) weights therefore balance the two objectives after accounting for the rescaling.
 
 %=========================================================
 \section{Pricing Diagnostics}
@@ -454,29 +496,9 @@ The pricing pipeline consists of three steps. First, the first-stage checkpoint 
 \subsection{ATM Greeks benchmark}
 \label{subsec:greeks_table}
 
-Table~\ref{tab:atm_greeks} reports analytic ATM Bachelier Greeks for a representative swaption grid. The table is included as a benchmark for interpreting model-implied sensitivities. Delta gives the swap-rate hedge ratio, DV01 gives the sensitivity to a one-basis-point change in the forward swap rate, and Vega gives the sensitivity to the normal volatility.
+Table~\ref{tab:atm_greeks} reports analytic ATM Bachelier Greeks for a representative swaption grid. The table is included as a benchmark for interpreting model-implied sensitivities. Delta gives the swap-rate hedge ratio, DV01 gives the sensitivity to a one-basis-point change in the forward swap rate, and Vega gives the sensitivity to the normal volatility. The table is generated programmatically by \texttt{Code/Pricing/make\_greeks\_table.py}; re-running that script regenerates \texttt{Figures/Pricing/tab\_atm\_greeks.tex} with any desired rate or volatility assumptions.
 
-\begin{table}[H]
-\centering
-\caption{ATM Bachelier Greeks for a representative swaption grid
-(\(\mathcal N=1\), \(\sigma_N=60\) bp, \(\mathcal A_0\) computed from a flat 3\% curve).}
-\label{tab:atm_greeks}
-\begin{tabular}{@{}ccrrrrr@{}}
-\toprule
-\(T_e\) & \(T_s\) & \(\mathcal A_0\) & \(\Delta\) & Vega & \(\Gamma\) & \(\Theta\) \\
-\midrule
-1Y & 5Y  & 4.580 & 2.290 & 1.090 & 303.6 & 0.913 \\
-2Y & 5Y  & 4.580 & 2.290 & 1.541 & 214.7 & 0.463 \\
-5Y & 5Y  & 4.580 & 2.290 & 2.436 & 135.8 & 0.181 \\
-1Y & 10Y & 8.530 & 4.265 & 2.030 & 565.3 & 1.699 \\
-2Y & 10Y & 8.530 & 4.265 & 2.870 & 399.8 & 0.862 \\
-5Y & 10Y & 8.530 & 4.265 & 4.535 & 252.8 & 0.337 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent
-\textit{Notes.} The annuities are computed from annual discount factors on a flat 3\% curve. At the money, \(\Delta=\frac12\mathcal N\mathcal A_0\), while Vanna and Volga are zero. Model-implied Greeks for the calibrated model are obtained by applying the same formulas using the model's \(F_0\), \(\mathcal A_0\), and Monte Carlo implied normal volatility \(\widehat{\sigma}_{N,\mathrm{mod}}\).
+\input{Figures/Pricing/tab_atm_greeks}
 
 \subsection{Terminal latent distribution and short rate}
 \label{subsec:terminal_dist}
@@ -512,13 +534,4 @@ Date & \(T_e\) & \(T_s\) & \(\sigma_{\mathrm{mkt}}\) (bp) & \(\widehat\sigma_{N,
 \end{table}
 
 \noindent
-The percentage of volatility error removed by the second-stage calibration is measured by
-\[
-    \text{Improvement}
-    =
-    1
-    -
-    \frac{\mathrm{RMSE}_{\mathrm{post}}}
-    {\mathrm{RMSE}_{\mathrm{pre}}}.
-\]
-A positive value indicates that the calibration improves the fit to market normal volatilities relative to the first-stage model, while a value close to zero indicates that the second stage provides little additional pricing information.
+The table is populated using results from \texttt{compare\_swapvol.py}, which generates detailed Excel files containing model-implied volatilities for all available swaption quotes. The MAE and RMSE metrics quantify how well the jointly-trained model matches market normal volatilities.

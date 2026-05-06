@@ -1,6 +1,12 @@
 import os
 import pandas as pd
 
+# Default path resolves relative to this file so the script works on any machine.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_EXCEL = os.path.abspath(
+    os.path.join(_HERE, "..", "..", "SwapData", "SwapVol.xlsx")
+)
+
 
 def parse_swaption_code(code):
     """
@@ -43,7 +49,7 @@ def parse_swaption_code(code):
 
 
 def load_swaption_vol_data(
-    excel_path=r"C:\Users\Bruger\PycharmProjects\MasterThesis\SwapData\SwapVol.xlsx",
+    excel_path=None,
     currency="EUR",
     sheet_name=0,
     code_row_idx=0,
@@ -55,6 +61,13 @@ def load_swaption_vol_data(
 ):
     """
     Load swaption vol data from Bloomberg-style Excel export.
+
+    Parameters
+    ----------
+    excel_path : str or None
+        Path to the Bloomberg-style Excel file.  When *None* (default),
+        resolves to ``<repo_root>/SwapData/SwapVol.xlsx`` relative to this
+        file so the script runs unchanged on any machine.
 
     Expected sheet structure
     ------------------------
@@ -74,6 +87,9 @@ def load_swaption_vol_data(
     Returns columns:
         currency, as_of_date, option_maturity, swap_tenor, vol
     """
+    if excel_path is None:
+        excel_path = _DEFAULT_EXCEL
+
     raw = pd.read_excel(
         excel_path,
         sheet_name=sheet_name,

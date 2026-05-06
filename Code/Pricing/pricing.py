@@ -65,8 +65,6 @@ def bachelier_price_torch(F, K, sigma, expiry, A, notional: float = 1.0):
     if any(isinstance(x, torch.Tensor) for x in (F, K, sigma, A)):
         # Torch path — fully differentiable via torch.erf
         vol_term = sigma * T_sqrt
-        vol_term = vol_term.clamp(min=1e-12) if isinstance(vol_term, torch.Tensor) \
-            else max(float(vol_term), 1e-12)
         d   = (F - K) / vol_term
         Phi = 0.5 * (1.0 + torch.erf(d / math.sqrt(2.0)))
         phi = torch.exp(-0.5 * d * d) / math.sqrt(2.0 * math.pi)
@@ -102,7 +100,7 @@ def swap_rate_torch(
     payment_dfs = P_full[:, pay_idx]
     A           = accrual * payment_dfs.sum(dim=1)
     P_end       = payment_dfs[:, -1]
-    F           = (1.0 - P_end) / A.clamp(min=1e-8)
+    F           = (1.0 - P_end) / A
     return F, A
 
 
@@ -637,17 +635,62 @@ def atm_swaption_mc_price_from_simulation(
     return res
 
 def main():
-    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep200\checkpoint_dim2_ep200.pt"
+    checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim4_stable\ep5000\checkpoint_dim4_ep5000.pt"
 
+    # For 10-year horizon with monthly steps:
+    # dt = 1/12 (monthly), n_steps = 120 gives 10 years
+    # For 2Y expiry, need at least n_steps = 24 (2 years)
+    
     ctx = run_simulation(
         checkpoint_path=checkpoint_path,
         ccy_filter="EUR",
-        n_paths=500,
-        n_steps=24,
-        dt=1 / 12,
-        show_plot=False,
+        latent_dim=4,
+        n_paths=2000,
+        n_steps=24,  # 2 years with monthly steps for 2Y expiry
+        dt=1 / 12,  # Monthly timesteps (not weekly!)
+        diffusion_scale=0.2,  # Balances weak drift (||μ||/||σ|| = 0.055)
+        show_plot=False,  # Faster execution
     )
 
+    # First, check simulation health
+    print("\n" + "="*60)
+    print("PRE-FLIGHT SIMULATION DIAGNOSTICS")
+    print("="*60)
+    
+    z_paths = ctx["z_paths"].detach().cpu().numpy()
+    z_train_mean = ctx["z_train_mean"].cpu().numpy()
+    z_train_std = ctx["z_train_std"].cpu().numpy()
+    
+    print("\nLatent state health check:")
+    for d in range(z_paths.shape[2]):
+        z_d = z_paths[:, :, d]
+        train_min = z_train_mean[d] - 3*z_train_std[d]
+        train_max = z_train_mean[d] + 3*z_train_std[d]
+        sim_min = z_d.min()
+        sim_max = z_d.max()
+        pct_in_range = np.mean((z_d >= train_min) & (z_d <= train_max)) * 100
+        
+        print(f"  z[{d}]:")
+        print(f"    Training μ±3σ  : [{train_min:.4f}, {train_max:.4f}]")
+        print(f"    Simulation range: [{sim_min:.4f}, {sim_max:.4f}]")
+        print(f"    % within 3σ    : {pct_in_range:.1f}%")
+    
+    # Check discount curves
+    P_full = ctx["P_full_paths"].detach().cpu().numpy()
+    print(f"\nDiscount curve health:")
+    print(f"  Shape             : {P_full.shape}")
+    print(f"  Min               : {np.nanmin(P_full):.6f}")
+    print(f"  Max               : {np.nanmax(P_full):.6f}")
+    print(f"  Paths with inf    : {np.isinf(P_full).any(axis=(1,2)).sum()}/{P_full.shape[0]}")
+    print(f"  Paths with nan    : {np.isnan(P_full).any(axis=(1,2)).sum()}/{P_full.shape[0]}")
+    print(f"  Paths with P>1    : {(P_full > 1.0).any(axis=(1,2)).sum()}/{P_full.shape[0]}")
+    print(f"  Paths with P<0    : {(P_full < 0.0).any(axis=(1,2)).sum()}/{P_full.shape[0]}")
+    
+    if np.isinf(P_full).any():
+        print(f"\n⚠️  WARNING: Infinity detected in discount curves!")
+        print(f"   This indicates decoder numerical overflow.")
+        print(f"   Try: diffusion_scale=0.5 or lower")
+    
     res = atm_swaption_mc_price_from_simulation(
         ctx=ctx,
         expiry=2,
@@ -655,22 +698,67 @@ def main():
         payer=True,
         accrual=1.0,
         notional=1.0,
+        verbose=True,  # Enable verbose output
     )
 
-    print("\nFirst 5 swap rates at expiry:")
-    print(res["swap_rate_paths"][:5])
+    print("\n" + "="*60)
+    print("SIMULATION DIAGNOSTICS")
+    print("="*60)
+    
+    # Check for path validity
+    n_total = len(res["swap_rate_paths"])
+    n_valid = res["valid_mask"].sum()
+    n_invalid = n_total - n_valid
+    
+    print(f"\nPath validity:")
+    print(f"  Total paths       : {n_total}")
+    print(f"  Valid paths       : {n_valid} ({100*n_valid/n_total:.1f}%)")
+    print(f"  Invalid paths     : {n_invalid} ({100*n_invalid/n_total:.1f}%)")
+    
+    # Check discount curve ranges
+    P_full = ctx["P_full_paths"].detach().cpu().numpy()
+    print(f"\nDiscount curve statistics:")
+    print(f"  Min discount      : {np.nanmin(P_full):.6f}")
+    print(f"  Max discount      : {np.nanmax(P_full):.6f}")
+    print(f"  Paths with inf    : {np.isinf(P_full).any(axis=(1,2)).sum()}")
+    print(f"  Paths with nan    : {np.isnan(P_full).any(axis=(1,2)).sum()}")
 
-    print("\nFirst 5 payoffs at expiry:")
-    print(res["payoff_paths"][:5])
+    # Valid swap rates statistics
+    valid_swap_rates = res["swap_rate_paths"][res["valid_mask"]]
+    if len(valid_swap_rates) > 0:
+        print(f"\nValid swap rate statistics at expiry:")
+        print(f"  Mean              : {np.mean(valid_swap_rates):.6f} ({np.mean(valid_swap_rates)*10000:.1f} bp)")
+        print(f"  Std               : {np.std(valid_swap_rates):.6f} ({np.std(valid_swap_rates)*10000:.1f} bp)")
+        print(f"  Min               : {np.min(valid_swap_rates):.6f} ({np.min(valid_swap_rates)*10000:.1f} bp)")
+        print(f"  Max               : {np.max(valid_swap_rates):.6f} ({np.max(valid_swap_rates)*10000:.1f} bp)")
 
-    print("\nFirst 5 discount factors to expiry:")
-    print(res["discount_to_expiry_paths"][:5])
+    print("\n" + "="*60)
+    print("PRICING RESULTS")
+    print("="*60)
 
-    print("\nFirst 5 discounted PVs:")
-    print(res["pv_paths"][:5])
+    print("\nFirst 5 valid swap rates at expiry:")
+    valid_indices = np.where(res["valid_mask"])[0][:5]
+    for i, idx in enumerate(valid_indices):
+        print(f"  Path {idx}: {res['swap_rate_paths'][idx]:.6f} ({res['swap_rate_paths'][idx]*10000:.1f} bp)")
 
-    print(f"\nMonte Carlo price: {res['mc_price']:.10f}")
-    print(f"Model normal vol: {res['implied_normal_vol'] * 10000:.2f} bp")
+    print("\nFirst 5 valid payoffs at expiry:")
+    for i, idx in enumerate(valid_indices):
+        print(f"  Path {idx}: {res['payoff_paths'][idx]:.10f}")
+
+    print("\nFirst 5 valid discount factors to expiry:")
+    for i, idx in enumerate(valid_indices):
+        print(f"  Path {idx}: {res['discount_to_expiry_paths'][idx]:.10f}")
+
+    print("\nFirst 5 valid discounted PVs:")
+    for i, idx in enumerate(valid_indices):
+        print(f"  Path {idx}: {res['pv_paths'][idx]:.10f}")
+
+    print(f"\n{'='*60}")
+    print(f"Monte Carlo price : {res['mc_price']:.10f}")
+    print(f"MC std error      : {res['mc_stderr']:.10f}")
+    print(f"Model normal vol  : {res['implied_normal_vol'] * 10000:.2f} bp")
+    print(f"{'='*60}")
+
 
 
 if __name__ == "__main__":
