@@ -4,9 +4,9 @@
 
 % This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}. While the original paper is formulated for two latent factors, the notation below is written for a general number \(\ell\) of latent factors. In the implementation, special care is required for \(\ell>2\) to ensure that the volatility correlation matrix remains positive definite.
 
-This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}, formulated here in a generalized framework that accommodates an arbitrary number of latent factors and currencies. The model combines a low-dimensional latent representation with an arbitrage-free bond-pricing structure in order to reconstruct observed par swap rate curves while enforcing the risk-neutral no-arbitrage condition by construction. 
+This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}, formulated here in a generalized framework that accommodates an arbitrary number of latent factors and currencies. The model combines a low-dimensional latent representation with an arbitrage-free bond-pricing structure to reconstruct observed par swap rate curves while enforcing the no-arbitrage condition by construction. 
 
-The encoder maps observed swap rates into a low-dimensional latent state representation. The decoder then transforms this latent state into a continuous zero-coupon bond price curve consistent with arbitrage-free term structure dynamics. Since par swap rates are deterministic functions of zero-coupon bond prices, the reconstructed swap rates are arbitrage-free whenever the underlying bond prices satisfy the no-arbitrage condition. Figure~\ref{fig:rolf_architecture} provides a graphical overview of the architecture.
+The encoder maps observed swap rates into a low-dimensional latent state. The decoder then transforms this latent state into a continuous zero-coupon bond price curve consistent with arbitrage-free term structure dynamics, ensuring that the reconstructed swap rates are arbitrage-free by construction. Figure~\ref{fig:rolf_architecture} provides a graphical overview of the architecture.
 
 \input{ThesisLayout/figures/Fig_RolfsMethodVisual}
 
@@ -46,7 +46,7 @@ P(t,T)=P(z_t,\tau), \qquad \tau=T-t.
 
 \subsection{Swap Rate Reconstruction from Bond Prices}
 
-Before describing the internal structure of the decoder, we note that its task is to generate zero-coupon bond prices $P(z_t,\tau)$ on the annually spaced maturity grid
+Before describing the internal structure of the decoder, we note that its task is to generate arbitrage-free zero-coupon bond prices $P(z_t,\tau)$ on the annually spaced maturity grid
 \[
 \tau \in \{1\text{Y},2\text{Y},\dots,30\text{Y}\}.
 \]
@@ -58,27 +58,25 @@ Following \cite{MatinWanPoulsen2025}, we adopt a single-curve framework and assu
 {\sum_{\tau' \leq \tau} P(z_t,\tau')}
 \label{estimatedswaprates}
 \end{equation}
-where the sum runs over all maturities on the specified grid less than or equal to $\tau$. Since swap rates are nonlinear functionals of zero-coupon bond prices, the decoder is constructed to generate bond prices satisfying the risk-neutral no-arbitrage condition, so that the reconstructed swap rates inherit arbitrage-freeness by construction.
+where the sum runs over all maturities on the grid specified with $\tau_i\leq\tau$. Since swap rates are functions of zero-coupon bond prices, arbitrage-freeness of the reconstructed swap rates follows from that of the bond prices.
 
 
 %--------------------------------------------------------
 \subsection{The Decoder Network}
 %--------------------------------------------------------
-Having specified the input and output of the model, we now describe the internal structure of the decoder in detail. Figure~\ref{fig:rolf_architecture} illustrates the overall mapping from latent factors to bond prices, however the decoder consists of additional components not explicitly shown in this high-level representation. As illustrated in the more detailed Figure~\ref{fig:rolf_architecture_details}, latent factors branch into four neural networks. Three of these, $\mathcal{K},\mathcal{H}$ and $\mathcal{R}$, are used for parameter modelling and are discussed in Section~\ref{subsec:neural-modelling-dynamics}. Here we focus on $\mathcal{G}$, which together with the affine-inspired representation described in the following section produces ZCB prices.
+Having specified the input and output of the decoder, we now describe its internal structure. Figure~\ref{fig:rolf_architecture} illustrates the overall mapping from latent factors to reconstructed swap rates, however the decoder consists of additional components not explicitly shown in this high-level representation. As illustrated in the more detailed Figure~\ref{fig:rolf_architecture_details}, latent factors branch into four neural networks. Three of these, $\mathcal{K},\mathcal{H}$ and $\mathcal{R}$, are used for parameter modelling and are discussed in Section~\ref{subsec:neural-modelling-dynamics}. Here we focus on $\mathcal{G}$, which together with the affine-inspired representation described in the following section produces ZCB prices.
 
 \input{ThesisLayout/figures/Fig_RolfsMethodVisual2}
 
-The network $\mathcal{G}$ takes as input the augmented vector $(z_t^\top,\tau)^\top\in\mathbb{R}^{\ell+1}$ and consists of one hidden layer of dimension 10, with hidden units $h_1,...,h_{10}$ as illustrated in Figure \ref{fig:rolf_architecture_details}, where the hidden-layer dimension follows the empirical specification in \citet{MatinWanPoulsen2025}.
+The network $\mathcal{G}$ takes as input $(z_t^\top,\tau)^\top\in\mathbb{R}^{\ell+1}$ and has one hidden layer of width 10 \citep{MatinWanPoulsen2025}, with neurons $h_1,...,h_{10}$ as illustrated in Figure \ref{fig:rolf_architecture_details}.
 
 The network computes
 \[
-\mathcal{G}(z_t,\tau)
-=
-W_2\psi\left(W_1(z_t^\top,\tau)^\top+b_1\right)+b_2,
+\mathcal{G}(z_t,\tau) = W_2\, \overbrace{\psi\!\left(W_1\begin{pmatrix}z_t\\\tau\end{pmatrix} + b_1\right)}^{=\,h} + b_2.
 \]
 where \(W_1\in\mathbb{R}^{10\times(\ell+1)}\),
 \(b_1\in\mathbb{R}^{10}\), \(W_2\in\mathbb{R}^{1\times 10}\), and
-\(b_2\in\mathbb{R}\) are learnable parameters. The activation function \(\psi\) is the centered soft-step function
+\(b_2\in\mathbb{R}\) are learnable parameters. The activation function \(\psi\), applied elementwise, is the centered soft-step function
 \begin{equation}
 \psi(x)=\frac{1}{1+e^{-x}}-\frac{1}{2}.
 \label{eq:activation}
@@ -88,14 +86,14 @@ where \(W_1\in\mathbb{R}^{10\times(\ell+1)}\),
 \subsection{Affine-Inspired Bond Price Representation}
 %--------------------------------------------------------
 
-Following \citet{MatinWanPoulsen2025}, zero-coupon bond prices are assumed to admit an affine-inspired structure. The price of a zero-coupon bond with time-to-maturity $\tau$ is given by
+Following \citet{MatinWanPoulsen2025}, zero-coupon bond prices are assumed to admit an affine-inspired structure. The price of a zero-coupon bond with time to maturity $\tau$ is given by
 \begin{equation}
 P(z_t,\tau)
 =
 \exp\!\Big(A_{z_t}(\tau)-B_{z_t}(\tau)\,\mathcal{G}(z_t,\tau)\Big),
 \label{affineinspiredzcbprices}
 \end{equation}
-where $A_{z_t}(\tau),B_{z_t}(\tau)\in\mathbb{R}$ are scalar functions of maturity $\tau$ that depend on $z_t$ through the model parameters. The term \textit{affine-inspired} reflects the structural analogy to classical affine term structure models, in which bond prices are exponential-affine in the state vector (see Section \ref{sec:Affine TSM Theory}). Here, the learned function $\mathcal{G}(z_t,\tau)$ introduces nonlinear dependence on the latent state and maturity, while the exponential form preserves the structural link to affine bond-pricing models.
+where $A_{z_t}(\tau),B_{z_t}(\tau)\in\mathbb{R}$ are scalar functions of maturity $\tau$ that depend on $z_t$ through the latent dynamics parameters $\mu$, $\sigma$ and $\rho$, introduced in Section \ref{subsec:neural-modelling-dynamics}. The term \textit{affine-inspired} reflects the structural analogy to classical affine term structure models, in which bond prices are exponential-affine in the state vector. Here, the learned function $\mathcal{G}(z_t,\tau)$ introduces nonlinear dependence on the latent state and time to maturity, while the exponential form preserves the structural link to affine bond-pricing models.
 
 For each latent state $z_t$, the functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ are obtained by solving a coupled ODE system derived from the no-arbitrage condition. These are state-specific solutions: for every encoded curve, the decoder solves the ODE system conditional on the corresponding latent state. This is the mechanism through which no-arbitrage is enforced in the generated bond-price curve.
 
@@ -107,11 +105,7 @@ The derivation of this ODE system, which ensures that the resulting zero-coupon 
 \label{subsec:no_arbitrage_ode_system}
 %--------------------------------------------------------
 
-%To guarantee that the generated bond price curve satisfies the no-arbitrage condition by construction, we parameterize bond prices in an affine-inspired form and derive a system of ordinary differential equations (ODEs) that must be satisfied for each realized latent state $z_t$. These ODEs arise directly from the risk-neutral pricing condition and enforce arbitrage-freeness at the level of zero-coupon bond prices.
-
-The derivation proceeds in three steps. First, we impose Markovian risk-neutral dynamics on the latent state. Second, we derive the bond-pricing PDE implied by absence of arbitrage. Third, we choose the maturity-dependent functions \(A_{z_t}\) and \(B_{z_t}\) so that the affine-inspired bond-price representation satisfies this PDE by construction.
-
-We begin by specifying the short rate. Recall from \eqref{shortrate} that the short rate is defined as the instantaneous forward rate at zero maturity. Under the affine-inspired bond price representation \eqref{affineinspiredzcbprices}, the instantaneous forward rate is given by
+The derivation starts from the short rate specification. Recall from Definition \ref{eq:instshortrate} that the short rate is defined as the instantaneous forward rate in the limit as time to maturity tends to zero. From the affine-inspired bond price representation \eqref{affineinspiredzcbprices}, the instantaneous forward rate is given by
 \begin{align}
 f(t,\tau)
 &= -\frac{\partial \log(P(z_t,\tau))}{\partial \tau} \nonumber\\
@@ -120,24 +114,29 @@ f(t,\tau)
 + B_{z_t}(\tau)\partial_{\tau}\mathcal{G}(z_t,\tau).
 \label{eq:instantforwardrate}
 \end{align}
-Taking the limit as $\tau \to 0$ and recalling that 
-$r(t)=\lim_{\tau\to0}f(t,\tau)$
-shows that the short rate is determined entirely by the current latent state $z_t$. We therefore define the short-rate function $\tilde r:\mathbb{R}^\ell\to\mathbb{R}$ such that
+Taking the limit as $\tau \to 0$, shows that the short rate is determined entirely by the current latent state $z_t$. We therefore define the short-rate function $\tilde r:\mathbb{R}^\ell\to\mathbb{R}$ such that
 \begin{equation}
-    r(t)=\lim_{\tau\to0}f(t,\tau)=\tilde r(z_t)
+    r(t)=\lim_{\tau\to0}f(t,\tau)=\tilde r(z_t).
     \label{hardconstraint}
 \end{equation}
+This condition is referred to as the \textit{hard constraint}. Unlike \citet{Andreasen2023}, who enforce no-arbitrage softly through a penalty term, the short rate implied by the bond-price curve is required to coincide exactly with $\tilde r(z_t)$.
 
-This condition is referred to as the hard constraint, since the short rate implied by the generated bond-price curve is required to coincide exactly with the short-rate function $\tilde r(z_t)$.
-
-% Furthermore, comparing the affine-inspired representation \eqref{affineinspiredzcbprices} with the risk-neutral pricing formula \eqref{riskneturalbondpriceformula} shows that the bond prices depend only on the current latent state. Hence, under absence of arbitrage, the latent state vector $z_t$ must form a Markov process under the risk-neutral measure $\mathbb{Q}$.
-
-Moreover, the affine-inspired representation \eqref{affineinspiredzcbprices}
+The affine-inspired representation \eqref{affineinspiredzcbprices}
 specifies bond prices as functions of the current latent state \(z_t\) and time
-to maturity \(\tau\). To make this representation consistent with
-risk-neutral pricing, we assume that the latent state is Markov under
-\(\mathbb Q\). Since the short rate is specified as
-\(r(t)=\tilde r(z_t)\), the risk-neutral pricing formula becomes
+to maturity \(\tau\). To be consistent with
+risk-neutral pricing, we assume that the latent state follows a Markov process under \(\mathbb Q\). 
+
+Following \citet{MatinWanPoulsen2025}, we further specify the latent-state dynamics as the diffusion
+\begin{equation}
+    dz_t=\mu(z_t)dt+\sigma(z_t)dW_t^\mathbb{Q},
+    \label{latentdynamics}
+\end{equation}
+where \(\mu(z_t)\in\mathbb{R}^\ell\) is the drift vector, \(\sigma(z_t)\in\mathbb{R}^{\ell\times \ell}\) is the volatility matrix, and \(W_t^\mathbb{Q}\) is an \(\ell\)-dimensional standard Brownian motion under \(\mathbb{Q}\). The short rate is modelled as
+\begin{equation}
+    r(t)=\tilde{r}(z_t),
+    \label{shortratedynamic}
+\end{equation}
+The risk-neutral bond price is therefore
 \[
 P(t,t+\tau)
 =
@@ -147,35 +146,21 @@ P(t,t+\tau)
 \right].
 \]
 Under the Markov assumption, this conditional expectation depends on the
-filtration \(\mathcal F_t\) only through the current state \(z_t\). Hence,
-within the chosen state-space specification, bond prices can be written as
+filtration \(\mathcal F_t\) only through the current state \(z_t\). Hence bond prices can be written as
 \[
 P(t,T)=P(z_t,\tau), \qquad \tau=T-t.
 \]
 
-Following \citet{MatinWanPoulsen2025}, we further specify the latent-state dynamics as the diffusion
-\begin{equation}
-    dz_t=\mu(z_t)dt+\sigma(z_t)dW_t^\mathbb{Q},
-    \label{latentdynamics}
-\end{equation}
-and model the short rate as
-\begin{equation}
-    r(t)=\tilde{r}(z_t),
-    \label{shortratedynamic}
-\end{equation}
-where \(\mu(z_t)\in\mathbb{R}^\ell\) is the drift vector, \(\sigma(z_t)\in\mathbb{R}^{\ell\times \ell}\) is the volatility matrix, and \(W_t^\mathbb{Q}\) is an \(\ell\)-dimensional standard Brownian motion under \(\mathbb{Q}\).
  
-The short rate admits two representations that must coincide identically: it is defined as the instantaneous forward rate at zero maturity
-\[
-r(t)=\lim_{\tau\to0} f(t,\tau),
-\]
-while at the same time it is modelled as $r(t)=\tilde{r}(z_t)$. Unlike approaches that enforce no-arbitrage softly through a penalty term in the loss function \textcolor{red}{(REFERENCE)}, this coincidence constitutes a \textit{hard constraint}. When deriving the ODE system for $A_{z_t}$ and $B_{z_t}$ from the bond-pricing PDE, the coefficients are constructed such that
-\[
-\lim_{\tau\to0} f(t,\tau)=\tilde r(z_t)
-\]
-holds exactly for every state $z_t$, thereby embedding the short rate specification directly into the arbitrage-free structure.
-
-With the dynamics and short-rate specification in place, we can now derive the bond-pricing PDE. 
+%The short rate admits two representations that must coincide: it is defined as the instantaneous forward rate at zero maturity
+%\[
+%r(t)=\lim_{\tau\to0} f(t,\tau),
+%\]
+%while it is also modelled as $r(t)=\tilde{r}(z_t)$. Unlike approaches that enforce no-arbitrage %softly through a penalty term \citep{Andreasen2023}, this coincidence is imposed as a %\textit{hard constraint}. The coefficients $A_{z_t}$ and $B_{z_t}$ are constructed such that
+%\[
+%\lim_{\tau\to0} f(t,\tau)=\tilde r(z_t)
+%\]
+%holds exactly for every state $z_t$.
 
 
 Assuming sufficient smoothness of $P$, in particular that $P$ is twice continuously differentiable in $z$ and once in $\tau$, we apply Itô's lemma. Since $d\tau=-dt$
@@ -187,7 +172,7 @@ dP(z_t,\tau)
 +
 \nabla_{z_t} P(z_t,\tau)^\top \mu(z_t)
 +
-\frac12 \mathrm{Tr}\!\big[\sigma(z_t)\sigma(z_t)^\top H_{z_t} P(z_t,\tau)\big]
+\frac12 \mathrm{Tr}\!\big[\sigma(z_t)\sigma(z_t)^\top H_{z} P(z_t,\tau) \big]
 \right) dt\nonumber\\
 &\phantom{=}+
 \nabla_z P(z_t,\tau)^\top \sigma(z_t)\, dW_t^{\mathbb Q}. 
@@ -197,7 +182,7 @@ Under absence of arbitrage, the discounted bond price process
 \(
 \tilde{P}(z_t,\tau) := \frac{P(z_t,\tau)}{B(t)}
 \)
-must be a martingale under $\mathbb Q$, which requires its drift to vanish. Applying the product rule for semimartingales, 
+must be a martingale under $\mathbb Q$, which requires its drift to vanish. Applying Itô's formula yields 
 \begin{align*}
    d\tilde{P}(z_t,\tau)
 &=
@@ -211,28 +196,31 @@ Since \(B(t)^{-1}\) is of finite variation, the quadratic covariation term is ze
 $$ d\tilde{P}(z_t,\tau)=\frac{1}{B(t)}dP(z_t,\tau)-r(t)\frac{P(z_t,\tau)}{B(t)}dt$$
 and substituting \eqref{Pdynamics} gives, suppressing the arguments of $P$ and $\tilde{P}$ for readability,
 \begin{align*}
-  d\tilde{P}&=\frac{1}{B(t)}\left(-\partial_\tau P+\nabla_z P^\top\mu(z_t)+\frac{1}{2}\mathrm{Tr}\left[\sigma^\top(z_t)H_zP\sigma(z_t)\right]-r(t)P\right)dt\\
+  d\tilde{P}&=\frac{1}{B(t)}\left(-\partial_\tau P+\nabla_z P^\top\mu(z_t)+\frac{1}{2}\mathrm{Tr}\left[\sigma(z_t)\sigma(z_t)^\top H_zP\right]-r(t)P\right)dt\\
   &\textcolor{white}{=}+\frac{1}{B(t)}\nabla_zP^\top\sigma(z_t)dW_t^\mathbb{Q}  
 \end{align*}
 Setting the drift to zero and using $r(t)=\tilde{r}(z_t)$ from \eqref{shortratedynamic} yields the bond-pricing PDE 
-\[
+\begin{equation}
 -\partial_\tau P
 +
 \nabla_z P^\top \mu(z_t)
 +
-\frac12 \mathrm{Tr}\!\left[\sigma(z_t)\sigma(z_t)^\top H_z P\right]
+\frac12 \mathrm{Tr}\!\left[\sigma(z_t)\sigma(z_t)^\top H_z P \right]
 -
 \tilde r(z_t)\,P
 =
 0
 \label{eq:bond_pricing_pde}
-\]
+\end{equation}
 
 with boundary condition $P(z_t,0)=1$. 
 
-Following \citet{MatinWanPoulsen2025}, the ODE system is derived state-wise. For a fixed encoded state \(z_t\), the functions \(A_{z_t}(\tau)\) and \(B_{z_t}(\tau)\) are treated as maturity-dependent coefficients generated conditional on that state. Hence, when evaluating the derivatives entering the PDE, the \(z\)-derivatives are applied to the neural function \(\mathcal G(z_t,\tau)\), while the solved coefficient paths \(A_{z_t}\) and \(B_{z_t}\) are held fixed for that state.
+% NÅET HER TIL - HUSK AT TJEKEK OM HELE DETTE DERIVATION AFSNIT HÆNGER SAMMEN NÅR ALT ER RETTET FÆRDIGT.
 
-Substituting the derivatives under the ansatz \eqref{affineinspiredzcbprices}, derived in Appendix~\ref{app:pde_derivatives},
+
+Following \citet{MatinWanPoulsen2025}, the ODE system is derived state-wise. For a fixed encoded state \(z_t\), the functions \(A_{z_t}(\tau)\) and \(B_{z_t}(\tau)\) are treated as maturity-dependent coefficients generated conditional on that state. 
+
+Substituting the derivatives of $P$ \eqref{affineinspiredzcbprices}, derived in Appendix~\ref{app:pde_derivatives},
 \begin{align}
     \partial_\tau P
 &=
@@ -254,11 +242,17 @@ P\Big(
 B_{z_t}^2\,\nabla_{z_t} \mathcal{G}\,\nabla_{z_t} \mathcal{G}^\top
 \Big)
 \end{align}
-into the PDE and factoring out $P>0$, and rearranging
-\[
--\partial_\tau A_{z_t} + (\partial_\tau B_{z_t})\,\mathcal{G} + B_{z_t}\,\partial_\tau\mathcal{G} - B_{z_t}(\nabla_{z_t}\mathcal{G})^\top\mu(z_t) - \tfrac{1}{2}B_{z_t}\,\mathrm{Tr}\!\left[\sigma\sigma^\top H_{z_t}\mathcal{G}\right] + \tfrac{1}{2}B_{z_t}^2\,\mathrm{Tr}\!\left[\sigma\sigma^\top\nabla_{z_t}\mathcal{G}\,\nabla_{z_t}\mathcal{G}^\top\right] - \tilde{r}(z_t) = 0.
-\]
-We then define the scalar coefficient functions
+into the PDE, factoring out $P>0$, and rearranging yields
+\begin{equation*}
+\begin{split}
+-\partial_\tau A_{z_t} + (\partial_\tau B_{z_t})\,\mathcal{G} + B_{z_t}\,\partial_\tau\mathcal{G} 
+- B_{z_t}(\nabla_{z_t}\mathcal{G})^\top\mu(z_t) 
+- \tfrac{1}{2}B_{z_t}\,\mathrm{Tr}\!\left[\sigma\sigma^\top H_{z_t}\mathcal{G}\right] \\
++ \tfrac{1}{2}B_{z_t}^2\,\mathrm{Tr}\!\left[\sigma\sigma^\top\nabla_{z_t}\mathcal{G}\,\nabla_{z_t}\mathcal{G}^\top\right] 
+- \tilde{r}(z_t) = 0.
+\end{split}
+\end{equation*}
+Assuming \(\mathcal{G}(z_t,\tau)\neq 0\), we define the scalar coefficient functions
 \begin{align}
 \alpha_{z_t}(\tau)&:=\frac{-(\partial_\tau \mathcal{G})+(\nabla_{z_t} \mathcal{G})^\top \mu({z_t})+\tfrac12 \mathrm{Tr}\!\big[\sigma({z_t})\sigma({z_t})^\top H_{z_t} \mathcal{G}\big]
 }{\mathcal{G}}\\
@@ -266,9 +260,7 @@ We then define the scalar coefficient functions
 \gamma_{z_t}(\tau)&:=
 \frac12\,\mathrm{Tr}\!\Big[\sigma({z_t})\sigma({z_t})^\top \nabla_{z_t} \mathcal{G}\,\nabla_{z_t} \mathcal{G}^\top\Big]
 \end{align}
-These expressions are understood on the region where \(\mathcal{G}(z_t,\tau)\neq 0\). In the numerical implementation, this denominator must be handled carefully to avoid instabilities when \(\mathcal{G}\) is close to zero.
-
-so that the identity reduces to
+whereupon the PDE reduces to
 \[
 \partial_\tau A_{z_t} = \mathcal{G}\big(\partial_\tau B_{z_t} - \beta_{z_t}(\tau) - \alpha_{z_t}(\tau) B_{z_t}\big) + B_{z_t}^2\,\gamma_{z_t}(\tau).
 \]
@@ -335,7 +327,7 @@ and the hard constraint \eqref{hardconstraint} is satisfied by construction, gua
 \subsection{Neural Modelling of the Dynamics}
 \label{subsec:neural-modelling-dynamics}
 
-The coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system depend on the drift $\mu(z_t)$, the volatility $\sigma(z_t)$, and the short rate $\tilde{r}(z_t)$. Following \citet{MatinWanPoulsen2025}, and as illustrated in Figure \ref{fig:rolf_architecture_details}, each of these is modelled by a dedicated neural network learned jointly with $\mathcal{G}$. The drift map $\mathcal{K}$ is specified as an affine transformation of the latent state. The volatility and short-rate networks, $\mathcal{H}$ and $\mathcal{R}$, use hidden layers with the centered soft-step activation function $\psi$ from \eqref{eq:activation}.
+The coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system depend on the drift $\mu(z_t)$, the volatility $\sigma(z_t)$, and the short rate $\tilde{r}(z_t)$. Following \citet{MatinWanPoulsen2025}, and as illustrated in Figure \ref{fig:rolf_architecture_details}, each of these is modelled by a dedicated neural network learned jointly with $\mathcal{G}$. The drift map $\mathcal{K}$ is specified as an affine transformation of the latent state. The volatility and short-rate networks, $\mathcal{H}$ and $\mathcal{R}$, use hidden layers with the centered soft-step activation function from \eqref{eq:activation}.
 
 
 \paragraph{Drift network}
@@ -366,12 +358,10 @@ z_\ell(t)
 \]
 where $\mathbf{M}\in\mathbb{R}^{\ell\times \ell}$ and $\mathbf{N}\in\mathbb{R}^\ell$. 
 
-%\textcolor{red}{This affine structure allows the drift to capture mean-reverting dynamics in the latent factors. (Or does it? rewrite this depending on the results we see after implemeting the stable versions)}
 
 
 \paragraph{Volatility network}
-The volatility matrix is modelled by a neural network 
-$\mathcal{H}:\mathbb{R}^{\ell}\rightarrow\mathbb{R}^{\ell+\ell(\ell-1)/2}$, with one hidden layer of dimension 4, which performs the mapping
+The volatility matrix is modelled by a neural network $\mathcal{H}:\mathbb{R}^{\ell}\rightarrow\mathbb{R}^{\ell+\ell(\ell-1)/2}$ with one hidden layer of dimension 4, performing the mapping
 \[
 \mathcal{H} :
 \begin{pmatrix}
@@ -381,60 +371,87 @@ z_\ell(t)
 \end{pmatrix}
 \;\mapsto\;
 \begin{pmatrix}
-\log(\sigma_1) \\
+u_1 \\
 \vdots \\
-\log(\sigma_\ell) \\
-\operatorname{atanh}(\rho_{12}) \\
+u_\ell \\
+v_{12} \\
 \vdots \\
-\operatorname{atanh}(\rho_{(\ell-1)\ell})
-\end{pmatrix}.
+v_{(\ell-1)\ell}
+\end{pmatrix},
 \]
-
-\textcolor{red}{MANGLER FORKLARING AF ENDLIG $\sigma$!}
-%The network outputs logarithms of the volatility coefficients and inverse hyperbolic tangents of the correlation parameters. This parameterization ensures strictly positive volatilities and correlations in $(-1,1)$. 
-%The full volatility matrix $\sigma(z_t)\in\mathbb{R}^{\ell\times\ell}$ ia then assembled through a lower-triangular Cholesky factorization, ensuring that the implied covariance matrix \[\sigma(z_t)=L(z_t)L(z_t)^\top,\]
-%is positive semidefinite for every state $z_t$, where $L(z_t)$ denotes a lower–triangular matrix whose entries depend on $\sigma_i(z_t)$ and $\rho_{ij}(z_t)$.  The detailed construction of the Cholesky factor $L(z_t)$ is provided in Appendix~\ref{sec:cholesky_volatility} for $\ell=2,3,4$.
-
-Let the output of \(\mathcal H\) be denoted by
+where $u_1,\ldots,u_\ell$ are log-volatilities and $v_{12},\ldots,v_{(\ell-1)\ell}$ are raw correlation parameters. The volatilities and correlations are recovered as
 \[
-(u_1,\ldots,u_\ell,v_{12},\ldots,v_{(\ell-1)\ell})^\top.
+\sigma_i(z_t)=\exp(u_i), \qquad \rho_{ij}(z_t)=\tanh(v_{ij}),
 \]
-The volatility levels and correlation parameters are then obtained as
-\[
-\sigma_i(z_t)=\exp(u_i),\qquad
-\rho_{ij}(z_t)=\tanh(v_{ij}).
-\]
-The exponential transformation ensures strictly positive volatility levels,
-while the hyperbolic tangent maps the raw correlation parameters into
-\((-1,1)\). Let
-\[
-D(z_t)=\operatorname{diag}(\sigma_1(z_t),\ldots,\sigma_\ell(z_t))
-\]
-and let \(R(z_t)\) denote the correlation matrix with entries
-\(\rho_{ij}(z_t)\). The covariance matrix is then
+ensuring strictly positive volatilities and correlations in $(-1,1)$. Letting $D(z_t)=\operatorname{diag}(\sigma_1(z_t),\ldots,\sigma_\ell(z_t))$ and $R(z_t)$ denote the correlation matrix with entries $\rho_{ij}(z_t)$, the covariance matrix is
 \[
 \Sigma(z_t)=D(z_t)R(z_t)D(z_t).
 \]
-The volatility loading matrix used in the latent diffusion is taken to be a lower-triangular Cholesky factor \(L(z_t)\) satisfying
-\[
-L(z_t)L(z_t)^\top=\Sigma(z_t).
-\]
-Thus, in the notation of the latent dynamics, \(\sigma(z_t)=L(z_t)\).
-For \(\ell=2\), this gives
-\[
-\sigma(z_t)=
-\begin{pmatrix}
-\sigma_1(z_t) & 0 \\
-\rho_{12}(z_t)\sigma_2(z_t) &
-\sqrt{1-\rho_{12}(z_t)^2}\,\sigma_2(z_t)
-\end{pmatrix}.
-\]
+The volatility loading matrix is taken as the lower-triangular Cholesky factor $\sigma(z_t)=L(z_t)$ satisfying $L(z_t)L(z_t)^\top=\Sigma(z_t)$. Explicit Cholesky factors for $\ell\in\{2,3,4\}$ are given in Appendix~\ref{sec:cholesky_volatility}.
+
+
+
+%\paragraph{Volatility network}
+%The volatility matrix is modelled by a neural network 
+%$\mathcal{H}:\mathbb{R}^{\ell}\rightarrow\mathbb{R}^{\ell+\ell(\ell-1)/2}$, with one hidden layer %of width 4, performing the mapping
+%\[
+%\mathcal{H} :
+%\begin{pmatrix}
+%z_1(t) \\
+%\vdots \\
+%z_\ell(t)
+%\end{pmatrix}
+%\;\mapsto\;
+%\begin{pmatrix}
+%\log(\sigma_1) \\
+%\vdots \\
+%\log(\sigma_\ell) \\
+%\operatorname{atanh}(\rho_{12}) \\
+%\vdots \\
+%\operatorname{atanh}(\rho_{(\ell-1)\ell})
+%\end{pmatrix}.
+%\]
+
+%Let the output of \(\mathcal H\) be denoted by
+%\[
+%(u_1,\ldots,u_\ell,v_{12},\ldots,v_{(\ell-1)\ell})^\top.
+%\]
+%The volatility levels and correlation parameters are then obtained as
+%\[
+%\sigma_i(z_t)=\exp(u_i),\qquad
+%\rho_{ij}(z_t)=\tanh(v_{ij}).
+%\]
+%The exponential transformation ensures strictly positive volatility levels,
+%while the hyperbolic tangent maps the raw correlation parameters into
+%\((-1,1)\). Let
+%\[
+%D(z_t)=\operatorname{diag}(\sigma_1(z_t),\ldots,\sigma_\ell(z_t))
+%\]
+%and let \(R(z_t)\) denote the correlation matrix with entries
+%\(\rho_{ij}(z_t)\). The covariance matrix is then
+%\[
+%\Sigma(z_t)=D(z_t)R(z_t)D(z_t).
+%\]
+%The volatility loading matrix used in the latent diffusion is taken to be a lower-triangular Cholesky factor \(L(z_t)\) satisfying
+%\[
+%L(z_t)L(z_t)^\top=\Sigma(z_t).
+%\]
+%Thus, in the notation of the latent dynamics, \(\sigma(z_t)=L(z_t)\).
+%For \(\ell=2\), this gives
+%\[
+%\sigma(z_t)=
+%\begin{pmatrix}
+%\sigma_1(z_t) & 0 \\
+%\rho_{12}(z_t)\sigma_2(z_t) &
+%\sqrt{1-\rho_{12}(z_t)^2}\,\sigma_2(z_t)
+%\end{pmatrix}.
+%\]
 
 %For \(\ell>2\), the pairwise correlations must be parameterized or constrained so that \(R(z_t)\) is positive definite.
 
 %For \(\ell=2\), the condition \(\rho_{12}(z_t)\in(-1,1)\) is sufficient to ensure that the correlation matrix is positive definite, yielding the two-factor volatility matrix used in \citet{MatinWanPoulsen2025}. For \(\ell>2\), however, bounding each pairwise correlation in \((-1,1)\) is not sufficient to guarantee that the full correlation matrix \(R(z_t)\) is positive definite. The Cholesky construction below is therefore valid conditional on \(R(z_t)\) being positive definite. In applications with more than two latent factors, this requires either explicit validation of \(R(z_t)\) or a positive-definite parameterization, such as a hyperspherical Cholesky parameterization.
 
-The explicit Cholesky factors for dimensions \(2\), \(3\), and \(4\), conditional on a valid correlation matrix, are given in Appendix~\ref{sec:cholesky_volatility}.
+%The explicit Cholesky factors for dimensions \(2\), \(3\), and \(4\), conditional on a valid correlation matrix, are given in Appendix~\ref{sec:cholesky_volatility}.
 
 
 \paragraph{Short-rate network}
@@ -454,16 +471,14 @@ z_\ell(t)
 
 \subsection{Full Decoding Pipeline}
 
-To summarize, the decoder first maps the latent state $z_t$ through the four neural networks $\mathcal{G},\mathcal{K},\mathcal{H}$ and $\mathcal{R}$. The outputs determine the coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system, which is solved numerically for each realized $z_t$ to yield $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$. Zero-coupon bond prices are then obtained via \eqref{affineinspiredzcbprices} and converted into model-implied swap rates using \eqref{estimatedswaprates}, with arbitrage-freeness holding by construction throughout.
+To summarize, the decoder first evaluates the four neural networks $\mathcal{G},\mathcal{K},\mathcal{H}$ and $\mathcal{R}$ at the latent state $z_t$. The outputs determine the coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system, which is solved numerically for each realized $z_t$ to yield $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$. Zero-coupon bond prices are then obtained via \eqref{affineinspiredzcbprices} and converted into model-implied swap rates using \eqref{estimatedswaprates}.
 
-%--------------------------------------------------------
-\section{Estimation Objective and Numerical Training Choices}
+\section{Training Objective and Numerical Implementation}
 \label{sec:model_estimation_training_choices}
-%--------------------------------------------------------
 
 All components of the model are trained jointly. In particular, the encoder, the neural functions entering the decoder, and the ODE-based bond-pricing map are estimated as a single computational graph.
 
-The affine-inspired encoder--decoder is estimated by choosing the trainable parameters
+The model is trained over the parameters
 \[
 \Omega
 =
@@ -472,11 +487,11 @@ The affine-inspired encoder--decoder is estimated by choosing the trainable para
 \]
 where \(A_1\) denotes the encoder matrix and
 \(\theta_{\mathcal{G}},\theta_{\mathcal{K}},\theta_{\mathcal{H}},\theta_{\mathcal{R}}\)
-denote the parameters of the decoder networks. The estimation criterion is the mean squared reconstruction error between observed and model-implied par swap rates. For \(N\) observed curves and maturity set
+denote the parameters of the decoder networks. The empirical risk is the mean squared reconstruction error between observed and model-implied par swap rates. For \(N\) observed curves from the cross-currency swap rate data described in Chapter~\ref{chap:datadescription} and maturity set
 \[
 \mathcal{M}=\{1,2,3,5,10,15,20,30\},
 \]
-the loss function is
+the empirical risk is
 \begin{equation}
 \mathcal{L}(\Omega)
 =
@@ -488,7 +503,7 @@ S_n(\tau)-\widetilde S_n(\tau;\Omega)
 \right)^2.
 \label{eq:model_estimation_loss}
 \end{equation}
-The index \(n\) runs over all observed curves in the pooled cross-currency training sample, so each curve is weighted equally in the loss function. The estimated parameter vector is therefore
+Each curve is weighted equally, and the optimal parameters are
 \begin{equation}
 \widehat{\Omega}
 =
@@ -520,7 +535,7 @@ In the numerical implementation, the ODE system is solved on the annual grid
 \mathcal{T}_{\mathrm{ODE}}=\{0,1,\ldots,30\}.
 \]
 The point \(\tau=0\) is included to impose the initial conditions
-\(A_{z_t}(0)=B_{z_t}(0)=0\), while the discount factors used for swap-rate reconstruction are \(P(z_t,1),\ldots,P(z_t,30)\). For each mini-batch, the model evaluates \(\mathcal G(z_t,\tau)\) on this grid, computes \(\mu(z_t)\), \(\sigma(z_t)\), and \(\tilde r(z_t)\), and obtains the derivatives entering \(\alpha_{z_t}\), \(\beta_{z_t}\), and \(\gamma_{z_t}\) using automatic differentiation. The resulting ODE system is solved using the fourth-order Runge--Kutta 3/8 method, described in Appendix~\ref{app:rk38}, after which zero-coupon bond prices are converted to par swap rates at the market tenors \(\mathcal M\).
+\(A_{z_t}(0)=B_{z_t}(0)=0\), while the discount factors used for swap-rate reconstruction are \(P(z_t,1),\ldots,P(z_t,30)\). For each mini-batch, the model evaluates \(\mathcal G(z_t,\tau)\) on this grid, computes \(\mu(z_t)\), \(\sigma(z_t)\), and \(\tilde r(z_t)\), and obtains the derivatives entering \(\alpha_{z_t}\), \(\beta_{z_t}\), and \(\gamma_{z_t}\) using automatic differentiation. The resulting ODE system is solved using the fourth-order Runge--Kutta 3/8 method, described in Appendix~\ref{app:rk38}, after which zero-coupon bond prices are converted to par swap rates at the maturities \(\mathcal M\).
 
 Gradients are propagated through the full pricing pipeline, including the Runge--Kutta solver, the solved functions \(A_{z_t}(\tau)\) and \(B_{z_t}(\tau)\), the zero-coupon bond prices, and the reconstructed swap rates. To improve numerical stability, gradients are clipped before each optimiser step using a maximum norm of 1.0. The training loop also checks for non-finite values; if the forward pass, loss, or gradients contain NaN or infinite values, the update is discarded for that mini-batch.
 
