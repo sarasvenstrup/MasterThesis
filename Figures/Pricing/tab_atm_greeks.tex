@@ -1,0 +1,21 @@
+\begin{table}[H]
+\centering
+\caption{ATM Bachelier Greeks for a representative swaption grid (\(\mathcal N=1\), \(\sigma_N=60\) bp\(=0.006\), \(\mathcal A_0=\delta\sum_{j=1}^{T_s}(1+0.03)^{-(T_e+j\delta)}\) on a flat 3\% annually-compounded curve).}
+\label{tab:atm_greeks}
+\begin{tabular}{@{}ccrrrrr@{}}
+\toprule
+\(T_e\) & \(T_s\) & \(\mathcal A_0\) & \(\Delta\) & Vega & \(\Gamma\) & \(\Theta\) \\
+\midrule
+1Y & 5Y & 4.446 & 2.223 & 1.774 & 295.6 & 0.00532 \\
+2Y & 5Y & 4.317 & 2.158 & 2.436 & 203.0 & 0.00365 \\
+5Y & 5Y & 3.950 & 1.975 & 3.524 & 117.5 & 0.00211 \\
+1Y & 10Y & 8.282 & 4.141 & 3.304 & 550.7 & 0.00991 \\
+2Y & 10Y & 8.041 & 4.020 & 4.536 & 378.0 & 0.00680 \\
+5Y & 10Y & 7.358 & 3.679 & 6.564 & 218.8 & 0.00394 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item \textit{Notes.} \(\mathcal A_0\) uses the expiry-dependent definition \(\mathcal A_0=\delta\sum_{j=1}^{T_s}P(0,T_e+j\delta)\); it differs across rows with the same \(T_s\). At the money: \(\Delta=\tfrac12\mathcal N\mathcal A_0\), Vanna\(=\)Volga\(=0\), and \(\Theta=\tfrac12\sigma_N^2\Gamma\) (verified for every row). \(\Theta\) is the partial derivative \(\partial V/\partial T_e\) with all other inputs fixed; its small magnitude reflects \(\sigma_N=60\) bp. Model-implied Greeks are obtained by substituting \(F_0\), \(\mathcal A_0\), and the Monte Carlo implied vol \(\widehat\sigma_{N,\mathrm{mod}}\) into the same formulas.
+\end{tablenotes}
+\end{table}

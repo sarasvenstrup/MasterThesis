@@ -47,7 +47,8 @@ def swaption_price_loss_single(
     device      : torch.device,
     dtype       : torch.dtype,
     freeze_K    : bool = True,
-) -> tuple[torch.Tensor, float, float]:
+    dt_max      : float = 1/12,    # maximum step size (years)
+) -> tuple[torch.Tensor, float, float, dict]:
     """
     Compute the Bachelier price loss for one (expiry, tenor) swaption.
 
@@ -71,8 +72,11 @@ def swaption_price_loss_single(
     loss         : scalar tensor with grad
     V_market_bp  : market vol in bp (logging only)
     sigma_mod_bp : MC-implied model vol in bp (logging only)
+    stats        : dict with diagnostics (z_max, valid_fraction, etc.)
     """
-    n_steps = max(1, int(round(expiry / dt)))
+    # Adaptive step sizing for long expiries
+    dt_eff = min(dt, dt_max, expiry / 10.0)  # at least 10 steps
+    n_steps = max(1, int(round(expiry / dt_eff)))
     d       = z0.shape[1]
     half    = n_paths // 2
 
@@ -96,9 +100,20 @@ def swaption_price_loss_single(
 
     # ── Differentiable simulation ─────────────────────────────────────────────
     z_T, D_T = simulate_to_expiry_differentiable(
-        model=model, z0=z0, n_steps=n_steps, dt=dt,
+        model=model, z0=z0, n_steps=n_steps, dt=dt_eff,
         n_paths=n_paths, eps=eps, freeze_K=freeze_K,
     )    # z_T: (n_paths, d) WITH grad;  D_T: (n_paths,) detached
+
+    # ── Check for NaN in z_T immediately ──────────────────────────────────────
+    if torch.isnan(z_T).any():
+        return torch.tensor(1e6, device=device, dtype=dtype), \
+               sigma_market * 10_000, 0.0, {
+            "z_max": float("nan"),
+            "valid_frac": 0.0,
+            "n_steps": n_steps,
+            "dt_eff": dt_eff,
+            "error": "NaN in z_T"
+        }
 
     # ── Decode bond prices at expiry (grad flows through G and z_T) ──────────
     _, aux_T = model.decode_from_z(z_T, tau=None, return_aux=True)
@@ -333,6 +348,8 @@ def calibrate_second_stage(
           "pathwise D_T discounting")
     print("=" * 70)
 
+    torch.autograd.set_detect_anomaly(True)
+
     for epoch in range(n_epochs):
         model.train()
 
@@ -350,7 +367,7 @@ def calibrate_second_stage(
 
             z0 = z0_dict[date].detach()    # (1, d) — encoder frozen
 
-            loss_ij, V_mkt_bp, sigma_mod_bp = swaption_price_loss_single(
+            loss_ij, V_mkt_bp, sigma_mod_bp, stats = swaption_price_loss_single(
                 model=model, z0=z0,
                 expiry=expiry, tenor=tenor,
                 sigma_market=sigma_mkt,
@@ -367,6 +384,8 @@ def calibrate_second_stage(
                 "mkt_bp" : round(sigma_mkt * 10_000, 2),
                 "mod_bp" : round(sigma_mod_bp, 2),
                 "err_bp" : round(sigma_mod_bp - sigma_mkt * 10_000, 2),
+                "z_max"  : round(stats["z_max"], 2),
+                "valid%" : round(stats["valid_frac"] * 100, 1),
             })
 
         total_loss = total_loss / len(batch)
@@ -383,9 +402,23 @@ def calibrate_second_stage(
             reg_K      = ((model.K.N - K_N_frozen) ** 2).sum()
             total_loss = total_loss + lambda_K * reg_K
 
+        # It's crucial to check for NaN/inf loss *before* backpropagation
+        if not torch.isfinite(total_loss):
+            print(f"WARNING: Non-finite loss detected in epoch {epoch}. Skipping backward pass and optimizer step.")
+            print("Problematic batch:")
+            print(pd.DataFrame(batch_log).to_string(index=False))
+            # Detach and record the non-finite loss for history, then skip to next epoch
+            loss_val = total_loss.detach().cpu().item()
+            loss_history.append(loss_val)
+            grad_norm_history["H"].append(0.0)
+            grad_norm_history["G"].append(0.0)
+            grad_norm_history["K_N"].append(0.0)
+            continue
+
         total_loss.backward()
 
-        # ── Gradient clipping per group ───────────────────────────────────────
+        # ── Gradient clipping per group (AFTER backward, BEFORE step) ────────
+        # This is a critical step to prevent exploding gradients from destabilizing training.
         nn.utils.clip_grad_norm_(model.H.parameters(), max_norm=1.0)
         if train_G:
             nn.utils.clip_grad_norm_(model.G.parameters(), max_norm=0.5)
@@ -464,8 +497,8 @@ if __name__ == "__main__":
     # SETTINGS  — edit here
     # =========================================================================
 
-    LATENT_DIM = 3       # match the stage-1 checkpoint you are using
-    STAGE1_EP  = 3500    # epoch tag of the stage-1 checkpoint
+    LATENT_DIM = 4       # match the stage-1 checkpoint you are using
+    STAGE1_EP  = 5000    # epoch tag of the stage-1 checkpoint
     EPOCHS     = 500     # stage-2 calibration epochs
     CCY        = "EUR"
     N_PATHS    = 1024    # MC paths during training (antithetic → effective 2×)

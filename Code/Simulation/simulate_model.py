@@ -31,7 +31,7 @@ from Code.model.sigma_matrix import L_from_sigmas_rhos
 # ==========================================================
 # Checkpoint switch
 # ==========================================================
-checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim2_stable\ep200\checkpoint_dim2_ep200.pt"
+checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim4_stable\ep5000\checkpoint_dim4_ep5000.pt"
 
 
 def load_and_setup_model(device, checkpoint_path, latent_dim=2, use_double=True):
@@ -551,7 +551,6 @@ def simulate_to_expiry_differentiable(
     dt      : float,
     n_paths : int,
     eps     : torch.Tensor,    # (n_paths, n_steps, d) — PRE-DRAWN, no grad
-    freeze_K: bool = True,     # If False, K.N grad flows; K.V always frozen
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Differentiable Euler-Maruyama simulation for optimization/calibration.
@@ -601,9 +600,6 @@ def simulate_to_expiry_differentiable(
     eps : torch.Tensor
         Pre-drawn standard normal noise, shape (n_paths, n_steps, d)
         Must have requires_grad=False (frozen)
-    freeze_K : bool
-        If True (default): K frozen entirely, drift contributes no gradient
-        If False: K.N receives gradients (K.V stays frozen)
     """
     sqrt_dt = math.sqrt(dt)
 
@@ -645,4 +641,4 @@ def simulate_to_expiry_differentiable(
 
 
 if __name__ == "__main__":
-    run_simulation(checkpoint_path=checkpoint_path, ccy_filter="EUR", show_plot=True)
+    run_simulation(checkpoint_path=checkpoint_path, latent_dim=4, n_steps=120, ccy_filter="EUR", show_plot=True)

@@ -37,6 +37,8 @@ for p in [SCRIPT_DIR, PROJECT_ROOT, THESIS_ROOT]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
+import argparse
+import glob
 import numpy as np
 import pandas as pd
 
@@ -52,6 +54,27 @@ OUT_DIR    = os.path.join(SCRIPT_DIR, "swapvol_results")
 
 # Threshold for "within X bp" statistic
 WITHIN_BP  = 5.0
+
+
+# =============================================================================
+# HELPER — locate Excel produced by compare_swapvol.py
+# =============================================================================
+
+def _find_swapvol_file(checkpoint_name: str, search_dir: str) -> str:
+    """
+    Return the path of the Excel file for *checkpoint_name* in *search_dir*.
+    Raises FileNotFoundError if not found.
+    """
+    candidate = os.path.join(search_dir, f"swaption_vol_comparison_{checkpoint_name}.xlsx")
+    if os.path.isfile(candidate):
+        return candidate
+    matches = glob.glob(os.path.join(search_dir, f"*{checkpoint_name}*.xlsx"))
+    vol_matches = [m for m in matches if "vol_comparison" in os.path.basename(m)]
+    if vol_matches:
+        return vol_matches[0]
+    raise FileNotFoundError(
+        f"No swaption_vol_comparison Excel found for '{checkpoint_name}' in {search_dir!r}"
+    )
 
 
 # =============================================================================
@@ -97,19 +120,32 @@ def _metrics(df, error_bp_col, abs_error_col, mc_se_col=None, within_bp=WITHIN_B
 # BUILD SUMMARY DATA-FRAME
 # =============================================================================
 
-def build_summary(df_pre, df_post, split_date=None, within_bp=WITHIN_BP):
+def build_summary(dataframes, labels, split_date=None, within_bp=WITHIN_BP):
     """
-    Return a long-format DataFrame with one row per
-    (model, split) combination.
-    """
-    # Flat-vol baseline: estimated from training rows of df_pre
-    if split_date is not None and "split" in df_pre.columns:
-        train_rows = df_pre[df_pre["split"] == "train"]
-    else:
-        train_rows = df_pre
+    Return a long-format DataFrame with one row per (model, split) combination,
+    plus a flat-vol baseline row estimated from the first dataframe's training rows.
 
+    Parameters
+    ----------
+    dataframes : list of pd.DataFrame
+        Each DataFrame is the output of compare_swapvol.comparison_table().
+    labels : list of str
+        Human-readable label for each DataFrame.
+    split_date : str or None
+    within_bp : float
+    """
+    if not dataframes:
+        return pd.DataFrame(), np.nan
+
+    # Flat-vol baseline estimated from the first dataframe's training (or all) rows
+    df_ref = dataframes[0]
+    if split_date is not None and "split" in df_ref.columns:
+        train_rows = df_ref[df_ref["split"] == "train"]
+    else:
+        train_rows = df_ref
     sigma_flat_bp = float(train_rows["market_vol_bp"].mean())
-    for df in (df_pre, df_post):
+
+    for df in dataframes:
         df["flat_vol_bp"]       = sigma_flat_bp
         df["flat_vol_error_bp"] = df["flat_vol_bp"] - df["market_vol_bp"]
         df["abs_flat_error_bp"] = df["flat_vol_error_bp"].abs()
@@ -120,19 +156,15 @@ def build_summary(df_pre, df_post, split_date=None, within_bp=WITHIN_BP):
 
     rows = []
     for split in splits:
-        for model_label, df, err_col, abs_col, se_col in [
-            ("Stage-1 (pre)",  df_pre,  "vol_error_bp",      "abs_vol_error_bp",  "mc_se_vol_bp"),
-            ("Stage-2 (post)", df_post, "vol_error_bp",      "abs_vol_error_bp",  "mc_se_vol_bp"),
-            ("Flat-vol",       df_pre,  "flat_vol_error_bp", "abs_flat_error_bp", None),
-        ]:
-            if split == "all":
-                sub = df
-            else:
-                sub = df[df["split"] == split] if "split" in df.columns else df
-
-            m = _metrics(sub, err_col, abs_col, mc_se_col=se_col, within_bp=within_bp)
+        # Model rows
+        for label, df in zip(labels, dataframes):
+            sub = df if split == "all" else (
+                df[df["split"] == split] if "split" in df.columns else df
+            )
+            m = _metrics(sub, "vol_error_bp", "abs_vol_error_bp",
+                         mc_se_col="mc_se_vol_bp", within_bp=within_bp)
             rows.append({
-                "model"      : model_label,
+                "model"      : label,
                 "split"      : split,
                 "N"          : m["n"],
                 "MAE (bp)"   : round(m["mae"],  1) if np.isfinite(m["mae"]) else np.nan,
@@ -143,6 +175,23 @@ def build_summary(df_pre, df_post, split_date=None, within_bp=WITHIN_BP):
                                if (m["median_se"] is not None and np.isfinite(m["median_se"]))
                                else "—",
             })
+
+        # Flat-vol baseline (uses first df only)
+        sub = df_ref if split == "all" else (
+            df_ref[df_ref["split"] == split] if "split" in df_ref.columns else df_ref
+        )
+        m = _metrics(sub, "flat_vol_error_bp", "abs_flat_error_bp",
+                     mc_se_col=None, within_bp=within_bp)
+        rows.append({
+            "model"      : "Flat-vol baseline",
+            "split"      : split,
+            "N"          : m["n"],
+            "MAE (bp)"   : round(m["mae"],  1) if np.isfinite(m["mae"]) else np.nan,
+            "RMSE (bp)"  : round(m["rmse"], 1) if np.isfinite(m["rmse"]) else np.nan,
+            f"Within {within_bp:.0f} bp (%)": round(m["within_pct"], 1)
+                           if np.isfinite(m["within_pct"]) else np.nan,
+            "Median MC SE (bp)": "—",
+        })
 
     return pd.DataFrame(rows), sigma_flat_bp
 
@@ -224,35 +273,76 @@ def render_latex(df_summary, sigma_flat_bp, within_bp=WITHIN_BP, split_date=None
 # =============================================================================
 
 def run(
-    pre_xlsx   = PRE_XLSX,
-    post_xlsx  = POST_XLSX,
-    split_date = SPLIT_DATE,
-    out_dir    = OUT_DIR,
-    within_bp  = WITHIN_BP,
+    checkpoint_names,
+    labels=None,
+    split_date=None,
+    out_dir=OUT_DIR,
+    within_bp=WITHIN_BP,
 ):
+    """
+    Generate comparison table for multiple checkpoints.
+    
+    Args:
+        checkpoint_names: list of checkpoint names (without extension)
+        labels: list of human-readable labels for each model
+        split_date: train/test split date (ISO string or None)
+        out_dir: output directory
+        within_bp: threshold for "within X bp" metric
+    """
     os.makedirs(out_dir, exist_ok=True)
 
-    print(f"Loading pre  : {pre_xlsx}")
-    df_pre  = _load(pre_xlsx)
-    print(f"Loading post : {post_xlsx}")
-    df_post = _load(post_xlsx)
+    if labels is None:
+        labels = checkpoint_names
+
+    if len(checkpoint_names) != len(labels):
+        raise ValueError(f"Number of checkpoint_names ({len(checkpoint_names)}) must match number of labels ({len(labels)})")
+
+    # Load swapvol data
+    dataframes = []
+    for name in checkpoint_names:
+        try:
+            xlsx_path = _find_swapvol_file(name, out_dir)
+            print(f"Loading {name}: {xlsx_path}")
+            df = _load(xlsx_path)
+            dataframes.append(df)
+        except FileNotFoundError as e:
+            print(f"Warning: {e}")
+    
+    if not dataframes:
+        print("ERROR: No swapvol files found!")
+        return None, None
+    
+    # Update labels if some files were skipped
+    if len(dataframes) < len(checkpoint_names):
+        loaded = []
+        for i, name in enumerate(checkpoint_names):
+            try:
+                _find_swapvol_file(name, out_dir)
+                loaded.append(labels[i])
+            except FileNotFoundError:
+                pass
+        labels = loaded
 
     df_summary, sigma_flat_bp = build_summary(
-        df_pre, df_post, split_date=split_date, within_bp=within_bp
+        dataframes, labels, split_date=split_date, within_bp=within_bp
     )
 
     print("\nSummary table:")
     print(df_summary.to_string(index=False))
 
+
+    # Create tag from checkpoint names
+    tag = "_vs_".join(checkpoint_names[:2]) if len(checkpoint_names) <= 2 else f"_{len(checkpoint_names)}models"
+
     # ── Save Excel ───────────────────────────────────────────────────
-    xlsx_path = os.path.join(out_dir, "tab_vol_comparison.xlsx")
+    xlsx_path = os.path.join(out_dir, f"tab_vol_comparison_{tag}.xlsx")
     df_summary.to_excel(xlsx_path, index=False, engine="openpyxl")
     print(f"\nSaved Excel → {xlsx_path}")
 
     # ── Save LaTeX ───────────────────────────────────────────────────
     latex_str = render_latex(df_summary, sigma_flat_bp,
                              within_bp=within_bp, split_date=split_date)
-    tex_path = os.path.join(out_dir, "tab_vol_comparison.tex")
+    tex_path = os.path.join(out_dir, f"tab_vol_comparison_{tag}.tex")
     with open(tex_path, "w", encoding="utf-8") as f:
         f.write(latex_str)
     print(f"Saved LaTeX → {tex_path}")
@@ -261,6 +351,26 @@ def run(
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Generate pricing comparison table")
+    parser.add_argument("--files", nargs="+", required=True,
+                       help="Checkpoint names (e.g., checkpoint_dim4_ep3500)")
+    parser.add_argument("--labels", nargs="+", default=None,
+                       help="Labels for each model (optional)")
+    parser.add_argument("--split_date", type=str, default=None,
+                       help="Train/test split date (YYYY-MM-DD)")
+    parser.add_argument("--out_dir", type=str, default=OUT_DIR,
+                       help=f"Output directory (default: {OUT_DIR})")
+    parser.add_argument("--within_bp", type=float, default=WITHIN_BP,
+                       help=f"Threshold for 'within X bp' metric (default: {WITHIN_BP})")
+    
+    args = parser.parse_args()
+    
+    run(
+        checkpoint_names=args.files,
+        labels=args.labels,
+        split_date=args.split_date,
+        out_dir=args.out_dir,
+        within_bp=args.within_bp,
+    )
 
 
