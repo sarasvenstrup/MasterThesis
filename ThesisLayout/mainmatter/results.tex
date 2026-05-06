@@ -154,7 +154,7 @@ Table~\ref{tab:q6e_combined} quantifies this further. Normal, non-negative curve
 \begin{table}[H]
 \centering
 {\small
-\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q6e_rmse_combined_display.csv}\datqsixe
+\pgfplotstableread[col sep=comma, trim cells=true]{Figures/thesis_results/AutoencoderPerformance/Q6e_rmse_combined_display.csv}\datqsixe
 \resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
   columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, All},

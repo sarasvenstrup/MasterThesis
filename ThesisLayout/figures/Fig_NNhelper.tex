@@ -71,30 +71,30 @@
 \normalsize
 
 % ======================
-% Callout box
+% Detail box
 % ======================
 \draw[dashed, red!60, rounded corners=6pt, line width=1.5pt]
     (10.5, 5.2) rectangle (19.5, -4.8);
 \node[red!70, font=\small\bfseries] at (15.0, 4.8)
-    {Zoom: neuron $x_h^{(j)}$};
+    {Inside neuron $x_h^{(j)}$};
 
-% Leader lines from Xhj to callout box
+% Leader lines from Xhj to detail box
 \draw[dashed, red!60, line width=1.5pt] (Xhj.north east) -- (10.5,  5.2);
 \draw[dashed, red!60, line width=1.5pt] (Xhj.south east) -- (10.5, -4.8);
 
-% Mini input nodes inside callout
+% Mini input nodes inside detail box
 \node[neuron, fill=gray!40, minimum size=13mm] (CX1) at (12.0,  3.0) {\small$x_{h-1}^{(1)}$};
 \node[neuron, fill=gray!40, minimum size=13mm] (CX2) at (12.0,  1.0) {\small$x_{h-1}^{(2)}$};
 \node at (12.0, -0.3) {$\vdots$};
 \node[neuron, fill=gray!40, minimum size=13mm] (CXM) at (12.0, -2.0) {\small$x_{h-1}^{(M_{h-1})}$};
 
-% Central neuron in callout
-\node[neuron, fill=red!70, minimum size=18mm] (CN) at (15.5, 1.0) {$\psi_h(\cdot)$};
+% Central neuron in detail box
+\node[neuron, fill=red!20, minimum size=18mm] (CN) at (15.5, 1.0) {$\psi_h(\cdot)$};
 
-% Output node in callout
-\node[neuron, fill=red!20, minimum size=13mm, font=\small, inner sep=1pt] (CO) at (18.5, 1.0) {$x_h^{(j)}$};
+% Output node in detail box
+\node[neuron, fill=red!70, minimum size=13mm, font=\small, inner sep=1pt] (CO) at (18.5, 1.0) {$x_h^{(j)}$};
 
-% Weighted arrows inside callout
+% Weighted arrows inside detail box
 \draw[->, draw=darkgray] (CX1) -- node[above, sloped, font=\scriptsize] {$w_{j1}$} (CN);
 \draw[->, draw=darkgray] (CX2) -- node[above, font=\scriptsize]         {$w_{j2}$} (CN);
 \draw[->, draw=darkgray] (CXM) -- node[below, sloped, font=\scriptsize] {$w_{jM_{h-1}}$} (CN);
@@ -104,14 +104,14 @@
 \node[font=\scriptsize, darkgray] at (15.5, -0.4) {bias $b_j$};
 \draw[darkgray, thin] (15.5, -0.2) -- (15.5, 0.2);
 
-% Equation inside callout
+% Equation inside detail box
 \node[font=\small] at (15.0, -3.8)
     {$x_h^{(j)} = \psi_h\!\left(w_j^\top x_{h-1} + b_j\right)$};
 
 \end{tikzpicture}
 \caption{General feedforward network of depth $H$. Each node $x_h^{(j)}$
 denotes the $j$-th neuron in layer $h$, for $j = 1,\ldots,M_h$.
-The callout shows how neuron $x_h^{(j)}$ computes its output from the
+The detail panel shows how neuron $x_h^{(j)}$ computes its output from the
 previous layer $x_{h-1}$ via weights $w_j$, bias $b_j$, and
 activation function $\psi_h$.}
 \label{fig:nn_general}
