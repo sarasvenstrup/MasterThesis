@@ -537,10 +537,10 @@ else:
 
     def _combined_regime_table_stable(df):
         groups = [
-            ("Normal, Non-negative",   ~df["inverted"] & ~df["negative"]),
-            ("Inverted, Non-negative",  df["inverted"] & ~df["negative"]),
-            ("Normal, Negative",       ~df["inverted"] &  df["negative"]),
-            ("Inverted, Negative",      df["inverted"] &  df["negative"]),
+            ("Normal Non-negative",   ~df["inverted"] & ~df["negative"]),
+            ("Inverted Non-negative",  df["inverted"] & ~df["negative"]),
+            ("Normal Negative",       ~df["inverted"] &  df["negative"]),
+            ("Inverted Negative",      df["inverted"] &  df["negative"]),
         ]
         rows = {}
         for lbl, mask in groups:
@@ -606,7 +606,7 @@ _stable_pred_all_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
 if not os.path.exists(_stable_pred_all_path):
     print(f"  ⚠️  Q4c_stable skipped — predictions_test_all.csv not found: {_stable_pred_all_path}")
 else:
-    _df_oos = pd.read_csv(_stable_pred_all_path)
+        _df_oos = pd.read_csv(_stable_pred_all_path)
 
         _actual_cols = [c for c in _df_oos.columns if c.startswith("actual_tenor_")]
         _fitted_cols = [c for c in _df_oos.columns if c.startswith("fitted_tenor_")]
@@ -662,6 +662,6 @@ else:
         fig.tight_layout()
         save_fig(fig, "Q4c_stable_oos_scatter_regime")
 
-        print(f"  Pooled {len(_stable_pred_frames)} roll windows, {len(_df_oos)} test observations.")
+        print(f"  Loaded {len(_df_oos)} OOS test observations.")
 
 print("\nResultsGeneratorStable complete.")

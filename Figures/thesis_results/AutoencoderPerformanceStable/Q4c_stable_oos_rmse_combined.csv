@@ -1,0 +1,13 @@
+index,AUD,CAD,DKK,EUR,JPY,NOK,SEK,GBP,USD,All
+Normal Non-negative — N,99.0,82.0,22.0,14.0,28.0,83.0,23.0,80.0,87.0,518.0
+Normal Non-negative — Avg RMSE (bps),10.2,6.98,13.07,14.89,9.83,8.0,11.78,9.55,10.17,9.53
+Normal Non-negative — Std RMSE (bps),8.28,4.37,8.27,7.75,2.83,4.99,6.08,3.08,4.98,5.91
+Inverted Non-negative — N,9.0,20.0,16.0,16.0,,25.0,18.0,3.0,15.0,122.0
+Inverted Non-negative — Avg RMSE (bps),21.0,25.26,10.96,10.97,,15.56,10.42,12.59,30.88,17.4
+Inverted Non-negative — Std RMSE (bps),1.97,13.49,4.54,4.29,,8.67,4.27,3.65,14.72,11.38
+Normal Negative — N,,,69.0,78.0,80.0,,67.0,,,294.0
+Normal Negative — Avg RMSE (bps),,,8.66,11.51,20.57,,9.53,,,12.86
+Normal Negative — Std RMSE (bps),,,5.32,7.42,30.86,,5.95,,,17.59
+Inverted Negative — N,,,,,,,,,,
+Inverted Negative — Avg RMSE (bps),,,,,,,,,,
+Inverted Negative — Std RMSE (bps),,,,,,,,,,

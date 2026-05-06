@@ -1196,7 +1196,7 @@ _pred_all_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
 if not os.path.exists(_pred_all_path):
     print(f"  ⚠️  Q4c skipped — predictions_test_all.csv not found: {_pred_all_path}")
 else:
-    _df_oos = pd.read_csv(_pred_all_path)
+        _df_oos = pd.read_csv(_pred_all_path)
 
         # identify actual and fitted tenor columns
         _actual_cols = [c for c in _df_oos.columns if c.startswith("actual_tenor_")]
@@ -1247,10 +1247,10 @@ else:
         # combined 4-regime table
         def _combined_regime_table_oos(df):
             groups = [
-                ("Normal, Non-negative",   ~df["inverted"] & ~df["negative"]),
-                ("Inverted, Non-negative",  df["inverted"] & ~df["negative"]),
-                ("Normal, Negative",       ~df["inverted"] &  df["negative"]),
-                ("Inverted, Negative",      df["inverted"] &  df["negative"]),
+                ("Normal Non-negative",   ~df["inverted"] & ~df["negative"]),
+                ("Inverted Non-negative",  df["inverted"] & ~df["negative"]),
+                ("Normal Negative",       ~df["inverted"] &  df["negative"]),
+                ("Inverted Negative",      df["inverted"] &  df["negative"]),
             ]
             rows = {}
             for lbl, mask in groups:
@@ -1273,7 +1273,7 @@ else:
 
         # display version: N + Avg only, no Std, no Inverted Negative
         _oos_display_rows = [r for r in tbl_combined_oos.index
-                             if "Std" not in r and "Inverted, Negative" not in r]
+                             if "Std" not in r and "Inverted Negative" not in r]
         _disp_oos = tbl_combined_oos.loc[_oos_display_rows].copy().astype(object)
         for _idx in _disp_oos.index:
             if _idx.endswith("— N"):
@@ -1306,7 +1306,7 @@ else:
         fig.tight_layout()
         save_fig(fig, "Q4c_oos_scatter_regime")
 
-        print(f"  Pooled {len(_pred_frames)} roll windows, {len(_df_oos)} test observations.")
+        print(f"  Loaded {len(_df_oos)} OOS test observations.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1723,10 +1723,10 @@ else:
     # combined 4-regime table
     def _combined_regime_table(df):
         groups = [
-            ("Normal, Non-negative",   ~df["inverted"] & ~df["negative"]),
-            ("Inverted, Non-negative",  df["inverted"] & ~df["negative"]),
-            ("Normal, Negative",       ~df["inverted"] &  df["negative"]),
-            ("Inverted, Negative",      df["inverted"] &  df["negative"]),
+            ("Normal Non-negative",   ~df["inverted"] & ~df["negative"]),
+            ("Inverted Non-negative",  df["inverted"] & ~df["negative"]),
+            ("Normal Negative",       ~df["inverted"] &  df["negative"]),
+            ("Inverted Negative",      df["inverted"] &  df["negative"]),
         ]
         rows = {}
         for lbl, mask in groups:
@@ -1749,7 +1749,7 @@ else:
 
     # display version: N + Avg only, drop Std and the empty Inverted, Negative block
     _display_rows = [r for r in tbl_combined.index
-                     if "Std" not in r and "Inverted, Negative" not in r]
+                     if "Std" not in r and "Inverted Negative" not in r]
     _disp = tbl_combined.loc[_display_rows].copy().astype(object)
     for _idx in _disp.index:
         if _idx.endswith("— N"):
