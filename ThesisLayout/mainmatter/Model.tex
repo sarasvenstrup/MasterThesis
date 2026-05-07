@@ -24,9 +24,12 @@ where $S_t^{(i)}:=S(t,\tau_i)$ denotes the par swap rate for maturity $\tau_i$. 
 \mathbf{S}_t=(S_t^{(1)},\dots,S_t^{(M)})^\top \in \mathbb{R}^M.
 \]
 The encoder maps the observed swap curve into a low-dimensional latent state through a linear transformation,
-\[
+
+\begin{equation}
 z_t = A_1 \mathbf{S}_t,
-\]
+\label{eq:linear_encoder}
+\end{equation}
+
 where $A_1 \in \mathbb{R}^{\ell \times M}$ and
 \[
 z_t=(z_1(t),\dots,z_\ell(t))^\top \in \mathbb{R}^\ell.
