@@ -1,23 +1,36 @@
 # ==================== Joint Training: Reconstruction + Pricing ====================
 """
-Diagnostic-driven version v4 (2026-05-07) — vol-space Huber loss.
+Diagnostic-driven version v5 (2026-05-08) — frozen G, correct eig sign, H pre-scale.
 
-v3 fixed gradient flow but the relative-price loss exploded to 1e28 because
-sigma_mod was 9× sigma_mkt at warm start, the loss squared the ratio, and
-small V_market values (low-vol swaptions) made the relative error blow up.
-Recon RMSE went from 5.3 to 1011 bp in 27 epochs — the decoder was being shredded.
+v4 had three bugs that caused RMSE to explode (6→89 bp in 82 epochs) while
+pricing loss stayed flat:
 
-v4 fix: vol-space Huber loss in basis points.
-- Compare sigma_mod_bp to sigma_mkt_bp directly (not via prices)
-- Huber loss: quadratic up to 50 bp error, linear beyond → bounded gradients
-- Rescale by delta² to keep magnitude near O(1)
+  Bug 1 (FREEZE_G=False): G was trainable, so the pricing gradient reshaped G
+    to reduce annuity/swap magnitudes for simulated z_T, which destroyed the
+    reconstruction mapping encoder(x)→G→rates. The two z distributions
+    (encoder vs SDE) are incompatible targets for the same G.
+    Fix: FREEZE_G = True. All vol correction flows through H and K only.
+
+  Bug 2 (wrong sign in eigenvalue_floor_loss): relu(eig_min - |Re(λ)|) has
+    the correct gradient only for already-negative eigenvalues. For positive
+    Re(λ) the gradient pushed eigenvalues MORE positive (divergent dynamics).
+    Fix: relu(Re(λ) + eig_min) — correctly penalises Re(λ) > -eig_min.
+
+  Bug 3 (LAMBDA_PRICE=0.001 too small): with G frozen the pricing signal must
+    move H and K. At 1000× weaker than reconstruction the gradient was
+    negligible. Fix: LAMBDA_PRICE = 0.05.
+
+v5 also adds H pre-scaling (×0.1) at warm-start because H learned physical-
+measure vol (~8-10× risk-neutral) during reconstruction training.
 
 Key design:
-- Decoder G unfrozen, learning from pricing loss
-- Eigenvalue floor regularizer (|Re(λ_K)| >= EIG_MIN)
+- Decoder G FROZEN (reconstruction integrity preserved)
+- H pre-scaled ×0.1 at warm-start so first pricing eval is near market vol
+- Eigenvalue floor enforces Re(λ_K) <= -EIG_MIN (true mean reversion)
+- Vol-space Huber loss (quadratic ≤50 bp, linear beyond)
 - Two-pass decoding: no_grad probe → grad pass on survivors only
-- Vol-space Huber loss
-- Lower LR_G (1e-5) and LAMBDA_PRICE (0.05) for stability
+- N_SWAPTIONS_PER_BATCH=16 (was 4) for lower gradient variance
+- 200-epoch LR warmup before cosine decay (prevents K overshooting early)
 """
 
 import time
@@ -93,12 +106,12 @@ PRETRAIN_CKPT = os.path.join(
 )
 
 FREEZE_ENCODER = True
-FREEZE_G        = False
+FREEZE_G        = True      # MUST be True: G sees different z distributions in recon vs pricing
 FREEZE_R        = True
 
 LAMBDA_RECON = 1.0
-LAMBDA_PRICE = 0.001        # CHANGED: was 0.1
-LAMBDA_EIG   = 0.1
+LAMBDA_PRICE = 0.05         # meaningful signal to H/K now that G is frozen
+LAMBDA_EIG   = 2.0          # strong enough to actually move K away from Re(λ)≈0
 EIG_MIN      = 0.05
 
 LR_H        = 5e-5
@@ -107,7 +120,7 @@ LR_G        = 1e-5         # CHANGED: was 5e-5 — decoder needs gentler updates
 LR_ENCODER  = 1e-5
 LR_R        = 1e-5
 
-N_SWAPTIONS_PER_BATCH = 4
+N_SWAPTIONS_PER_BATCH = 16     # more swaptions per batch → lower gradient variance
 N_PATHS_PRICING       = 512
 DT_PRICING            = 1 / 12
 
@@ -120,7 +133,7 @@ HUBER_DELTA_BP   = 50.0     # transition point: quadratic below, linear above
 LOSS_SKIP_THRESH = 1e4      # skip individual swaption if its loss exceeds this
 
 USE        = "bbg"
-CCY_FILTER = "EUR"
+CCY_FILTER = "EUR"  # only EUR has swaption vol data
 
 FIGURES_DIR = os.path.join(PROJECT_ROOT, "Figures", "TrainingResults",
                            f"dim{LATENT_DIM}_{config.VARIANT}_joint", f"ep{EPOCHS}")
@@ -158,6 +171,27 @@ if PRETRAIN_CKPT and os.path.isfile(PRETRAIN_CKPT):
 else:
     print(f"WARNING: PRETRAIN_CKPT not found ({PRETRAIN_CKPT}). Training from scratch.")
 
+# H pre-scaling: warm-start model vol is ~8-10× market (sigmas learned under P,
+# not Q).  Scale the last linear layer of H down so the first pricing loss
+# evaluation starts near market vol rather than needing hundreds of epochs to
+# descend 8×.  Only sigma outputs matter; we cannot easily isolate them without
+# knowing H's architecture, so we scale the entire output layer — rho outputs
+# will also shrink but they will recover quickly since they have a separate
+# correction signal.  Adjust H_PRESCALE if diagnostics show mod_bp/mkt_bp != ~1.
+H_PRESCALE = 0.1
+_h_last_linear = None
+for _m in model.H.modules():
+    if isinstance(_m, nn.Linear):
+        _h_last_linear = _m
+if _h_last_linear is not None:
+    with torch.no_grad():
+        _h_last_linear.weight.mul_(H_PRESCALE)
+        if _h_last_linear.bias is not None:
+            _h_last_linear.bias.mul_(H_PRESCALE)
+    print(f"Pre-scaled H output layer by {H_PRESCALE} (warm-start vol ~8-10× market)")
+else:
+    print("WARNING: could not find H's last linear layer for pre-scaling")
+
 if FREEZE_ENCODER:
     for p in model.encoder.parameters():
         p.requires_grad_(False)
@@ -186,7 +220,19 @@ param_groups = [g for g in param_groups_all if any(p.requires_grad for p in g["p
 print(f"Trainable groups: {[g['name'] for g in param_groups]}")
 optim = torch.optim.Adam(param_groups)
 
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=EPOCHS, eta_min=1e-7)
+# Warmup for first 200 epochs (LR ramps from 0 → full), then cosine decay.
+# Without warmup, the eigenvalue regulariser pushes K hard from epoch 0
+# before the pricing signal has stabilised, which can overshoot.
+LR_WARMUP_EPOCHS = 200
+scheduler_warmup = torch.optim.lr_scheduler.LinearLR(
+    optim, start_factor=1e-3, end_factor=1.0, total_iters=LR_WARMUP_EPOCHS
+)
+scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+    optim, T_max=max(EPOCHS - LR_WARMUP_EPOCHS, 1), eta_min=1e-7
+)
+scheduler = torch.optim.lr_scheduler.SequentialLR(
+    optim, schedulers=[scheduler_warmup, scheduler_cosine], milestones=[LR_WARMUP_EPOCHS]
+)
 
 loss_fn_recon = nn.MSELoss()
 
@@ -210,7 +256,10 @@ def get_K_matrix(model, dim, device, dtype):
 def eigenvalue_floor_loss(M, eig_min=EIG_MIN):
     eigs = torch.linalg.eigvals(M)
     real = eigs.real
-    deficit = torch.relu(eig_min - real.abs())
+    # Mean reversion requires Re(λ) <= -eig_min (negative eigenvalues).
+    # The old relu(eig_min - |Re(λ)|) had the wrong sign gradient for positive
+    # eigenvalues — it made divergent dynamics MORE divergent.
+    deficit = torch.relu(real + eig_min)   # penalises Re(λ) > -eig_min
     return deficit.pow(2).mean()
 
 
