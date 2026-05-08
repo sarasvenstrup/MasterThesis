@@ -1,0 +1,14 @@
+\begin{table}[H]
+\centering
+\caption{Statistics of $\|z_T - z_0\|$ at $T_e = 5$Y under Euler--Maruyama simulation ($N=1000$ paths, $\Delta t = 1/12$ y) and the corresponding fraction of paths that decode to finite discount curves. The baseline SDE diverges by thirteen orders of magnitude; the stable SDE produces well-behaved displacements but the recon-only decoder cannot handle them.}
+\label{tab:displacement_summary}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Model & Mean & Median & p95 & Max & Finite \% \\
+\midrule
+\texttt{dim4_baseline} & 3.87e+13 & 1.88e+13 & 1.44e+14 & 3.3e+14 & 100.0\% \\
+\texttt{dim4_stable} & 2.15 & 1.9 & 4.72 & 7.59 & 51.2\% \\
+\bottomrule
+\end{tabular}
+\end{table}
