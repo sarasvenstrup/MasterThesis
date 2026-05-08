@@ -535,11 +535,7 @@ To better understand where the out-of-sample errors arise, we next inspect the r
 
 \begin{figure}[H]
     \centering
-    % \includegraphics[width=\textwidth]{Figures/Simulation/rolling_oos_rmse.png}
-    \fbox{\parbox{0.9\textwidth}{
-    \centering
-    Placeholder for rolling-window out-of-sample RMSE plot across test windows.
-    }}
+    \includegraphics[width=\textwidth]{Figures/Simulation/fig_rolling_rmse.png}
     \caption{Rolling out-of-sample RMSE across test windows for the baseline and stable variants at \(\ell\in\{2,3,4\}\).}
     \label{fig:rolling_oos_rmse}
 \end{figure}
@@ -551,3 +547,12 @@ The 2022 window separates the variants clearly. The dim-3 and dim-4 baseline mod
 This pattern suggests that the stable restrictions are most useful when combined with sufficient latent flexibility. In lower dimensions, the restrictions may leave too little capacity to represent a stressed rate environment. With \(\ell=4\), however, the stable model has enough latent degrees of freedom to reconstruct curves from a regime that is far from the training window, while still avoiding the unstable behaviour seen in the baseline simulations. Outside the 2022 stress period and a small number of structural-shift windows, the two variants are more similar, with errors typically in the \(7\)--\(25\) bps range.
 
 The main conclusion is therefore that the preferred specification depends on the intended use. For benign reconstruction windows, the baseline and stable variants can perform similarly. However, when the model is intended for simulation or for reconstruction under stressed market regimes, the stable variant becomes more attractive, provided the latent dimension is sufficiently large. Among the configurations considered here, the stable model with \(\ell=4\) provides the strongest combination of reconstruction accuracy, simulation stability and robustness in the 2022 stress window.
+
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Simulation/fig_regime_scatter.png}
+    \caption{Out-of-sample RMSE per observation coloured by interest rate regime for the baseline and stable variants at \(\ell=4\).}
+    \label{fig:regime_scatter}
+\end{figure}
