@@ -97,7 +97,7 @@ FREEZE_G        = False
 FREEZE_R        = True
 
 LAMBDA_RECON = 1.0
-LAMBDA_PRICE = 0.05        # CHANGED: was 0.1
+LAMBDA_PRICE = 0.001        # CHANGED: was 0.1
 LAMBDA_EIG   = 0.1
 EIG_MIN      = 0.05
 
