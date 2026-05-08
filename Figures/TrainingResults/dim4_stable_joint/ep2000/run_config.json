@@ -15,7 +15,7 @@
   "lr_r": 1e-05,
   "lr_k": 1e-05,
   "lambda_recon": 1.0,
-  "lambda_price": 0.05,
+  "lambda_price": 0.001,
   "lambda_eig": 0.1,
   "eig_min": 0.05,
   "n_swaptions_per_batch": 4,

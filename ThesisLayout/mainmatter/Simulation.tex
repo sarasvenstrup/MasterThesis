@@ -393,65 +393,45 @@ The baseline curves increase almost linearly on the log scale, showing that the 
 
 Together, Figures~\ref{fig:comp_fans} and~\ref{fig:log_growth} show both the distributional behaviour and the growth rate of the simulated latent factors. The baseline model generates latent paths that grow by many orders of magnitude, while the stable model keeps the latent factors on a substantially smaller scale over the same ten-year horizon.
 
+\item[Short-rate percentile fans.] The latent-factor diagnostics show that the baseline simulation moves to an extreme region of latent space. We next examine how this affects the simulated short rate, since each latent state is mapped to a short rate through the short-rate network.
 
-\paragraph{Short-rate fan and sample paths.}
-
-Figure~\ref{fig:comp_short_rate_fan} shows the short-rate percentile fans with eight individual sample paths overlaid. The two panels are plotted on different vertical scales because the spread of the baseline rates would compress the stable panel into a single line.
-
-The baseline short rate (left panel) departs from the initial level of approximately \(4\%\) almost immediately and saturates at the network output limits within roughly one year. The median traces a sharp transition followed by an essentially flat segment near \(+125\%\), while the percentile bands span \([-125\%,+125\%]\) for the rest of the horizon. This is the saturation pattern predicted in Section~\ref{subsec:sim_baseline_problems}: as the latent state becomes large, the centered soft-step activation in the baseline short-rate network is pushed against its bounds and the output is pinned at \(\pm\tfrac12\|W_2\|_1\). The behaviour is bounded but not stable; it is a property of the network's saturation rather than of the underlying dynamics.
-
-The stable short rate (right panel) remains within a learned bounded range of approximately \([-11\%,+11\%]\) over the full horizon. The median is roughly flat near \(+4\%\), and the inner percentile band fluctuates around this level. Individual sample paths exhibit substantial volatility but always return toward the median. The contrast with the baseline is qualitative as well as quantitative: the stable short rate exhibits a continuous distribution of plausible values, whereas the baseline distribution is degenerate at its saturation limits.
+Figure~\ref{fig:comp_short_rate_fan} shows percentile fan charts for the simulated short-rate paths. The two panels use different vertical scales because the baseline short rates vary over a much wider range than the stable short rates.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig_short_rate_fan.png}
-    \caption{Short-rate percentile fan charts with 8 sample paths overlaid.
-    Left: baseline; the rate saturates at the network output limits within
-    roughly one year and the percentile bands collapse to those limits.
-    Right: stable; the rate fluctuates within a learned bounded range of
-    approximately \([-11\%,+11\%]\) and exhibits a continuous distribution of
-    plausible values. The two panels use different vertical scales.}
+    \caption{Short-rate percentile fan charts with eight individual sample
+    paths overlaid. At each time step, percentiles are computed across the
+    \(M=500\) simulated paths. Left: baseline. Right: stable. The two panels
+    use different vertical scales because the baseline short-rate range is much
+    wider than the stable short-rate range.}
     \label{fig:comp_short_rate_fan}
 \end{figure}
 
-\paragraph{Terminal distributions.}
+The baseline short rate in the left panel moves away from its initial level of approximately \(4\%\) almost immediately and is pushed close to network-implied output limits. After roughly one year, the median is almost flat near the upper limit, while the percentile bands span approximately \([-125\%,125\%]\). This is consistent with the short-rate mechanism discussed above: when the simulated latent state becomes very large, the centered soft-step activation is pushed close to its limiting values \(\pm 1/2\). The short rate remains finite, but this boundedness comes from the activation limits rather than from stability of the simulated latent state.
 
-Figure~\ref{fig:comp_terminal} compares the terminal distributions, meaning the distributions of simulated values across paths at the final simulation time \(t=10\) years. The left panel shows a scatter of the stable terminal latent states. The cloud is concentrated within the encoded training \(\pm 2\sigma\) box (shaded), with a small number of paths sitting just outside it. The shape is mildly anisotropic, reflecting the different stationary variances along the two latent directions. The annotation in the upper-left corner reports the baseline terminal mean of \(z_1\), which is off-scale by roughly eighteen orders of magnitude; baseline points cannot be displayed on the same axes.
+The stable short rate in the right panel remains within a much narrower learned range of approximately \([-11\%,+11\%]\) over the full simulation horizon. The median stays close to the initial level, and the percentile bands fluctuate around it. Individual sample paths still move substantially, but they do not get pushed toward activation-induced upper or lower output limits in the same way as in the baseline simulation.
 
-The middle and right panels show terminal short-rate histograms. The stable distribution is broad, finite and modestly right-skewed, with a peak near \(+5\%\) and a longer tail toward negative values. The baseline distribution, by contrast, is bimodal, with essentially all mass concentrated at the saturation limits of approximately \(\pm 125\%\). This bimodality is the histogram analogue of the saturation observed in Figure~\ref{fig:comp_short_rate_fan}: each path's terminal short rate is pinned to one of the two output limits depending on the sign of the latent direction it diverged along.
+\item[Terminal distributions.] The fan charts above describe how the simulated latent factors and short rates evolve over time. We now summarise the same behaviour at the final simulation horizon. This provides a compact view of where the simulated paths end up after ten years and whether the terminal values remain close to the region represented by the training data.
+
+Figure~\ref{fig:comp_terminal} compares the terminal distributions at \(t=10\) years. The left panel shows the terminal latent states for the stable model. The shaded region marks the encoded training region using a \(\pm 2\sigma\) box around the stable model's encoded training cloud. The baseline terminal latent states are not plotted on the same axes because their values are far outside this scale; instead, the annotation reports the terminal mean of the first baseline latent factor. The middle and right panels show the terminal short-rate distributions for the stable and baseline models.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig_terminal_dist.png}
     \caption{Terminal distributions at \(t=10\) years. Left: stable terminal
-    latent-state scatter with training-support shading. The annotation
-    summarises the baseline terminal latent mean, which is off-scale by
-    roughly eighteen orders of magnitude. Centre: stable terminal short-rate
-    histogram, showing a broad, modestly right-skewed distribution. Right:
-    baseline terminal short-rate histogram, showing bimodal saturation at
-    approximately \(\pm 125\%\).}
+    latent states with the encoded training region indicated by the shaded
+    \(\pm 2\sigma\) box. The annotation reports the baseline terminal mean of
+    \(z_1\), which is off-scale. Centre: stable terminal short-rate histogram.
+    Right: baseline terminal short-rate histogram.}
     \label{fig:comp_terminal}
 \end{figure}
 
-\paragraph{Volatility bounds.}
+The stable terminal latent states remain concentrated near the encoded training region, with only a small number of paths outside the shaded \(\pm 2\sigma\) box. This is consistent with the latent-factor fan charts, where the stable latent factors remain on a controlled scale throughout the simulation horizon.
 
-Figure~\ref{fig:sigma_bounds} compares the individual volatility functions \(\sigma_i(z)\), evaluated both on the encoded training cloud (solid histograms) and on an expanded grid extending three training standard deviations beyond the training mean (dashed histograms). This diagnostic does not describe simulated paths directly; rather, it illustrates how the learned volatility functions behave when extrapolated.
+The terminal short-rate histograms confirm the behaviour seen in Figure~\ref{fig:comp_short_rate_fan}. The stable model produces a finite distribution spread over a moderate range of short-rate values. The baseline model, by contrast, produces a bimodal distribution concentrated near the two network-implied output limits. Thus, by the end of the simulation, many baseline paths have short rates close to either the upper or lower activation-induced limit.
 
-On the training cloud, the baseline volatilities are unimodal: \(\sigma_1\) is concentrated around \(0.7\)--\(1.1\) and \(\sigma_2\) around \(0.5\)--\(1.0\). The stable volatilities are markedly different: \(\sigma_1\) is bimodal, with a sharp peak near \(\sigma_{\min}\) and a broader peak around \(1.6\), while \(\sigma_2\) is concentrated in a narrow range \([0.26,0.35]\). The bimodality of stable \(\sigma_1\) suggests that the trained model has learned a state-dependent volatility regime: certain regions of latent space generate very low diffusion, while others generate substantial diffusion. This is a feature of the trained weights, not a constraint imposed by the parameterisation.
 
-The expanded-grid histograms reveal what happens off the training distribution. The baseline volatilities take values substantially outside the training range, with \(\sigma_1\) and \(\sigma_2\) reaching beyond \(4\) and \(5\) respectively. Such large diffusion coefficients amplify shocks well beyond what the model encountered during training, contributing directly to the divergence observed in earlier figures. The stable volatilities, in contrast, accumulate at the prescribed bounds \(\sigma_{\min}\) and \(\sigma_{\max}\) by construction. The bounds are doing visible work: they prevent the extrapolation pathology even though the network outputs are unrestricted.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/Simulation/fig_sigma_bounds.png}
-    \caption{Distributions of \(\sigma_i(z)\) for the baseline and stable
-    models, evaluated on the encoded training cloud (solid) and on an expanded
-    grid extending three training standard deviations beyond the training mean
-    (dashed). Stable values respect \(\sigma_{\min}=10^{-4}\) and
-    \(\sigma_{\max}=2\) by construction; baseline values can exceed both
-    sides of the training range during extrapolation.}
-    \label{fig:sigma_bounds}
-\end{figure}
 
 \paragraph{Decoded swap-rate curves at simulation horizons.}
 
@@ -460,6 +440,8 @@ The diagnostics above describe what the simulator produces inside the model. Fig
 The baseline panels (top row) are clipped to \(\pm 50\%\) for readability. At the one-year horizon, only \(12\%\) of paths produce decoded swap rates that fit within the clipped range; the remaining \(88\%\) are outside it. By the five- and ten-year horizons, \(100\%\) of paths produce numerically finite curves, but those curves lie almost entirely outside any economically plausible interest-rate range, which is why the panels appear as nearly uniform shaded bands. The ``valid paths'' annotation should be interpreted carefully: it measures only numerical finiteness of the decoded swap rates, not economic plausibility. The fact that finiteness is preserved is a consequence of the saturation behaviour described earlier --- the decoder is being evaluated at extreme latent states, but the saturation of the short-rate network keeps the resulting bond prices within float range.
 
 The stable panels (bottom row) show curves that remain on a controlled and economically interpretable scale. At the one-year horizon, the mean curve slopes upward from approximately \(4\%\) at the short end to a similar level at the long end, with a percentile band of roughly \([-2\%,+8\%]\). At later horizons the bands widen as expected for a stochastic interest-rate model: the five-year band covers approximately \([-15\%,+15\%]\) and the ten-year band a similar range, while the mean curve continues to slope gently upward. This widening reflects genuine uncertainty about future levels rather than divergence; the percentile bands are wide but bounded, and the mean curves remain interpretable.
+
+The volatility-range rows quantify a phenomenon that was already visible in Figure~\ref{fig:sigma_bounds}: on the encoded training cloud, the two models produce volatility values of comparable order, but on the expanded grid the baseline range expands by roughly an order of magnitude in both factors, while the stable range is constrained to remain within \((\sigma_{\min},\sigma_{\max})\). The structural bound on diffusion is therefore the proximate cause of the controlled simulation behaviour observed elsewhere in the table.
 
 \begin{figure}[H]
     \centering
@@ -476,50 +458,34 @@ The stable panels (bottom row) show curves that remain on a controlled and econo
 
 \end{description}
 
-%========================================================
-\subsection{In-Sample Simulation Diagnostics}
-\label{subsec:sim_summary}
-%========================================================
-
-Table~\ref{tab:sim_comparison_summary} summarises the key diagnostics for the paired simulation. The values are read directly from the simulation output file \texttt{sim\_diagnostics.csv}, so the table is regenerated automatically whenever the experiment is rerun.
-
-\begin{table}[H]
-\centering
-\small
-\caption{Simulation diagnostics for baseline and stable models
-(\(\ell=2\), ep5000, EUR, \(N=500\) paths, \(T=10\) years,
-\(\Delta t=1/12\)). Short-rate values are expressed as percentages; RMSE is
-reported in basis points.}
-\label{tab:sim_comparison_summary}
-\input{Figures/Simulation/sim_diagnostics_table.tex}
-\end{table}
-
 The diagnostics confirm what the figures show. The baseline model remains finite in floating-point arithmetic, but it is not stable as a forward scenario generator in this experiment. The latent state reaches values of order \(10^{20}\), the drift matrix has positive eigenvalues, and the short rate saturates at the network output limits. The stable model keeps the latent state on a controlled scale, has strictly negative drift eigenvalues, and produces short-rate paths that remain within a much narrower learned range.
-
-The in-sample reconstruction RMSE row should be interpreted together with the simulation results. In the present experiment, the stable checkpoint does not sacrifice reconstruction accuracy: it achieves a lower in-sample error (\(8.49\) bps versus \(17.61\) bps) while also generating much better-behaved simulated paths. The comparison should therefore not be read as a necessary fit-versus-stability trade-off, but rather as evidence that structural stability constraints can materially improve simulation behaviour without harming the fit on observed curves.
-
-The volatility-range rows quantify a phenomenon that was already visible in Figure~\ref{fig:sigma_bounds}: on the encoded training cloud, the two models produce volatility values of comparable order, but on the expanded grid the baseline range expands by roughly an order of magnitude in both factors, while the stable range is constrained to remain within \((\sigma_{\min},\sigma_{\max})\). The structural bound on diffusion is therefore the proximate cause of the controlled simulation behaviour observed elsewhere in the table.
 
 The central conclusion is that reconstruction accuracy is not sufficient on its own for simulation-based pricing. A model may reconstruct observed curves accurately while learning latent dynamics that behave poorly when iterated forward. In the present experiment, the baseline checkpoint has unstable drift eigenvalues, simulated latent states leave the encoded training region, and the decoded swap-rate curves become economically uninterpretable. The stable parameterisation materially changes this behaviour by imposing mean-reverting deterministic dynamics, explicit volatility bounds, positive-definite correlations and a learnable bounded short-rate network. These restrictions lead to simulated paths and decoded swap-rate curves that are much more suitable for model-based pricing.
 
 %========================================================
-\subsection{Out-of-Sample Generalisation}
-\label{subsec:oos_generalisation}
+\subsection{Reconstruction Accuracy}
+\label{subsec:sim_reconstruction_accuracy}
 %========================================================
 
-The analysis up to this point has examined a single in-sample window and assessed stability through forward simulation. This isolates the effect of the structural parameterisation on the simulated paths, but it does not directly answer whether the same stability properties also benefit reconstruction of swap curves the model has not seen during training. The forward simulation in Section~\ref{subsec:sim_evidence} relies on extrapolation of the decoder, the volatility network and the short-rate network into latent regions visited only after long simulation horizons. Out-of-sample reconstruction relies on extrapolation along a different axis, namely the encoded latent states of test-period swap curves drawn from a future market regime. The aim of this subsection is to test whether the stability properties identified earlier translate into more accurate out-of-sample reconstructions across multiple time periods, currencies and latent dimensions.
+The simulation results above show that the stable variant produces more controlled simulated paths than the baseline model. A natural concern is that this behaviour may come at the cost of reconstruction accuracy. The stability restrictions reduce the flexibility of the drift, volatility, correlation and short-rate specifications, so it is important to check whether the stable model can still reconstruct observed swap curves accurately.
 
-\paragraph{Experimental setup.}
-We re-run the rolling-window evaluation protocol of Chapter~\ref{chap:evaluation} for both variants. The protocol --- five-year training period, six-month test period, advanced six months at a time, yielding eighteen non-overlapping test windows from January~2015 to December~2023 --- and the per-currency RMSE metric are unchanged from there. The only modification is that both the baseline and the stable variant are estimated on every window at three latent dimensions \(\ell\in\{2,3,4\}\), giving \(18\times 2\times 3=108\) trained models in total. Each is trained for \(3{,}500\) epochs, in line with the convergence analysis underlying the evaluation chapter.
-
-\paragraph{Aggregate results.}
-Table~\ref{tab:oos_summary} reports the across-window mean and maximum of the rolling out-of-sample RMSE for each \((\ell,\text{variant})\) pair, with the corresponding mean in-sample RMSE for reference. The dim-4 stable model is the strongest configuration, with a mean rolling out-of-sample RMSE of \(12.1\) bps and a maximum of \(24.2\) bps. The improvement over the baseline is substantial at \(\ell=4\), where the average error falls from \(100.5\) to \(12.1\) bps and the worst-window error from \(691.8\) to \(24.2\) bps; the improvement at \(\ell=3\) is similar in direction although smaller in magnitude. The pattern reverses at \(\ell=2\), where the stable variant produces a higher mean out-of-sample RMSE than the baseline. The reversal is driven by a single window (2016-07-01) on which the no-arbitrage ODE used for decoding fails on eight test rows; we return to this case below. The mean in-sample errors are similar across configurations (between \(8\) and \(12\) bps) for five of the six rows, so in-sample fit alone does not predict the out-of-sample ranking.
+We first compare the in-sample reconstruction errors for the two models used in the simulation experiment. Both models are trained on the same EUR swap-rate data, use latent dimension \(\ell=2\), and are trained for \(5000\) epochs. Reconstruction accuracy is measured by the root mean squared error between observed and reconstructed swap rates, reported in basis points.
 
 \begin{table}[H]
 \centering
 \small
-\caption{Average and maximum rolling out-of-sample RMSE (bps) across the 18 rolling windows for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column reports the average rolling-window in-sample RMSE for reference. All models are trained for \(3{,}500\) epochs.}
-\label{tab:oos_summary}
+\caption{In-sample reconstruction RMSE for the baseline and stable models used in the simulation experiment. Both models are trained on EUR swap-rate data with latent dimension \(\ell=2\) for \(5000\) epochs. RMSE is reported in basis points.}
+\label{tab:sim_insample_rmse}
+\input{Figures/Simulation/sim_insample_rmse_table}
+\end{table}
+
+Table~\ref{tab:sim_insample_rmse} shows that the stable variant does not sacrifice in-sample reconstruction accuracy in this experiment. It achieves a lower in-sample RMSE than the baseline model, with \(8.49\) bps compared to \(17.61\) bps. Thus, in this experiment, the stable simulation behaviour is not obtained by giving up reconstruction accuracy.
+
+We also compare the two variants out of sample using the rolling-window evaluation protocol from Chapter~\ref{chap:evaluation}. The experiment is repeated for latent dimensions \(\ell\in\{2,3,4\}\), with each model trained for \(3500\) epochs. Reconstruction accuracy is measured by the rolling out-of-sample RMSE.
+
+\begin{table}[H]
+\centering
+\small
 \begin{tabular}{@{}llrrr@{}}
 \toprule
 \(\ell\) & Variant & Mean OOS (bps) & Max OOS (bps) & Mean IS (bps) \\
@@ -534,7 +500,40 @@ Table~\ref{tab:oos_summary} reports the across-window mean and maximum of the ro
 4 & Stable   & 12.1  & 24.2    & 8.1   \\
 \bottomrule
 \end{tabular}
+\caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column reports the average rolling-window in-sample RMSE for reference. All models are trained for \(3500\) epochs. RMSE values are reported in basis points.}
+\label{tab:oos_summary}
 \end{table}
+
+Table~\ref{tab:oos_summary} shows that the effect of the stability restrictions depends strongly on the latent dimension. For the baseline model, the mean out-of-sample RMSE worsens as the latent dimension increases, even though the mean in-sample RMSE remains low. This indicates that a good in-sample fit does not necessarily translate into robust out-of-sample reconstruction.
+
+The stable variant shows the opposite pattern. At \(\ell=2\), the restrictions appear too strong relative to the limited latent dimension, leading to both high in-sample and out-of-sample RMSE. As the latent dimension increases, the stable model gains more flexibility while retaining the same stability restrictions. Its reconstruction performance therefore improves substantially, and at \(\ell=4\) it achieves the lowest mean out-of-sample RMSE, the lowest worst-window RMSE, and the lowest mean in-sample RMSE among all configurations in Table~\ref{tab:oos_summary}. This suggests that the stability restrictions are not inherently harmful for reconstruction, but require enough latent flexibility to represent the observed curve movements.
+
+To better understand where the out-of-sample errors arise, we next inspect the rolling-window errors over time. This is useful because the average and maximum RMSE values in Table~\ref{tab:oos_summary} may be driven by a small number of stressed market periods rather than by persistent differences across all windows.
+
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=\textwidth]{Figures/Simulation/rolling_oos_rmse.png}
+    \fbox{\parbox{0.9\textwidth}{
+    \centering
+    Placeholder for rolling-window out-of-sample RMSE plot across test windows.
+    }}
+    \caption{Rolling out-of-sample RMSE across test windows for the baseline and stable variants at \(\ell\in\{2,3,4\}\).}
+    \label{fig:rolling_oos_rmse}
+\end{figure}
+
+The rolling-window errors show that a large part of the worst-case behaviour is concentrated in the second half of 2022. This period is a natural stress test for the model, since the European Central Bank, the Federal Reserve and other major central banks raised policy rates rapidly after several years of low interest rates. Models trained on the preceding five-year window were therefore fitted mostly to a low-rate environment, while the test curves came from a substantially different market regime.
+
+The 2022 window separates the variants clearly. The dim-3 and dim-4 baseline models produce large rolling RMSEs of \(296\) and \(395\) bps, respectively, with the dim-4 baseline additionally producing ten test rows with non-finite ODE output. The lower-dimensional stable variants also struggle: the dim-2 stable model reaches \(266\) bps and the dim-3 stable model reaches \(146\) bps. By contrast, the dim-4 stable model handles the period much more accurately, with a rolling RMSE of \(23.7\) bps and no decoder failures.
+
+This pattern suggests that the stable restrictions are most useful when combined with sufficient latent flexibility. In lower dimensions, the restrictions may leave too little capacity to represent a stressed rate environment. With \(\ell=4\), however, the stable model has enough latent degrees of freedom to reconstruct curves from a regime that is far from the training window, while still avoiding the unstable behaviour seen in the baseline simulations. Outside the 2022 stress period and a small number of structural-shift windows, the two variants are more similar, with errors typically in the \(7\)--\(25\) bps range.
+
+The main conclusion is therefore that the preferred specification depends on the intended use. For benign reconstruction windows, the baseline and stable variants can perform similarly. However, when the model is intended for simulation or for reconstruction under stressed market regimes, the stable variant becomes more attractive, provided the latent dimension is sufficiently large. Among the configurations considered here, the stable model with \(\ell=4\) provides the best balance between reconstruction accuracy, simulation stability and robustness in the 2022 stress window.
+
+
+%========================================================
+\subsection{Out-of-Sample Generalisation}
+\label{subsec:oos_generalisation}
+%========================================================
 
 \paragraph{Interpretation: the role of the eigenvalue spectrum.}
 The ranking in Table~\ref{tab:oos_summary} is consistent with the structure of the learned drift. For the baseline model, the maximum real eigenvalue \(\lambda_{\max}\) of the drift matrix \(M\) is positive in 18 of 18 windows at \(\ell=2\), 13 of 18 at \(\ell=3\), and 18 of 18 at \(\ell=4\); the corresponding ranges across windows are \([-2.86,5.31]\), \([-4.76,3.30]\) and \([-3.58,2.68]\). Every catastrophic baseline failure (rolling RMSE above \(50\) bps) occurs in a window with \(\lambda_{\max}>0\), so the explosive-drift mechanism identified theoretically in Section~\ref{subsec:sim_baseline_problems} is also responsible for the largest baseline errors out of sample. A positive maximum eigenvalue is, however, a necessary rather than sufficient condition for catastrophic failure: the dim-2 baseline has \(\lambda_{\max}>0\) in all eighteen windows but produces a rolling RMSE above \(50\) bps in only one of them. The interpretation is that explosive drift causes large reconstruction errors only when the encoded test states are also far enough from the training cloud for the local explosive component of \(\mathcal{K}\) to amplify the displacement; in benign windows the encoded test states remain inside the training cloud and reconstruction is accurate despite the unstable spectrum. The eigenvalue spectrum is therefore a leading indicator of failure risk rather than a guarantee of failure.
@@ -544,5 +543,6 @@ For the stable variant, all eigenvalues are non-positive by construction. The ob
 \paragraph{Interpretation: behaviour in the 2022 rate-hike cycle.}
 A single test period dominates the worst-case behaviour: the second half of 2022, during which the European Central Bank, the Federal Reserve and most other major central banks raised policy rates rapidly. Models trained on the preceding five-year window had been fitted almost entirely to a low-rate environment, so the encoded 2022 test states fall well outside the training cloud. The window functions as a natural stress test for the encoder/decoder pair, and it separates the variants cleanly. The dim-3 and dim-4 baselines fail with rolling RMSEs of \(296\) and \(395\) bps respectively, the latter additionally producing ten test rows of non-finite ODE output. The dim-2 stable also struggles, at \(266\) bps, and the dim-3 stable reaches \(146\) bps. Only the dim-4 stable model handles the period cleanly, with a rolling RMSE of \(23.7\) bps and no decoder failures. The pattern is consistent with the interpretation that the lower-dimensional stable models lack the representational capacity to extrapolate through this regime, while the higher-dimensional stable model has enough latent flexibility to reconstruct test curves outside the training distribution without the explosive baseline pathology. Outside the 2022 period and a small number of structural-shift windows, the two variants perform comparably across the eighteen rolling windows, with errors typically in the \(7\)--\(25\) bps range. The stable parameterisation therefore does not sacrifice accuracy on benign windows in order to better handle stress periods.
 
-\paragraph{Summary and chapter conclusion.}
-The rolling-window evidence reinforces the in-sample stability conclusions of this chapter. In-sample reconstruction loss alone does not predict out-of-sample behaviour: both variants achieve similar in-sample RMSE while their out-of-sample errors differ by orders of magnitude. The eigenvalue spectrum of the trained drift matrix, by contrast, is informative: a positive maximum eigenvalue is a leading indicator of catastrophic out-of-sample failure, while eigenvalues clustered very close to zero in the stable variant flag configurations that may remain numerically fragile in stress periods. Taken together with the in-sample evidence in Sections~\ref{subsec:sim_evidence} and~\ref{subsec:sim_summary}, the results show that the stable parameterisation materially improves both the forward-simulation behaviour of the model and its out-of-sample reconstruction accuracy, without sacrificing in-sample fit. Among the configurations considered, the dim-4 stable model is the most robust on both criteria, and we adopt it as the reference configuration for the application chapters that follow.
+\textcolor{red}{SHORTEN THE ABOVE - BUT MAJOR OBSERVATION! SUDDENLY THE MODEL CAN RECONSTRUCT ON STRESS PERIODS}
+
+

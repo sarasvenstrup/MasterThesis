@@ -365,28 +365,93 @@ Combining~\eqref{eq:gamma} and~\eqref{eq:theta} gives
 This identity holds for the partial derivative with respect to time to expiry, holding \(F_0\), \(\mathcal A_0\), \(K\), and \(\sigma_N\) fixed. It provides a useful analytic consistency check for the Bachelier formulas, although it is not a full calendar-time theta for a dynamic term-structure model, where the annuity and forward swap rate also evolve.
 
 %=========================================================
+\section{Why Recon-Only Training Cannot Price}
+\label{sec:why_recon_only_fails}
+%=========================================================
+
+The encoder--decoder checkpoints from Chapter~\ref{chap:encoderdecodermodel} were trained to minimise reconstruction error on observed swap curves. Reconstruction is necessary but not sufficient for derivative pricing: pricing requires that the decoder produce sensible discount curves not just at encoded points but at every latent state the simulated SDE visits. This section assembles the empirical evidence that recon-only training fails this requirement, and that the failure has two distinct mechanisms which a naive reading would conflate.
+
+\paragraph{The pricing pipeline as a probe.}
+The pricing pipeline of Section~\ref{sec:swaption_pricing_methodology} can be read as a stress test of the trained model. From an encoded $z_0$, Euler--Maruyama is run forward to expiry to obtain $z_T$, and the decoder maps $z_T$ to a discount curve. Recon-only training optimises the decoder only on the manifold $\{\mathrm{encoder}(x) : x \in \mathcal{X}_{\mathrm{train}}\}$, which is a measure-zero subset of $\mathbb{R}^\ell$. Anything outside this manifold is uncharted territory for the decoder, and Brownian increments push $z_T$ off the manifold immediately.
+
+\paragraph{Decoder robustness to off-manifold inputs.}
+We probe each decoder directly by perturbing encoded points $z = z_0 + \varepsilon \eta$, $\eta \sim \mathcal{N}(0, I_\ell)$, and measuring the fraction of decoded curves $\mathcal{G}(z)$ that are fully finite. Figure~\ref{fig:decoder_robustness} and Table~\ref{tab:decoder_robustness} show the result for all six recon-only checkpoints. Three observations stand out. First, every decoder handles $\varepsilon = 0$ perfectly, as it should --- on-manifold inputs are exactly the inputs the decoder was trained on. Second, robustness degrades sharply: by $\varepsilon \approx 0.5$, none of the decoders is reliable. Third, the stable variant is uniformly \emph{more} robust than its baseline counterpart of the same dimension, refuting the natural hypothesis that stable's tighter encoded manifold makes its decoder more brittle. The stable decoder generalises better off-manifold; it is simply that no recon-only decoder generalises far enough.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/Pricing/fig_decoder_robustness.png}
+    \caption{Decoder finite-decoding fraction versus isotropic perturbation scale $\varepsilon$. Stable decoders are uniformly more robust than baseline decoders of the same dimension, but all decoders fail rapidly beyond $\varepsilon \approx 0.5$.}
+    \label{fig:decoder_robustness}
+\end{figure}
+
+\input{Figures/Pricing/tab_decoder_robustness}
+
+\paragraph{Where the SDE actually goes.}
+Whether the recon-only decoder's failure regime is reached during real simulation depends on the SDE's displacement distribution. Simulating $1{,}000$ Euler--Maruyama paths to $T_e = 5$Y from a representative EUR curve reveals two qualitatively different pathologies in the dim4 case (Figure~\ref{fig:latent_displacement_cdf} and Table~\ref{tab:displacement_summary}). The baseline SDE diverges to $\|z_T - z_0\| \sim 10^{13}$ --- thirteen orders of magnitude larger than the stable SDE's $\|z_T - z_0\| \sim 2$. At those astronomical magnitudes the baseline decoder happens to extrapolate to finite-but-meaningless outputs, returning curves that yield the large pricing errors observed when the recon-only checkpoints are evaluated against market quotes. The stable decoder, by contrast, rejects its (well-behaved) inputs with NaNs roughly half the time, because $\|z_T - z_0\| \approx 2$ sits exactly in the regime where Figure~\ref{fig:decoder_robustness} predicts failure.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/Pricing/fig_latent_displacement_cdf.png}
+    \caption{CDF of $\|z_T - z_0\|$ at $T_e = 5$Y for dim4 baseline and stable. The baseline distribution lies at $\|z_T - z_0\| \sim 10^{13}$; the stable distribution at $\sim 2$. Note the symlog scale on the horizontal axis.}
+    \label{fig:latent_displacement_cdf}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Pricing/fig_latent_displacement_scatter.png}
+    \caption{Simulated $z_T$ at $T_e = 5$Y (red) overlaid on the encoded training cloud (blue), in the first two latent dimensions. Baseline's $z_T$ traces an unstable eigenvector; stable's $z_T$ forms a well-behaved cloud around $z_0$ but already much larger than the training cloud.}
+    \label{fig:latent_displacement_scatter}
+\end{figure}
+
+\input{Figures/Pricing/tab_displacement_summary}
+
+This is the central observation of the section: baseline and stable both fail at pricing, but for different reasons. Baseline fails by SDE divergence --- the latent state explodes to coordinates no curve ever reached --- and the decoder is permissive enough to return finite garbage. Stable fails by decoder rejection --- the latent state is well-behaved but the decoder has never been asked to handle the modest displacements the SDE produces. Two different broken things, one common consequence: recon-only training cannot price.
+
+\paragraph{$H$ versus $K$: where the displacement comes from.}
+Decomposing the full displacement into diffusion-only and drift-only contributions localises the simulation pathology in the baseline. With $H = 0$, the baseline drift alone grows exponentially over five years (Figure~\ref{fig:drift_only_displacement} and Table~\ref{tab:hk_decomposition}); the linear part of $K$ has positive eigenvalues, and the unstable eigenvector absorbs the entire trajectory. The stable variant, having all-negative eigenvalues by construction, keeps the drift-only displacement bounded. For stable the realised displacement is therefore essentially the diffusion contribution, partially damped by the mean-reverting drift acting as a restoring force.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Figures/Pricing/fig_drift_only_displacement.png}
+    \caption{$\|z_t - z_0\|$ over time with $H = 0$ (drift only). Baseline grows exponentially along the unstable eigenvector; stable stays bounded.}
+    \label{fig:drift_only_displacement}
+\end{figure}
+
+\input{Figures/Pricing/tab_hk_decomposition}
+
+\paragraph{An apparent paradox in the stable variant.}
+The stable equilibrium $z^* = -M^{-1} N_K$ for dim4 sits roughly $\|z^* - z_0\| \approx 9.5$ from a typical encoded EUR curve, against $\approx 0.2$ for baseline. One would expect strong mean-reverting drift with such a large equilibrium gap to dominate the displacement, yet the drift-only contribution at five years is only $\approx 0.14$. The resolution is that $(z^* - z_0)$ is almost entirely aligned with the slowest eigenvector of $K$. Table~\ref{tab:eigenvector_alignment} shows the projection breakdown: the slow eigenvector has timescale $1/|\lambda| \sim 600$ years and absorbs essentially all of the misplacement, so over five years $|1 - e^{\lambda T}|$ in that direction is below $0.01$. The misplacement is structural --- it sits in the direction the time-series fit cannot constrain --- but its dynamic effect at pricing-relevant horizons is negligible.
+
+\input{Figures/Pricing/tab_eigenvector_alignment}
+
+\paragraph{Implications for joint training.}
+Three conclusions follow. First, the recon-only stable model is not pricing-ready, but the failure mechanism is decoder generalisation, not SDE dynamics: stable's SDE delivers exactly the bounded latent paths it was designed for, and the displacement it produces is modest. Second, both architectures fail at pricing with recon-only training, but the comparison is asymmetric --- baseline's failure is a simulation pathology dressed up as a partial success, while stable's failure is an explicit rejection that quantifies the gap remaining to be closed. Third, joint training closes precisely that gap. The pricing loss $\mathcal{L}_{\mathrm{price}}$ introduced in the next section backpropagates through $\mathcal{G}(z_T)$, forcing the decoder to extend its working domain to the displacement range the SDE actually visits. The eigenvector-alignment result additionally suggests that adding a regulariser pushing $|\lambda_K|$ away from zero is conceptually clean --- it eliminates the slow direction in which $z^*$ can drift unconstrained --- without being strictly necessary at pricing horizons of $5$ to $10$ years.
+
+%=========================================================
 \section{Joint Training: Reconstruction and Pricing}
 \label{sec:joint_training}
 %=========================================================
 
-The model is trained with a combined objective function that optimizes both swap-curve reconstruction and swaption pricing simultaneously. This section describes the joint training methodology.
+The diagnostics of Section~\ref{sec:why_recon_only_fails} identify the gap that pricing requires the model to close: the decoder must extend its working domain from the encoded manifold to the displacement range the simulated SDE actually visits. We address this directly through a joint training objective in which the model is fine-tuned simultaneously on swap-curve reconstruction and swaption-vol fitting, starting from the recon-only stable checkpoint of Chapter~\ref{chap:encoderdecodermodel}.
 
 \subsection{Joint objective function}
 \label{subsec:joint_objective}
 
-The joint training loss combines two components:
+The joint training loss combines three components:
 \begin{equation}
     \mathcal{L}_{\mathrm{total}}(\Omega)
     =
     \lambda_{\mathrm{recon}}\,\mathcal{L}_{\mathrm{recon}}(\Omega)
     +
-    \lambda_{\mathrm{price}}\,\mathcal{L}_{\mathrm{price}}(\Omega),
+    \lambda_{\mathrm{price}}\,\mathcal{L}_{\mathrm{price}}(\Omega)
+    +
+    \lambda_{\mathrm{eig}}\,\mathcal{L}_{\mathrm{eig}}(\Omega),
     \label{eq:joint_loss}
 \end{equation}
-where \(\Omega\) denotes all trainable parameters, \(\lambda_{\mathrm{recon}}\) and \(\lambda_{\mathrm{price}}\) are weighting hyperparameters, and the two loss terms are defined as follows.
+where $\Omega$ denotes all trainable parameters. The three terms are defined as follows.
 
 \paragraph{Reconstruction loss.}
-For a mini-batch of observed swap curves \(\{S_i\}_{i \in \mathcal B}\), the reconstruction loss is the mean squared error:
+For a mini-batch of observed swap curves $\{S_i\}_{i \in \mathcal B}$, the reconstruction loss is the mean squared error
 \begin{equation}
     \mathcal{L}_{\mathrm{recon}}(\Omega)
     =
@@ -395,54 +460,64 @@ For a mini-batch of observed swap curves \(\{S_i\}_{i \in \mathcal B}\), the rec
     \|\widehat S_i - S_i\|^2,
     \label{eq:recon_loss}
 \end{equation}
-where \(\widehat S_i\) is the decoded swap curve.
+with $\widehat S_i$ the decoded swap curve. This term preserves the reconstruction quality acquired during pre-training; without it, the pricing gradient would degrade the encoder--decoder pair's fit to observed curves.
 
 \paragraph{Pricing loss.}
-For each market at-the-money swaption quote \((\sigma^{(j)}_{\mathrm{mkt}}, T_e^{(j)}, T_s^{(j)}, t^{(j)})\) in the pricing mini-batch, the target price is computed from the Bachelier formula~\eqref{eq:bachelier_atm}:
+Section~\ref{sec:swaption_pricing_methodology} delivers a Monte Carlo price $\widehat V_{\mathrm{MC}}^{(j)}$ for each ATM swaption quote $(\sigma_{\mathrm{mkt}}^{(j)}, T_e^{(j)}, T_s^{(j)}, t^{(j)})$. Inverting the ATM Bachelier formula~\eqref{eq:bachelier_atm} gives the model-implied normal volatility
 \begin{equation}
-    V^{(j)}_{\mathrm{mkt}}
+    \widehat\sigma_{N,\mathrm{mod}}^{(j)}
     =
-    \mathcal N \mathcal A^{(j)}_0
-    \frac{\sigma^{(j)}_{\mathrm{mkt}}\sqrt{T_e^{(j)}}}{\sqrt{2\pi}}.
-    \label{eq:joint_target}
+    \frac{\widehat V_{\mathrm{MC}}^{(j)}\sqrt{2\pi}}
+         {\mathcal N\,\mathcal A_0^{(j)}\sqrt{T_e^{(j)}}},
+    \label{eq:sigma_mod_inversion}
 \end{equation}
-The model Monte Carlo price \(\widehat{V}^{(j)}_{\mathrm{MC}}\) is computed via simulation as described in Section~\ref{sec:swaption_pricing_methodology}. The pricing loss is then
+which we compare directly to the market vol in basis points. Writing $e^{(j)} = 10^4 \cdot (\widehat\sigma_{N,\mathrm{mod}}^{(j)} - \sigma_{\mathrm{mkt}}^{(j)})$ for the vol-space residual and $\rho_\delta$ for the Huber penalty
+\begin{equation*}
+    \rho_\delta(e) =
+    \begin{cases}
+        \tfrac12 e^2 & |e| \le \delta, \\
+        \delta\bigl(|e| - \tfrac12 \delta\bigr) & |e| > \delta,
+    \end{cases}
+\end{equation*}
+the pricing loss is
 \begin{equation}
     \mathcal{L}_{\mathrm{price}}(\Omega)
     =
-    \frac{1}{|\mathcal B_{\mathrm{price}}|}
+    \frac{1}{\delta^2 |\mathcal B_{\mathrm{price}}|}
     \sum_{j \in \mathcal B_{\mathrm{price}}}
-    \left(
-        10\,000\cdot
-        \bigl(\widehat{V}^{(j)}_{\mathrm{MC}} - V^{(j)}_{\mathrm{mkt}}\bigr)
-    \right)^2.
+    \rho_\delta\!\left(e^{(j)}\right),
+    \qquad
+    \delta = 50\text{ bp}.
     \label{eq:pricing_loss}
 \end{equation}
-The factor \(10\,000\) rescales prices to basis-point units for numerical conditioning.
+Three design choices warrant comment. First, fitting in vol space rather than price space avoids the implicit $\mathcal A_0^2 T_e$ weighting that a squared price residual would impose on long-dated swaptions: the squared price residual scales with $\mathcal A_0\sqrt{T_e}$ pointwise and hence with $\mathcal A_0^2 T_e$ after squaring, giving a 5Y$\times$10Y swaption (with $\mathcal A_0 \approx 7.4$) roughly $13.7\times$ the loss weight of a 1Y$\times$5Y swaption (with $\mathcal A_0 \approx 4.5$). The vol-space formulation is dimensionless once expressed in basis points and is invariant to annuity scale. Second, the Huber form is used rather than a pure squared error because the warm-start vols can disagree with market vols by several hundred basis points; a squared loss would put the gradient in regions where individual residuals dominate the batch and cause exploding optimiser steps. The Huber penalty grows linearly beyond $\delta = 50$ bp, capping the per-swaption gradient. Third, the rescaling by $\delta^2$ keeps $\mathcal L_{\mathrm{price}}$ at order one when residuals are of order $\delta$, which simplifies the choice of $\lambda_{\mathrm{price}}$.
 
-\paragraph{Implicit weighting by annuity and expiry.}
-Because the market target is \(V^{(j)}_{\mathrm{mkt}}\approx\mathcal A_0^{(j)}\sigma^{(j)}_{\mathrm{mkt}}\sqrt{T_e^{(j)}}/\sqrt{2\pi}\), the price residual \(\widehat{V}^{(j)}_{\mathrm{MC}}-V^{(j)}_{\mathrm{mkt}}\) scales with \(\mathcal A_0\sqrt{T_e}\). The squared pricing loss~\eqref{eq:pricing_loss} therefore weights vol errors by \(\mathcal A_0^2 T_e\): a 5Y\(\times\)10Y swaption (\(\mathcal A_0\approx 7.36\), \(T_e=5\)) receives roughly \((7.36^2\cdot5)/(4.45^2\cdot1)\approx 13.7\times\) the loss weight of a 1Y\(\times\)5Y swaption, not just \(3.7\times\) as a linear reading might suggest. An alternative formulation that fits the vol-space error \(\widehat\sigma_{N,\mathrm{mod}}^{(j)}-\sigma^{(j)}_{\mathrm{mkt}}\) directly would remove this bias; the price-space formulation is used here because it avoids the numerical inversion step inside the training loop and admits exact gradients.
+\paragraph{Eigenvalue-floor regulariser.}
+The diagnostic of Section~\ref{sec:why_recon_only_fails} identified one near-zero eigenvalue of the linearised drift in the recon-only stable model ($|\lambda_{\min}| \approx 0.002$), corresponding to a mean-reversion timescale of order centuries. This direction is structurally underdetermined by the recon objective and lets $z^*$ drift unconstrained. We add a soft floor on the magnitude of $K$'s eigenvalues:
+\begin{equation}
+    \mathcal{L}_{\mathrm{eig}}(\Omega)
+    =
+    \frac{1}{\ell}\sum_{i=1}^{\ell}
+    \bigl(\,\max(0,\;\varepsilon_{\min} - |\Re\lambda_i|)\,\bigr)^2,
+    \label{eq:eig_loss}
+\end{equation}
+with $\varepsilon_{\min} = 0.05$ (timescale $\sim 20$ years). The penalty activates only when an eigenvalue's magnitude falls below the floor. At pricing horizons of $5$ to $10$ years this regulariser has limited effect on $\widehat V_{\mathrm{MC}}$ directly --- the alignment analysis showed the slow direction barely activates over those horizons --- but it eliminates the unconstrained drift direction, removing a long-horizon pathology that would otherwise resurface in scenario-generation applications.
 
-\subsection{Trainable parameter groups}
+\subsection{Trainable parameter groups and gradient flow}
 \label{subsec:param_groups}
 
-All parameter groups learn from both objectives:
-\begin{itemize}
-    \item \textbf{\(\mathcal H\):} the diffusion network uses the full learning rate \(\eta_H = 10^{-3}\). It controls the volatility of simulated latent paths and is therefore the primary mechanism for fitting swaption prices.
+Training starts from the dim4 stable checkpoint of Chapter~\ref{chap:encoderdecodermodel}. The encoder and short-rate network $\mathcal R$ are frozen for the entirety of joint training, and the decoder $\mathcal G$, drift $\mathcal K$, and diffusion $\mathcal H$ are fine-tuned at separately tuned learning rates (Table~\ref{tab:joint_hyperparams}). The freezing decision is deliberate. The recon-only encoder already produces a high-quality latent representation, with reconstruction RMSE of $5.3$ bp on EUR; allowing it to drift during pricing fine-tuning risks degrading recon performance without compensating gain in pricing, since the pricing-loss gradient with respect to the encoder parameters would have to travel through both the simulated path and the time-zero anchors. Likewise, the short-rate network $\mathcal R$ is frozen because it received no useful pricing signal under the recon-only objective and we want recon to remain its supervisor.
 
-    \item \textbf{\(\mathcal G\):} the decoder network is updated at a reduced learning rate \(\eta_G = 5\times 10^{-4}\). A slower decoder update preserves the bond-pricing structure acquired early in training while still allowing the forward curve at expiry to adjust.
+Within the pricing loss, the encoder pass to obtain $z_0$ and the time-zero decoder pass to obtain $F_0$ and $\mathcal A_0$ are evaluated under \texttt{no\_grad}. These two quantities serve as fixed anchors for the strike $K = F_0$ and the market price target, and propagating gradients through them would couple the strike choice to the loss minimisation, producing meaningless updates. The pricing loss therefore propagates gradients only through the simulation $z_0 \to z_T$ (touching $\mathcal K$ and $\mathcal H$) and through the expiry-time decode $\mathcal G(z_T)$.
 
-    \item \textbf{\(\mathcal K\):} the full drift network (including the drift intercept \(N_K\)) is updated at a reduced learning rate \(\eta_K = 10^{-4}\), ten times slower than the diffusion network. This keeps the mean-reversion equilibrium \(z^*=-M^{-1}N_K\) stable and prevents the drift from being overwhelmed by the larger-magnitude diffusion updates.
+A subtlety arises from the decoder generalisation problem: at warm start, roughly half of simulated paths produce non-finite outputs from $\mathcal G$. Naively backpropagating through such a batch produces NaN gradients on the shared decoder parameters even when the bad paths are masked from the loss, because PyTorch propagates $0 \times \mathrm{NaN} = \mathrm{NaN}$ through the autograd graph for masked-out branches. We therefore use a two-pass procedure: a no-gradient probe identifies which simulated $z_T$ values decode to finite curves, and a second pass with gradient enabled is run only on the surviving paths. The Monte Carlo estimator is then averaged over the survivors. As $\mathcal G$ extends its working domain during training, the survivor fraction approaches one and the two passes converge; the procedure introduces no bias in the limit. We track the survivor fraction explicitly as a training diagnostic.
 
-    \item \textbf{Encoder and \(\mathcal R\):} the encoder and short-rate network are updated at the full learning rate \(\eta = 10^{-3}\). However, within the pricing loss computation, the encoder pass (to obtain the initial latent state \(z_0\)) and the time-zero decoder pass (to obtain \(F_0\) and \(\mathcal A_0\) for the ATM strike and market price target) are evaluated under \texttt{no\_grad}. These two quantities serve as fixed anchors for the pricing target and ATM strike, so it is natural that the pricing loss does not propagate gradients back through them. In practice, the encoder and \(\mathcal R\) receive gradients exclusively from the reconstruction loss, while \(\mathcal H\), \(\mathcal K\), and \(\mathcal G\) (at expiry time) also receive gradients from the pricing loss.
-\end{itemize}
-
-\subsection{Variance reduction and gradient flow}
+\subsection{Variance reduction}
 \label{subsec:antithetic}
 
-The pricing loss component is simulation-based and therefore subject to Monte Carlo noise. To reduce variance, antithetic variates are used. The \(N_{\mathrm{MC}}/2\) pre-drawn noise realisations \(\varepsilon\) and \(-\varepsilon\) are paired. This reduces Monte Carlo variance by introducing negative dependence between paired paths while preserving the marginal distribution of the Brownian increments.
+The pricing loss is simulation-based and therefore subject to Monte Carlo noise. To reduce variance, we use antithetic variates: the $N_{\mathrm{MC}}/2$ noise realisations $\varepsilon$ and $-\varepsilon$ are paired so each path has its mirror image in the same Monte Carlo sample. This introduces negative dependence between paired paths while preserving the marginal distribution of the Brownian increments, halving the variance of any payoff that is monotone in $\varepsilon$ at no cost.
 
-The Euler step can be written as
+The Euler step
 \[
 z_{t+\Delta t}
 =
@@ -450,43 +525,40 @@ z_t
 +
 \mu(z_t;\mathcal K)\Delta t
 +
-L(z_t;\mathcal H)\varepsilon_t\sqrt{\Delta t}.
+L(z_t;\mathcal H)\varepsilon_t\sqrt{\Delta t}
 \]
-Conditional on the sampled noise \(\varepsilon_t\), this is a deterministic differentiable transformation of the model parameters. Gradients therefore propagate through the simulated latent path, through all network components, and through the diffusion matrix \(L(z_t;\mathcal H)\) at each time step.
+is, conditional on the sampled noise, a deterministic differentiable transformation of the model parameters. Gradients therefore propagate through the simulated latent path, through all unfrozen network components, and through the diffusion matrix $L(z_t;\mathcal H)$ at each time step. Gradient clipping with maximum norm $1.0$ is applied uniformly to stabilise training.
 
-All parameters receive gradients from the pricing loss. Gradient clipping with maximum norm of \(1.0\) is applied uniformly across all parameter groups to stabilize training. No path-level validity mask is applied: all simulated paths contribute equally to the Monte Carlo average, so the estimator remains an unconditional sample mean consistent with the Bachelier pricing target.
-
-\subsection{Hyperparameters and pricing pipeline}
+\subsection{Hyperparameters}
 \label{subsec:hyperparams_pipeline}
 
 \begin{table}[H]
 \centering
-\caption{Joint training hyperparameters for reconstruction and pricing.}
+\caption{Joint training hyperparameters. Learning rates are smaller than typical pre-training values because joint training is a fine-tuning step from a converged recon-only checkpoint.}
 \label{tab:joint_hyperparams}
 \begin{tabular}{@{}lll@{}}
 \toprule
 \textbf{Hyperparameter} & \textbf{Value} & \textbf{Description} \\
 \midrule
-\(\lambda_{\mathrm{recon}}\)  & 1.0        & Reconstruction loss weight \\
-\(\lambda_{\mathrm{price}}\)  & 0.3        & Pricing loss weight \\
-\(N_{\mathrm{MC}}\)            & 256        & Monte Carlo paths per swaption \\
-\(\Delta t\)                   & \(1/12\) yr & Simulation step, monthly \\
-\(\eta_H\)                     & \(10^{-3}\) & Learning rate for \(\mathcal H\) (diffusion) \\
-\(\eta_K\)                     & \(10^{-4}\) & Learning rate for \(\mathcal K\) (drift) \\
-\(\eta_G\)                     & \(5 \times 10^{-4}\) & Learning rate for \(\mathcal G\) (decoder) \\
-\(\eta\)                       & \(10^{-3}\) & Learning rate for encoder and \(\mathcal R\) \\
-\(n_{\mathrm{epochs}}\)        & 3500       & Training epochs \\
-\(|\mathcal B|\)               & 32         & Reconstruction batch size \\
-\(|\mathcal B_{\mathrm{price}}|\) & 2       & Swaptions per batch \\
-\(\mathrm{clip}\)              & 1.0        & Gradient clip norm (all groups) \\
+$\lambda_{\mathrm{recon}}$    & $1.0$              & Reconstruction loss weight \\
+$\lambda_{\mathrm{price}}$    & $0.05$             & Pricing loss weight \\
+$\lambda_{\mathrm{eig}}$      & $0.1$              & Eigenvalue floor weight \\
+$\varepsilon_{\min}$          & $0.05$             & Eigenvalue floor magnitude \\
+$\delta$                      & $50$ bp            & Huber transition (vol space) \\
+$N_{\mathrm{MC}}$             & $512$              & MC paths per swaption (antithetic) \\
+$\Delta t$                    & $1/12$ yr          & Simulation step, monthly \\
+$\eta_H$                      & $5\times 10^{-5}$  & Learning rate for $\mathcal H$ \\
+$\eta_K$                      & $1\times 10^{-5}$  & Learning rate for $\mathcal K$ \\
+$\eta_G$                      & $1\times 10^{-5}$  & Learning rate for $\mathcal G$ \\
+$n_{\mathrm{epochs}}$         & $2000$             & Training epochs \\
+$|\mathcal B|$                & $32$               & Reconstruction batch size \\
+$|\mathcal B_{\mathrm{price}}|$ & $4$              & Swaptions per batch \\
+$\mathrm{clip}$               & $1.0$              & Gradient clip norm \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The joint training pipeline consists of two phases. First, the model is trained from scratch using the combined loss~\eqref{eq:joint_loss}. Each training iteration processes one reconstruction batch and samples swaptions for the pricing loss. Second, after training, the checkpoint is evaluated on held-out data to assess both reconstruction quality and pricing accuracy. The main reported metrics are the reconstruction RMSE in basis points and the mean absolute error in swaption normal volatilities.
-
-\paragraph{Scale of the pricing loss.}
-The effective scale of the pricing component should be read together with the \(10\,000\) rescaling in~\eqref{eq:pricing_loss}: a swap-rate price of \(10^{-3}\) (one basis point) becomes \(10\) after rescaling, so the squared term is of order \(100\) per swaption. With \(\lambda_{\mathrm{price}}=0.3\) this contribution is \(30\) per swaption, broadly comparable to a reconstruction MSE of order \(10^{-4}\text{--}10^{-3}\) which is already in squared-rate units. The \(\lambda\) weights therefore balance the two objectives after accounting for the rescaling.
+The relative magnitudes of the three loss terms after rescaling are designed to keep reconstruction in primary control while letting the pricing loss exert directional pressure on $\mathcal G$, $\mathcal K$, and $\mathcal H$. The reconstruction MSE at warm start is of order $10^{-7}$ in squared-rate units; the Huber-rescaled pricing loss for an at-warm-start residual of $480$ bp is of order $9$ per swaption, contributing $\lambda_{\mathrm{price}} \cdot 9 \approx 0.45$ per batch of four swaptions. The eigenvalue penalty contributes $\lambda_{\mathrm{eig}} \cdot 5\times 10^{-4} \approx 5\times 10^{-5}$. The reconstruction term begins to dominate only after the pricing residual falls below roughly $50$ bp, which is the regime where Huber transitions to quadratic and the loss gradient softens naturally. After training, the checkpoint is evaluated on held-out swaption quotes; the main reported metrics are the reconstruction RMSE per currency in basis points and the per-cell vol-space MAE in basis points. We additionally report the survivor fraction as a sanity check that the decoder has fully extended its working domain.
 
 %=========================================================
 \section{Pricing Diagnostics}
