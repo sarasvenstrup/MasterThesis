@@ -432,25 +432,6 @@ The stable terminal latent states remain concentrated near the encoded training 
 The terminal short-rate histograms confirm the behaviour seen in Figure~\ref{fig:comp_short_rate_fan}. The stable model produces a finite distribution spread over a moderate range of short-rate values. The baseline model, by contrast, produces a bimodal distribution concentrated near the two network-implied output limits. Thus, by the end of the simulation, many baseline paths have short rates close to either the upper or lower activation-induced limit.
 
 
-\paragraph{Volatility bounds.}
-
-Figure~\ref{fig:sigma_bounds} compares the individual volatility functions \(\sigma_i(z)\), evaluated both on the encoded training cloud (solid histograms) and on an expanded grid extending three training standard deviations beyond the training mean (dashed histograms). This diagnostic does not describe simulated paths directly; rather, it illustrates how the learned volatility functions behave when extrapolated.
-
-On the training cloud, the baseline volatilities are unimodal: \(\sigma_1\) is concentrated around \(0.7\)--\(1.1\) and \(\sigma_2\) around \(0.5\)--\(1.0\). The stable volatilities are markedly different: \(\sigma_1\) is bimodal, with a sharp peak near \(\sigma_{\min}\) and a broader peak around \(1.6\), while \(\sigma_2\) is concentrated in a narrow range \([0.26,0.35]\). The bimodality of stable \(\sigma_1\) suggests that the trained model has learned a state-dependent volatility regime: certain regions of latent space generate very low diffusion, while others generate substantial diffusion. This is a feature of the trained weights, not a constraint imposed by the parameterisation.
-
-The expanded-grid histograms reveal what happens off the training distribution. The baseline volatilities take values substantially outside the training range, with \(\sigma_1\) and \(\sigma_2\) reaching beyond \(4\) and \(5\) respectively. Such large diffusion coefficients amplify shocks well beyond what the model encountered during training, contributing directly to the divergence observed in earlier figures. The stable volatilities, in contrast, accumulate at the prescribed bounds \(\sigma_{\min}\) and \(\sigma_{\max}\) by construction. The bounds are doing visible work: they prevent the extrapolation pathology even though the network outputs are unrestricted.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/Simulation/fig_sigma_bounds.png}
-    \caption{Distributions of \(\sigma_i(z)\) for the baseline and stable
-    models, evaluated on the encoded training cloud (solid) and on an expanded
-    grid extending three training standard deviations beyond the training mean
-    (dashed). Stable values respect \(\sigma_{\min}=10^{-4}\) and
-    \(\sigma_{\max}=2\) by construction; baseline values can exceed both
-    sides of the training range during extrapolation.}
-    \label{fig:sigma_bounds}
-\end{figure}
 
 \paragraph{Decoded swap-rate curves at simulation horizons.}
 
@@ -505,8 +486,6 @@ We also compare the two variants out of sample using the rolling-window evaluati
 \begin{table}[H]
 \centering
 \small
-\caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column reports the average rolling-window in-sample RMSE for reference. All models are trained for \(3500\) epochs. RMSE values are reported in basis points.}
-\label{tab:oos_summary}
 \begin{tabular}{@{}llrrr@{}}
 \toprule
 \(\ell\) & Variant & Mean OOS (bps) & Max OOS (bps) & Mean IS (bps) \\
@@ -521,6 +500,8 @@ We also compare the two variants out of sample using the rolling-window evaluati
 4 & Stable   & 12.1  & 24.2    & 8.1   \\
 \bottomrule
 \end{tabular}
+\caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column reports the average rolling-window in-sample RMSE for reference. All models are trained for \(3500\) epochs. RMSE values are reported in basis points.}
+\label{tab:oos_summary}
 \end{table}
 
 Table~\ref{tab:oos_summary} shows that the effect of the stability restrictions depends strongly on the latent dimension. For the baseline model, the mean out-of-sample RMSE worsens as the latent dimension increases, even though the mean in-sample RMSE remains low. This indicates that a good in-sample fit does not necessarily translate into robust out-of-sample reconstruction.
