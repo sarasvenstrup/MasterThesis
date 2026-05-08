@@ -1,5 +1,5 @@
 Metric,Baseline,Stable
-Max |z| across all paths,272450670275622043648.00,3.51
+Max |z| across all paths,272450670275622207488.00,3.51
 Terminal r mean,37.97%,2.30%
 Terminal r std,117.29%,5.82%
 Terminal z std,z1=32979361770808078336.000; z2=30319574794572312576.000,z1=0.668; z2=0.107
