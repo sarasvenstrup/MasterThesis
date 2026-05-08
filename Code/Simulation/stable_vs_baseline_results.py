@@ -622,7 +622,7 @@ def main():
                         h_samp = line
                 ax.axhline(0, color="black", linewidth=0.5, linestyle="--", alpha=0.35)
                 if row == 1:
-                    ax.set_xlabel("Maturity $\\tau$ (years)")
+                    ax.set_xlabel("Maturity (years)")
                 if ci == 0:
                     ax.set_ylabel("Swap rate (%)")
                 if row == 0:
@@ -647,6 +647,16 @@ def main():
                 fontsize=7,
             )
 
+        # Clip baseline row to ±50% and annotate
+        for ci in range(n_h):
+            axes[0, ci].set_ylim(-50, 50)
+            axes[0, ci].annotate(
+                "Distribution truncated at ±50%",
+                xy=(0.5, 0.97), xycoords="axes fraction",
+                ha="center", va="top", fontsize=7, color=C_BASE,
+                bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.8, ec="none"),
+            )
+
         # Shared y-axis across the Stable row
         ylims_stab = [axes[1, ci].get_ylim() for ci in range(n_h)]
         ymin_stab  = min(yl[0] for yl in ylims_stab)
@@ -661,6 +671,200 @@ def main():
         print(f"  Saved {p}")
     except Exception as e:
         print(f"  [Fig 7 yield curves] failed: {e}")
+        import traceback; traceback.print_exc()
+
+    # =================================================================
+    # FIG 8: Rolling OOS RMSE over time — Baseline (dashed) vs Stable (solid)
+    # =================================================================
+    print("\n-- Fig 8: Rolling OOS RMSE over time --")
+    try:
+        import warnings
+        import matplotlib.dates as mdates
+        from Code.load_swapdata import custom_palette
+
+        ROLL_SUBDIR  = "train5Y_test6M_step6M"
+        ROLL_EPOCHS  = 3500
+        ROLL_CLIP    = 100
+        DIM_COLORS   = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
+        EVENTS       = {
+            "GFC\n(15 Sep 2008)":       "2008-09-15",
+            "ECB QE\n(22 Jan 2015)":    "2015-01-22",
+            "COVID\n(1 Mar 2020)":      "2020-03-01",
+            "Rate hikes\n(1 Mar 2022)": "2022-03-01",
+        }
+
+        def _load_roll(dim, variant):
+            fname = f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv"
+            path  = os.path.join(
+                THESIS_ROOT, "Figures", "OOSResults", "Roll",
+                f"OOS_roll_dim{dim}_{variant}", ROLL_SUBDIR,
+                f"ep{ROLL_EPOCHS}", fname,
+            )
+            if not os.path.exists(path):
+                warnings.warn(f"Rolling CSV not found: {path}")
+                return None
+            df = pd.read_csv(path)
+            df["test_start"] = pd.to_datetime(df["test_start"])
+            return df
+
+        fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
+        _any = False
+        _x_min = _x_max = None
+
+        for ax, dim in zip(axes, [2, 3, 4]):
+            col = DIM_COLORS[dim]
+            for variant, ls, alpha, lbl in [
+                ("baseline", "--", 0.45, "Baseline"),
+                ("stable",   "-",  1.0,  "Stable"),
+            ]:
+                df = _load_roll(dim, variant)
+                if df is None:
+                    continue
+                _any = True
+                # track x range across all panels
+                _x_min = df["test_start"].min() if _x_min is None else min(_x_min, df["test_start"].min())
+                _x_max = df["test_start"].max() if _x_max is None else max(_x_max, df["test_start"].max())
+
+                avg_clipped = df["avg_rmse_bps"].clip(upper=ROLL_CLIP)
+                ax.plot(df["test_start"], avg_clipped,
+                        linewidth=1.8, color=col, linestyle=ls, alpha=alpha, label=lbl, zorder=5)
+
+                # spike value annotations
+                for _, row in df[df["avg_rmse_bps"] > ROLL_CLIP].iterrows():
+                    ax.text(row["test_start"], ROLL_CLIP - 3,
+                            f"{row['avg_rmse_bps']:.0f}",
+                            fontsize=6, ha="center", va="top",
+                            color=col, alpha=alpha, fontweight="bold", zorder=6)
+
+            ax.set_ylim(0, ROLL_CLIP)
+            ax.set_ylabel("RMSE (bps)")
+            ax.annotate(f"$\\ell={dim}$", xy=(0.99, 0.97), xycoords="axes fraction",
+                        ha="right", va="top", fontsize=10, fontweight="bold", color=col)
+            ax.legend(fontsize=8, frameon=True, facecolor="white", edgecolor="none",
+                      loc="center left", bbox_to_anchor=(1.02, 0.5))
+            ax.grid(True, alpha=0.3)
+
+            # event markers per panel (skip GFC — outside data range)
+            for ev_label, ev_date in EVENTS.items():
+                if "GFC" in ev_label:
+                    continue
+                d = pd.Timestamp(ev_date)
+                ax.axvline(d, color="0.5", linewidth=1.0, linestyle="--")
+                if dim == 2:
+                    ax.text(d, ROLL_CLIP, ev_label, fontsize=7,
+                            ha="center", va="bottom", color="0.4")
+
+        if _any:
+            axes[-1].set_xlim(_x_min - pd.Timedelta(days=120), _x_max)
+            axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+            fig.autofmt_xdate()
+            fig.tight_layout()
+            fig.subplots_adjust(right=0.88)
+            p = os.path.join(OUT_DIR, "fig_rolling_rmse.png")
+            fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
+            print(f"  Saved {p}")
+        else:
+            print("  SKIPPED — no rolling CSVs found")
+            plt.close(fig)
+    except Exception as e:
+        print(f"  [Fig 8 rolling RMSE] failed: {e}")
+        import traceback; traceback.print_exc()
+
+    # =================================================================
+    # FIG 9: Per-observation IS RMSE scatter over time, coloured by regime
+    #        ℓ=4 only — top panel = Stable, bottom panel = Baseline
+    #        Shared y-axis scale
+    # =================================================================
+    print("\n-- Fig 9: Regime scatter OOS (dim=4, stable vs baseline) --")
+    try:
+        from Code.load_swapdata import custom_palette as _cp
+        import matplotlib.dates as _mdates
+
+        _REGIME_GROUPS = [
+            ("Normal, Non-negative",   False, False, _cp[2]),
+            ("Inverted, Non-negative", True,  False, "black"),
+            ("Normal, Negative",       False, True,  "indianred"),
+            ("Inverted, Negative",     True,  True,  _cp[8]),
+        ]
+
+        _DIM9 = 4
+
+        def _load_oos_scatter(variant):
+            fname = "predictions_test_all.csv"
+            path  = os.path.join(
+                THESIS_ROOT, "Figures", "OOSResults", "Roll",
+                f"OOS_roll_dim{_DIM9}_{variant}", ROLL_SUBDIR,
+                f"ep{ROLL_EPOCHS}", fname,
+            )
+            if not os.path.exists(path):
+                print(f"  SKIPPED {variant} dim={_DIM9} — OOS predictions not found: {path}")
+                return None
+            df = pd.read_csv(path)
+            df["as_of_date"] = pd.to_datetime(df["as_of_date"])
+            actual_cols = sorted([c for c in df.columns if c.startswith("actual_")])
+            fitted_cols = sorted([c for c in df.columns if c.startswith("fitted_")])
+            actual = df[actual_cols].values
+            fitted = df[fitted_cols].values
+            df["rmse_bps"] = np.sqrt(np.mean((actual - fitted) ** 2, axis=1)) * 1e4
+            df["inv_flag"] = actual[:, 0] > actual[:, -1]
+            df["neg_flag"] = (actual < 0).any(axis=1)
+            return df
+
+        fig9, axes9 = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=True)
+
+        _legend_handles9 = []
+        for ax9, variant, lbl_model in zip(axes9,
+                                           ["baseline", "stable"],
+                                           ["Baseline", "Stable"]):
+            df9 = _load_oos_scatter(variant)
+            if df9 is None:
+                continue
+
+            dates9   = df9["as_of_date"].values
+            rmse9    = df9["rmse_bps"].values
+            inv_all9 = df9["inv_flag"].values
+            neg_all9 = df9["neg_flag"].values
+            print(f"  {variant} dim={_DIM9}: avg OOS RMSE = {rmse9.mean():.2f} bps")
+
+            for lbl, inv_flag, neg_flag, col in _REGIME_GROUPS:
+                mask = (inv_all9 == inv_flag) & (neg_all9 == neg_flag)
+                if not mask.any():
+                    continue
+                sc = ax9.scatter(dates9[mask], rmse9[mask],
+                                 s=3, alpha=0.35, color=col, marker="o",
+                                 label=lbl, zorder=3)
+                if not _legend_handles9:
+                    _legend_handles9.append(sc)
+                elif lbl not in [h.get_label() for h in _legend_handles9]:
+                    _legend_handles9.append(sc)
+
+            ax9.set_ylabel("RMSE (bps)")
+            ax9.annotate(lbl_model, xy=(0.99, 0.97), xycoords="axes fraction",
+                         ha="right", va="top", fontsize=10, fontweight="bold",
+                         color=C_STAB if variant == "stable" else C_BASE)
+            ax9.grid(True, alpha=0.3)
+
+        # single legend on the top panel
+        _all_handles9 = []
+        _all_labels9  = []
+        for lbl, inv_flag, neg_flag, col in _REGIME_GROUPS:
+            import matplotlib.lines as _mlines
+            _all_handles9.append(_mlines.Line2D([], [], marker="o", color=col,
+                                                linestyle="None", markersize=5))
+            _all_labels9.append(lbl)
+        axes9[0].legend(_all_handles9, _all_labels9,
+                        fontsize=7, frameon=True, facecolor="white", edgecolor="none",
+                        loc="center left", bbox_to_anchor=(1.02, 0.5), markerscale=1)
+
+        axes9[-1].xaxis.set_major_formatter(_mdates.DateFormatter("%Y"))
+        fig9.autofmt_xdate()
+        fig9.tight_layout()
+        fig9.subplots_adjust(right=0.88)
+        p = os.path.join(OUT_DIR, "fig_regime_scatter.png")
+        fig9.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig9)
+        print(f"  Saved {p}")
+    except Exception as e:
+        print(f"  [Fig 9 regime scatter] failed: {e}")
         import traceback; traceback.print_exc()
 
     # =================================================================
