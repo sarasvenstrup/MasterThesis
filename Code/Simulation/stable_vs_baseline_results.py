@@ -323,7 +323,6 @@ def main():
     ax.set_xticks(x_pos)
     ax.set_xticklabels([f"$\\lambda_{{{d+1}}}$" for d in range(LATENT_DIM)])
     ax.set_ylabel("Re($\\lambda$)")
-    ax.set_title(f"Eigenvalues of drift matrix $M$ ($\\ell = {LATENT_DIM}$)")
     ax.legend(fontsize=9, frameon=False); ax.grid(True, alpha=0.3, axis="y")
     fig.tight_layout()
     p = os.path.join(OUT_DIR, "fig_eigenvalues.png")
@@ -352,9 +351,7 @@ def main():
             ax.axvline(model_stab.H.sigma_max, color=C_GREY, linewidth=1, linestyle=":",
                        label=f"$\\sigma_{{\\max}}={model_stab.H.sigma_max}$")
         ax.set_xlabel(f"$\\sigma_{{{d+1}}}$"); ax.set_ylabel("Density")
-        ax.set_title(f"Volatility $\\sigma_{{{d+1}}}(z)$")
         ax.legend(fontsize=7, frameon=False); ax.grid(True, alpha=0.3)
-    fig.suptitle(f"Volatility distributions ($\\ell = {LATENT_DIM}$)", fontsize=12, y=1.02)
     fig.tight_layout()
     p = os.path.join(OUT_DIR, "fig_sigma_bounds.png")
     fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
@@ -364,32 +361,47 @@ def main():
     # FIG 3: Latent-path percentile fans  WITH  sample-path overlay
     # =================================================================
     print("\n-- Fig 3: Latent fans + sample paths --")
-    fig, axes = plt.subplots(2, LATENT_DIM, figsize=(6*LATENT_DIM, 8), squeeze=False)
-    for row, (arr, col, lbl) in enumerate([(zb, C_BASE, "Baseline"), (zs, C_STAB, "Stable")]):
+    fig, axes = plt.subplots(LATENT_DIM, 2, figsize=(12, 4 * LATENT_DIM), squeeze=False)
+    col_data_fig3    = [(zb, C_BASE, "Baseline"), (zs, C_STAB, "Stable")]
+    col_handles_fig3 = [None, None]
+
+    for col_idx, (arr, c, lbl) in enumerate(col_data_fig3):
         for dd in range(LATENT_DIM):
-            ax = axes[row, dd]
+            ax = axes[dd, col_idx]
             med = np.nanmedian(arr[:, :, dd], axis=0)
             p5  = np.nanpercentile(arr[:, :, dd],  5, axis=0)
             p95 = np.nanpercentile(arr[:, :, dd], 95, axis=0)
             p25 = np.nanpercentile(arr[:, :, dd], 25, axis=0)
             p75 = np.nanpercentile(arr[:, :, dd], 75, axis=0)
-            ax.fill_between(times, p5,  p95, color=col, alpha=0.12)
-            ax.fill_between(times, p25, p75, color=col, alpha=0.28)
-            ax.plot(times, med, color=col, linewidth=1.8, label="Median", zorder=3)
-            # Overlay individual sample paths
+            h_outer = ax.fill_between(times, p5,  p95, color=c, alpha=0.12, label="5–95 %")
+            h_inner = ax.fill_between(times, p25, p75, color=c, alpha=0.28, label="25–75 %")
+            h_med,  = ax.plot(times, med, color=c, linewidth=1.8, label="Median", zorder=3)
+            h_samp  = None
             for k, idx in enumerate(sp_idx):
-                ax.plot(times, arr[idx, :, dd], color=col, linewidth=0.5,
-                        alpha=0.45, zorder=2,
-                        label="Sample paths" if k == 0 else None)
-            ax.set_xlabel("Time (years)"); ax.set_ylabel(f"$z_{{{dd+1}}}$")
-            ax.set_title(f"{lbl} — $z_{{{dd+1}}}$")
-            ax.legend(fontsize=8, frameon=False); ax.grid(True, alpha=0.3)
-    fig.suptitle(
-        f"Latent-factor fans (5/25/50/75/95) + {N_SAMPLE_PATHS} sample paths"
-        f"  —  N={N_PATHS}, $\\ell={LATENT_DIM}$",
-        fontsize=12, y=1.01,
-    )
+                line, = ax.plot(times, arr[idx, :, dd], color=c, linewidth=0.5,
+                                alpha=0.45, zorder=2,
+                                label="Sample paths" if k == 0 else None)
+                if k == 0:
+                    h_samp = line
+            if col_idx == 0:
+                ax.set_ylabel(f"$z_{{{dd+1}}}$")
+            if dd == LATENT_DIM - 1:
+                ax.set_xlabel("Years")
+            if dd == 0:
+                axes[0, col_idx].set_title(lbl)
+                col_handles_fig3[col_idx] = [h_med, h_inner, h_outer, h_samp]
+            ax.grid(True, alpha=0.3)
+
+    for col_idx in range(2):
+        axes[LATENT_DIM - 1, col_idx].legend(
+            col_handles_fig3[col_idx],
+            ["Median", "25–75 %", "5–95 %", "Sample paths"],
+            loc="upper center", bbox_to_anchor=(0.5, -0.18),
+            frameon=False, fontsize=8, ncol=4,
+        )
+
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.2)
     p = os.path.join(OUT_DIR, "fig_latent_fans.png")
     fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
     print(f"  Saved {p}")
@@ -399,90 +411,135 @@ def main():
     # =================================================================
     print("\n-- Fig 4: Short-rate fan + sample paths --")
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=False)
-    for ax, arr, col, lbl in [
+    col_handles_fig4 = None
+    for ax_idx, (ax, arr, col, lbl) in enumerate([
         (axes[0], rb, C_BASE, "Baseline"),
         (axes[1], rs, C_STAB, "Stable"),
-    ]:
+    ]):
         med = np.nanmedian(arr, axis=0) * 100
         p5  = np.nanpercentile(arr,  5, axis=0) * 100
         p95 = np.nanpercentile(arr, 95, axis=0) * 100
         p25 = np.nanpercentile(arr, 25, axis=0) * 100
         p75 = np.nanpercentile(arr, 75, axis=0) * 100
-        ax.fill_between(times, p5,  p95, color=col, alpha=0.10, label="5–95 %")
-        ax.fill_between(times, p25, p75, color=col, alpha=0.22, label="25–75 %")
-        ax.plot(times, med, color=col, linewidth=1.8, label="Median", zorder=3)
+        h_outer = ax.fill_between(times, p5,  p95, color=col, alpha=0.10, label="5–95 %")
+        h_inner = ax.fill_between(times, p25, p75, color=col, alpha=0.22, label="25–75 %")
+        h_med,  = ax.plot(times, med, color=col, linewidth=1.8, label="Median", zorder=3)
+        h_samp  = None
         for k, idx in enumerate(sp_idx):
-            ax.plot(times, arr[idx, :] * 100, color=col, linewidth=0.5,
+            line, = ax.plot(times, arr[idx, :] * 100, color=col, linewidth=0.5,
                     alpha=0.45, zorder=2,
                     label="Sample paths" if k == 0 else None)
+            if k == 0:
+                h_samp = line
         ax.axhline(0, color="black", linewidth=0.7, linestyle="--", alpha=0.4)
-        ax.set_xlabel("Time (years)"); ax.set_ylabel("Short rate (%)")
-        ax.set_title(f"{lbl} short-rate fan")
-        ax.legend(fontsize=8, frameon=False); ax.grid(True, alpha=0.3)
-    fig.suptitle(
-        f"Short-rate fan (5/25/50/75/95) + {N_SAMPLE_PATHS} sample paths  —  N={N_PATHS}",
-        fontsize=11,
-    )
+        ax.set_xlabel("Years")
+        if ax_idx == 0:
+            ax.set_ylabel("Short rate (%)")
+            col_handles_fig4 = [h_med, h_inner, h_outer, h_samp]
+        ax.grid(True, alpha=0.3)
+
+    for ax in axes:
+        ax.legend(
+            col_handles_fig4,
+            ["Median", "25–75 %", "5–95 %", "Sample paths"],
+            loc="upper center", bbox_to_anchor=(0.5, -0.18),
+            frameon=False, fontsize=8, ncol=4,
+        )
+
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.2)
     p = os.path.join(OUT_DIR, "fig_short_rate_fan.png")
     fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
     print(f"  Saved {p}")
 
     # =================================================================
-    # FIG 5: Terminal distributions
+    # FIG 5: Terminal distributions  (2x2)
+    # rows = r(T) histogram / z scatter,  cols = Baseline / Stable
     # =================================================================
     print("\n-- Fig 5: Terminal distributions --")
     if LATENT_DIM >= 2:
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
-        z_train_stab_np = _np(z_train_stab)
-        zmean_s = z_train_stab_np.mean(axis=0); zstd_s = z_train_stab_np.std(axis=0)
-        axes[0].axhspan(zmean_s[1] - 2*zstd_s[1], zmean_s[1] + 2*zstd_s[1],
+        fig, axes = plt.subplots(2, 2, figsize=(12, 9), squeeze=False)
+        col_data_fig5 = [
+            (zb, rb, z_train_base, M_base, C_BASE, "Baseline"),
+            (zs, rs, z_train_stab, M_stab, C_STAB, "Stable"),
+        ]
+
+        for col_idx, (z_arr, r_arr, z_train, M_curr, c, lbl) in enumerate(col_data_fig5):
+            z_train_np = _np(z_train)
+            zmean = z_train_np.mean(axis=0)
+            zstd  = z_train_np.std(axis=0)
+
+            # Row 0: terminal r(T) histogram
+            ax0 = axes[0, col_idx]
+            ax0.hist(r_arr[:, -1] * 100, bins=40, alpha=0.75, color=c, density=True)
+            ax0.set_title(lbl)
+            ax0.set_xlabel("Short rate (%)")
+            if col_idx == 0:
+                ax0.set_ylabel("Density")
+            ax0.grid(True, alpha=0.3)
+
+            # Row 1: terminal latent scatter
+            ax1 = axes[1, col_idx]
+            ax1.axhspan(zmean[1] - 2*zstd[1], zmean[1] + 2*zstd[1],
                         color=C_GREY, alpha=0.12, zorder=0)
-        axes[0].axvspan(zmean_s[0] - 2*zstd_s[0], zmean_s[0] + 2*zstd_s[0],
-                        color=C_GREY, alpha=0.12, zorder=0, label="Training +/-2sigma")
-        axes[0].scatter(zs[:, -1, 0], zs[:, -1, 1], s=8, alpha=0.5, color=C_STAB,
-                        label="Stable", zorder=2)
-        # NaN-safe annotation for baseline off-scale value
-        _bz1_mean = np.nanmean(zb[:, -1, 0])
-        if np.isfinite(_bz1_mean) and abs(_bz1_mean) > 1:
-            _orders = f"~{np.log10(abs(_bz1_mean)):.0f} orders"
-        elif np.isfinite(_bz1_mean):
-            _orders = "within O(1)"
-        else:
-            _orders = "NaN"
-        axes[0].annotate(
-            f"Baseline z1 mean: {_bz1_mean:.1e}\n(off-scale by {_orders})",
-            xy=(0.03, 0.97), xycoords="axes fraction",
-            ha="left", va="top", fontsize=7, color=C_BASE,
-            bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.8),
-        )
-        axes[0].set_xlabel("$z_1$"); axes[0].set_ylabel("$z_2$")
-        axes[0].set_title(f"Stable terminal $(z_1,z_2)$ -- $t={times[-1]:.0f}$ yr")
-        axes[0].legend(fontsize=8, frameon=False); axes[0].grid(True, alpha=0.3)
+            ax1.axvspan(zmean[0] - 2*zstd[0], zmean[0] + 2*zstd[0],
+                        color=C_GREY, alpha=0.12, zorder=0)
+            for val in [zmean[0] - 2*zstd[0], zmean[0] + 2*zstd[0]]:
+                ax1.axvline(val, color=C_GREY, linewidth=1.2, linestyle="--", zorder=1)
+            for val in [zmean[1] - 2*zstd[1], zmean[1] + 2*zstd[1]]:
+                ax1.axhline(val, color=C_GREY, linewidth=1.2, linestyle="--", zorder=1)
+            h_band = ax1.axvline(zmean[0], color=C_GREY, linewidth=0, label="Training ±2σ")
+            h_scat = ax1.scatter(z_arr[:, -1, 0], z_arr[:, -1, 1],
+                                 s=8, alpha=0.5, color=c, zorder=2, label="Terminal $z$")
 
-        axes[1].hist(rs[:, -1]*100, bins=40, alpha=0.75, color=C_STAB, label="Stable", density=True)
-        axes[1].set_xlabel("Short rate (%)"); axes[1].set_title("Stable terminal $r(T)$")
-        axes[1].legend(fontsize=8, frameon=False); axes[1].grid(True, alpha=0.3)
+            # Eigenvector arrows scaled to axis range
+            import matplotlib.colors as mcolors
+            darken = 0.38 if c == C_BASE else 0.6
+            arrow_c = tuple(x * darken for x in mcolors.to_rgb(c))
+            eig_vals_f, eig_vecs_f = np.linalg.eig(M_curr)
+            xlim = ax1.get_xlim(); ylim = ax1.get_ylim()
+            scale = 0.25 * min(abs(xlim[1] - xlim[0]), abs(ylim[1] - ylim[0]))
+            ox, oy = zmean[0], zmean[1]
+            dom_i = np.argmax(np.abs(np.real(eig_vals_f)))
+            for i in [dom_i]:
+                ev  = np.real(eig_vecs_f[:, i])
+                ev  = ev / (np.linalg.norm(ev) + 1e-12)
+                lam = np.real(eig_vals_f[i])
+                dx, dy = ev * scale
+                ax1.annotate("", xy=(ox + dx, oy + dy), xytext=(ox, oy),
+                             arrowprops=dict(arrowstyle="-|>", color=arrow_c, lw=1.8),
+                             zorder=5)
+                right_perp = np.array([dy, -dx])
+                right_perp = right_perp / (np.linalg.norm(right_perp) + 1e-12) * scale * 0.25
+                ax1.text(ox + dx + right_perp[0], oy + dy + right_perp[1],
+                         f"$\\lambda_{{{i+1}}}={lam:+.3f}$",
+                         fontsize=7, color=arrow_c, ha="center", va="center", zorder=5,
+                         bbox=dict(boxstyle="round,pad=0.15", fc="white", alpha=0.7, ec="none"))
 
-        axes[2].hist(rb[:, -1]*100, bins=40, alpha=0.75, color=C_BASE, label="Baseline", density=True)
-        axes[2].set_xlabel("Short rate (%)")
-        axes[2].set_title("Baseline terminal $r(T)$ -- saturation")
-        axes[2].legend(fontsize=8, frameon=False); axes[2].grid(True, alpha=0.3)
+            ax1.set_xlabel("$z_1$")
+            if col_idx == 0:
+                ax1.set_ylabel("$z_2$")
+            ax1.grid(True, alpha=0.3)
 
-        fig.suptitle(
-            f"Terminal distributions -- baseline vs stable  (N={N_PATHS}, $\\ell={LATENT_DIM}$)",
-            fontsize=12, y=1.02,
-        )
+            # Shared legend below bottom subplot
+            ax1.legend(
+                [h_band, h_scat],
+                ["Training ±2σ", "Terminal $z$"],
+                loc="upper center", bbox_to_anchor=(0.5, -0.18),
+                frameon=False, fontsize=8, ncol=2,
+            )
+
         fig.tight_layout()
+        fig.subplots_adjust(bottom=0.15)
     else:
         fig, axes = plt.subplots(1, 2, figsize=(10, 4))
         axes[0].hist(zb[:, -1, 0], bins=40, alpha=0.5, color=C_BASE, label="Baseline")
         axes[0].hist(zs[:, -1, 0], bins=40, alpha=0.5, color=C_STAB, label="Stable")
-        axes[0].set_xlabel("$z_1$"); axes[0].set_title("Terminal $z_1$")
+        axes[0].set_xlabel("$z_1$")
         axes[0].legend(); axes[0].grid(True, alpha=0.3)
         axes[1].hist(rb[:, -1]*100, bins=40, alpha=0.5, color=C_BASE, label="Baseline")
         axes[1].hist(rs[:, -1]*100, bins=40, alpha=0.5, color=C_STAB, label="Stable")
-        axes[1].set_xlabel("Short rate (%)"); axes[1].set_title("Terminal r")
+        axes[1].set_xlabel("Short rate (%)")
         axes[1].legend(); axes[1].grid(True, alpha=0.3)
         fig.tight_layout()
     p = os.path.join(OUT_DIR, "fig_terminal_dist.png")
@@ -501,33 +558,29 @@ def main():
         zstd_stab  = _np(z_train_stab).std(axis=0)
 
     fig, axes = plt.subplots(1, LATENT_DIM, figsize=(6*LATENT_DIM, 4.5), squeeze=False)
-    fig.suptitle(
-        r"Mean $|z_d(t)|$ on $\log_{10}$ scale — exponential divergence vs bounded OU",
-        fontsize=11,
-    )
     for dd in range(LATENT_DIM):
-        ax = axes[0, dd]
         mean_abs_base = np.maximum(np.nanmean(np.abs(zb[:, :, dd]), axis=0), 1e-12)
         mean_abs_stab = np.maximum(np.nanmean(np.abs(zs[:, :, dd]), axis=0), 1e-12)
+        support_level = np.log10(2 * zstd_stab[dd] + abs(zmean_stab[dd]))
+
+        ax = axes[0, dd]
         ax.plot(times, np.log10(mean_abs_base), color=C_BASE, linewidth=2.0, label="Baseline")
         ax.plot(times, np.log10(mean_abs_stab), color=C_STAB, linewidth=2.0, label="Stable")
-        support_level = np.log10(2 * zstd_stab[dd] + abs(zmean_stab[dd]))
         ax.axhline(support_level, color=C_GREY, linestyle="--", linewidth=1.0,
-                   label=r"Training $\pm 2\sigma$ level")
-        ax.set_xlabel("Time (years)")
-        ax.set_ylabel(r"$\log_{10}(\mathrm{mean}\;|z_d|)$")
+                   label="Training boundary")
         ax.set_title(f"$z_{{{dd+1}}}$ growth")
-        ax.legend(fontsize=8, frameon=False, loc="lower right"); ax.grid(True, alpha=0.3)
-        final_dec_base = np.log10(max(mean_abs_base[-1], 1e-12))
-        final_dec_stab = np.log10(max(mean_abs_stab[-1], 1e-12))
-        ax.annotate(
-            f"Baseline final: ~$10^{{{final_dec_base:.0f}}}$\n"
-            f"Stable final:   ~$10^{{{final_dec_stab:.1f}}}$",
-            xy=(0.03, 0.95), xycoords="axes fraction",
-            ha="left", va="top", fontsize=8, color="black",
-            bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.7),
-        )
+        ax.set_xlabel("Years")
+        if dd == 0:
+            ax.set_ylabel(r"$\log_{10}(\mathrm{mean}\;|z_d|)$")
+        ax.grid(True, alpha=0.3)
+
+    # shared legend to the right of the second column
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels,
+               loc="center left", bbox_to_anchor=(0.88, 0.5),
+               frameon=False, fontsize=8)
     fig.tight_layout()
+    fig.subplots_adjust(right=0.85)
     p = os.path.join(OUT_DIR, "fig_log_growth.png")
     fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
     print(f"  Saved {p}")
@@ -542,7 +595,10 @@ def main():
 
         n_h = len(CURVE_HORIZONS)
         fig, axes = plt.subplots(2, n_h, figsize=(5.5*n_h, 8), squeeze=False)
-        YIELD_CLIP = 50.0   # clip y-axis to [-50%, 50%] so baseline panels are readable
+        YIELD_CLIP = 50.0   # currently unused — clipping disabled
+
+        horizon_labels = {h: f"{h}Y" for h in CURVE_HORIZONS}
+        row_handles = [None, None]
 
         for row, (curves, col_model, lbl_model) in enumerate([
             (curves_base, C_BASE, "Baseline"),
@@ -552,42 +608,54 @@ def main():
                 ax  = axes[row, ci]
                 cd  = curves[h]
                 tau = cd["tau"]
-                hc  = col_model   # colour follows model row (consistent with other figures)
-                ax.fill_between(tau, cd["p25"]*100, cd["p75"]*100,
+                hc  = col_model
+                h_inner = ax.fill_between(tau, cd["p25"]*100, cd["p75"]*100,
                                 color=hc, alpha=0.25, label="25-75 %")
-                ax.fill_between(tau, cd["p5"]*100,  cd["p95"]*100,
+                h_outer = ax.fill_between(tau, cd["p5"]*100,  cd["p95"]*100,
                                 color=hc, alpha=0.10, label="5-95 %")
-                ax.plot(tau, cd["mean"]*100, color=hc, linewidth=2.0, label="Mean", zorder=3)
+                h_mean, = ax.plot(tau, cd["mean"]*100, color=hc, linewidth=2.0, label="Mean", zorder=3)
+                h_samp = None
                 for k, samp in enumerate(cd["samples"]):
-                    ax.plot(tau, samp*100, color=hc, linewidth=0.5, alpha=0.5,
+                    line, = ax.plot(tau, samp*100, color=hc, linewidth=0.5, alpha=0.5,
                             zorder=2, label="Sample paths" if k == 0 else None)
+                    if k == 0:
+                        h_samp = line
                 ax.axhline(0, color="black", linewidth=0.5, linestyle="--", alpha=0.35)
-                ax.set_xlabel("Maturity $\\tau$ (years)")
-                ax.set_ylabel("Swap rate (%)")
-                # Clip y-axis if bands or mean exceed threshold
-                extreme_pct = max(
-                    np.nanmax(np.abs(cd["p95"] * 100)),
-                    np.nanmax(np.abs(cd["p5"]  * 100)),
-                    np.nanmax(np.abs(cd["mean"] * 100)),
-                )
-                if lbl_model == "Baseline" and extreme_pct > YIELD_CLIP:
-                    ax.set_ylim(-YIELD_CLIP, YIELD_CLIP)
-                    ax.annotate(
-                        f"y-axis clipped to $\\pm${YIELD_CLIP:.0f}%\n"
-                        f"(valid paths: {cd['valid_frac']*100:.0f}%)",
-                        xy=(0.97, 0.97), xycoords="axes fraction",
-                        ha="right", va="top", fontsize=7, color=C_BASE,
-                        bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.8),
-                    )
-                ax.set_title(f"{lbl_model} -- $t = {h}$ yr")
-                ax.legend(fontsize=7, frameon=False)
+                if row == 1:
+                    ax.set_xlabel("Maturity $\\tau$ (years)")
+                if ci == 0:
+                    ax.set_ylabel("Swap rate (%)")
+                if row == 0:
+                    ax.set_title(horizon_labels[h])
+                if ci == 0:
+                    row_handles[row] = [h_mean, h_inner, h_outer, h_samp]
                 ax.grid(True, alpha=0.3)
 
-        fig.suptitle(
-            f"Decoded swap-rate curves at simulation horizons  (N={N_PATHS}, $\\ell={LATENT_DIM}$)",
-            fontsize=12, y=1.01,
-        )
+        for row, lbl_model in enumerate(["Baseline", "Stable"]):
+            axes[row, 0].annotate(
+                lbl_model,
+                xy=(0, 0.5), xycoords="axes fraction",
+                xytext=(-0.18, 0.5), textcoords="axes fraction",
+                ha="center", va="center", fontsize=11, fontweight="bold",
+                rotation=90,
+            )
+            axes[row, -1].legend(
+                row_handles[row],
+                ["Mean", "25-75 %", "5-95 %", "Sample paths"],
+                loc="center left", bbox_to_anchor=(1.02, 0.5),
+                frameon=True, facecolor="white", edgecolor="none",
+                fontsize=7,
+            )
+
+        # Shared y-axis across the Stable row
+        ylims_stab = [axes[1, ci].get_ylim() for ci in range(n_h)]
+        ymin_stab  = min(yl[0] for yl in ylims_stab)
+        ymax_stab  = max(yl[1] for yl in ylims_stab)
+        for ci in range(n_h):
+            axes[1, ci].set_ylim(ymin_stab, ymax_stab)
+
         fig.tight_layout()
+        fig.subplots_adjust(right=0.85)
         p = os.path.join(OUT_DIR, "fig_yield_curves.png")
         fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
         print(f"  Saved {p}")
