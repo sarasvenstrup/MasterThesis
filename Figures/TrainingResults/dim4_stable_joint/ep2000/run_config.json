@@ -5,7 +5,7 @@
   "variant": "stable",
   "epochs": 2000,
   "batch_size": 32,
-  "pretrain_ckpt": "C:\\Users\\Bruger\\PycharmProjects\\MasterThesis\\Figures\\TrainingResults\\dim4_stable\\ep5000\\checkpoint_dim4_ep5000.pt",
+  "pretrain_ckpt": "/Users/sarasvenstrup/PycharmProjects/MasterThesis/Figures/TrainingResults/dim4_stable/ep5000/checkpoint_dim4_ep5000.pt",
   "freeze_encoder": true,
   "freeze_G": true,
   "freeze_R": true,
