@@ -1,31 +1,35 @@
-# ==================== Straddle-Based Drift-Bias Correction ====================
+# ==================== Straddle-Based Drift-Bias Diagnostic ====================
 """
-Root cause: the model simulates under the physical measure P, but market
-swaption prices are risk-neutral (Q-measure) expectations.  The P-measure
-drift K(z) systematically moves z toward z*, creating a directional bias
-in the simulated swap rate distribution.
+Diagnostic experiment: test whether the residual pricing error is driven by a
+directional forward-rate bias in K.
 
-For a payer swaption (receives max(S_T - K, 0)):
-  V_pay  = E^P[D_T A_T max(S_T - F_0, 0)]   -- inflated if E^P[S_T] > F_0
+Background
+----------
+The model assumes Q-measure dynamics  dz = K(z)dt + H(z)dW^Q.  K is identified
+by minimising the cross-sectional swap-curve reconstruction loss, NOT by enforcing
+the annuity-measure martingale condition E^{Q_A}[S_T] = F_0.  As a result, the
+model's Q may not centre S_T on the forward swap rate F_0, creating a forward bias.
 
-For a receiver (receives max(K - S_T, 0)):
-  V_rec  = E^P[D_T A_T max(F_0 - S_T, 0)]   -- deflated if E^P[S_T] > F_0
+For a payer swaption:
+  V_pay  = E^Q[D_T A_T max(S_T - F_0, 0)]   -- inflated if E^{Q_A}[S_T] > F_0
 
-Put-call parity under P:
-  V_pay - V_rec = A_0 * (E^{P,A}[S_T] - F_0)  != 0  if P != Q^A
+For a receiver:
+  V_rec  = E^Q[D_T A_T max(F_0 - S_T, 0)]   -- inflated if E^{Q_A}[S_T] < F_0
 
-The STRADDLE (V_pay + V_rec) cancels the directional bias:
-  V_straddle = V_pay + V_rec  =  symmetric w.r.t. the mean of S_T
+Put-call parity:
+  V_pay - V_rec = A_0 * (E^{Q_A}[S_T] - F_0)  != 0  when K is mis-calibrated
+
+The STRADDLE (V_pay + V_rec) would cancel the directional component IF the bias
+were uniformly signed across cells.
 
 Symmetric implied vol:
   sigma_straddle = (V_pay + V_rec)/2 * sqrt(2*pi) / (A_0 * sqrt(T_e))
 
-Under correctly specified Q:  sigma_straddle == sigma_payer == sigma_receiver
-Under our P-biased model:     sigma_payer  > sigma_straddle > sigma_receiver
-
-If sigma_straddle is closer to sigma_market, this confirms:
-  1. The pricing error is driven by the P-measure drift bias (not vol mis-calibration)
-  2. Symmetric straddle pricing partially corrects for the P->Q mismatch
+Under a correctly specified Q:  sigma_straddle == sigma_payer
+Under a bias with consistent sign: sigma_straddle < sigma_payer (cancellation)
+Finding (result): OOS MAE jumps 75 -> 287 bp under straddle convention, because
+the forward bias is SIGN-INCONSISTENT across cells (+239 bp for 5Yx1Y,
+-401 bp for 1Yx5Y).  Straddle amplifies rather than cancels the error.
 
 This script:
   1. Re-prices every swaption from baseline_vols_s1.csv as BOTH payer AND receiver
