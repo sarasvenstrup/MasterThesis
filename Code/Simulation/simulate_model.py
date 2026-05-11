@@ -551,6 +551,7 @@ def simulate_to_expiry_differentiable(
     dt      : float,
     n_paths : int,
     eps     : torch.Tensor,    # (n_paths, n_steps, d) — PRE-DRAWN, no grad
+    k_override=None,           # optional Q-measure drift module; if None uses model.K
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Differentiable Euler-Maruyama simulation for optimization/calibration.
@@ -578,8 +579,8 @@ def simulate_to_expiry_differentiable(
         sigmas, rhos = model.H(z)
         L = L_from_sigmas_rhos(sigmas, rhos, validate=False)    # (n_paths, d, d)
 
-        # Drift — gradients always flow through K
-        drift = model.K(z) * dt
+        # Drift — use k_override (K^Q) if provided, else model.K (K^P)
+        drift = (k_override(z) if k_override is not None else model.K(z)) * dt
 
         # Euler step with fixed noise
         dW    = eps[:, t, :] * sqrt_dt          # (n_paths, d)

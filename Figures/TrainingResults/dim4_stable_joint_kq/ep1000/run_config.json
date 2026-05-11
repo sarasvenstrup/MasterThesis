@@ -1,0 +1,20 @@
+{
+  "version": "kq_v1",
+  "seed": 0,
+  "latent_dim": 4,
+  "variant": "stable",
+  "epochs": 1000,
+  "n_steps_per_epoch": 8,
+  "pretrain_ckpt": "C:\\Users\\Bruger\\PycharmProjects\\MasterThesis\\Figures\\TrainingResults\\dim4_stable\\ep5000\\checkpoint_dim4_ep5000.pt",
+  "lr_kq": 0.0001,
+  "lr_h": 5e-05,
+  "lambda_price": 1.0,
+  "lambda_eig": 2.0,
+  "eig_min": 0.05,
+  "n_swaptions_per_batch": 16,
+  "n_paths_pricing": 512,
+  "dt_pricing": 0.08333333333333333,
+  "loss": "mse_vol_bp_div100",
+  "ccy_filter": "EUR",
+  "save_every": 200
+}

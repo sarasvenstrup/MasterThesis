@@ -1,0 +1,24 @@
+\begin{table}[H]
+\centering
+\caption{Per-cell OOS vol MAE (bp): baseline expiry-level OLS (payer at $K=F_0$, ATM formula) versus forward-adjusted calibration (payer re-priced at $K=F_{\mathrm{model}}$, where $F_{\mathrm{model}} = F_0 + (V_{\mathrm{pay}}-V_{\mathrm{rec}})/\mathcal{A}_0$). The forward adjustment decouples the model's true volatility from the forward bias in $\mathcal{K}$, producing a cleaner vol signal for calibration.}
+\label{tab:fwd_adj_comparison}
+\begin{tabular}{@{}ccrrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten} & \textbf{Baseline (bp)} & \textbf{Fwd-adj (bp)} & \textbf{Improvement (bp)} \\
+\midrule
+1 & 1 & 17 & 24 & $-7$ \\
+1 & 5 & 14 & 49 & $-34$ \\
+1 & 10 & 144 & 154 & $-10$ \\
+\addlinespace[2pt]
+5 & 1 & 6 & 10 & $-3$ \\
+5 & 5 & 61 & 70 & $-9$ \\
+5 & 10 & 55 & 60 & $-4$ \\
+\addlinespace[2pt]
+10 & 1 & 44 & 47 & $-3$ \\
+10 & 5 & 45 & 45 & $-0$ \\
+10 & 10 & 44 & 43 & $+0$ \\
+\midrule
+\textbf{Overall} & & 53 & 60 & $-7$ \\
+\bottomrule
+\end{tabular}
+\end{table}
