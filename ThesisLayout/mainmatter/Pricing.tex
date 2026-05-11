@@ -7,7 +7,7 @@ The previous chapter examined whether the trained encoder--decoder model can be 
 
 The encoder--decoder framework provides a natural simulation-based pricing setup. Starting from an observed swap curve, the encoder gives an initial latent state. The learned risk-neutral dynamics are then simulated forward, and the decoder maps each simulated latent state into an arbitrage-free zero-coupon bond curve. This makes it possible to compute pathwise swap rates, annuities and discounted payoffs.
 
-The chapter proceeds as follows. Section~\ref{sec:swaption_pricing_methodology} describes how European swaptions are priced by Monte Carlo using the simulated latent paths and decoded bond curves. Section~\ref{sec:why_recon_only_fails} diagnoses why the stable model cannot price without calibration, tracing the failure to the gap between the decoder's training manifold and the states the SDE visits at pricing horizons. Section~\ref{sec:hscale_calibration} introduces the diffusion-scale calibration, derives the OLS estimator, extends the calibration to a per-cell scheme, evaluates both on a held-out test period, and closes with a structural diagnosis of the residual pricing error. Section~\ref{sec:pricing_diagnostics} provides analytic ATM Greeks as a reference benchmark for interpreting model-implied sensitivities.
+The chapter proceeds as follows. Section~\ref{sec:swaption_pricing_methodology} describes how European swaptions are priced by Monte Carlo using the simulated latent paths and decoded bond curves. Section~\ref{sec:why_recon_only_fails} diagnoses why the stable model cannot price without calibration, tracing the failure to the gap between the decoder's training manifold and the states the SDE visits at pricing horizons. Section~\ref{sec:hscale_calibration} introduces the diffusion-scale calibration, derives the OLS estimator, extends the calibration to a per-cell scheme, evaluates both on a held-out test period, and closes with a structural diagnosis of the residual pricing error. Section~\ref{sec:pricing_diagnostics} uses the ATM Delta identity to quantify the forward bias per cell, revealing that $\mathcal{K}$ encodes a consistently negative drift prior that explains both the receiver inflation and the failure of the straddle experiment.
 
 %=========================================================
 \section{Monte Carlo Swaption Pricing}
@@ -635,7 +635,7 @@ If the residual error were driven primarily by a directional drift bias in $\mat
 \[
   \sigma_{\mathrm{str}} = \frac{V_{\mathrm{pay}} + V_{\mathrm{rec}}}{2} \cdot \frac{\sqrt{2\pi}}{\mathcal{A}_0 \sqrt{T_e}},
 \]
-equals the payer vol under a correctly specified $\mathbb{Q}$ model, but under a biased model the averaging removes the directional component. The experiment was run: the OOS MAE jumped from $75$ bp (payer OLS) to $287$ bp (straddle). The reason is that the forward bias $\mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] - F_0$ is not uniformly positive --- it is strongly positive for some cells (e.g.\ $+239$ bp for 5Y$\times$1Y) and strongly negative for others (e.g.\ $-401$ bp for 1Y$\times$5Y). When the bias is negative, the receiver payoff is massively inflated and the straddle is far worse than the payer alone. This confirms that the residual error does not arise from a single-direction drift bias but from a more complex mis-calibration of $\mathcal{K}$ across the grid, and that the $\mathbb{Q}_\mathcal{A}$-martingale condition is violated inconsistently across cells. Table~\ref{tab:straddle_comparison} gives the cell-level breakdown.
+equals the payer vol under a correctly specified $\mathbb{Q}$ model, but under a biased model the averaging removes the directional component. The experiment was run: the OOS MAE jumped from $75$ bp (payer OLS) to $287$ bp (straddle). The reason is made precise by the forward-bias analysis of Section~\ref{sec:pricing_diagnostics}: the bias $\mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] - F_0$ is \emph{consistently negative} for every cell (Table~\ref{tab:delta_diagnostic}), ranging from $-18$ bp for the 10Y$\times$1Y cell to $-694$ bp for the 1Y$\times$5Y cell. The model's $\mathbb{Q}$ distribution of $S_T$ is systematically below $F_0$ at every expiry--tenor combination, so the receiver payoff is inflated everywhere. The diffusion-scale calibration corrects the payer vol to match the market on average, but the straddle average $(V_{\mathrm{pay}} + V_{\mathrm{rec}})/2$ is dominated by the inflated receiver and produces a straddle vol far above market vol for every cell. This confirms that the $\mathbb{Q}_\mathcal{A}$-martingale condition is violated, and that the violation is consistent in direction: $\mathcal{K}$ encodes a falling-rate prior from the 2010--2019 training period. Table~\ref{tab:straddle_comparison} gives the cell-level breakdown.
 
 \input{Figures/TrainingResults/dim4_stable_hscale/straddle/tab_straddle}
 
@@ -664,16 +664,45 @@ Adaptive $z_t$ scale     & 45  & 102 \\
 \end{table}
 
 %=========================================================
-\section{ATM Greeks}
+\section{Forward Bias and Effective Exercise Probabilities}
 \label{sec:pricing_diagnostics}
 %=========================================================
 
-Table~\ref{tab:atm_greeks} reports analytic ATM Bachelier Greeks for a representative swaption grid. For a payer swaption with notional $N$, fixed rate $K = F_0$, expiry $T_e$, annuity $\mathcal{A}_0$, and normal vol $\sigma_N$, the ATM Greeks under the Bachelier model are
+The Bachelier Greeks of Section~\ref{sec:bachelier_greeks} provide a useful lens for reading the model's pricing behaviour. At the money, the Bachelier Delta is
 \[
-  \Delta = \tfrac{1}{2}\,N\,\mathcal{A}_0, \qquad
-  \mathrm{DV01} = \tfrac{1}{2}\,N\,\mathcal{A}_0 \cdot 10^{-4}, \qquad
-  \mathcal{V} = N\,\mathcal{A}_0\,\sqrt{\tfrac{T_e}{2\pi}}.
+  \Delta^{\mathrm{ATM}} = \tfrac{1}{2}\,\mathcal{N}\,\mathcal{A}_0,
 \]
-Delta is $\tfrac{1}{2}$ at-the-money regardless of vol, DV01 is $\Delta$ per basis point of forward rate, and Vega is proportional to $\sqrt{T_e}$. The table below evaluates these for the nine expiry--tenor combinations at representative EUR rate and vol levels, and serves as a reference benchmark for interpreting model-implied hedge ratios and vol sensitivities.
+exactly, for any volatility level: the distribution of $S_T$ is symmetric around $F_0$, so the exercise probability is precisely $50\%$. This is the defining property of a model in which $F_0 = \mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T]$ --- i.e.\ one that satisfies the annuity-measure martingale condition.
 
-\input{Figures/Pricing/tab_atm_greeks}
+A model with $\mathcal{K}$ identified from cross-sectional reconstruction rather than from the martingale condition will in general have $\mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] \neq F_0$. This forward bias is directly measurable from put-call parity. Pricing both the payer and receiver at the expiry-level calibrated scales gives
+\begin{equation}
+  \text{forward bias} = \frac{V_{\mathrm{pay}} - V_{\mathrm{rec}}}{\mathcal{A}_0}
+  = \mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] - F_0,
+  \label{eq:forward_bias}
+\end{equation}
+and the effective ATM exercise probability follows by standardising relative to the model's own distribution width:
+\begin{equation}
+  d_{\mathrm{eff}} = \frac{\text{forward bias}}{\sigma_{\mathrm{str}}\sqrt{T_e}},
+  \qquad
+  p_{\mathrm{eff}} = \Phi(d_{\mathrm{eff}}),
+  \label{eq:p_eff}
+\end{equation}
+where $\sigma_{\mathrm{str}} = (V_{\mathrm{pay}} + V_{\mathrm{rec}})/2 \cdot \sqrt{2\pi}/(\mathcal{A}_0\sqrt{T_e})$ is the straddle vol, which measures distribution width without directional contamination. Under a correctly specified model: $d_{\mathrm{eff}} = 0$ and $p_{\mathrm{eff}} = 50\%$.
+
+\paragraph{Results.}
+Table~\ref{tab:delta_diagnostic} reports the per-cell forward bias and effective exercise probability at the expiry-level calibrated scales. Two findings stand out.
+
+First, the forward bias is \emph{consistently negative} across all nine cells, ranging from $-18$ bp for the 10Y$\times$1Y cell to $-694$ bp for the 1Y$\times$5Y cell. The model's $\mathbb{Q}$ distribution of $S_T$ is systematically below $F_0$ at every expiry--tenor combination. This reflects $\mathcal{K}$ being identified on 2010--2019 EUR data, a period of persistently falling rates: the fitted drift encodes a downward-rate prior that is entirely appropriate for in-sample reconstruction but inconsistent with the martingale condition. Applied out-of-sample to the 2022--23 rate-hiking cycle, this prior is wrong in direction as well as magnitude.
+
+Second, the effective exercise probabilities range from $24\%$ (1Y$\times$5Y) to $49\%$ (10Y$\times$1Y), with an overall average of $35\%$ versus the Bachelier benchmark of $50\%$. The 10Y$\times$1Y cell is closest to the benchmark ($p_{\mathrm{eff}} = 48.8\%$): over a ten-year horizon the drift's cumulative effect is still small relative to the diffusion, so $\mathcal{K}$'s mis-calibration matters less. The 1Y expiry cells are the most affected, since the one-year drift contribution is large relative to diffusion at the calibrated scale $s^* \approx 0.13$.
+
+These results also explain why the straddle experiment of Section~\ref{subsec:calibration_improvements} fails: the receiver payoff is inflated at every cell, so the straddle average $(V_{\mathrm{pay}} + V_{\mathrm{rec}})/2$ is dominated by the inflated receiver and produces a vol far above market. No symmetric averaging can improve the payer fit when the bias is uniformly negative.
+
+\input{Figures/TrainingResults/dim4_stable_hscale/delta_diagnostic/tab_delta_diagnostic}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\textwidth]{Figures/TrainingResults/dim4_stable_hscale/delta_diagnostic/fig_exercise_prob.png}
+  \caption{Effective ATM exercise probability $p_{\mathrm{eff}}$ per cell at the expiry-level calibrated scale. Bachelier benchmark is $50\%$ (white). All cells are below $50\%$, confirming a systematic downward bias in the model's $\mathbb{Q}$ distribution. The 10Y$\times$1Y cell (48.8\%) is the closest to correct; the 1Y$\times$5Y cell (24.2\%) is the furthest.}
+  \label{fig:exercise_prob}
+\end{figure}
