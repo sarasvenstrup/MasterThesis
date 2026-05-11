@@ -286,7 +286,19 @@ Together, these restrictions define the stable variant considered in the simulat
 \label{subsec:sim_evidence}
 %========================================================
 
-To investigate the effect of the stability restrictions introduced in the previous section, we run a simulation experiment comparing the baseline and stable models. We simulate latent paths from both models and compare their behaviour over a $10$-year horizon. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Both models use the latent dimension \(\ell=2\), are trained for 5000 epochs, and are initialised from the observed EUR swap curve on 29 January 2010. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
+To investigate the effect of the stability restrictions introduced in the previous section, we run a simulation experiment comparing the baseline and stable models. We simulate latent paths from both models and compare their behaviour over a $10$-year horizon. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Both models use the latent dimension \(\ell=2\), are trained for 5000 epochs, and are initialised from the observed EUR swap curve on 29 January 2010. 
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{Figures/Simulation/fig_training_cloud.png}
+\caption{Encoded training latent cloud for the baseline and stable models. Each point represents the latent state obtained by encoding an observed training swap curve. The shaded region indicates the (\pm 2\sigma) range of the training cloud, and the star marks the initial latent state encoded from the EUR swap curve on 29 January 2010.}
+\label{fig:training_cloud}
+\end{figure}
+
+
+
+Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
 
 
 \begin{description}[
@@ -384,6 +396,8 @@ The baseline drift violates the mean reversion condition of Proposition \ref{pro
 %Figure~\ref{fig:comp_short_rate_fan} shows percentile fan charts for the simulated short-rate paths. The two panels use different vertical scales because the baseline short rates vary over a much wider range than the stable short rates.
 
 As the baseline latent move to extreme regions of the latent space, the short rate activation saturates and the rate is pinned near a network-implied ceiling or floor. The baseline median is flat near the upper limit within roughly one year, and percentile bands spanning approximately \([-125\%,125\%]\). The stable short rate, by contrast, stays within its learned bounded range of approximately \([-11\%,+11\%]\) throughout the horizon, as the mean-reverting latent paths never push the activation to its limits. The short rate thus reflects activation saturation in the baseline, while remaining within a meaningful range in the stable model.
+
+
 
 
 \item[Terminal distributions.] 
