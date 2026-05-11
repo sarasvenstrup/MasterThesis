@@ -3,7 +3,7 @@
 \label{chap:pricing_methodology}
 %=========================================================
 
-The previous chapter examined whether the trained encoder--decoder model can be used as a stable forward scenario generator. We now use the same simulation framework for derivative pricing. In fixed-income applications, accurate reconstruction of the current swap curve is not sufficient: the value of an interest-rate derivative depends on the distribution of future discount factors, swap rates and short rates under the risk-neutral measure.
+The previous chapter examined whether the autoencoder model can be used as a stable forward scenario generator. We now use the same simulation framework for derivative pricing. In fixed-income applications, accurate reconstruction of the current swap curve is not sufficient: the value of an interest-rate derivative depends on the distribution of future discount factors, swap rates and short rates under the risk-neutral measure.
 
 The encoder--decoder framework provides a natural simulation-based pricing setup. Starting from an observed swap curve, the encoder gives an initial latent state. The learned risk-neutral dynamics are then simulated forward, and the decoder maps each simulated latent state into an arbitrage-free zero-coupon bond curve. This makes it possible to compute pathwise swap rates, annuities and discounted payoffs.
 
@@ -13,7 +13,7 @@ The encoder--decoder framework provides a natural simulation-based pricing setup
 \label{sec:swaption_pricing_methodology}
 %=========================================================
 
-We now specialise the simulation-based pricing framework to European swaptions. The objective is to compute the option payoff on each simulated path and then average the discounted payoffs to obtain a time-zero price.
+We now specialize the simulation-based pricing framework to European swaptions. The objective is to compute the option payoff on each simulated path and then average the discounted payoffs to obtain a time-zero price.
 
 The section first defines the underlying swap and the at-the-money strike. It then derives the pathwise swap rate and payoff at expiry, before introducing the Monte Carlo estimator and the Bachelier normal-volatility convention used for reporting model prices.
 
@@ -127,18 +127,20 @@ and the associated Monte Carlo standard error
 \frac{\widehat{\mathrm{SD}}_{\mathrm{MC}}}{\sqrt{N_{\mathrm{MC}}}}.
 \]
 
+\textcolor{red}{we should move the below paragraph to wher ewe actually do the numerical exmaples}
+
 In the numerical examples below, the notional is set to \(\mathcal N=1\). The time-zero quantities \(F_0\) and \(\mathcal A_0\) are computed directly from the decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and \(\mathcal A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry on each simulated path. Because the pricing routine extracts bond prices directly from the model grids, the option expiry \(T_e\) must lie on the simulation time grid. Moreover, the maturities needed for the initial forward swap rate, \(T_e\) and \(T_e+j\delta\), and the expiry-time maturities \(j\delta\), must lie on the decoder maturity grid.
 
 
 \subsection{Bachelier swaption formula and implied normal volatility}
 \label{subsec:bachelier_formula}
 
-To report swaption prices in market-standard volatility units, we use the Bachelier normal-volatility framework. Under the annuity measure \(\mathbb{Q}^{\mathcal A}\) associated with the underlying swap annuity, the forward swap rate is a martingale. In the Bachelier normal model \citep{Bachelier1900}, it evolves as
+To report swaption prices in market-standard volatility units, we use the Bachelier normal-volatility framework. Under the annuity measure \(\mathbb{Q}^{\mathcal A}\) \textcolor{red}{what is that ???} associated with the underlying swap annuity, the forward swap rate is a martingale. In the Bachelier normal model \citep{Bachelier1900}, it evolves as
 \begin{equation}
     dF(t) = \sigma_N\, dW^{\mathcal A}(t),
     \label{eq:bachelier_sde}
 \end{equation}
-where \(\sigma_N>0\) is the normal volatility. The normal model is convenient in low- and negative-rate environments because it allows the forward swap rate to take negative values.
+where \(\sigma_N>0\) is the normal volatility \textcolor{red}{what is that????}. The normal model \textcolor{red}{what is the normal model????} is convenient in low- and negative-rate environments because it allows the forward swap rate to take negative values.
 
 Under~\eqref{eq:bachelier_sde}, the time-zero price of a payer swaption with notional \(\mathcal N\), strike \(K\), option expiry \(T_e\), forward swap rate \(F\), and swap annuity \(\mathcal A_0\) is
 \begin{equation}
@@ -193,6 +195,9 @@ After Monte Carlo pricing, the model price can also be converted back into an im
     {\mathcal N \mathcal A_0\sqrt{T_e}}.
     \label{eq:implied_vol_atm}
 \end{equation}
+
+\textcolor{red}{maybe we should only introduce this when relevant and commented on later ????}
+
 However, this ATM inversion is valid only when the option is at the money with respect to the forward rate used in the Bachelier formula. If the model-implied forward differs from the market forward, the market-ATM strike \(K=F_0\) is not necessarily at the money under the model.
 
 To separate the model's volatility from any forward-rate bias, we also compute a model-implied forward using payer--receiver parity. Given model payer and receiver prices at the same strike \(K=F_0\),
@@ -366,9 +371,13 @@ This identity holds for the partial derivative with respect to time to expiry, h
 \label{sec:why_recon_only_fails}
 %=========================================================
 
-The encoder--decoder model from Chapter~\ref{chap:encoderdecodermodel} was trained to minimise reconstruction error on observed swap curves. This objective ensures that the model can reproduce curves close to the training data, but derivative pricing places an additional requirement on the model. For swaption pricing, the initial swap curve is encoded into a latent state, the latent SDE is simulated forward to the option expiry, and the decoder is then applied to the latent states reached by the simulated paths. These simulated latent states need not coincide with the encoded historical states seen during reconstruction training.
+The autoencoder model from Chapter~\ref{chap:encoderdecodermodel} was trained to minimize reconstruction error on observed swap curves. This objective ensures that the model can reproduce curves close to the training data, but derivative pricing places an additional requirement on the model. For swaption pricing, the initial swap curve is encoded into a latent state, the latent SDE is simulated forward to the option expiry, and the decoder is then applied to the latent states reached by the simulated paths. These simulated latent states need not coincide with the encoded historical states seen during reconstruction training.
 
-This section investigates whether reconstruction-only training is sufficient for this pricing task. We use the Monte Carlo swaption pricing setup as a diagnostic tool and ask where, if anywhere, the reconstruction-trained model breaks down when used for pricing. The analysis proceeds in three steps. First, we test how robust the decoder is to perturbations away from encoded training states. Second, we examine where the simulated latent paths actually move. Third, we decompose the movement into drift and diffusion contributions in order to identify its source. The baseline model is included as a reference point, but the main focus is the stable model used for pricing.
+This section investigates whether reconstruction-only training is sufficient for this pricing task. We use the Monte Carlo swaption pricing setup as a diagnostic tool and ask where, if anywhere, the reconstruction-trained model breaks down when used for pricing \textcolor{red}{yeah well we dont price in this section so maybe a bit misleadning? }. 
+
+\textcolor{red}{maybe we shouldnt list?}
+
+The analysis proceeds in three steps. First, we test how robust the decoder is to perturbations away from encoded training states. Second, we examine where the simulated latent paths actually move. Third, we decompose the movement into drift and diffusion contributions in order to identify its source. The baseline model is included as a reference point, but the main focus is the stable model used for pricing.
 
 \begin{description}[
     style=unboxed,
@@ -378,7 +387,7 @@ This section investigates whether reconstruction-only training is sufficient for
 ]
 
 \item[The pricing pipeline as an off-manifold test.] 
-The Monte Carlo swaption pricing framework developed above can be viewed as a test of the trained encoder--decoder model away from the pure reconstruction setting. Starting from an observed swap curve, the encoder produces an initial latent state \(z_0\). The latent SDE is then simulated forward to the option expiry, producing a terminal latent state \(z_{T_e}^{(m)}\) on each Monte Carlo path. Finally, the decoder maps \(z_{T_e}^{(m)}\) into a zero-coupon bond curve, from which the pathwise swap rate, annuity and payoff are computed.
+The Monte Carlo swaption pricing framework developed above can be viewed as a test of the trained autoencoder model away from the pure reconstruction setting. Starting from an observed swap curve, the encoder produces an initial latent state \(z_0\). The latent SDE is then simulated forward to the option expiry, producing a terminal latent state \(z_{T_e}^{(m)}\) on each Monte Carlo path. Finally, the decoder maps \(z_{T_e}^{(m)}\) into a zero-coupon bond curve, from which the pathwise swap rate, annuity and payoff are computed.
 
 For reconstruction, the decoder is only required to behave well at encoded historical states of the form \(z=E(S)\), where \(S\) is an observed swap curve. For pricing, however, it must also behave well at simulated latent states reached by the SDE. This is a stronger requirement. If the simulated states lie outside the region where the decoder has learned to produce valid discount curves, the resulting swaption prices can become unreliable even if the reconstruction error on observed curves is small.
 
