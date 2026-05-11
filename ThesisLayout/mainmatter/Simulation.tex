@@ -286,19 +286,21 @@ Together, these restrictions define the stable variant considered in the simulat
 \label{subsec:sim_evidence}
 %========================================================
 
-To investigate the effect of the stability restrictions introduced in the previous section, we run a simulation experiment comparing the baseline and stable models. We simulate latent paths from both models and compare their behaviour over a $10$-year horizon. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Both models use the latent dimension \(\ell=2\), are trained for 5000 epochs, and are initialised from the observed EUR swap curve on 29 January 2010. 
+We compare the baseline and stable models by simulating latent paths over a $10$-year horizon. Both models use the latent dimension \(\ell=2\), are trained for 5000 epochs, and are initialised from the observed EUR swap curve on 29 January 2010. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial latent states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
+
+
+Before examining the simulated paths, Figure \ref{fig:training_cloud} shows the encoded training latent cloud for both models, with the initial state marked. This establishes a reference for the training region, against which the behaviour of simulated paths can be assessed throughout the analysis. 
 
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{Figures/Simulation/fig_training_cloud.png}
-\caption{Encoded training latent cloud for the baseline and stable models. Each point represents the latent state obtained by encoding an observed training swap curve. The shaded region indicates the (\pm 2\sigma) range of the training cloud, and the star marks the initial latent state encoded from the EUR swap curve on 29 January 2010.}
+\caption{Encoded training latent cloud for the baseline and stable models. Each point represents the latent state obtained by encoding an observed training swap curve. The shaded region indicates the \(\pm 2\sigma\) range of the training cloud, and the star marks the initial latent state encoded from the EUR swap curve on 29 January 2010.}
 \label{fig:training_cloud}
 \end{figure}
 
 
 
-Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
 
 
 \begin{description}[
@@ -311,10 +313,8 @@ Although both variants share the same encoder architecture, the encoder weights 
 
 \item[Latent-factor Paths.]
 
+The simulate latent paths, visualized in Figure~\ref{fig:comp_fans}, reveal an immediate contrast between the two models. The baseline paths explode to values of the order \(10^{19}\) by then end of the horizon, far beyond the training region visible in Figure \ref{fig:training_cloud}, while the stable paths fluctuate throughout but remain bounded. 
 
-
-
-We begin by assessing the simulated latent paths. The question is whether the latent states remain on a controlled scale over the ten-year horizon, or drift away from the region where the networks were trained. Figure~\ref{fig:comp_fans} shows percentile fan charts for \(z_1(t)\) and \(z_2(t)\) under both models. The baseline paths explode to values of order \(10^{19}\) by the end of the horizon, far outside the region where the model was trained. The stable paths fluctuate throughout, but remain bounded. 
 
 \begin{figure}[H]
     \centering
