@@ -1,5 +1,5 @@
 %=========================================================
-\chapter{Simulation-Based Swaption Pricing and Joint Calibration}
+\chapter{Simulation-Based Swaption Pricing and Calibration}
 \label{chap:pricing_methodology}
 %=========================================================
 
@@ -7,7 +7,7 @@ The previous chapter examined whether the trained encoder--decoder model can be 
 
 The encoder--decoder framework provides a natural simulation-based pricing setup. Starting from an observed swap curve, the encoder gives an initial latent state. The learned risk-neutral dynamics are then simulated forward, and the decoder maps each simulated latent state into an arbitrage-free zero-coupon bond curve. This makes it possible to compute pathwise swap rates, annuities and discounted payoffs.
 
-The purpose of this chapter is therefore twofold. First, we describe how European swaptions are priced by Monte Carlo using the simulated latent paths and decoded bond curves. Second, we introduce a joint training step, in which the model is trained simultaneously on swap-curve reconstruction and swaption pricing, allowing the diffusion and drift components to be calibrated to observed swaption normal volatilities while maintaining reconstruction quality.
+The chapter proceeds as follows. Section~\ref{sec:swaption_pricing_methodology} describes how European swaptions are priced by Monte Carlo using the simulated latent paths and decoded bond curves. Section~\ref{sec:why_recon_only_fails} diagnoses why the stable model cannot price without calibration, tracing the failure to the gap between the decoder's training manifold and the states the SDE visits at pricing horizons. Section~\ref{sec:hscale_calibration} introduces the diffusion-scale calibration, derives the OLS estimator, extends the calibration to a per-cell scheme, evaluates both on a held-out test period, and closes with a structural diagnosis of the residual pricing error. Section~\ref{sec:pricing_diagnostics} provides analytic ATM Greeks as a reference benchmark for interpreting model-implied sensitivities.
 
 %=========================================================
 \section{Monte Carlo Swaption Pricing}
@@ -365,17 +365,17 @@ Combining~\eqref{eq:gamma} and~\eqref{eq:theta} gives
 This identity holds for the partial derivative with respect to time to expiry, holding \(F_0\), \(\mathcal A_0\), \(K\), and \(\sigma_N\) fixed. It provides a useful analytic consistency check for the Bachelier formulas, although it is not a full calendar-time theta for a dynamic term-structure model, where the annuity and forward swap rate also evolve.
 
 %=========================================================
-\section{Why Recon-Only Training Cannot Price}
+\section{Why the Stable Model Cannot Price Without Calibration}
 \label{sec:why_recon_only_fails}
 %=========================================================
 
-The encoder--decoder checkpoints from Chapter~\ref{chap:encoderdecodermodel} were trained to minimise reconstruction error on observed swap curves. Reconstruction is necessary but not sufficient for derivative pricing: pricing requires that the decoder produce sensible discount curves not just at encoded points but at every latent state the simulated SDE visits. This section assembles the empirical evidence that recon-only training fails this requirement, and that the failure has two distinct mechanisms which a naive reading would conflate.
+The encoder--decoder checkpoints from Chapter~\ref{chap:encoderdecodermodel} were trained to minimise reconstruction error on observed swap curves. Reconstruction is necessary but not sufficient for derivative pricing: pricing requires that the decoder produce sensible discount curves not just at observed inputs but at every latent state the simulated SDE visits. This section assembles the empirical evidence that recon-only training fails this requirement, and identifies the two mechanisms responsible.
 
 \paragraph{The pricing pipeline as a probe.}
 The pricing pipeline of Section~\ref{sec:swaption_pricing_methodology} can be read as a stress test of the trained model. From an encoded $z_0$, Euler--Maruyama is run forward to expiry to obtain $z_T$, and the decoder maps $z_T$ to a discount curve. Recon-only training optimises the decoder only on the manifold $\{\mathrm{encoder}(x) : x \in \mathcal{X}_{\mathrm{train}}\}$, which is a measure-zero subset of $\mathbb{R}^\ell$. Anything outside this manifold is uncharted territory for the decoder, and Brownian increments push $z_T$ off the manifold immediately.
 
 \paragraph{Decoder robustness to off-manifold inputs.}
-We probe each decoder directly by perturbing encoded points $z = z_0 + \varepsilon \eta$, $\eta \sim \mathcal{N}(0, I_\ell)$, and measuring the fraction of decoded curves $\mathcal{G}(z)$ that are fully finite. Figure~\ref{fig:decoder_robustness} and Table~\ref{tab:decoder_robustness} show the result for all six recon-only checkpoints. Three observations stand out. First, every decoder handles $\varepsilon = 0$ perfectly, as it should --- on-manifold inputs are exactly the inputs the decoder was trained on. Second, robustness degrades sharply: by $\varepsilon \approx 0.5$, none of the decoders is reliable. Third, the stable variant is uniformly \emph{more} robust than its baseline counterpart of the same dimension, refuting the natural hypothesis that stable's tighter encoded manifold makes its decoder more brittle. The stable decoder generalises better off-manifold; it is simply that no recon-only decoder generalises far enough.
+We probe each decoder by perturbing encoded points $z = z_0 + \varepsilon \eta$, $\eta \sim \mathcal{N}(0, I_\ell)$, and measuring the fraction of decoded curves that are fully finite. Figure~\ref{fig:decoder_robustness} and Table~\ref{tab:decoder_robustness} show the result for the dim4 checkpoints. Every decoder handles $\varepsilon = 0$ perfectly; robustness degrades sharply by $\varepsilon \approx 0.5$. Notably, the stable variant is uniformly \emph{more} robust than its baseline counterpart of the same dimension --- the stable decoder generalises better off-manifold. But neither generalises far enough for pricing.
 
 \begin{figure}[H]
     \centering
@@ -387,7 +387,7 @@ We probe each decoder directly by perturbing encoded points $z = z_0 + \varepsil
 \input{Figures/Pricing/tab_decoder_robustness}
 
 \paragraph{Where the SDE actually goes.}
-Whether the recon-only decoder's failure regime is reached during real simulation depends on the SDE's displacement distribution. Simulating $1{,}000$ Euler--Maruyama paths to $T_e = 5$Y from a representative EUR curve reveals two qualitatively different pathologies in the dim4 case (Figure~\ref{fig:latent_displacement_cdf} and Table~\ref{tab:displacement_summary}). The baseline SDE diverges to $\|z_T - z_0\| \sim 10^{13}$ --- thirteen orders of magnitude larger than the stable SDE's $\|z_T - z_0\| \sim 2$. At those astronomical magnitudes the baseline decoder happens to extrapolate to finite-but-meaningless outputs, returning curves that yield the large pricing errors observed when the recon-only checkpoints are evaluated against market quotes. The stable decoder, by contrast, rejects its (well-behaved) inputs with NaNs roughly half the time, because $\|z_T - z_0\| \approx 2$ sits exactly in the regime where Figure~\ref{fig:decoder_robustness} predicts failure.
+Whether the failure regime is reached during simulation depends on the SDE's displacement distribution. Simulating $1{,}000$ Euler--Maruyama paths to $T_e = 5$Y reveals two qualitatively different pathologies (Figure~\ref{fig:latent_displacement_cdf} and Table~\ref{tab:displacement_summary}). The baseline SDE diverges to $\|z_T - z_0\| \sim 10^{13}$ --- at those magnitudes the decoder extrapolates to finite-but-meaningless outputs, producing the large pricing errors observed. The stable SDE, by contrast, stays at $\|z_T - z_0\| \approx 2$, which sits exactly in the regime where Figure~\ref{fig:decoder_robustness} predicts failure --- and the decoder rejects those inputs with NaNs roughly half the time.
 
 \begin{figure}[H]
     \centering
@@ -396,233 +396,284 @@ Whether the recon-only decoder's failure regime is reached during real simulatio
     \label{fig:latent_displacement_cdf}
 \end{figure}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/Pricing/fig_latent_displacement_scatter.png}
-    \caption{Simulated $z_T$ at $T_e = 5$Y (red) overlaid on the encoded training cloud (blue), in the first two latent dimensions. Baseline's $z_T$ traces an unstable eigenvector; stable's $z_T$ forms a well-behaved cloud around $z_0$ but already much larger than the training cloud.}
-    \label{fig:latent_displacement_scatter}
-\end{figure}
-
 \input{Figures/Pricing/tab_displacement_summary}
 
-This is the central observation of the section: baseline and stable both fail at pricing, but for different reasons. Baseline fails by SDE divergence --- the latent state explodes to coordinates no curve ever reached --- and the decoder is permissive enough to return finite garbage. Stable fails by decoder rejection --- the latent state is well-behaved but the decoder has never been asked to handle the modest displacements the SDE produces. Two different broken things, one common consequence: recon-only training cannot price.
-
-\paragraph{$H$ versus $K$: where the displacement comes from.}
-Decomposing the full displacement into diffusion-only and drift-only contributions localises the simulation pathology in the baseline. With $H = 0$, the baseline drift alone grows exponentially over five years (Figure~\ref{fig:drift_only_displacement} and Table~\ref{tab:hk_decomposition}); the linear part of $K$ has positive eigenvalues, and the unstable eigenvector absorbs the entire trajectory. The stable variant, having all-negative eigenvalues by construction, keeps the drift-only displacement bounded. For stable the realised displacement is therefore essentially the diffusion contribution, partially damped by the mean-reverting drift acting as a restoring force.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.75\textwidth]{Figures/Pricing/fig_drift_only_displacement.png}
-    \caption{$\|z_t - z_0\|$ over time with $H = 0$ (drift only). Baseline grows exponentially along the unstable eigenvector; stable stays bounded.}
-    \label{fig:drift_only_displacement}
-\end{figure}
+\paragraph{$\mathcal{H}$ versus $\mathcal{K}$: where the displacement comes from.}
+Decomposing the displacement into diffusion-only and drift-only contributions localises the pathology. With $\mathcal{H} = 0$, the baseline drift alone grows exponentially --- the linear part of $\mathcal{K}$ has positive eigenvalues, and the unstable eigenvector absorbs the entire trajectory. The stable variant, having all-negative eigenvalues by construction, keeps the drift-only displacement bounded. For stable, the realised displacement is therefore essentially the diffusion contribution, partially damped by the mean-reverting drift acting as a restoring force. Table~\ref{tab:hk_decomposition} reports the two contributions separately.
 
 \input{Figures/Pricing/tab_hk_decomposition}
 
 \paragraph{An apparent paradox in the stable variant.}
-The stable equilibrium $z^* = -M^{-1} N_K$ for dim4 sits roughly $\|z^* - z_0\| \approx 9.5$ from a typical encoded EUR curve, against $\approx 0.2$ for baseline. One would expect strong mean-reverting drift with such a large equilibrium gap to dominate the displacement, yet the drift-only contribution at five years is only $\approx 0.14$. The resolution is that $(z^* - z_0)$ is almost entirely aligned with the slowest eigenvector of $K$. Table~\ref{tab:eigenvector_alignment} shows the projection breakdown: the slow eigenvector has timescale $1/|\lambda| \sim 600$ years and absorbs essentially all of the misplacement, so over five years $|1 - e^{\lambda T}|$ in that direction is below $0.01$. The misplacement is structural --- it sits in the direction the time-series fit cannot constrain --- but its dynamic effect at pricing-relevant horizons is negligible.
+The stable equilibrium $z^* = -M^{-1}N_{\mathcal{K}}$ for dim4 sits roughly $\|z^* - z_0\| \approx 9.5$ from a typical encoded EUR curve. One would expect strong mean-reverting drift to dominate the displacement, yet the drift-only contribution at five years is only $\approx 0.14$. The resolution is that $(z^* - z_0)$ is almost entirely aligned with the \emph{slowest} eigenvector of $\mathcal{K}$, which has timescale $1/|\lambda| \sim 600$ years. Over five years, $|1 - e^{\lambda T}|$ in that direction is below $0.01$. Table~\ref{tab:eigenvector_alignment} shows the projection breakdown: the large structural misplacement sits in the direction that the time-series fit cannot constrain, and its dynamic effect at pricing-relevant horizons is negligible.
 
 \input{Figures/Pricing/tab_eigenvector_alignment}
 
-\paragraph{Implications for joint training.}
-Three conclusions follow. First, the recon-only stable model is not pricing-ready, but the failure mechanism is decoder generalisation, not SDE dynamics: stable's SDE delivers exactly the bounded latent paths it was designed for, and the displacement it produces is modest. Second, both architectures fail at pricing with recon-only training, but the comparison is asymmetric --- baseline's failure is a simulation pathology dressed up as a partial success, while stable's failure is an explicit rejection that quantifies the gap remaining to be closed. Third, joint training must close this gap, but the mechanism matters: the correct approach is \emph{not} to train $\mathcal{G}$ on simulated $z_T$ directly. Because $z_T$ from simulation and $z_0 = \mathrm{encoder}(x)$ from data occupy different regions of $\mathbb{R}^\ell$, training $\mathcal{G}$ simultaneously on both creates conflicting objectives and degrades reconstruction. Instead, $\mathcal{G}$ is held frozen, and the pricing loss acts exclusively on the drift $\mathcal{K}$ and diffusion $\mathcal{H}$, whose task is to keep simulated paths within the decoder's existing working domain. The eigenvector-alignment result supports adding a regulariser that pushes $\Re\lambda_K$ sufficiently negative: this eliminates the slow unconstrained direction and prevents long-horizon path divergence.
+\paragraph{Summary.}
+The stable model fails at pricing for a concrete reason: the decoder was never trained to decode states at distance $\|z_T - z_0\| \approx 2$, which is where the well-behaved stable SDE sends simulated paths. The failure is not a flaw in the SDE design --- the bounded displacement is exactly what was intended --- but a gap between the reconstruction manifold and the simulation range. Closing this gap by retraining the diffusion is architecturally blocked, for reasons explained in Section~\ref{sec:hscale_calibration}. The solution is to calibrate a scalar multiplier on the diffusion output, which simultaneously brings simulated paths within the decoder's working domain and matches model-implied volatilities to market levels.
 
 %=========================================================
-\section{Joint Training: Reconstruction and Pricing}
-\label{sec:joint_training}
+\section{Diffusion-Scale Calibration}
+\label{sec:hscale_calibration}
 %=========================================================
 
-The diagnostics of Section~\ref{sec:why_recon_only_fails} identify the gap that pricing requires the model to close: the decoder must extend its working domain from the encoded manifold to the displacement range the simulated SDE actually visits. We address this directly through a joint training objective in which the model is fine-tuned simultaneously on swap-curve reconstruction and swaption-vol fitting, starting from the recon-only stable checkpoint of Chapter~\ref{chap:encoderdecodermodel}.
+The encoder--decoder model from Chapter~\ref{chap:encoderdecodermodel} was trained to minimise swap-curve reconstruction error. When the same model is used for swaption pricing without modification, it systematically over-prices: at $s=1$ the model-implied normal volatilities are $4$--$11\times$ market vols across the nine expiry--tenor cells, reflecting the fact that $\mathcal{H}$ was calibrated to match the yield-curve cross-section rather than market derivative prices. A direct fix --- retraining $\mathcal{K}$ or $\mathcal{H}$ jointly against swaption vols --- is architecturally blocked: both networks appear in the no-arbitrage ODE that computes $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$, so any gradient update to them simultaneously changes the reconstructed bond prices. There is, however, one free parameter that enters the simulation without touching the ODE: a global scalar $s$ applied to the diffusion output at simulation time. If the Euler step uses $s \cdot \mathcal{H}(z_t)$ instead of $\mathcal{H}(z_t)$, the latent paths change while $A(\tau)$, $B(\tau)$, and all reconstructed bond prices remain exactly as trained. Calibrating this scalar to market swaption volatilities is the approach adopted here.
 
-\subsection{Joint objective function}
-\label{subsec:joint_objective}
+\subsection{Calibration procedure}
+\label{subsec:hscale_procedure}
 
-The joint training loss combines three components:
-\begin{equation}
-    \mathcal{L}_{\mathrm{total}}(\Omega)
-    =
-    \lambda_{\mathrm{recon}}\,\mathcal{L}_{\mathrm{recon}}(\Omega)
-    +
-    \lambda_{\mathrm{price}}\,\mathcal{L}_{\mathrm{price}}(\Omega)
-    +
-    \lambda_{\mathrm{eig}}\,\mathcal{L}_{\mathrm{eig}}(\Omega),
-    \label{eq:joint_loss}
-\end{equation}
-where $\Omega$ denotes all trainable parameters. The three terms are defined as follows.
-
-\paragraph{Reconstruction loss.}
-For a mini-batch of observed swap curves $\{S_i\}_{i \in \mathcal B}$, the reconstruction loss is the mean squared error
-\begin{equation}
-    \mathcal{L}_{\mathrm{recon}}(\Omega)
-    =
-    \frac{1}{|\mathcal B|}
-    \sum_{i \in \mathcal B}
-    \|\widehat S_i - S_i\|^2,
-    \label{eq:recon_loss}
-\end{equation}
-with $\widehat S_i$ the decoded swap curve. This term preserves the reconstruction quality acquired during pre-training; without it, the pricing gradient would degrade the encoder--decoder pair's fit to observed curves.
-
-\paragraph{Pricing loss.}
-Section~\ref{sec:swaption_pricing_methodology} delivers a Monte Carlo price $\widehat V_{\mathrm{MC}}^{(j)}$ for each ATM swaption quote $(\sigma_{\mathrm{mkt}}^{(j)}, T_e^{(j)}, T_s^{(j)}, t^{(j)})$. Inverting the ATM Bachelier formula~\eqref{eq:bachelier_atm} gives the model-implied normal volatility
-\begin{equation}
-    \widehat\sigma_{N,\mathrm{mod}}^{(j)}
-    =
-    \frac{\widehat V_{\mathrm{MC}}^{(j)}\sqrt{2\pi}}
-         {\mathcal N\,\mathcal A_0^{(j)}\sqrt{T_e^{(j)}}},
-    \label{eq:sigma_mod_inversion}
-\end{equation}
-which we compare directly to the market vol in basis points. Writing $e^{(j)} = 10^4 \cdot (\widehat\sigma_{N,\mathrm{mod}}^{(j)} - \sigma_{\mathrm{mkt}}^{(j)})$ for the vol-space residual and $\rho_\delta$ for the Huber penalty
-\begin{equation*}
-    \rho_\delta(e) =
-    \begin{cases}
-        \tfrac12 e^2 & |e| \le \delta, \\
-        \delta\bigl(|e| - \tfrac12 \delta\bigr) & |e| > \delta,
-    \end{cases}
-\end{equation*}
-the pricing loss is
-\begin{equation}
-    \mathcal{L}_{\mathrm{price}}(\Omega)
-    =
-    \frac{1}{\delta^2 |\mathcal B_{\mathrm{price}}|}
-    \sum_{j \in \mathcal B_{\mathrm{price}}}
-    \rho_\delta\!\left(e^{(j)}\right),
-    \qquad
-    \delta = 50\text{ bp}.
-    \label{eq:pricing_loss}
-\end{equation}
-Three design choices warrant comment. First, fitting in vol space rather than price space avoids the implicit $\mathcal A_0^2 T_e$ weighting that a squared price residual would impose on long-dated swaptions: the squared price residual scales with $\mathcal A_0\sqrt{T_e}$ pointwise and hence with $\mathcal A_0^2 T_e$ after squaring, giving a 5Y$\times$10Y swaption (with $\mathcal A_0 \approx 7.4$) roughly $13.7\times$ the loss weight of a 1Y$\times$5Y swaption (with $\mathcal A_0 \approx 4.5$). The vol-space formulation is dimensionless once expressed in basis points and is invariant to annuity scale. Second, the Huber form is used rather than a pure squared error because the warm-start vols can disagree with market vols by several hundred basis points; a squared loss would put the gradient in regions where individual residuals dominate the batch and cause exploding optimiser steps. The Huber penalty grows linearly beyond $\delta = 50$ bp, capping the per-swaption gradient. Third, the rescaling by $\delta^2$ keeps $\mathcal L_{\mathrm{price}}$ at order one when residuals are of order $\delta$, which simplifies the choice of $\lambda_{\mathrm{price}}$.
-
-\paragraph{Eigenvalue-floor regulariser.}
-The diagnostic of Section~\ref{sec:why_recon_only_fails} identified one near-zero eigenvalue of the linearised drift in the recon-only stable model ($|\lambda_{\min}| \approx 0.002$), corresponding to a mean-reversion timescale of order centuries. This direction is structurally underdetermined by the recon objective and lets $z^*$ drift unconstrained. We add a soft floor that enforces \emph{negative} real parts on $\mathcal{K}$'s eigenvalues:
-\begin{equation}
-    \mathcal{L}_{\mathrm{eig}}(\Omega)
-    =
-    \frac{1}{\ell}\sum_{i=1}^{\ell}
-    \bigl(\,\max(0,\;\Re\lambda_i + \varepsilon_{\min})\,\bigr)^2,
-    \label{eq:eig_loss}
-\end{equation}
-with $\varepsilon_{\min} = 0.05$ (mean-reversion timescale $\lesssim 20$ years). The penalty activates for any eigenvalue with $\Re\lambda_i > -\varepsilon_{\min}$ and pushes it negative, enforcing mean reversion. The sign of the gradient is critical: a formulation based on $\max(0,\, \varepsilon_{\min} - |\Re\lambda_i|)$ is correct for already-negative eigenvalues but has the opposite gradient for positive ones, actively driving dynamics towards instability. The signed formulation above is correct regardless of the sign of $\Re\lambda_i$. At pricing horizons of $5$ to $10$ years this regulariser has limited effect on $\widehat V_{\mathrm{MC}}$ directly --- the alignment analysis showed the slow direction barely activates over those horizons --- but it eliminates the unconstrained drift direction and removes a long-horizon pathology that would otherwise resurface in scenario-generation applications.
-
-\subsection{Trainable parameter groups and gradient flow}
-\label{subsec:param_groups}
-
-Training starts from the dim4 stable checkpoint of Chapter~\ref{chap:encoderdecodermodel}. The encoder, decoder $\mathcal G$, and short-rate network $\mathcal R$ are all frozen for the entirety of joint training; only the drift $\mathcal K$ and diffusion $\mathcal H$ are fine-tuned. The pricing loss therefore propagates gradients exclusively through the simulation $z_0 \to z_T$, touching $\mathcal K$ and $\mathcal H$ at each Euler step, but not through the decoder at expiry.
-
-Freezing the decoder is the key architectural decision. The decoder was trained to map $z = \mathrm{encoder}(x)$ to a bond curve; simulated terminal states $z_T$ follow a different distribution, since Brownian increments immediately push $z_T$ off the encoded manifold. Training $\mathcal G$ simultaneously on both distributions creates conflicting objectives: the pricing gradient reshapes the mapping for simulated $z_T$, which corrupts the reconstruction mapping for encoded $z_0$, causing reconstruction RMSE to grow without bound while the pricing residual remains flat. The resolution is to leave $\mathcal G$ fixed and instead calibrate $\mathcal K$ and $\mathcal H$ so that simulated paths stay within the decoder's existing working domain. The encoder is frozen for the same reason as in earlier iterations: its latent representation is already high-quality (EUR RMSE $5.3$ bp), and allowing it to drift during pricing fine-tuning would degrade reconstruction without improving pricing. $\mathcal R$ is frozen because it received no useful pricing signal under the recon-only objective.
-
-Within the pricing loss, the encoder pass to obtain $z_0$ and the time-zero decoder pass to obtain $F_0$ and $\mathcal A_0$ are evaluated under \texttt{no\_grad}. These two quantities serve as fixed anchors for the strike $K = F_0$ and the market price target, and propagating gradients through them would couple the strike choice to the loss minimisation, producing meaningless updates.
-
-A subtlety arises from the decoder coverage problem: at warm start, a fraction of simulated paths produce non-finite outputs from $\mathcal G$ because $z_T$ falls outside the decoder's reliable domain. Even with $\mathcal G$ frozen, naively including non-finite paths in the loss produces NaN gradients on $\mathcal K$ and $\mathcal H$, because PyTorch propagates $0 \times \mathrm{NaN} = \mathrm{NaN}$ through the autograd graph for masked-out branches. We therefore use a two-pass procedure: a no-gradient probe pass identifies which simulated $z_T$ values decode to finite curves, and a second gradient-enabled pass is run only on the surviving paths. The Monte Carlo estimator is averaged over the survivors. As $\mathcal K$ and $\mathcal H$ adapt to keep simulated paths in the decoder's domain, the survivor fraction increases and the two passes converge; the procedure introduces no bias in the limit. We track the survivor fraction explicitly as a training diagnostic.
-
-\subsection{Variance reduction}
-\label{subsec:antithetic}
-
-The pricing loss is simulation-based and therefore subject to Monte Carlo noise. To reduce variance, we use antithetic variates: the $N_{\mathrm{MC}}/2$ noise realisations $\varepsilon$ and $-\varepsilon$ are paired so each path has its mirror image in the same Monte Carlo sample. This introduces negative dependence between paired paths while preserving the marginal distribution of the Brownian increments, halving the variance of any payoff that is monotone in $\varepsilon$ at no cost.
-
-The Euler step
+For a swaption with market normal volatility $\sigma_{\mathrm{mkt}}$ and model-implied normal volatility $\sigma_{\mathrm{mod}}(s)$ at diffusion scale $s$, the at-the-money Bachelier formula~\eqref{eq:bachelier_atm} gives
 \[
-z_{t+\Delta t}
-=
-z_t
-+
-\mu(z_t;\mathcal K)\Delta t
-+
-L(z_t;\mathcal H)\varepsilon_t\sqrt{\Delta t}
+    \widehat V_{\mathrm{MC}}(s) \propto s \cdot \widehat V_{\mathrm{MC}}(1),
 \]
-is, conditional on the sampled noise, a deterministic differentiable transformation of the model parameters. Gradients therefore propagate through the simulated latent path, through all unfrozen network components, and through the diffusion matrix $L(z_t;\mathcal H)$ at each time step. Gradient clipping with maximum norm $1.0$ is applied uniformly to stabilise training.
+since scaling the diffusion by $s$ scales all increments $\Delta z$ by $s$, which scales the terminal distribution's spread by $s$, and hence scales the ATM swaption price linearly in $s$ to first order. The model vol at scale $s$ is therefore approximately $\sigma_{\mathrm{mod}}(s) \approx s \cdot \sigma_{\mathrm{mod}}(1)$.
 
-\subsection{Training failure modes and diagnostic-driven corrections}
-\label{subsec:training_failures}
+This linearity motivates a simple ordinary least-squares calibration. We first price all available swaptions at $s = 1$ to obtain $\{\sigma_{\mathrm{mod},j}(1)\}$. We then estimate the optimal scale by minimising the sum of squared vol errors in basis points:
+\begin{equation}
+    s^* = \operatorname*{arg\,min}_{s > 0}
+    \sum_{j:\,\sigma_{\mathrm{mkt},j}>0}
+    \bigl(s \cdot \sigma_{\mathrm{mod},j}(1) - \sigma_{\mathrm{mkt},j}\bigr)^2,
+    \label{eq:hscale_objective}
+\end{equation}
+which has the closed-form solution
+\begin{equation}
+    s^* = \frac{\sum_j \sigma_{\mathrm{mod},j}(1)\,\sigma_{\mathrm{mkt},j}}
+               {\sum_j \sigma_{\mathrm{mod},j}(1)^2}.
+    \label{eq:hscale_ols}
+\end{equation}
+The scale $s^*$ is then applied as a \texttt{diffusion\_scale} argument to the Euler--Maruyama simulator; no weight in $\mathcal H$ is modified for pricing. For the saved calibrated checkpoint, the last linear layer of $\mathcal H$ is scaled by $s^*$ (equivalent to baking the scale into the weights), and the reconstruction RMSE with the scaled weights is measured explicitly as a diagnostic of the ODE coupling cost.
 
-The design described above was reached through iterative debugging rather than derived a priori. This subsection documents what the training diagnostics revealed at each iteration, both because the failures are instructive and because the corrections directly motivate several non-obvious design choices.
+\subsection{Calibration results}
+\label{subsec:hscale_results}
 
-\paragraph{Failure mode 1: decoder corruption by the pricing gradient.}
-The first fully-implemented joint training run left $\mathcal G$ trainable alongside $\mathcal K$ and $\mathcal H$. The intention was that the pricing loss would force the decoder to extend its working domain to the displacement range the SDE visits, closing the gap identified in Section~\ref{sec:why_recon_only_fails}. The diagnostics showed the opposite: reconstruction RMSE deteriorated from $6$ bp to $89$ bp within 82 epochs, while the pricing residual remained flat at $\sim 500$ bp above market throughout. The decoder was being corrupted by the pricing gradient, and the pricing signal was not flowing usefully to $\mathcal H$ or $\mathcal K$.
-
-The root cause is a distribution mismatch. The reconstruction loss trains $\mathcal G$ on $z = \mathrm{encoder}(x)$, which lies on the encoded manifold. The pricing loss trains $\mathcal G$ on $z_T$ from the SDE, which lies off the manifold immediately. These are incompatible targets for a single network: gradient steps that reduce the pricing error by reshaping $z_T \mapsto \mathcal G(z_T)$ simultaneously corrupt the reconstruction mapping. The fix is to freeze $\mathcal G$ entirely and require $\mathcal K$ and $\mathcal H$ to keep $z_T$ within the decoder's existing domain, which is the design adopted in the final implementation.
-
-\paragraph{Failure mode 2: wrong sign in the eigenvalue regulariser.}
-A second bug affected the eigenvalue-floor loss. The initial implementation penalised $\max(0,\, \varepsilon_{\min} - |\Re\lambda_i|)^2$, which is symmetric in the sign of $\Re\lambda_i$. For an eigenvalue with $\Re\lambda_i > 0$ (divergent dynamics), this penalty has gradient of the form $\partial_{\Re\lambda_i}({\varepsilon_{\min} - \Re\lambda_i})^2 < 0$ when $\Re\lambda_i < \varepsilon_{\min}$, which pushes $\Re\lambda_i$ \emph{upward} --- actively reinforcing instability. At warm start, $\mathcal K$ from the recon-only checkpoint had near-zero eigenvalues (the drift network had not received a useful gradient during reconstruction training); with positive initialisations near zero, the eigenvalue regulariser was making dynamics more divergent rather than less. Correcting the formula to $\max(0,\, \Re\lambda_i + \varepsilon_{\min})^2$ gives the correct gradient regardless of sign and consistently pushes eigenvalues towards $\Re\lambda_i \le -\varepsilon_{\min}$.
-
-\paragraph{Failure mode 3: insufficient pricing signal with $\mathcal G$ frozen.}
-With $\mathcal G$ frozen, the only trainable targets for the pricing loss are $\mathcal H$ and $\mathcal K$. The initial $\lambda_{\mathrm{price}} = 0.001$ was calibrated assuming $\mathcal G$ participated; without it, the pricing gradient on $\mathcal H$ and $\mathcal K$ was negligible relative to reconstruction. At the same time, the warm-start $\mathcal H$ was fitted under $\mathbb P$, where normal volatilities are roughly 8--10$\times$ those observed in the swaption market under $\mathbb Q$. The combination of a weak pricing loss and a starting point far from market vols meant that gradient descent made essentially no progress on vol calibration. The corrections are: increase $\lambda_{\mathrm{price}}$ to $0.05$, increase $\lambda_{\mathrm{eig}}$ to $2.0$ (so the eigenvalue regulariser is strong enough to move $\mathcal K$ from random initialisation), scale the last linear layer of $\mathcal H$ by $0.1$ at warm start to bring model vols into the right order of magnitude before training begins, and increase the per-batch swaption count from 4 to 16 to reduce the Monte Carlo gradient noise.
-
-\subsection{Hyperparameters}
-\label{subsec:hyperparams_pipeline}
+The calibration was run on $1{,}246$ EUR ATM swaptions with path survival $100\%$ at $s = 1$. The OLS estimator gives $s^* = 0.151$: the diffusion implied by the reconstruction-calibrated $\mathcal{H}$ weights is approximately $6.6\times$ larger than needed to match market swaption implied volatilities. Table~\ref{tab:hscale_results} summarises the vol errors before and after calibration, and Table~\ref{tab:hscale_per_cell} shows the breakdown by expiry and tenor.
 
 \begin{table}[H]
 \centering
-\caption{Joint training hyperparameters. Learning rates are smaller than typical pre-training values because joint training is a fine-tuning step from a converged recon-only checkpoint. $\mathcal G$ and the encoder are frozen; only $\mathcal H$ and $\mathcal K$ are updated by gradient descent.}
-\label{tab:joint_hyperparams}
-\begin{tabular}{@{}lll@{}}
+\caption{Aggregate vol-pricing errors before and after diffusion-scale calibration. The calibrated column applies $s^* = 0.151$ to the simulation only (original $\mathcal H$ weights, ODE unaffected); reconstruction RMSE stays at $5.3$ bp in this configuration. Baking $s^*$ into the $\mathcal H$ weights raises reconstruction RMSE to $45.9$ bp and changes the ODE-computed bond prices used for pricing, giving a different (worse) vol MAE of $278$ bp.}
+\label{tab:hscale_results}
+\begin{tabular}{@{}lrrr@{}}
 \toprule
-\textbf{Hyperparameter} & \textbf{Value} & \textbf{Description} \\
+\textbf{Metric} & \textbf{$s=1$} & \textbf{$s^*=0.151$ (sim only)} & \textbf{$s^*$ baked into weights} \\
 \midrule
-$\lambda_{\mathrm{recon}}$    & $1.0$              & Reconstruction loss weight \\
-$\lambda_{\mathrm{price}}$    & $0.05$             & Pricing loss weight \\
-$\lambda_{\mathrm{eig}}$      & $2.0$              & Eigenvalue floor weight \\
-$\varepsilon_{\min}$          & $0.05$             & Eigenvalue floor (mean-reversion speed) \\
-$\delta$                      & $50$ bp            & Huber transition (vol space) \\
-$N_{\mathrm{MC}}$             & $512$              & MC paths per swaption (antithetic) \\
-$\Delta t$                    & $1/12$ yr          & Simulation step, monthly \\
-$\eta_H$                      & $5\times 10^{-5}$  & Learning rate for $\mathcal H$ \\
-$\eta_K$                      & $1\times 10^{-5}$  & Learning rate for $\mathcal K$ \\
-$n_{\mathrm{warmup}}$         & $200$              & Linear LR warmup epochs \\
-$n_{\mathrm{epochs}}$         & $2000$             & Total training epochs \\
-$|\mathcal B|$                & $32$               & Reconstruction batch size \\
-$|\mathcal B_{\mathrm{price}}|$ & $16$             & Swaptions per batch \\
-$\mathrm{clip}$               & $1.0$              & Gradient clip norm \\
-$\gamma_H$                    & $0.1$              & $\mathcal H$ output pre-scale at warm start \\
+Vol MAE (bp)          & 315.0 & 91.0  & 278.0 \\
+Vol RMSE (bp)         & 350.5 & 108.0 & 299.0 \\
+Recon RMSE (bp)       & 5.3   & 5.3   & 45.9  \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-With $\mathcal G$ frozen, the pricing loss exerts directional pressure only on $\mathcal H$ and $\mathcal K$. The reconstruction MSE at warm start is of order $10^{-7}$ in squared-rate units; the Huber-rescaled pricing loss for a warm-start residual of $\sim 480$ bp is of order $9$ per swaption, contributing $\lambda_{\mathrm{price}} \cdot 9 \approx 0.45$ per batch. The eigenvalue penalty at $\lambda_{\mathrm{eig}} = 2.0$ is large enough to move $\mathcal K$ away from near-zero eigenvalues even when the reconstruction loss is small. A 200-epoch linear warmup ramps learning rates from near zero to their target values before cosine decay; this prevents the eigenvalue regulariser from overshooting early before the pricing signal has stabilised. Finally, the last linear layer of $\mathcal H$ is scaled by $\gamma_H = 0.1$ before training begins: the warm-start $\mathcal H$ was fitted under the physical measure $\mathbb P$, where volatility is roughly 8--10$\times$ higher than under the risk-neutral measure $\mathbb Q$, and this pre-scaling places the initial model-implied vols near market levels, substantially reducing the distance gradient descent must cover. After training, the checkpoint is evaluated on held-out swaption quotes; the main reported metrics are the reconstruction RMSE per currency in basis points and the per-cell vol-space MAE in basis points.
+\begin{table}[H]
+\centering
+\caption{Per-cell normal-volatility errors (bp) before and after calibration, averaged over all available EUR quote dates. Market vols are average ATM normal vols in basis points. Errors are $|\sigma_{\mathrm{mod}} - \sigma_{\mathrm{mkt}}|$ in basis points. The calibration reduces errors across all cells but cannot correct the \emph{shape} mismatch: short-expiry errors remain substantially larger than long-expiry errors, reflecting a structural difference between the model's volatility term structure and the market's.}
+\label{tab:hscale_per_cell}
+\begin{tabular}{@{}ccrrrr@{}}
+\toprule
+\textbf{Expiry (Y)} & \textbf{Tenor (Y)} & \textbf{Mkt (bp)} & \textbf{Model at $s=1$ (bp)} & \textbf{Error at $s=1$} & \textbf{Error at $s^*$} \\
+\midrule
+ 1 &  1 & 60  &  647 & 587 & 202 \\
+ 1 &  5 & 73  &  546 & 474 &  74 \\
+ 1 & 10 & 90  &  528 & 441 &  95 \\
+ 5 &  1 & 56  &  434 & 378 & 130 \\
+ 5 &  5 & 58  &  343 & 285 &  80 \\
+ 5 & 10 & 53  &  291 & 238 &  71 \\
+10 &  1 & 48  &  282 & 234 &  92 \\
+10 &  5 & 45  &  222 & 177 &  63 \\
+10 & 10 & 43  &  182 & 139 &  50 \\
+\midrule
+\multicolumn{5}{l}{MAE (bp)} & 91 \\
+\multicolumn{5}{l}{RMSE (bp)} & 108 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-%=========================================================
-\section{Pricing Diagnostics}
-\label{sec:pricing_diagnostics}
-%=========================================================
+Two observations follow from Table~\ref{tab:hscale_per_cell}. First, the model systematically over-prices volatility at every expiry--tenor cell: at $s = 1$, model vols are $2\times$ to $11\times$ market vols, confirming that the reconstruction-calibrated diffusion is far above the level implied by market swaption prices. Second, the ratio $\sigma_{\mathrm{mod}}(1)/\sigma_{\mathrm{mkt}}$ is not constant across the grid: it is highest at short expiries (10.7$\times$ at 1Y$\times$1Y) and lowest at long expiries (4.2$\times$ at 10Y$\times$10Y). A single scale factor $s^*$ can correct the average level but not the shape of the volatility term structure. The residual errors after calibration therefore retain a systematic structure: the 1Y$\times$1Y cell has a $202$ bp error while the 10Y$\times$10Y cell has a $50$ bp error. This shape mismatch is a genuine limitation of the one-parameter calibration and reflects the fact that the model's volatility term structure --- determined by how $\mathcal H(z)$ varies across the simulated latent path --- does not match the market's term structure shape.
 
-\subsection{ATM Greeks benchmark}
-\label{subsec:greeks_table}
+The reconstruction cost of baking $s^*$ into the $\mathcal H$ weights is $45.9$ bp RMSE (versus $5.3$ bp for the unscaled model), confirming the ODE coupling: scaling $\mathcal H$'s last layer by $0.151$ changes the ODE diffusion coefficient and hence every reconstructed bond price.
 
-Table~\ref{tab:atm_greeks} reports analytic ATM Bachelier Greeks for a representative swaption grid. The table is included as a benchmark for interpreting model-implied sensitivities. Delta gives the swap-rate hedge ratio, DV01 gives the sensitivity to a one-basis-point change in the forward swap rate, and Vega gives the sensitivity to the normal volatility. The table is generated programmatically by \texttt{Code/Pricing/make\_greeks\_table.py}; re-running that script regenerates \texttt{Figures/Pricing/tab\_atm\_greeks.tex} with any desired rate or volatility assumptions.
+A further, initially unexpected consequence of the ODE coupling is that the calibrated checkpoint (with scaled $\mathcal H$ weights) does not reproduce the 91 bp vol MAE when used for pricing. When the scaled checkpoint is loaded and priced with \texttt{diffusion\_scale}$=1.0$, the vol MAE is $278$ bp rather than $91$ bp. The reason is that the scaled $\mathcal H$ changes the ODE coefficients used for both the time-$0$ bond prices (which determine the strike $K = F_0$) and the at-expiry bond prices (which determine $S^{(m)}(T_e)$). The strike and the payoff are therefore both shifted by the ODE change, and the resulting swaption prices no longer reflect a simple $s^*$-rescaling of the diffusion. The correct way to apply the calibration is to use the original (unscaled) checkpoint with \texttt{diffusion\_scale}$= s^*$ passed to the simulator at pricing time. This leaves all ODE computations unchanged and reproduces the 91 bp vol MAE exactly. The calibrated checkpoint with scaled weights is provided as a convenience artefact for inspection but should not be used directly for pricing without the corresponding ODE correction.
 
-\input{Figures/Pricing/tab_atm_greeks}
-
-\subsection{Terminal latent distribution and short rate}
-\label{subsec:terminal_dist}
-
-Figure~\ref{fig:terminal_dist} shows the terminal distribution of the latent state and the short rate at \(t=T_e=2\) years under the stable model. A compact terminal cloud is a useful diagnostic for economically meaningful swaption prices: if the latent state disperses widely, the decoded discount curves at expiry may become implausible, biasing the Monte Carlo estimator~\eqref{eq:mc_price}.
+Figures~\ref{fig:vol_heatmap_stable}--\ref{fig:vol_scatter_stable_cal} visualise the calibration effect. Figure~\ref{fig:vol_heatmap_stable} shows per-cell vol MAE for the uncalibrated model ($s=1$); Figure~\ref{fig:vol_heatmap_stable_cal} shows the same after applying $s^*=0.151$; Figure~\ref{fig:vol_scatter_stable_cal} plots model-implied against market vol, where points close to the diagonal indicate accurate pricing.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.85\textwidth]{Figures/Pricing/fig_terminal_dist.png}
-    \caption{Terminal latent-state and short-rate distribution at \(T_e=2\) years for the stable model. The compact terminal cloud reflects the mean-reversion properties established in Section~\ref{sec:stability_analysis}.}
-    \label{fig:terminal_dist}
+    \includegraphics[width=0.72\textwidth]{Figures/Pricing/vol_comparison/fig_vol_heatmap_stable.png}
+    \caption{Per-cell vol MAE (bp) for the recon-only stable model ($s=1$). All cells show large systematic over-pricing, with short-expiry cells exceeding $500$ bp error.}
+    \label{fig:vol_heatmap_stable}
 \end{figure}
 
-\subsection{Swaption volatility comparison}
-\label{subsec:vol_comparison}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.72\textwidth]{Figures/Pricing/vol_comparison/fig_vol_heatmap_stable_cal.png}
+    \caption{Per-cell vol MAE (bp) after applying the global scale $s^* = 0.151$. Calibration reduces errors across all cells; long-expiry cells reach $50$--$63$ bp while short-expiry cells remain above $74$--$202$ bp, reflecting the shape mismatch that motivates the per-cell extension.}
+    \label{fig:vol_heatmap_stable_cal}
+\end{figure}
 
-Table~\ref{tab:vol_comparison} provides a template for comparing market normal volatilities with model-implied normal volatilities. For each quote date, expiry and tenor, the columns report the market volatility, the model volatility and the error in basis points. The last two rows report the mean absolute error and root mean squared error across all valid observations.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.72\textwidth]{Figures/Pricing/vol_comparison/fig_vol_scatter_stable_cal.png}
+    \caption{Model-implied vs market normal volatility (bp) for the calibrated stable model ($s^*=0.151$). Each point is one (date, expiry, tenor) observation; the diagonal is perfect fit. The systematic upward spread at lower market vols reflects the residual shape mismatch at short expiries.}
+    \label{fig:vol_scatter_stable_cal}
+\end{figure}
+
+\input{Figures/Pricing/vol_comparison/vol_summary_table}
+
+\subsection{Per-cell calibration and out-of-sample validation}
+\label{subsec:per_cell_calibration}
+
+The single global scale $s^* = 0.151$ corrects the average level of model-implied volatilities but cannot correct the \emph{shape}: the ratio $\sigma_{\mathrm{mod}}(1)/\sigma_{\mathrm{mkt}}$ varies from roughly $11\times$ at the 1Y$\times$1Y cell to $4\times$ at the 10Y$\times$10Y cell. We therefore extend the calibration to nine independent scale factors, one per (expiry, tenor) cell:
+\begin{equation}
+    s^*(e,t)
+    =
+    \frac{\sum_{d \in \mathcal D_{\mathrm{train}}} \sigma_{\mathrm{mod},d}(1;\, e,t)\,\sigma_{\mathrm{mkt},d}(e,t)}
+         {\sum_{d \in \mathcal D_{\mathrm{train}}} \sigma_{\mathrm{mod},d}(1;\, e,t)^2},
+    \label{eq:per_cell_ols}
+\end{equation}
+where $\mathcal D_{\mathrm{train}}$ is the training set of dates and the sum excludes dates with zero market vol (missing data). This is the same OLS formula as~\eqref{eq:hscale_ols}, applied independently to each cell using only training-period data.
+
+\paragraph{Train/test split.}
+All 170 available EUR quote dates are sorted chronologically. The first 70\% (105 dates, October 2010 -- June 2019) form the training window; the remaining 30\% (46 dates, July 2019 -- February 2024) are a held-out out-of-sample test. Crucially, the scale factors $s^*(e,t)$ are fitted \emph{exclusively} on training dates; the test period, which includes the COVID-19 volatility spike of 2020 and the rate-hiking cycle of 2022--23, was never seen during calibration.
+
+\paragraph{Fitted scale factors.}
+Table~\ref{tab:per_cell_scales} reports the nine fitted scale factors. All nine values lie in the narrow band $[0.10, 0.18]$, close to the global OLS estimate of $0.151$. The largest factor is at 10Y$\times$10Y ($0.183$) and the smallest at 1Y$\times$10Y ($0.098$). There is no clean monotone pattern across the grid: the correction required in each cell is driven by both the local vol level and the model's sensitivity in that region of state space.
+
+\input{Figures/TrainingResults/dim4_stable_hscale/per_cell/tab_per_cell_scales}
+
+\paragraph{R-squared and explanatory power.}
+The $R^2$ of the origin-constrained regression~\eqref{eq:per_cell_ols} ranges from $0.11$ to $0.33$ across the nine cells (Table~\ref{tab:per_cell_mae}). These values are low: the model's time-series variation in $\sigma_{\mathrm{mod}}(1)$ explains only $11$--$33\%$ of the variance in market vols. The remainder reflects market volatility dynamics (regime changes, risk premia, etc.) that the encoder --- calibrated to cross-sectional swap-curve reconstruction rather than to derivative prices --- cannot capture. This is an important limitation: the per-cell scales correct the \emph{average level} of each cell, but the model cannot track day-to-day or year-to-year fluctuations in the market vol surface.
+
+\paragraph{In-sample and OOS results.}
+Table~\ref{tab:per_cell_mae} and Figures~\ref{fig:per_cell_train}--\ref{fig:per_cell_oos} report the vol MAE per cell for the training and test periods. The MC prices at cell-specific scales are computed honestly (not under the linearity approximation), so the table reflects actual pricing errors rather than a best-case linear fit.
+
+\input{Figures/TrainingResults/dim4_stable_hscale/per_cell/tab_per_cell_mae}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.72\textwidth]{Figures/TrainingResults/dim4_stable_hscale/per_cell/fig_mae_train.png}
+    \caption{Per-cell vol MAE (bp) for the per-cell calibrated model on the \emph{training} window (2010--2019). Errors are substantially reduced compared to the global single-scale calibration.}
+    \label{fig:per_cell_train}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.72\textwidth]{Figures/TrainingResults/dim4_stable_hscale/per_cell/fig_mae_oos.png}
+    \caption{Per-cell vol MAE (bp) on the \emph{out-of-sample test} window (July 2019 -- February 2024), which includes the COVID-19 spike and the 2022--23 rate-hiking cycle. Comparing to Figure~\ref{fig:per_cell_train} shows whether the calibration generalises.}
+    \label{fig:per_cell_oos}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.60\textwidth]{Figures/TrainingResults/dim4_stable_hscale/per_cell/fig_scatter.png}
+    \caption{Model-implied vs market normal volatility (bp) for all cells after per-cell calibration. Training observations (blue circles) and OOS observations (red triangles) are shown separately. Points close to the diagonal indicate accurate pricing; systematic upward or downward bias indicates residual shape mismatch.}
+    \label{fig:per_cell_scatter}
+\end{figure}
+
+\paragraph{Interpretation.}
+The per-cell calibration addresses the shape limitation of the global scale, and the OOS test answers whether the fitted factors hold up post-calibration. The aggregate results are: in-sample MAE $83$ bp (RMSE $99$ bp), OOS MAE $73$ bp (RMSE $109$ bp), overall $81$ bp --- compared to $91$ bp for the global single-scale calibration. The per-cell extension yields only a modest $10$ bp aggregate improvement over the one-parameter approach, which already reflects the low $R^2$ (0.11--0.33): because the model's time-series variation in $\sigma_{\mathrm{mod}}(1)$ explains only a small fraction of the market vol variance, adding nine cell-specific intercepts cannot buy much beyond what the single global scale provides.
+
+The cell-level pattern is more revealing. Six of the nine cells show OOS MAE \emph{smaller} than or comparable to their training MAE, indicating that the fitted scale factors are stable across market regimes: 5Y$\times$5Y ($61$ bp train, $59$ bp OOS), 5Y$\times$10Y ($54$ vs.\ $56$ bp), 10Y$\times$1Y ($89$ vs.\ $45$ bp), 10Y$\times$5Y ($66$ vs.\ $43$ bp), and 10Y$\times$10Y ($67$ vs.\ $53$ bp) all show minimal degradation or even improvement on the held-out period, which covers COVID-19 and the 2022--23 rate-hiking cycle.
+
+Two cells stand out as problematic. The 1Y$\times$1Y cell has MAE $209$ bp in-sample and $161$ bp out-of-sample: the per-cell correction reduces the error relative to the global scale ($202$ bp from Table~\ref{tab:hscale_per_cell}) but leaves a residual of more than one-and-a-half percentage points, indicating a structural limitation of the model for very short expiries. The 1Y$\times$10Y cell is the most concerning: it achieves the lowest in-sample MAE of any cell ($23$ bp) but the second-highest OOS MAE ($144$ bp, RMSE $229$ bp). The fitted scale $s^* = 0.098$ --- appreciably smaller than any other cell --- over-fitted to the training data, and the large OOS error is a textbook sign of this. The extremely low in-sample error combined with $R^2 = 0.24$ suggests that the OLS closed-form happened to fit the training observations well on average, while providing no useful signal about the underlying risk-neutral dynamics.
+
+These findings clarify the appropriate use of the per-cell calibration. For mid- to long-expiry cells (5Y and 10Y), the calibrated scale factors appear robust and the pricing accuracy is sufficient for indicative use. For 1Y expiry cells, the framework has genuine limitations: the 1Y$\times$10Y cell requires close monitoring and possible recalibration as market conditions evolve, and the 1Y$\times$1Y cell may require a structural extension (e.g.\ a richer diffusion parameterisation) rather than a simple scale correction.
+
+\subsection{Calibration limits and structural diagnosis}
+\label{subsec:calibration_improvements}
+
+\paragraph{A better calibration: expiry-level OLS.}
+The diffusion scale $s$ enters the model at the \emph{simulation} stage: it multiplies $\mathcal{H}(z_t)$ in the SDE solved over the $T_e$-year option horizon. It does not enter the payoff calculation, which depends on the tenor of the underlying swap. This asymmetry motivates fitting one scale per expiry row --- pooling all three tenor columns --- rather than one per cell. The result is three parameters rather than nine:
+\[
+  s^*(1\mathrm{Y}) = 0.129, \qquad
+  s^*(5\mathrm{Y}) = 0.133, \qquad
+  s^*(10\mathrm{Y}) = 0.141.
+\]
+These are strikingly uniform: the scale varies by only $0.012$ across the three expiry horizons, compared with a range of $[0.098, 0.183]$ for the nine per-cell estimates, which reflects genuine pooling. The OOS MAE is $72$ bp (RMSE $105$ bp), matching or marginally improving on the nine-parameter per-cell result of $73$ bp, while also reducing in-sample MAE from $83$ bp to $78$ bp. Table~\ref{tab:expiry_comparison} gives the cell-level breakdown. This is the recommended calibration: physically motivated, parsimonious, and robust.
+
+\input{Figures/TrainingResults/dim4_stable_hscale/expiry_scale/tab_expiry_comparison}
+
+\paragraph{Why the residual error is structural, not a calibration problem.}
+The expiry-level and per-cell scales both converge near $72$--$73$ bp OOS MAE, and even daily recalibration --- setting $s_t = \sigma_{\mathrm{mkt},t}/\sigma_{\mathrm{mod},t}(1)$ using each OOS date's \emph{own observed vol} as the target, an unrealisable lower bound --- yields an essentially identical $74$ bp. The flat ceiling across all these approaches points to a structural origin rather than a calibration one.
+
+The origin lies in how $\mathcal{K}$ was identified. The model derives no-arbitrage bond prices from the $\mathbb{Q}$-measure SDE
+\[
+  dz_t = \mathcal{K}(z_t)\,dt + \mathcal{H}(z_t)\,dW_t^{\mathbb{Q}},
+\]
+where $\mathcal{K}$ appears in the ODE coefficients $\alpha_{z_t}(\tau)$ and thereby shapes the term structure of decoded bond prices. In training, $\mathcal{K}$ is identified by minimising the cross-sectional swap-rate reconstruction loss~\eqref{eq:model_estimation_loss}. It is selected to make the yield curve \emph{shape} fit well at each date in isolation, not to satisfy the risk-neutral martingale condition $\mathbb{E}^{\mathbb{Q}_{\mathcal{A}}}[S_T] = F_0$ (the requirement that the forward swap rate is a martingale under the annuity numeraire). As a result, when the SDE is integrated forward to price a swaption, the distribution of $S_T$ under the model's $\mathbb{Q}$ is not centred on $F_0$: the model assigns non-zero expected rate changes over the option horizon that cannot be removed by any diffusion-scale correction.
+
+\paragraph{The drift floor as a diagnostic.}
+This mis-calibration of $\mathcal{K}$ is directly measurable. Pricing all swaptions at near-zero diffusion ($s = 0.01$) eliminates the stochastic component and leaves only the deterministic contribution of $\mathcal{K}$. Any non-zero implied vol at $s \to 0$ --- the \emph{drift floor} --- reveals that $\mathcal{K}$ alone moves $z$ in a direction that creates intrinsic swaption value. Table~\ref{tab:drift_floor} reports the average drift floor per cell over training dates.
 
 \begin{table}[H]
 \centering
-\caption{Swaption normal-volatility comparison: market versus model, in basis points. Rows show individual quote-date, expiry and tenor triplets; the last two rows report MAE and RMSE across all valid observations.}
-\label{tab:vol_comparison}
-\begin{tabular}{@{}lrrrrr@{}}
+\caption{Average drift floor $\sigma_{\mathrm{drift}}$ (bp) at $s = 0.01$ versus average market vol $\sigma_{\mathrm{mkt}}$ (bp) on training dates. A non-zero drift floor indicates that $\mathcal{K}(z)$ alone displaces the swap rate away from $F_0$. For the 1Y$\times$1Y cell the floor (133 bp) exceeds market vol (62 bp) on 25\% of dates, which means no positive diffusion scale can reproduce market vol on those dates.}
+\label{tab:drift_floor}
+\begin{tabular}{@{}ccrrr@{}}
 \toprule
-Date & \(T_e\) & \(T_s\) & \(\sigma_{\mathrm{mkt}}\) (bp) & \(\widehat\sigma_{N,\mathrm{mod}}\) (bp) & Error (bp) \\
+\textbf{Exp} & \textbf{Ten} & $\sigma_{\mathrm{drift}}$ \textbf{(bp)} & $\sigma_{\mathrm{mkt}}$ \textbf{(bp)} & \textbf{Floor $>$ mkt (\% dates)} \\
 \midrule
-\multicolumn{6}{c}{\textit{[values populated from the pricing results]}} \\
-\midrule
-\multicolumn{5}{l}{MAE (bp)} & \\
-\multicolumn{5}{l}{RMSE (bp)} & \\
+ 1 &  1 & 133 & 62 & 25\% \\
+ 1 &  5 &   6 & 77 &  7\% \\
+ 1 & 10 &   4 & 50 &  0\% \\
+\addlinespace[2pt]
+ 5 &  1 &  10 & 58 & 10\% \\
+ 5 &  5 &  16 & 43 &  0\% \\
+ 5 & 10 &   3 & 37 &  0\% \\
+\addlinespace[2pt]
+10 &  1 &   9 & 35 &  0\% \\
+10 &  5 &   2 & 32 &  0\% \\
+10 & 10 &   0 & 33 &  0\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent
-The table is populated using results from \texttt{compare\_swapvol.py}, which generates detailed Excel files containing model-implied volatilities for all available swaption quotes. The MAE and RMSE metrics quantify how well the jointly-trained model matches market normal volatilities.
+The 1Y$\times$1Y cell is the most extreme case: $\mathcal{K}(z)$ moves $z$ so strongly toward its learned equilibrium $z^*$ over a one-year horizon that the implied vol from the drift alone averages $133$ bp, more than twice the market vol of $62$ bp, and exceeds the market on one in four training dates. For the remaining cells the drift floor is small relative to market vol, so the diffusion scale can bridge the gap; the persistent 1Y$\times$1Y error ($161$ bp OOS) is therefore a ceiling set by the drift, not a failure of the scale search. More broadly, across all cells, the $\mathbb{Q}_\mathcal{A}$-martingale condition is not satisfied by the model: $\mathcal{K}$ was never calibrated to market derivative prices, only to yield-curve cross-sections.
+
+\paragraph{Ridge regularisation and temporal over-fitting.}
+The 1Y$\times$10Y cell achieves the lowest in-sample MAE ($23$ bp) but the second-highest OOS MAE ($144$ bp), a textbook over-fit. Ridge regression with leave-one-year-out cross-validation was applied to shrink its scale towards the global estimate $s^* = 0.151$. The CV selected $\lambda \approx 0$ --- identical to plain OLS --- for every cell. The reason is instructive: the within-training fit of $s^* = 0.098$ is not a statistical artefact but a genuine property of the 2010--2019 data; the problem is that the OOS period 2019--2024 represents a different vol regime. Ridge regularises \emph{within-sample} variance, not \emph{temporal} regime shifts, so it cannot detect or correct this kind of extrapolation failure.
+
+\paragraph{A direct test of the $\mathcal{K}$ mis-calibration.}
+If the residual error were driven primarily by a directional drift bias in $\mathcal{K}$ --- i.e.\ $\mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] \neq F_0$ pulling rates systematically in one direction --- then pricing the \emph{straddle} $(V_{\mathrm{pay}} + V_{\mathrm{rec}})/2$ instead of the payer alone should cancel the bias and improve fit. The straddle implied vol,
+\[
+  \sigma_{\mathrm{str}} = \frac{V_{\mathrm{pay}} + V_{\mathrm{rec}}}{2} \cdot \frac{\sqrt{2\pi}}{\mathcal{A}_0 \sqrt{T_e}},
+\]
+equals the payer vol under a correctly specified $\mathbb{Q}$ model, but under a biased model the averaging removes the directional component. The experiment was run: the OOS MAE jumped from $75$ bp (payer OLS) to $287$ bp (straddle). The reason is that the forward bias $\mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] - F_0$ is not uniformly positive --- it is strongly positive for some cells (e.g.\ $+239$ bp for 5Y$\times$1Y) and strongly negative for others (e.g.\ $-401$ bp for 1Y$\times$5Y). When the bias is negative, the receiver payoff is massively inflated and the straddle is far worse than the payer alone. This confirms that the residual error does not arise from a single-direction drift bias but from a more complex mis-calibration of $\mathcal{K}$ across the grid, and that the $\mathbb{Q}_\mathcal{A}$-martingale condition is violated inconsistently across cells. Table~\ref{tab:straddle_comparison} gives the cell-level breakdown.
+
+\input{Figures/TrainingResults/dim4_stable_hscale/straddle/tab_straddle}
+
+\paragraph{Implications and the path to improvement.}
+The $\mathcal{H}$ weights are fixed after reconstruction training and do not respond to changes in the market vol regime. When market vols nearly double during the 2022--23 hiking cycle, $\sigma_{\mathrm{mod}}(1)$ barely moves, so any OLS scale estimate is regime-dependent. A 12-month rolling OLS and a scale conditioned on the latent state $z_t$ were both tried; both produced OOS MAEs above $95$ bp, substantially worse than the fixed expiry-level estimate: the scale signal is too noisy and too non-linear for short-window estimation to help.
+
+Genuine improvement requires calibrating the dynamics to derivative prices, not swap curves. Two routes are conceivable. The first is to retrain $\mathcal{K}$ and $\mathcal{H}$ on a joint objective that includes swaption vols, enforcing the martingale condition for $S_T$; this is architecturally infeasible because both networks appear in the reconstruction ODE, so any gradient step on them corrupts the cross-sectional bond pricing. The second is to introduce a stochastic vol factor that allows $\mathcal{H}(z_t)$ to track the vol regime; this is a natural model extension but requires a separate calibration infrastructure outside the current framework.
+
+\begin{table}[H]
+\centering
+\caption{OOS vol MAE (bp) for calibration approaches, evaluated on the held-out test period (July 2019 -- February 2024, 46 dates). The expiry-level OLS uses three parameters; per-cell OLS uses nine; daily recalibration uses each day's own market vol and is an unrealisable lower bound. All methods use the original $\mathcal{H}$ weights with the scale applied only at simulation time.}
+\label{tab:calibration_comparison}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Method} & \textbf{Params} & \textbf{OOS MAE (bp)} \\
+\midrule
+Global OLS              & 1   & 91 \\
+Expiry-level OLS        & 3   & 72 \\
+Per-cell OLS            & 9   & 73 \\
+Daily recalibration     & --- & 74 \\
+\midrule
+Rolling window ($W=12$M) & --- & 98 \\
+Adaptive $z_t$ scale     & 45  & 102 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%=========================================================
+\section{ATM Greeks}
+\label{sec:pricing_diagnostics}
+%=========================================================
+
+Table~\ref{tab:atm_greeks} reports analytic ATM Bachelier Greeks for a representative swaption grid. For a payer swaption with notional $N$, fixed rate $K = F_0$, expiry $T_e$, annuity $\mathcal{A}_0$, and normal vol $\sigma_N$, the ATM Greeks under the Bachelier model are
+\[
+  \Delta = \tfrac{1}{2}\,N\,\mathcal{A}_0, \qquad
+  \mathrm{DV01} = \tfrac{1}{2}\,N\,\mathcal{A}_0 \cdot 10^{-4}, \qquad
+  \mathcal{V} = N\,\mathcal{A}_0\,\sqrt{\tfrac{T_e}{2\pi}}.
+\]
+Delta is $\tfrac{1}{2}$ at-the-money regardless of vol, DV01 is $\Delta$ per basis point of forward rate, and Vega is proportional to $\sqrt{T_e}$. The table below evaluates these for the nine expiry--tenor combinations at representative EUR rate and vol levels, and serves as a reference benchmark for interpreting model-implied hedge ratios and vol sensitivities.
+
+\input{Figures/Pricing/tab_atm_greeks}

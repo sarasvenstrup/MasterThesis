@@ -1,0 +1,24 @@
+\begin{table}[H]
+\centering
+\caption{OOS vol MAE (bp) under three pricing conventions. \emph{Payer}: standard payer swaption implied vol (current convention). \emph{Straddle @ pay scale}: straddle vol $\sigma_{\mathrm{str}} = (V_{\mathrm{pay}}+V_{\mathrm{rec}})/2 \cdot \sqrt{2\pi}/(A_0\sqrt{T_e})$ evaluated at the payer-calibrated scale. \emph{Straddle}: straddle vol at its own OLS-calibrated scale. If $\mathcal{K}$ induced a uniform directional bias in $\mathbb{E}^{\mathbb{Q}_{\mathcal{A}}}[S_T] - F_0$, the straddle average would cancel it and lower the MAE. The experiment shows the opposite: OOS MAE jumps from $75$ bp (payer) to $287$ bp (straddle), confirming that the forward bias is cell-specific and sign-inconsistent rather than a single-direction drift.}
+\label{tab:straddle_comparison}
+\begin{tabular}{@{}ccrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten} & \textbf{Payer (OLS)} & \textbf{Straddle @ pay scale} & \textbf{Straddle (OLS)} \\
+\midrule
+1 & 1 & 174 & 545 & 535 \\
+1 & 5 & 47 & 949 & 1003 \\
+1 & 10 & 143 & 293 & 308 \\
+\addlinespace[2pt]
+5 & 1 & 88 & 189 & 193 \\
+5 & 5 & 60 & 387 & 362 \\
+5 & 10 & 55 & 127 & 136 \\
+\addlinespace[2pt]
+10 & 1 & 47 & 87 & 86 \\
+10 & 5 & 46 & 259 & 264 \\
+10 & 10 & 54 & 98 & 98 \\
+\midrule
+\textbf{Overall} & & 75 & 287 & 292 \\
+\bottomrule
+\end{tabular}
+\end{table}
