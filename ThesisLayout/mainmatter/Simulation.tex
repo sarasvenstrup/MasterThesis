@@ -273,7 +273,6 @@ r_{\mathrm{center}}+r_{\mathrm{scale}}
 \bigr).
 \]
 The range is now set by trainable parameters rather than by activation saturation. 
-
 \end{description}
 
 Together, these restrictions define the stable variant considered in the simulation experiment. 
@@ -288,17 +287,13 @@ Together, these restrictions define the stable variant considered in the simulat
 
 We compare the baseline and stable models by simulating latent paths over a $10$-year horizon. Both models use the latent dimension \(\ell=2\), are trained for 5000 epochs, and are initialised from the observed EUR swap curve on 29 January 2010. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial latent states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
 
-
-Before examining the simulated paths, Figure \ref{fig:training_cloud} shows the encoded training latent cloud for both models, with the initial state marked. This establishes a reference for the training region, against which the behaviour of simulated paths can be assessed throughout the analysis. 
-
-
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{Figures/Simulation/fig_training_cloud.png}
+\includegraphics[width=0.95\textwidth]{Figures/Simulation/fig_training_cloud.png}
 \caption{Encoded training latent cloud for the baseline and stable models. Each point represents the latent state obtained by encoding an observed training swap curve. The shaded region indicates the \(\pm 2\sigma\) range of the training cloud, and the star marks the initial latent state encoded from the EUR swap curve on 29 January 2010.}
 \label{fig:training_cloud}
 \end{figure}
-
+Before examining the simulated paths, Figure \ref{fig:training_cloud} shows the encoded training latent cloud for both models, with the initial state marked. This establishes a reference for the training region, against which the behaviour of simulated paths can be assessed throughout the analysis. 
 
 
 
@@ -313,12 +308,12 @@ Before examining the simulated paths, Figure \ref{fig:training_cloud} shows the 
 
 \item[Latent-factor Paths.]
 
-The simulate latent paths, visualized in Figure~\ref{fig:comp_fans}, reveal an immediate contrast between the two models. The baseline paths explode to values of the order \(10^{19}\) by then end of the horizon, far beyond the training region visible in Figure \ref{fig:training_cloud}, while the stable paths fluctuate throughout but remain bounded. 
+The simulated latent paths, visualized in Figure~\ref{fig:comp_fans}, reveal an immediate contrast between the two models. The baseline paths explode to values of the order \(10^{19}\) by the end of the horizon, far beyond the training region in Figure \ref{fig:training_cloud}, while the stable paths fluctuate throughout but remain bounded. 
 
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/Simulation/fig_latent_fans.png}
+    \includegraphics[width=0.95\textwidth]{Figures/Simulation/fig_latent_fans.png}
     \caption{Percentile fan charts for the simulated latent factors \(z_1(t)\)
     and \(z_2(t)\). At each time step, percentiles are computed across the
     \(M=500\) simulated paths. The dark line shows the median, the shaded
@@ -328,11 +323,6 @@ The simulate latent paths, visualized in Figure~\ref{fig:comp_fans}, reveal an i
     Bottom row: stable.}
     \label{fig:comp_fans}
 \end{figure}
-
-% Note To figure:
-
-% - At each simulation time \(t_n\), percentiles are computed across the \(M=500\) simulated paths. The shaded bands therefore describe the distribution of simulated latent states over time, while the individual sample paths show single simulated trajectories.
-
 
 
 The eigenvalues of the learned drift matrix $M$ explain why. By Proposition \ref{prop:meanreversion} in Section \ref{sec:stability_analysis}, mean reversion requires all eigenvalues of $M$ to have negative real parts. The learned eigenvalues are:
@@ -349,7 +339,6 @@ and
 \]
 
 Both baseline eigenvalues are positive, so deviations from the fixed point grow rather than decay, consistent with the \(10^{19}\) scale in Figure~\ref{fig:comp_fans}. For the stable model, however, both eigenvalues are negative, so deviations revert toward the fixed point. The faster reversion of $z_2$, with $|\lambda_2^{\mathrm{stable}}| \approx 10.846$ versus \(|\lambda_1^{\mathrm{stable}}| \approx 1.327\), is reflected in its tighter range in Figure~\ref{fig:comp_fans}.
-
 
 
 For each latent factor \(d=1,2\), Figure~\ref{fig:log_growth} gives a complementary view by plotting 
@@ -371,38 +360,27 @@ where \(z_d^{(m)}(t)\) denotes latent factor \(d\) on simulated path \(m\). Expo
     \label{fig:log_growth}
 \end{figure}
 
-%The baseline curves increase almost linearly on the log scale, showing that the latent factors grow approximately exponentially over the simulation horizon. This agrees with the positive drift eigenvalues reported above. The stable curves, by contrast, rise initially and then remain on a controlled scale. This is consistent with negative drift eigenvalues, where deterministic deviations are pulled back rather than reinforced.
-
-%Together, Figures~\ref{fig:comp_fans} and~\ref{fig:log_growth} show both the distributional behaviour and the growth rate of the simulated latent factors. The baseline model generates latent paths that grow by many orders of magnitude, while the stable model keeps the latent factors on a substantially smaller scale over the same ten-year horizon.
-
-The baseline drift violates the mean reversion condition of Proposition \ref{prop:meanreversion}, producing paths that grow exponentially over the simulation horizon. The stable variant, with all eigenvalues negative by construction, keeps the latent paths bounded throughout the simulation horizon.
+The baseline drift violates the mean reversion condition of Proposition \ref{prop:meanreversion}, producing paths that grow exponentially. The stable variant prevents this, but the simulated $z_1$ paths still reach roughly $\pm 2$--$3$, well beyond the training cloud of $[-0.30,0.02]$ visble in Figure \ref{fig:training_cloud}. The stability restrictions therefore keep the paths bounded, but do not confine them to the region seen during training. 
 
 
 
-\item[Short-rate percentile fans.] The baseline paths reach an extreme region of latent space. We next examine how this affects the simulated short rate in Figure \ref{fig:comp_short_rate_fan}.
+\item[Short-rate behaviour.] We next examine how the latetn path behaviour affects the simulated short rate in Figure \ref{fig:comp_short_rate_fan}.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig_short_rate_fan.png}
     \caption{Short-rate percentile fan charts with eight individual sample
     paths overlaid. At each time step, percentiles are computed across the
-    \(M=500\) simulated paths. Left: baseline. Right: stable. The two panels
-    use different vertical scales because the baseline short-rate range is much
-    wider than the stable short-rate range.}
+    \(M=500\) simulated paths.}
     \label{fig:comp_short_rate_fan}
 \end{figure}
 
-% Notes to figure
-%Figure~\ref{fig:comp_short_rate_fan} shows percentile fan charts for the simulated short-rate paths. The two panels use different vertical scales because the baseline short rates vary over a much wider range than the stable short rates.
-
-As the baseline latent move to extreme regions of the latent space, the short rate activation saturates and the rate is pinned near a network-implied ceiling or floor. The baseline median is flat near the upper limit within roughly one year, and percentile bands spanning approximately \([-125\%,125\%]\). The stable short rate, by contrast, stays within its learned bounded range of approximately \([-11\%,+11\%]\) throughout the horizon, as the mean-reverting latent paths never push the activation to its limits. The short rate thus reflects activation saturation in the baseline, while remaining within a meaningful range in the stable model.
-
-
+As the baseline latent paths move to extreme regions of the latent space, the short rate activation saturates and the rate is pinned near a network-implied ceiling or floor. The baseline median is flat near the upper limit within roughly one year, with percentile bands spanning approximately \([-125\%,125\%]\). The stable short rate, by contrast, stays within its learned bounded range of approximately \([-11\%,+11\%]\) throughout the horizon, as the mean-reverting latent paths never push the activation to its limits. 
 
 
 \item[Terminal distributions.] 
 
-The previous fan charts show the evolution of the simulated paths over time. To examine where terminal behaviour, Figure~\ref{fig:comp_terminal} shows the joint terminal distribution of latent states and short rates at the final horizon $T=10$ years.
+Beyond how paths evolve over time, Figure~\ref{fig:comp_terminal} examines where they end up, showing the joint terminal distribution of latent states and short rates at $T=10$ years.
 
 \begin{figure}[H]
     \centering
@@ -416,10 +394,9 @@ The previous fan charts show the evolution of the simulated paths over time. To 
 \end{figure}
 
 
-In the baseline, the terminal latent states are concentrated along a single direction of order \(10^{20}\), consistent with deviations growing predominantly along one dominant eigen vector of the drift matrix. The terminal short-rate distribution consequently collapses to the network-implied output limits near \(\pm125\%\).
+For the baseline, the terminal latent state collapse onto a near-straight line. The annotated direction $\lambda_1^{\text{base}}=+5.571$ identifies the dominant eigenvector of M. Because this eigenvalue is positive, any component along it grows without bound, and after ten years all paths are dominated by that single mode. The short histogram reflects this degeneracy, with virtually all mass concetrated at extreme values near \(\pm125\%\).
 
-For the stable model, the terminal latent states form a diffuse cloud at a substantially smaller scale, with a large fraction of paths remaining close to the encoded training region. No single direction dominates the terminal distribution, and the corresponding short rates remain within the learned bounded range of approximately \([-11\%,11\%]\).
-
+The stable model cloud is quite different. The annotated direction $\lambda_2^{\text{stable}}=+5.571$ corresponds to the dominant eigenvector. The cloud is compressed along $z_2$ relative to $z_1$, reflecting stronger mean reversion in that direction. While paths extend somewhat beyond the training region, no dominant direction emerges, and the terminal short-rate distribution spans a more plausible range of approximately \([-11\%,11\%]\).
 
 
 \item[Volatility bounds.] We now inspect the learned volatility functions. This is useful because the volatility functions determine the size of the Brownian shock term in the latent SDE,
@@ -452,7 +429,7 @@ Table~\ref{tab:sigma_ranges} reports the corresponding volatility ranges. On the
 
 The stable model behaves differently. Its volatility values remain inside the prescribed interval \((\sigma_{\min},\sigma_{\max})\) for all latent states. Thus, the stable specification does not remove state-dependent volatility, but it prevents the diffusion scale from becoming extreme when the model is evaluated outside the encoded training region.
 
-\item[Decoded swap-rate curves at simulation horizons.] We now translate the simulated latent states back into the observable space. Figure~\ref{fig:yield_curves} shows decoded swap-rate curves at simulation horizons \(t=1\), \(5\) and \(10\) years. For each horizon, the figure reports the mean decoded swap-rate curve across the \(M=500\) simulated paths, together with the 25--75 and 5--95 percentile ranges and five individual decoded curves.
+\item[Decoded swap-rate curves.] Whether latent instability matters in practice becomes clear when the simulated states are decoded back into swap rate curves. Figure \ref{fig:yield_curves} shows decoded curves at $t=1,5$ and $10$ years for both models.
 
 \begin{figure}[H]
     \centering
@@ -465,26 +442,23 @@ The stable model behaves differently. Its volatility values remain inside the pr
     \label{fig:yield_curves}
 \end{figure}
 
-The baseline panels in the top row are clipped to \(\pm 50\%\) for readability. The clipping is necessary because many decoded baseline curves lie far outside this range. The important point is therefore not only that the plotted bands are wide, but that the decoder is being evaluated at latent states that have already moved to an extreme scale. The resulting swap-rate curves are consequently driven by extrapolation of the learned networks rather than by behaviour learned from the encoded training region.
-
-The stable panels in the bottom row remain on a much more controlled scale. The percentile bands widen as the simulation horizon increases, which is expected when uncertainty accumulates over time. However, the decoded curves remain visually interpretable throughout the ten-year horizon. This shows why stability of the latent simulation matters: unstable latent paths can translate into unusable decoded swap-rate curve scenarios, even when the model itself produces finite numerical outputs.
+The baseline distribution already fills the clipped \(\pm 50\%\) range at the one-year horizon, at which point the decoder is operating on latent states the training data never covered, and the resulting curves cannot serve as interest rate scenarios. For the stable model, uncertainty accumulates as the horizon grows, but the decoded curves remain on an interpretable scale throughout.
 
 \end{description}
 
-The empirical evidence supports the stability mechanisms discussed above. In the baseline model, the learned drift matrix has positive eigenvalues, the simulated latent states grow along an unstable direction, and the short-rate network is pushed toward its activation-induced output limits. These effects carry through to the decoded swap-rate curves.
 
-The stable model behaves differently. The drift eigenvalues are negative, the volatility functions are explicitly bounded, the correlation matrix is valid by construction, and the short-rate range is explicit and learnable. In the simulation experiment, these restrictions keep the latent factors, short rates and decoded swap-rate curves on a much more controlled scale.
+The experiment shows that the stability restrictions turn out to be a practical requirement, not only a theoretical one. Constraining the drift, diffusion scale and the short-rate output together is what keeps the paths and decoded curves on a interpretable scale throughout the ten-year horizon.
 
-The main conclusion is that reconstruction accuracy alone is not sufficient for using the learned dynamics as a scenario generator. A model may reconstruct observed curves accurately while still producing unstable paths when its latent dynamics are iterated forward. The next subsection therefore examines whether the improved simulation behaviour of the stable variant comes at the cost of reconstruction accuracy.
 
 %========================================================
 \subsection{Reconstruction Accuracy}
 \label{subsec:sim_reconstruction_accuracy}
 %========================================================
 
-The simulation results above show that the stable variant produces more controlled simulated paths than the baseline model. A natural concern is that this behaviour may come at the cost of reconstruction accuracy. The stability restrictions reduce the flexibility of the drift, volatility, correlation and short-rate specifications, so it is important to check whether the stable model can still reconstruct observed swap curves accurately.
+Imposing stability comes at a cost in model flexibility. This section examines whether that cost shows up in reconstruction accuracy.
 
-We first compare the in-sample reconstruction errors for the two models used in the simulation experiment. Both models are trained on the same EUR swap-rate data, use latent dimension \(\ell=2\), and are trained for \(5000\) epochs. Reconstruction accuracy is measured by the root mean squared error between observed and reconstructed swap rates, reported in basis points.
+We first compare the in-sample reconstruction errors for the two models used in the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports the in-sample EUR swap-curve reconstruction RMSE for both models from the simulation experiment. Both models are trained on multi-currency swap-rate data, but the error is measured on the EUR curve only.
+
 
 \begin{table}[H]
 \centering
@@ -494,7 +468,7 @@ We first compare the in-sample reconstruction errors for the two models used in 
 \label{tab:sim_insample_rmse}
 \end{table}
 
-Table~\ref{tab:sim_insample_rmse} shows that the stable variant does not sacrifice in-sample reconstruction accuracy in this experiment. It achieves a lower in-sample RMSE than the baseline model, with \(8.49\) bps compared to \(17.61\) bps. Thus, in this experiment, the stable simulation behaviour is not obtained by giving up reconstruction accuracy.
+Table~\ref{tab:sim_insample_rmse} shows that the stable variant does not sacrifice in-sample reconstruction accuracy in this experiment. It achieves a lower in-sample RMSE than the baseline model, with \(8.49\) bps compared to \(17.61\) bps. Thus, in this experiment, the stable simulation behaviour is not obtained by giving up reconstruction accuracy. 
 
 We also compare the two variants out of sample using the rolling-window evaluation protocol from Chapter~\ref{chap:evaluation}. The experiment is repeated for latent dimensions \(\ell\in\{2,3,4\}\), with each model trained for \(3500\) epochs. Reconstruction accuracy is measured by the rolling out-of-sample RMSE.
 
