@@ -20,17 +20,17 @@ A neural network is built from neurons and layers, with the full network obtaine
 
 \begin{description}
     \item[Neurons]
-A \emph{neuron} is a map from a vector $x \in \mathbb{R}^n$ to a scalar:
+A \emph{neuron} is a map from a vector $x \in \mathbb{R}^n$ to a scalar $N(x)\in \mathbb{R}$:
 \begin{equation}
     \mathcal{N}(x)
     = \psi(w^\top x + b),
     \qquad x \in \mathbb{R}^n,
 \label{eq:neuron}
 \end{equation}
-where $w \in \mathbb{R}^n$ is a weight vector, $b \in \mathbb{R}$ is a bias, and $\psi : \mathbb{R} \to \mathbb{R}$ is an \emph{activation function}, with the computation illustrated in the detail panel of Figure \ref{fig:nn_general}. If $\psi$ is linear, the neuron reduces to an affine map, and a composition of affine maps remains affine. A network composed only of linear neurons can therefore represent only affine functions of the input, regardless of its depth or width. Choosing $\psi$ to be nonlinear allows networks to represent more complex input--output relationships. Common choices include the logistic sigmoid $\psi(t) = (1 + e^{-t})^{-1}$, the hyperbolic tangent, and the rectified linear unit $\psi(t) = \max(0,t)$.
+where $w \in \mathbb{R}^n$ is a weight vector, $b \in \mathbb{R}$ is a bias, and $\psi : \mathbb{R} \to \mathbb{R}$ is an \emph{activation function}, with the computation illustrated in the detail panel of Figure \ref{fig:nn_general}. If $\psi$ is linear, the neuron reduces to an affine map, and a composition of affine maps remains affine. A network composed only of linear neurons can therefore represent only affine functions of the input, regardless of its depth or width. Choosing $\psi$ to be nonlinear allows networks to represent more complex input--output relationships. Common choices include the logistic sigmoid $\psi(t) = (1 + e^{-t})^{-1}$, the hyperbolic tangent $\psi(t) = \tanh(t)$, and the rectified linear unit $\psi(t) = \max(0,t)$.
     
     \item[Layers]
-A \emph{layer} consists of neurons operating in parallel on the same input vector, each with its own weights and bias, as shown in Figure \ref{fig:nn_general}. We index the layers by $h = 1,\dotsc,H$, where different layers may have different numbers of neurons. The number of neurons in layer $h$ is denoted $M_h$ and referred to as the \emph{width} of that layer. The outputs of all neurons in the layer are stacked into a vector, which becomes the input to the next layer. Explicitly, a layer computes
+A \emph{layer} consists of neurons operating in parallel on the same input vector, each with its own weights and bias, as shown in Figure \ref{fig:nn_general}. We index the layers by $h = 1,\dotsc,H$, where different layers may have different numbers of neurons $M_h$. The number of neurons in layer $h$ is referred to as the \emph{width} of that layer. The outputs of all neurons in the layer are stacked into a vector, which becomes the input to the next layer. Explicitly, a layer computes
 \begin{equation}
     x_h = \psi_h(W_h x_{h-1} + b_h),
 \label{eq:layer}
@@ -135,10 +135,12 @@ Given a dataset $\mathcal{D} = \{(x_t,y_t)\}_{t=1}^N$ with $N$ data points, trai
     \ell\bigl(y_n,\, f(x_n;\Omega)\bigr),
 \label{eq:empirical_risk}
 \end{equation}
-where $\ell$ is a \emph{loss function} measuring the discrepancy between the target $y_t$ and the model output $f(x_t;\Omega)$. The quantity $\mathcal{L}(\Omega)$ is the corresponding \emph{empirical risk}, that is, the average loss over the dataset \citep[Ch.~6]{Goodfellow2016}. A common example is the squared-error loss
+where $\ell$ is a \emph{loss function} measuring the discrepancy between the target $y_t$ and the model output $f(x_t;\Omega)$. The quantity $\mathcal{L}(\Omega)$ is the corresponding \emph{empirical risk}, that is, the average loss over the dataset \citep[Ch.~6]{Goodfellow2016}. Since the target and predicted outputs are vectors, a natural choice is the squared Euclidean norm,
 \[
     \ell(y,\hat{y}) = \|y-\hat{y}\|_2^2.
 \]
+
+which sums the squared errors across all vector components.
 
 \subsection{Gradient descent}
 
@@ -153,11 +155,7 @@ where $\gamma > 0$ is the \emph{learning rate}, controlling the step size \citep
 
 \subsection{Stochastic gradient descent and mini-batches}
 
-For large datasets, computing the full gradient of the empirical risk \eqref{eq:empirical_risk} at every iteration can be computationally expensive. Instead, one may approximate the gradient using only part of the dataset. Given a batch
-\[
-    \mathcal{B} \subset \mathcal{D}
-\]
-of size $B$, the corresponding gradient approximation is
+For large datasets, computing the full gradient of the empirical risk \eqref{eq:empirical_risk} at every iteration can be computationally expensive. Instead, one may approximate the gradient using only part of the dataset $\mathcal{D}$. Given a batch $\mathcal{B} \subset \mathcal{D}$ of size $B$, the corresponding gradient approximation is
 \begin{equation}
     \nabla_\Omega \mathcal{L}_{\mathcal{B}}(\Omega)
     =

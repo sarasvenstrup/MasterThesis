@@ -1,30 +1,33 @@
-\chapter{Simulation and Stability Analysis}
+\chapter{Simulation and Stability}
 \label{chap:simulation}
 
-This chapter studies the behaviour of the arbitrage-free encoder--decoder model when it is used beyond curve reconstruction. A natural next question is whether the learned latent dynamics can also be used to generate stable swap-rate curve scenarios by simulating latent paths forward in time.
+This chapter studies the behaviour of the arbitrage-free encoder--decoder model when it is used beyond curve reconstruction. In particular, we ask whether the learned latent dynamics can be used to generate interest rate curve scenarios, comprising zero-coupon bond price curves and swap-rate curves, by simulating latent paths under the model's risk-neutral dynamics.
 
-The chapter therefore addresses the following practical question: is accurate reconstruction of observed curves sufficient for using the learned latent dynamics as a scenario generator? To investigate this, we compare two variants of the model. The first is the arbitrage-free encoder--decoder model introduced in Chapter~\ref{chap:encoderdecodermodel}, which we refer to in this chapter as the baseline model. In this version, the latent dynamics are learned without explicit stability restrictions. The second is a stable variant designed to control the behaviour of simulated paths.
+To investigate this, we consider two model variants. The first is the arbitrage-free encoder--decoder model from the previous chapter, referred to here as the \textit{baseline}. The second is a \textit{stable} variant proposed in this thesis, which extends the baseline with modifications to the latent dynamics designed to produce more controlled simulated paths. These modifications are described in Section~\ref{sec:stability_analysis}, after which the two variants are compared empirically to assess whether the stable specification achieves more controlled simulated scenarios without sacrificing reconstruction accuracy.
+
 
 %========================================================
-\section{Simulation of Latent Dynamics and Curve Reconstruction}
+\section{Simulation Setup}
 \label{sec:simulation-latent-dynamics}
 %========================================================
 
-Using the same swap-rate data as in the previous chapters, let \(\mathbf{S}_0 \in \mathbb{R}^8\) denote the observed market swap curve selected as the initial condition for the simulation.
+This section describes the simulation procedure common to both model variants. Starting from an observed swap-rate curve on an arbitrary initial date, the encoder maps the curve to a latent initial state, which is then simulated forward under the model's learned risk-neutral dynamics. At each time step, the resulting latent state is decoded to produce a zero coupon bond price curve and the corresponding swap-rate curve.
 
-As in the linear encoder \eqref{eq:linear_encoder} of Chapter~\ref{chap:encoderdecodermodel}, the trained encoder maps the initial swap curve to a latent initial state,
+
+
+Let \(\mathbf{S}_0 \in \mathbb{R}^8\) denote the observed market swap curve on a chosen initial date. The trained encoder \eqref{eq:linear_encoder} maps this curve to a latent initial state,
 \[
 z_0 = A_1\mathbf{S}_0 \in \mathbb{R}^{\ell},
 \]
-where \(\ell\) denotes the latent dimension. Starting from \(z_0\), the latent state is simulated forward under the learned risk-neutral dynamics given in \eqref{latentdynamics},
+where \(\ell\) denotes the latent dimension. Starting from \(z_0\), the latent state is simulated forward under the learned risk-neutral dynamics \eqref{latentdynamics},
 \[
 dz_t = \mu(z_t)\,dt + \sigma(z_t)\,dW_t^{\mathbb{Q}},
 \]
-where \(W_t^{\mathbb{Q}}\) is an \(\ell\)-dimensional Brownian motion under the risk-neutral measure \(\mathbb{Q}\). Here \(\mu(z_t)\) is the learned drift vector and \(\sigma(z_t)\) is the volatility loading matrix defined by the neural dynamics in Section~\ref{subsec:neural-modelling-dynamics}.
+where \(W_t^{\mathbb{Q}}\) is an \(\ell\)-dimensional Brownian motion under the risk-neutral measure \(\mathbb{Q}\), \(\mu(z_t)\) is the learned drift vector and \(\sigma(z_t)\) is the volatility matrix defined in Section~\ref{subsec:neural-modelling-dynamics}.
 
-Under the regularity conditions in Proposition~\ref{prop:sde_existence}, the latent SDE therefore has a unique non-explosive solution. This ensures that the simulated process is mathematically well defined. 
+\textcolor{red}{Under the regularity conditions in Proposition~\ref{prop:sde_existence}, the latent SDE therefore has a unique non-explosive solution. This ensures that the simulated process is mathematically well defined.[Vi skal lige snakke om hvordan vi skal have dette med.]}
 
-We simulate the latent dynamics by discretising the diffusion process above using the Euler--Maruyama scheme, a standard method for approximating sample paths of continuous-time diffusion models; see \citep{Glasserman2004}. For a time step \(\Delta t>0\), terminal horizon \(T=N\Delta t\), and grid points \(t_n=n\Delta t\), \(n=0,\ldots,N\), the simulated paths satisfy
+The latent SDE is discretised using the Euler--Maruyama scheme \citep{Glasserman2004}. For a time step \(\Delta t>0\) and grid points \(t_n=n\Delta t\), \(n=0,1,\ldots,N\), where $N$ is the total number of steps and \(T=N\Delta t\) is the terminal horizon, the simulated paths satisfy
 \[
 z_{t_{n+1}}
 =
@@ -36,24 +39,12 @@ z_{t_n}
 \qquad
 \Delta W_n \sim \mathcal{N}(0,\Delta t\,I_{\ell}).
 \]
-From the simulated latent path we obtain the corresponding short-rate path using the short-rate specification \eqref{shortratedynamic},
+From the simulated latent path, the short-rate path is obtained using the short-rate specification \eqref{shortratedynamic},
 \[
 r_{t_n}=\tilde r(z_{t_n}),
-\qquad n=0,\ldots,N,
+\qquad n=0,1,\ldots,N,
 \]
-where \(N\) is the number of time steps in the simulation.
-
-Consistent with the risk-neutral pricing setup leading to the bond-pricing PDE \eqref{eq:bond_pricing_pde}, the associated bank account is
-\[
-B_t=\exp\!\left(\int_0^t r_s\,ds\right),
-\]
-and the pathwise discount factor is therefore
-\[
-D_t=B_t^{-1}
-=
-\exp\!\left(-\int_0^t r_s\,ds\right).
-\]
-Since the short rate is only observed on the simulation grid, we approximate the integral using the trapezoidal rule, a standard numerical integration method \citep{Glasserman2004}:
+The pathwise discount factor is then approximated using the trapezoidal rule \citep{Glasserman2004}:
 \[
 D_{t_n}
 \approx
@@ -63,7 +54,7 @@ D_{t_n}
 \frac{r_{t_k}+r_{t_{k+1}}}{2}\,\Delta t
 \right).
 \]
-For each simulated latent state \(z_{t_n}\), the corresponding zero-coupon bond curve is obtained through the decoder described in Chapter~\ref{chap:encoderdecodermodel}. Conditional on this state, the functions \(A_{z_{t_n}}(\tau)\) and \(B_{z_{t_n}}(\tau)\) are obtained by solving the no-arbitrage ODE system \eqref{ODEB}--\eqref{ODEA} numerically, and bond prices are recovered from the affine-inspired representation \eqref{affineinspiredzcbprices},
+For each simulated latent state \(z_{t_n}\), the zero-coupon bond curve is recovered through the decoder by solving the no-arbitrage ODE system \eqref{ODEB}--\eqref{ODEA} numerically,
 \[
 P(z_{t_n},\tau)
 =
@@ -73,16 +64,15 @@ A_{z_{t_n}}(\tau)
 B_{z_{t_n}}(\tau)\mathcal{G}(z_{t_n},\tau)
 \bigr).
 \]
-Hence, each simulated path produces a latent-factor path, a short-rate path, pathwise discount factors, and a sequence of zero-coupon bond curves across maturities, which can be converted into decoded swap-rate curves using \eqref{estimatedswaprates}.
+Hence, each simulated path yields a time series of latent states, short rates, discount factors, and zero-coupon bond curves, from which the corresponding swap-rate curves are obtained using \eqref{estimatedswaprates}.
 
 %========================================================
-\section{Stability Analysis of the Simulation Experiment}
+\section{The Stable Variant}
 \label{sec:stability_analysis}
 %========================================================
 
-The previous section describes how the arbitrage-free encoder--decoder model is turned into a scenario generator. The latent SDE is mathematically well defined under the regularity conditions stated above, but this does not by itself ensure stable simulated paths. When the learned dynamics are iterated over a simulation horizon, several stability issues may arise.
+When the learned latent dynamics are iterated over a multi-year simulation horizon, a mathematically well-defined SDE does not by itself ensure that the simulated paths remain on a controlled scale. Several stability issues may arise, stemming from the drift, diffusion, and short rate components of the latent model. The following identifies a set of such issues and the corresponding modifications introduced in the stable variant.
 
-The discussion below presents these issues together with the corresponding restrictions introduced in the stable variant. 
 
 \begin{description}[
     style=unboxed,
@@ -90,7 +80,6 @@ The discussion below presents these issues together with the corresponding restr
     labelindent=0pt,
     labelsep=0.5em
 ]
-
 \item[Drift stability.] The baseline drift is affine,
 \[
 \mathcal{K}(z)=Mz+N,
@@ -99,81 +88,65 @@ M\in\mathbb{R}^{\ell\times\ell},
 \quad
 N\in\mathbb{R}^{\ell},
 \]
-where \(M\) and \(N\) are learned parameters. For simulation purposes, it is desirable that the deterministic drift is mean-reverting, since shocks to the latent state should be pulled back toward a central region rather than propagated away from the encoded training data. The baseline model does not guarantee this, since \(M\) is learned without any restrictions.
+where \(M\) and \(N\) are learned parameters. Mean reversion is a natural property to impose on the drift, as it ensures the latent state fluctuates around a long-run equilibrium rather than drifting without bound. The baseline model does not guarantee this, since \(M\) is unconstrained.
 
-To see the role of \(M\), consider the deterministic dynamics obtained by omitting the Brownian shock term,
-\[
-\dot z_t = Mz_t+N,
-\]
-where \(\dot z_t\) denotes the derivative with respect to time. If \(M\) is invertible, the fixed point \(z^*\) is the state where the deterministic drift is zero:
-\[
-Mz^*+N=0,
-\qquad
-z^*=-M^{-1}N.
-\]
-Define the deviation from equilibrium by
-\[
-y_t=z_t-z^*,
-\qquad
-\text{so that}
-\qquad
-z_t=y_t+z^*.
-\]
-Since \(Mz^*+N=0\), we obtain
-\[
-\dot z_t
-=
-Mz_t+N
-=
-M(y_t+z^*)+N
-=
-My_t+Mz^*+N
-=
-My_t.
-\]
-Moreover, since \(z^*\) is constant,
-\[
-\dot y_t
-=
-\frac{d}{dt}(z_t-z^*)
-=
-\dot z_t.
-\]
-Hence the deviation from equilibrium satisfies
-\[
-\dot y_t=My_t,
-\]
-with solution
-\[
-y_t=e^{Mt}y_0,
-\qquad
-y_0=z_0-z^*.
-\]
-Equivalently,
-\[
-z_t-z^*=e^{Mt}(z_0-z^*).
-\]
+Whether the drift is mean-reverting is determined by the eigenvalues 
+of $M$, as the following result establishes.
 
-Thus the matrix exponential \(e^{Mt}\) determines whether deviations from equilibrium decay or grow. In an eigenvector direction \(v\) with eigenvalue \(\lambda\), an initial deviation \(y_0=cv\) evolves as
-\[
-y_t=c e^{\lambda t}v.
-\]
-Hence deviations in this direction decay only if \(\operatorname{Re}(\lambda)<0\). Mean reversion therefore requires all eigenvalues of \(M\) to have negative real parts.
+\begin{proposition}[Mean reversion condition]
+The deterministic system \(\dot{z}_t = Mz_t + N\) with fixed point 
+\(z^* = -M^{-1}N \in \mathbb{R}^{\ell}\) is globally asymptotically 
+stable about \(z^*\) if and only if all eigenvalues of \(M\) have 
+strictly negative real parts.
+\label{prop:meanreversion}
+\end{proposition}
 
-The stable variant enforces this by replacing the unconstrained drift matrix with
+\begin{proof}
+Let \(y_t = z_t - z^*\). Since \(Mz^* + N = 0\), we obtain
 \[
-M
-=
--\left(V^\top V+\varepsilon I_\ell\right),
+\dot{z}_t = Mz_t + N = M(y_t + z^*) + N = My_t + Mz^* + N = My_t.
+\]
+Moreover, since \(z^*\) is constant, \(\dot{y}_t = \dot{z}_t\), so 
+the deviation satisfies
+\[
+\dot{y}_t = My_t,
+\]
+with unique solution \(y_t = e^{Mt}y_0\), where \(y_0 = z_0 - z^*\), 
+or equivalently,
+\[
+z_t - z^* = e^{Mt}(z_0 - z^*).
+\]
+Suppose \(M\) is diagonalisable with eigenvalues 
+\(\lambda_1, \ldots, \lambda_\ell \in \mathbb{C}\) and corresponding 
+eigenvectors \(v_1, \ldots, v_\ell\). Writing 
+\(y_0 = \sum_{i=1}^\ell c_i v_i\), linearity of \(e^{Mt}\) gives
+\[
+y_t = \sum_{i=1}^\ell c_i e^{\lambda_i t} v_i.
+\]
+Since \(|e^{\lambda_i t}| = e^{\operatorname{Re}(\lambda_i)t}\),
+\[
+\|y_t\| \leq \sum_{i=1}^\ell |c_i|\, 
+e^{\operatorname{Re}(\lambda_i)t} \|v_i\|.
+\]
+If \(\operatorname{Re}(\lambda_i) < 0\) for all \(i\), each term 
+decays to zero and hence \(y_t \to 0\) as \(t \to \infty\). 
+Conversely, if \(\operatorname{Re}(\lambda_j) \geq 0\) for some \(j\), 
+choosing \(y_0 = v_j\) gives \(y_t = e^{\lambda_j t} v_j\), which 
+does not decay to zero. Since \(y_t \to 0\) is equivalent to 
+\(z_t \to z^*\), the result follows; see 
+\citep[Theorem~4.5]{Khalil2002}.
+\end{proof}
+
+
+To enforce this, the stable variant replaces the unconstrained drift matrix with the parametrisation  
+\[
+M = -\underbrace{\left(V^\top V+\varepsilon I_\ell\right)}_{=:\,A},
 \qquad
 V\in\mathbb{R}^{\ell\times\ell},
 \quad
 \varepsilon>0.
 \]
-Let
-\[
-A=V^\top V+\varepsilon I_\ell.
-\]
+
 For any non-zero vector \(x\in\mathbb{R}^{\ell}\),
 \[
 x^\top A x
@@ -182,27 +155,27 @@ x^\top A x
 >
 0.
 \]
-Thus \(A\) is symmetric positive definite, so all eigenvalues of \(A\) are positive and satisfy
-\[
-\lambda_i(A)\geq \varepsilon.
-\]
-Since \(M=-A\), the eigenvalues of \(M\) satisfy
+so \(A\) is symmetric positive definite with eigenvalues satisfying $\lambda_i(A)\geq\varepsilon$. Since \(M=-A\), it follows that
 \[
 \lambda_i(M)=-\lambda_i(A)\leq -\varepsilon<0.
 \]
-All eigenvalues of the stable drift matrix therefore have negative real parts by construction. Consequently, the deterministic part of the stable latent dynamics is mean-reverting: deviations from \(z^*\) decay over time instead of growing.
 
-\item[Diffusion scale.] In the baseline model, the volatility network \(\mathcal{H}\) outputs raw log-volatility values, and the individual volatility levels are recovered as
+By Proposition \ref{prop:meanreversion}, the stable drift matrix therefore guarantees global asymptotic stability about $z^*$ by construction.
+
+%\begin{remark}
+%    The scalar analogue of the stable parametrisation is the Ornstein--Uhlenbeck process, where $M=-\kappa$ for some $\kappa>0$, so that $\dot{z}_t=-\kappa(z_t-\mu)$ is mean-reverting with speed $\kappa$. The stable variant generalises this to the multivariate setting by replacing the scalar $-\kappa$ with the matrix $M=-(V^\top V+\varepsilon I_\ell),$ which plays the role of the mean reversion speed matrix.
+%\end{remark}
+
+
+\item[Diffusion scale.] The baseline volatility network \(\mathcal{H}\) recovers individual volatility levels as
 \[
 \sigma_i(z)=\exp([\mathcal{H}(z)]_i).
 \]
-This guarantees strictly positive volatilities. However, the upper bound on \(\sigma_i(z)\) is only implicit and depends on the trained network weights. This matters in simulation because large volatility values increase the size of the Brownian shock term in
-\[
-dz_t=\mu(z_t)\,dt+\sigma(z_t)\,dW_t^{\mathbb Q}.
-\]
-Even if the deterministic drift is stable, large diffusion terms can push simulated paths away from the region where the networks were trained.
+which ensures strict positivity, but places no upper bound on \(\sigma_i(z)\). Large volatility values amplify the Brownian shock term, and even a mean-reverting drift may fail to keep simulated paths on a controlled scale if the diffusion term is sufficiently large.
 
-The stable variant therefore bounds the volatility levels explicitly. Instead of using an unrestricted exponential transformation, it sets
+
+
+The stable variant therefore bounds the volatility levels \textit{explicitly}. Instead of using an unrestricted exponential transformation, it sets
 \[
 \log\sigma_i(z)
 =
@@ -228,15 +201,17 @@ and therefore
 \forall z\in\mathbb{R}^{\ell}.
 \]
 
-The stable variant thus keeps the diffusion scale explicitly controlled for all latent states, including states outside the encoded training region. The bounds \(\sigma_{\min}\) and \(\sigma_{\max}\) should be interpreted as stabilising numerical hyperparameters rather than hard economic limits. They are chosen wide enough to contain the volatility values observed on the encoded training region, while preventing extreme diffusion values when the model is evaluated outside this region.
+The bounds $\sigma_{\min}$ and $\sigma_{\max}$ are fixed numerical hyperparameters, not learned from data.
+
+
 
 \item[Correlation structure.] The volatility levels alone do not determine the full diffusion matrix. In the baseline model, the network \(\mathcal{H}\) also outputs raw pairwise correlation parameters, which are transformed as
 \[
-\rho_{ij}(z)=\tanh([\mathcal{H}(z)]_k).
+\rho_{ij}(z)=\tanh([\mathcal{H}(z)]_{ij}).
 \]
 This ensures that each individual correlation lies in \((-1,1)\). For \(\ell=2\), this is sufficient to define a valid \(2\times2\) correlation matrix. For \(\ell\geq3\), however, specifying pairwise correlations separately does not in general guarantee that the full correlation matrix is positive definite. Hence the resulting covariance matrix may fail to be valid in higher dimensions.
 
-The stable variant therefore constructs the correlation matrix through a hyperspherical Cholesky representation. Instead of predicting pairwise correlations directly, the network outputs \(\ell(\ell-1)/2\) unconstrained values \(g_k(z)\), which are transformed into angles
+The stable variant therefore constructs the correlation matrix through a hyperspherical Cholesky representation. \textcolor{red}{reference!} Instead of predicting pairwise correlations directly, the network outputs \(\ell(\ell-1)/2\) unconstrained values \(g_k(z)\), which are transformed into angles
 \[
 \theta_k(z)
 =
@@ -271,9 +246,9 @@ Since each component of \(\psi(W_1z)\) lies in \((-1/2,1/2)\), the output is bou
 \leq
 \frac12\|W_2\|_1.
 \]
-Thus the baseline short rate remains bounded, and therefore finite, for all latent states. However, this boundedness is implicit and determined by the learned weights. If the latent state becomes large, then \(W_1z\) also becomes large in magnitude, and the centered soft-step activation is pushed close to its limiting values \(\pm 1/2\). The simulated short rate is therefore pinned near a network-implied upper or lower level. The rate remains finite, but this reflects the activation function flattening near its bounds rather than stability of the simulated latent state.
+Thus the baseline short rate remains bounded for all latent states, but the bound is implicit and set by the learned weights. When the simulated latent state becomes large, \(W_1z\) grows in magnitude and the activation is pushed toward its limiting values \(\pm 1/2\), pinning the short rate near a network-implied ceiling or floor. The rate stays finite, but only because the activation saturates, not because the latent dynamics are stable.
 
-The stable variant makes the bounded range explicit by using
+The stable variant instead parametrises the short rate as
 \[
 r(z)
 =
@@ -281,13 +256,13 @@ r_{\mathrm{center}}
 +
 r_{\mathrm{scale}}\tanh(f(z)),
 \]
-where \(f(z)\) is a neural network, \(r_{\mathrm{center}}\) is a learnable centre parameter, and \(r_{\mathrm{scale}}>0\) is a learnable scale parameter. Positivity of the scale is enforced by
+where \(f(z)\) is a neural network, \(r_{\mathrm{center}}\) is a learnable parameter, and \(r_{\mathrm{scale}}>0\) is a learnable scale parameter. To ensure positivity of the scale,
 \[
 r_{\mathrm{scale}}
 =
 \operatorname{softplus}(\eta)+s_{\min},
 \]
-where \(\eta\) is an unconstrained trainable parameter and \(s_{\min}>0\) is a small lower bound on the scale. This lower bound applies only to the width of the short-rate interval, not to the short rate itself. Since \(\tanh(f(z))\in(-1,1)\), the short rate satisfies
+where \(\eta\) is an unconstrained trainable parameter and \(s_{\min}>0\) is a small lower bound on the scale, which applies to the width of the interval, rather than to the short rate itself. Since \(\tanh(f(z))\in(-1,1)\), the short rate satisfies
 \[
 r(z)
 \in
@@ -297,21 +272,22 @@ r_{\mathrm{center}}-r_{\mathrm{scale}},
 r_{\mathrm{center}}+r_{\mathrm{scale}}
 \bigr).
 \]
-The stable short-rate network therefore remains bounded by construction, but the range is explicit and learnable rather than an accidental consequence of the activation function flattening near its bounds.
+The range is now set by trainable parameters rather than by activation saturation. 
 
 \end{description}
 
-Together, these restrictions define the stable variant considered in the simulation experiment. Relative to the baseline model, the drift restriction imposes mean reversion in the deterministic latent dynamics, the volatility bounds control the diffusion scale, the correlation construction ensures a valid covariance matrix, and the short-rate specification makes the rate range explicit and learnable. The empirical comparison below investigates how these changes affect the simulated latent paths and the resulting model-generated swap-rate curve scenarios.
+Together, these restrictions define the stable variant considered in the simulation experiment. 
+
+%Together, these restrictions define the stable variant considered in the simulation experiment. Relative to the baseline model, the drift restriction imposes mean reversion in the deterministic latent dynamics, the volatility bounds control the diffusion scale, the correlation construction ensures a valid covariance matrix, and the short-rate specification makes the rate range explicit and learnable. The empirical comparison below investigates how these changes affect the simulated latent paths and the resulting model-generated swap-rate curve scenarios.
 
 
 %========================================================
-\subsection{Empirical Evidence from Simulated Paths}
+\subsection{A Simulation Experiment}
 \label{subsec:sim_evidence}
 %========================================================
 
-To investigate the practical effect of the stability restrictions, we simulate latent paths from the baseline and stable models trained for \(5000\) epochs. Both models use the latent dimension \(\ell=2\) and are initialised from the same observed EUR swap curve on 1 January 2010. The two variants use the same encoder architecture, but the encoder weights are learned separately as part of each trained model. Hence, the same initial swap curve may be mapped to different latent initial states in the two models. The latent dynamics are then simulated using the Euler--Maruyama scheme.
+To investigate the effect of the stability restrictions introduced in the previous section, we run a simulation experiment comparing the baseline and stable models. We simulate latent paths from both models and compare their behaviour over a $10$-year horizon. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Both models use the latent dimension \(\ell=2\), are trained for 5000 epochs, and are initialised from the observed EUR swap curve on 29 January 2010. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
 
-The simulations use identical Brownian increments for the two models. This paired design reduces Monte Carlo noise and makes differences between the simulated paths primarily reflect differences between the baseline and stable specifications. We generate \(M=500\) simulated paths, using monthly time steps \(\Delta t=1/12\), a 10-year horizon, and random seed 1234.
 
 \begin{description}[
     style=unboxed,
@@ -321,11 +297,12 @@ The simulations use identical Brownian increments for the two models. This paire
 ]
 
 
-\item[Latent-factor percentile fans and growth.]
+\item[Latent-factor Paths.]
 
-Figure~\ref{fig:comp_fans} provides a visual comparison of the simulated latent paths. The purpose is to assess whether the simulated latent states remain on a controlled scale over the ten-year horizon, or whether they move rapidly away from the region where the learned networks were trained.
 
-The figure shows percentile fan charts for the simulated latent factors \(z_1(t)\) and \(z_2(t)\) under the baseline and stable models, with eight individual sample paths overlaid. At each simulation time \(t_n\), percentiles are computed across the \(M=500\) simulated paths. The shaded bands therefore describe the distribution of simulated latent states over time, while the individual sample paths show single simulated trajectories.
+
+
+We begin by assessing the simulated latent paths. The question is whether the latent states remain on a controlled scale over the ten-year horizon, or drift away from the region where the networks were trained. Figure~\ref{fig:comp_fans} shows percentile fan charts for \(z_1(t)\) and \(z_2(t)\) under both models. The baseline paths explode to values of order \(10^{19}\) by the end of the horizon, far outside the region where the model was trained. The stable paths fluctuate throughout, but remain bounded. 
 
 \begin{figure}[H]
     \centering
@@ -340,17 +317,13 @@ The figure shows percentile fan charts for the simulated latent factors \(z_1(t)
     \label{fig:comp_fans}
 \end{figure}
 
-The top row shows the baseline model. The latent factors are plotted in units of \(10^{19}\) because the terminal values become extremely large. As a result, most of the earlier part of the trajectories is compressed visually toward zero. The sharp widening near the end of the horizon therefore reflects the very large scale reached by the simulated baseline paths. Since both the percentile bands and the overlaid sample paths expand, the instability is not caused only by a few isolated paths, but affects a substantial part of the simulated distribution.
+% Note To figure:
 
-The bottom row shows the stable model. Both latent factors remain on a controlled scale throughout the ten-year horizon. The two factors operate at different magnitudes: the variation in \(z_1\) is substantially larger than the variation in \(z_2\). Individual paths may still move away from the median temporarily, but they remain on a much smaller scale over the simulation horizon.
+% - At each simulation time \(t_n\), percentiles are computed across the \(M=500\) simulated paths. The shaded bands therefore describe the distribution of simulated latent states over time, while the individual sample paths show single simulated trajectories.
 
-To understand this difference, we inspect the learned drift matrix \(M\). In Section~\ref{sec:stability_analysis}, we established that the deterministic deviations from the fixed point are governed by
-\[
-z_t-z^*=e^{Mt}(z_0-z^*).
-\]
-Hence, for the deterministic latent dynamics to be mean-reverting, all eigenvalues of \(M\) must have negative real parts. If this condition fails, deviations in the corresponding directions are not pulled back toward the fixed point and may instead grow over time.
 
-We calculate the eigenvalues of the learned drift matrix for both variants:
+
+The eigenvalues of the learned drift matrix $M$ explain why. By Proposition \ref{prop:meanreversion} in Section \ref{sec:stability_analysis}, mean reversion requires all eigenvalues of $M$ to have negative real parts. The learned eigenvalues are:
 \[
 \lambda_1^{\mathrm{base}} \approx 5.571,
 \qquad
@@ -362,21 +335,18 @@ and
 \qquad
 \lambda_2^{\mathrm{stable}} \approx -10.846.
 \]
-The baseline eigenvalues are both positive. This means that the deterministic part of the baseline dynamics contains directions in which deviations from the fixed point grow. To see this, recall that a deviation in an eigenvector direction evolves as
-\[
-y_t=c e^{\lambda t}v.
-\]
-When \(\lambda>0\), the factor \(e^{\lambda t}\) increases with time. Hence a shock in such a direction is not pulled back by the deterministic drift, but is instead reinforced as the simulation is iterated forward. This is consistent with the sharp increase in the scale of the baseline latent paths in Figure~\ref{fig:comp_fans}.
 
-For the stable model, both eigenvalues are negative. When \(\lambda<0\), the factor \(e^{\lambda t}\) decreases with time. Deviations in both deterministic eigenvector directions are therefore pulled back toward the fixed point. The two stable eigenvalues have different magnitudes, so the two latent directions revert at different speeds, but both are mean-reverting.
+Both baseline eigenvalues are positive, so deviations from the fixed point grow rather than decay, consistent with the \(10^{19}\) scale in Figure~\ref{fig:comp_fans}. For the stable model, however, both eigenvalues are negative, so deviations revert toward the fixed point. The faster reversion of $z_2$, with $|\lambda_2^{\mathrm{stable}}| \approx 10.846$ versus \(|\lambda_1^{\mathrm{stable}}| \approx 1.327\), is reflected in its tighter range in Figure~\ref{fig:comp_fans}.
 
-Figure~\ref{fig:log_growth} gives a complementary view of the same phenomenon. For each latent factor \(d=1,2\), it plots
+
+
+For each latent factor \(d=1,2\), Figure~\ref{fig:log_growth} gives a complementary view by plotting 
 \[
 \log_{10}\left(
 \frac{1}{M}\sum_{m=1}^{M}|z_d^{(m)}(t)|
 \right),
 \]
-where \(z_d^{(m)}(t)\) denotes latent factor \(d\) on simulated path \(m\). This diagnostic is useful because exponential growth appears approximately linear on a logarithmic scale. If a quantity grows like \(e^{ct}\), then its base-10 logarithm grows approximately linearly with slope \(c/\ln(10)\).
+where \(z_d^{(m)}(t)\) denotes latent factor \(d\) on simulated path \(m\). Exponential growth appears approximately linear on this scale, with slope \(c/\ln(10)\) for a quantity growing as \(e^{ct}\). The baseline curves follow this pattern closely, while the stable curves level off.
 
 \begin{figure}[H]
     \centering
@@ -389,13 +359,15 @@ where \(z_d^{(m)}(t)\) denotes latent factor \(d\) on simulated path \(m\). This
     \label{fig:log_growth}
 \end{figure}
 
-The baseline curves increase almost linearly on the log scale, showing that the latent factors grow approximately exponentially over the simulation horizon. This agrees with the positive drift eigenvalues reported above. The stable curves, by contrast, rise initially and then remain on a controlled scale. This is consistent with negative drift eigenvalues, where deterministic deviations are pulled back rather than reinforced.
+%The baseline curves increase almost linearly on the log scale, showing that the latent factors grow approximately exponentially over the simulation horizon. This agrees with the positive drift eigenvalues reported above. The stable curves, by contrast, rise initially and then remain on a controlled scale. This is consistent with negative drift eigenvalues, where deterministic deviations are pulled back rather than reinforced.
 
-Together, Figures~\ref{fig:comp_fans} and~\ref{fig:log_growth} show both the distributional behaviour and the growth rate of the simulated latent factors. The baseline model generates latent paths that grow by many orders of magnitude, while the stable model keeps the latent factors on a substantially smaller scale over the same ten-year horizon.
+%Together, Figures~\ref{fig:comp_fans} and~\ref{fig:log_growth} show both the distributional behaviour and the growth rate of the simulated latent factors. The baseline model generates latent paths that grow by many orders of magnitude, while the stable model keeps the latent factors on a substantially smaller scale over the same ten-year horizon.
 
-\item[Short-rate percentile fans.] The latent-factor diagnostics show that the baseline simulation moves to an extreme region of latent space. We next examine how this affects the simulated short rate, since each latent state is mapped to a short rate through the short-rate network.
+The baseline drift violates the mean reversion condition of Proposition \ref{prop:meanreversion}, producing paths that grow exponentially over the simulation horizon. The stable variant, with all eigenvalues negative by construction, keeps the latent paths bounded throughout the simulation horizon.
 
-Figure~\ref{fig:comp_short_rate_fan} shows percentile fan charts for the simulated short-rate paths. The two panels use different vertical scales because the baseline short rates vary over a much wider range than the stable short rates.
+
+
+\item[Short-rate percentile fans.] The baseline paths reach an extreme region of latent space. We next examine how this affects the simulated short rate in Figure \ref{fig:comp_short_rate_fan}.
 
 \begin{figure}[H]
     \centering
@@ -408,11 +380,15 @@ Figure~\ref{fig:comp_short_rate_fan} shows percentile fan charts for the simulat
     \label{fig:comp_short_rate_fan}
 \end{figure}
 
-The baseline short rate in the left panel moves away from its initial level of approximately \(4\%\) almost immediately and is pushed close to network-implied output limits. After roughly one year, the median is almost flat near the upper limit, while the percentile bands span approximately \([-125\%,125\%]\). This is consistent with the short-rate mechanism discussed above: when the simulated latent state becomes very large, the centered soft-step activation is pushed close to its limiting values \(\pm 1/2\). The short rate remains finite, but this boundedness comes from the activation limits rather than from stability of the simulated latent state.
+% Notes to figure
+%Figure~\ref{fig:comp_short_rate_fan} shows percentile fan charts for the simulated short-rate paths. The two panels use different vertical scales because the baseline short rates vary over a much wider range than the stable short rates.
 
-The stable short rate in the right panel remains within a much narrower learned range of approximately \([-11\%,+11\%]\) over the full simulation horizon. The median stays close to the initial level, and the percentile bands fluctuate around it. Individual sample paths still move substantially, but they do not get pushed toward activation-induced upper or lower output limits in the same way as in the baseline simulation.
+As the baseline latent move to extreme regions of the latent space, the short rate activation saturates and the rate is pinned near a network-implied ceiling or floor. The baseline median is flat near the upper limit within roughly one year, and percentile bands spanning approximately \([-125\%,125\%]\). The stable short rate, by contrast, stays within its learned bounded range of approximately \([-11\%,+11\%]\) throughout the horizon, as the mean-reverting latent paths never push the activation to its limits. The short rate thus reflects activation saturation in the baseline, while remaining within a meaningful range in the stable model.
 
-\item[Terminal distributions.] The fan charts describe the evolution of the simulated paths over time. Figure~\ref{fig:comp_terminal} summarises the same behaviour at the final simulation horizon \(t=10\) years. The top row shows the terminal short-rate distributions, while the bottom row shows the corresponding terminal latent states. This provides a compact final-horizon view of the mechanism observed above: when the latent state moves far away from the encoded training region, the short-rate network is pushed toward its output limits.
+
+\item[Terminal distributions.] 
+
+The previous fan charts show the evolution of the simulated paths over time. To examine where terminal behaviour, Figure~\ref{fig:comp_terminal} shows the joint terminal distribution of latent states and short rates at the final horizon $T=10$ years.
 
 \begin{figure}[H]
     \centering
@@ -425,9 +401,11 @@ The stable short rate in the right panel remains within a much narrower learned 
     \label{fig:comp_terminal}
 \end{figure}
 
-The baseline panels show the same mechanism in two different spaces. In the bottom-left panel, the terminal latent states have moved to values of order \(10^{20}\) and lie almost on a straight line. This indicates that the positive drift eigenvalue has caused deviations to grow mainly along one dominant eigenvector direction. Since these terminal latent states are far outside the encoded training region, the short-rate network is evaluated in a region where the centered soft-step activation is close to its limiting values. The top-left histogram therefore concentrates near the two network-implied output limits, around \(\pm125\%\), rather than representing a broad range of plausible terminal short rates.
 
-The stable panels show a different pattern. The terminal latent states form a much more diffuse cloud on a substantially smaller scale, with many points close to the encoded training region. No single explosive direction dominates the terminal distribution. The corresponding terminal short-rate distribution is continuous and remains within the learned bounded range, approximately \([-11\%,11\%]\), rather than collapsing to the two output limits.
+In the baseline, the terminal latent states are concentrated along a single direction of order \(10^{20}\), consistent with deviations growing predominantly along one dominant eigen vector of the drift matrix. The terminal short-rate distribution consequently collapses to the network-implied output limits near \(\pm125\%\).
+
+For the stable model, the terminal latent states form a diffuse cloud at a substantially smaller scale, with a large fraction of paths remaining close to the encoded training region. No single direction dominates the terminal distribution, and the corresponding short rates remain within the learned bounded range of approximately \([-11\%,11\%]\).
+
 
 
 \item[Volatility bounds.] We now inspect the learned volatility functions. This is useful because the volatility functions determine the size of the Brownian shock term in the latent SDE,
@@ -453,9 +431,9 @@ Table~\ref{tab:sigma_ranges} reports the corresponding volatility ranges. On the
 \begin{table}[H]
 \centering
 \small
+\input{Figures/Simulation/sigma_ranges_table}
 \caption{Ranges of the learned volatility functions \(\sigma_i(z)\) for the baseline and stable models, evaluated on the encoded training cloud and on the expanded diagnostic set.}
 \label{tab:sigma_ranges}
-\input{Figures/Simulation/sigma_ranges_table}
 \end{table}
 
 The stable model behaves differently. Its volatility values remain inside the prescribed interval \((\sigma_{\min},\sigma_{\max})\) for all latent states. Thus, the stable specification does not remove state-dependent volatility, but it prevents the diffusion scale from becoming extreme when the model is evaluated outside the encoded training region.
@@ -548,11 +526,11 @@ This pattern suggests that the stable restrictions are most useful when combined
 
 The main conclusion is therefore that the preferred specification depends on the intended use. For benign reconstruction windows, the baseline and stable variants can perform similarly. However, when the model is intended for simulation or for reconstruction under stressed market regimes, the stable variant becomes more attractive, provided the latent dimension is sufficiently large. Among the configurations considered here, the stable model with \(\ell=4\) provides the strongest combination of reconstruction accuracy, simulation stability and robustness in the 2022 stress window.
 
-
-
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Simulation/fig_regime_scatter.png}
     \caption{Out-of-sample RMSE per observation coloured by interest rate regime for the baseline and stable variants at \(\ell=4\).}
     \label{fig:regime_scatter}
 \end{figure}
+
+

@@ -1,0 +1,91 @@
+{
+  "train": {
+    "ae_pay": {
+      "mae": 80.5,
+      "rmse": 94.8
+    },
+    "ae_str_pscal": {
+      "mae": 317.7,
+      "rmse": 408.3
+    },
+    "ae_str": {
+      "mae": 300.7,
+      "rmse": 372.0
+    }
+  },
+  "test": {
+    "ae_pay": {
+      "mae": 75.2,
+      "rmse": 111.3
+    },
+    "ae_str_pscal": {
+      "mae": 287.2,
+      "rmse": 378.1
+    },
+    "ae_str": {
+      "mae": 291.8,
+      "rmse": 391.1
+    }
+  },
+  "all": {
+    "ae_pay": {
+      "mae": 79.0,
+      "rmse": 99.6
+    },
+    "ae_str_pscal": {
+      "mae": 309.3,
+      "rmse": 400.2
+    },
+    "ae_str": {
+      "mae": 298.2,
+      "rmse": 377.4
+    }
+  },
+  "per_cell": {
+    "1x1": {
+      "ae_pay": 173.5,
+      "ae_str_pscal": 545.0,
+      "ae_str": 534.9
+    },
+    "1x5": {
+      "ae_pay": 46.8,
+      "ae_str_pscal": 948.7,
+      "ae_str": 1003.4
+    },
+    "1x10": {
+      "ae_pay": 143.4,
+      "ae_str_pscal": 292.9,
+      "ae_str": 307.6
+    },
+    "5x1": {
+      "ae_pay": 87.6,
+      "ae_str_pscal": 189.0,
+      "ae_str": 193.1
+    },
+    "5x5": {
+      "ae_pay": 59.6,
+      "ae_str_pscal": 387.1,
+      "ae_str": 362.4
+    },
+    "5x10": {
+      "ae_pay": 55.2,
+      "ae_str_pscal": 127.1,
+      "ae_str": 135.8
+    },
+    "10x1": {
+      "ae_pay": 47.4,
+      "ae_str_pscal": 86.6,
+      "ae_str": 85.6
+    },
+    "10x5": {
+      "ae_pay": 46.0,
+      "ae_str_pscal": 259.3,
+      "ae_str": 263.8
+    },
+    "10x10": {
+      "ae_pay": 54.4,
+      "ae_str_pscal": 98.0,
+      "ae_str": 98.3
+    }
+  }
+}

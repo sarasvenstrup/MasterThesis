@@ -1,7 +1,7 @@
 \chapter{Data}
 \label{chap:datadescription}
 
-This chapter describes the panel of par swap rates used throughout the thesis. The dataset is used for both model training and evaluation, and its characteristics are essential for interpreting the results in later chapters. The chapter proceeds by first presenting the data source and coverage, before outlining the modeling choices made prior to application.
+This chapter describes the panel data of par swap rates used throughout the thesis. The dataset is used for both model training and evaluation, and its characteristics are essential for interpreting the results in later chapters. The chapter proceeds by first presenting the data source and coverage, before outlining the modeling choices made prior to application.
 
 \section{Data Description}
 
@@ -33,8 +33,7 @@ one missing tenor.}
 \label{tab:data_summary}
 \end{table}
 
-The panel is unbalanced across currencies, with start and end dates varying considerably. Most currencies span the full period from March 2004 to February 2024, while JPY and USD begin in 2009 and GBP covers a notably shorter period from May 2011 to November 2021, yielding only 127 observations. NOK, CAD and DKK have a small number of missing months within their respective sample periods. Missing observations are simply excluded and the remaining data is considered sufficient for training and evaluation across all nine currencies.
-
+The panel is unbalanced across currencies, with start and end dates varying considerably. Most currencies span the full period from March 2004 to February 2024, while JPY and USD begin in 2009 and GBP covers a notably shorter period from May 2011 to November 2021, yielding only 127 observations. NOK, CAD and DKK have a small number of missing months within their respective sample periods. Importantly, the missing observations correspond to absent monthly dates rather than incomplete yield curves, since all available curves contain the full set of tenors. Therefore, missing observations are excluded and the remaining data is considered sufficient for training and evaluation across all nine currencies.
 
 \begin{figure}[htbp]
     \centering
@@ -62,6 +61,8 @@ The panel is unbalanced across currencies, with start and end dates varying cons
 Having established the data coverage, we now turn to the main time-series characteristics of the swap rate data. The 10-year swap rates in Figure~\ref{fig:D2b_10y_timeseries} show a broadly declining trend across currencies from the beginning of the sample until around 2020, followed by a sharp increase from 2022 onwards. Four macroeconomic events are particularly visible in the sample.
 
 % The economy following the GFC was still weak as demand was depressed, as households and businesses were paying down debt and saving rather than spending and investing, also resulting in less people being hired. Banks where not lending after suffering massive losses trying to rebuild capital. 
+
+\textcolor{red}{GENERALIZE THESE EVENTS AND BE AWARE OF THE REFERENCE}
 
 \begin{itemize}
     \item \textbf{Event 1} \textcolor{UCPHred}{\textbf{|}} \; The Global Financial Crisis in September 2008 triggered a sharp and synchronized decline in swap rates, as central banks responded by lowering policy rates to support economic activity \citep{RBA2024}. 

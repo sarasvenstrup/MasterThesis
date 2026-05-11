@@ -1,0 +1,24 @@
+\begin{table}[H]
+\centering
+\caption{Per-cell forward bias and effective ATM exercise probability at the expiry-level calibrated scale. The forward bias $\mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] - F_0$ is measured directly from put-call parity: $(V_{\mathrm{pay}} - V_{\mathrm{rec}})/\mathcal{A}_0$. The effective exercise probability $p_{\mathrm{eff}} = \Phi(d_{\mathrm{eff}})$ where $d_{\mathrm{eff}} = \text{forward bias} / (\sigma_{\mathrm{str}}\sqrt{T_e})$ measures how far the model's $\mathbb{Q}$ distribution is shifted relative to its own width. Under a correctly specified risk-neutral model: forward bias $= 0$ and $p_{\mathrm{eff}} = 50\%$. Deviations quantify the failure of $\mathcal{K}$ to satisfy the annuity-measure martingale condition.}
+\label{tab:delta_diagnostic}
+\begin{tabular}{@{}ccrrrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten} & $\sigma_{\mathrm{mkt}}$ \textbf{(bp)} & $\sigma_{\mathrm{str}}$ \textbf{(bp)} & \textbf{Fwd bias (bp)} & $d_{\mathrm{eff}}$ & $p_{\mathrm{eff}}$ \textbf{(\%)} \\
+\midrule
+1 & 1 & 60 & 588 & $-255$ & $-0.43$ & 33.3 \\
+1 & 5 & 73 & 991 & $-694$ & $-0.70$ & 24.2 \\
+1 & 10 & 90 & 384 & $-207$ & $-0.53$ & 29.8 \\
+\addlinespace[2pt]
+5 & 1 & 56 & 226 & $-85$ & $-0.16$ & 43.8 \\
+5 & 5 & 58 & 494 & $-665$ & $-0.60$ & 27.4 \\
+5 & 10 & 53 & 205 & $-167$ & $-0.36$ & 36.2 \\
+\addlinespace[2pt]
+10 & 1 & 48 & 143 & $-18$ & $-0.03$ & 48.8 \\
+10 & 5 & 45 & 336 & $-587$ & $-0.55$ & 29.1 \\
+10 & 10 & 43 & 148 & $-145$ & $-0.30$ & 38.2 \\
+\midrule
+\textbf{Overall} & & 58 & 376 & $-313$ & & 34.6 \\
+\bottomrule
+\end{tabular}
+\end{table}

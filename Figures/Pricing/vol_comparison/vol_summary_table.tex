@@ -1,0 +1,24 @@
+\begin{table}[H]
+\centering
+\caption{ATM swaption vol MAE (bp) by model. Entries show the mean absolute error $|\hat\sigma_{N,\mathrm{mod}} - \sigma_{\mathrm{mkt}}|$ averaged over all available quote dates for each (expiry, tenor) pair.}
+\label{tab:vol_comparison_mae}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten} & \textbf{Stable (dim4)} & \textbf{Stable + cal. H (s=0.151)} \\
+\midrule
+1 & 1 & 587 & 201 \\
+1 & 5 & 474 & 74 \\
+1 & 10 & 440 & 96 \\
+\addlinespace[2pt]
+5 & 1 & 378 & 130 \\
+5 & 5 & 285 & 80 \\
+5 & 10 & 238 & 71 \\
+\addlinespace[2pt]
+10 & 1 & 234 & 93 \\
+10 & 5 & 177 & 62 \\
+10 & 10 & 138 & 49 \\
+\midrule
+\textbf{Overall MAE} & & 315.1 & 91.0 \\
+\bottomrule
+\end{tabular}
+\end{table}

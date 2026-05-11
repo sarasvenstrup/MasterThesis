@@ -1,0 +1,10 @@
+{
+  "s_ols": 0.150871,
+  "n_swaptions_priced": 1246,
+  "vol_mae_s1_bp": 314.96,
+  "vol_mae_cal_bp": 91.0,
+  "vol_rmse_s1_bp": 350.51,
+  "vol_rmse_cal_bp": 107.97,
+  "recon_rmse_before_bp": 5.3,
+  "recon_rmse_after_bp": 45.89
+}

@@ -166,8 +166,8 @@ Let the $n$-dimensional process $X$ have dynamics given by \eqref{eq:multiSDE} a
     + \sum_{i=1}^n \frac{\partial f}{\partial x^i}\,\sigma_t^i\,dW_t,
     \label{eq:Ito}
 \end{equation}
-where $H$ denotes the Hessian matrix with
-$$H_{ij}=\frac{\partial^2f}{\partial {x^i}\partial {x^j}},$$
+where $H_f$ denotes the Hessian matrix with
+$$H_f{ij}=\frac{\partial^2f}{\partial {x^i}\partial {x^j}},$$
 and $\text{tr}$ denotes the trace of a matrix, which is defined as $\text{tr}(A)=\sum_i A_{ii}$ for any square matrix $A$.
 \label{thm:ito}
 \end{theorem}
@@ -458,7 +458,7 @@ f(t,T)=-\frac{\partial}{\partial T}\log P(t,T),
 provided the derivative exists. 
 \end{definition}
 
-The function $T\mapsto f(t,T)$ is called the forward curve. The instantaneous short rate arises as the limit as maturity approaches $t$.
+The function $T\mapsto f(t,T)$ is called the forward curve. The instantaneous short rate arises as the limit as maturity $T$ approaches $t$.
 
 \begin{definition}[Instantaneous Short Rate]
 The instantaneous short rate at time $t$ is defined by
@@ -505,7 +505,7 @@ Under Assumption \ref{as:singlecurve} the family $\{P(t,T)\}_{T\geq t}$ fully en
 
 \subsection{Interest Rate Swaps}
 
-An interest rate swap is an agreement to exchange a fixed payment stream for a floating payment stream \citep{Filipovic2009}. Consider the standard fixed-for-floating interest rate swap initiated at time $t$ and maturing at $T=t+\tau$, where $\tau$ is time to maturity. Let
+A standard interest rate swap is an agreement to exchange a fixed payment stream for a floating payment stream \citep{Filipovic2009}. Consider the standard fixed-for-floating interest rate swap initiated at time $t$ and maturing at $T=t+\tau$, where $\tau$ is time to maturity. Let
 \[
 T_0=t<T_1<\dots<T_n=T
 \]
