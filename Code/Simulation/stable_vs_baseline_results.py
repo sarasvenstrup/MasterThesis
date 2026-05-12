@@ -1066,12 +1066,25 @@ def main():
     # If make_diagnostics_table.py is missing for any reason, fall through
     # gracefully so the rest of the simulation output is unaffected.
     try:
-        from make_diagnostics import build_rows, render  # local module
+        from make_diagnostics import build_rows, render, render_insample_rmse  # local module
         d = {r["Metric"]: (r["Baseline"], r["Stable"]) for r in rows}
+
         tex_path = os.path.join(OUT_DIR, "sim_diagnostics_table.tex")
         with open(tex_path, "w", encoding="utf-8") as fh:
             fh.write(render(build_rows(d)))
         print(f"  Saved {tex_path}")
+
+        rmse_tex_path = os.path.join(OUT_DIR, "sim_insample_rmse_table.tex")
+        with open(rmse_tex_path, "w", encoding="utf-8") as fh:
+            fh.write(render_insample_rmse(d))
+        print(f"  Saved {rmse_tex_path}")
+
+        rmse_csv_path = os.path.join(OUT_DIR, "sim_insample_rmse_table.csv")
+        with open(rmse_csv_path, "w", encoding="utf-8") as fh:
+            fh.write("variant,rmse\n")
+            fh.write(f"Baseline,{rmse_base:.2f}\n")
+            fh.write(f"Stable,{rmse_stab:.2f}\n")
+        print(f"  Saved {rmse_csv_path}")
     except ImportError:
         print("  [tex] make_diagnostics.py not found — skipping .tex fragment")
     except Exception as e:
@@ -1111,6 +1124,8 @@ def main():
                 )
             if i < len(_dims) - 1:
                 _tex_rows.append(r"    \midrule")
+
+        _tex_rows.append(r"    \bottomrule")
 
         oos_tex_path = os.path.join(OUT_DIR, "oos_summary_table.tex")
         with open(oos_tex_path, "w", encoding="utf-8") as fh:
