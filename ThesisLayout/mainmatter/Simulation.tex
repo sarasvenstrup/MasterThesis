@@ -451,14 +451,14 @@ The experiment shows that the stability restrictions turn out to be a practical 
 
 
 %========================================================
-\subsection{Reconstruction Accuracy}
+\subsection{Reconstruction Accuracy under Stability Constraints}
 \label{subsec:sim_reconstruction_accuracy}
 %========================================================
 
-Imposing stability comes at a cost in model flexibility. This section examines whether that cost shows up in reconstruction accuracy.
+Imposing stability restrictions improves simulation behaviour. The question is whether this comes at the cost of the model's primary objective of reconstructing observed swap curves and the zero-coupon bond prices derived from them.
 
 
-We start off by comparing the in-sample reconstruction errors for the two models used in the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports the in-sample EUR swap-curve reconstruction RMSE for both models from the simulation experiment. Both models are trained on multi-currency swap-rate data, but the error is measured on the EUR curve only.
+The assessment begins with the two models from the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports their in-sample RMSE on the EUR swap curve. Both models are trained on multi-currency data but evaluated on the EUR curve only.
 
 \begin{table}[H]
 \centering
@@ -468,37 +468,29 @@ We start off by comparing the in-sample reconstruction errors for the two models
 \label{tab:sim_insample_rmse}
 \end{table}
 
-Table~\ref{tab:sim_insample_rmse} shows that the stable variant does not sacrifice in-sample reconstruction accuracy in this experiment. It achieves a lower in-sample RMSE than the baseline model, with \(8.49\) bps compared to \(17.61\) bps. Thus, in this experiment, the stable simulation behaviour is not obtained by giving up reconstruction accuracy. 
+The stable variant achieves \(8.49\) bps compared to \(17.61\) bps for the baseline, so the improved behavior does not come at the cost of in-sample fit. 
 
-
-
-
-We also compare the two variants out of sample using the rolling-window evaluation protocol from Chapter~\ref{chap:evaluation}. The experiment is repeated for latent dimensions \(\ell\in\{2,3,4\}\), with each model trained for \(3500\) epochs. Reconstruction accuracy is measured by the rolling out-of-sample RMSE.
+In-sample accuracy alone does not confirm that the model generalises to unseen data. Table \ref{tab:oos_summary_sim} extends the comparison to a rolling out-of-sample evaluation across latent dimensions $\ell\in\{2,3,4\}$, following the protocol from Chapter \ref{chap:evaluation}, with each model trained for 3500 epochs.
 
 \begin{table}[H]
 \centering
 \small
 \begin{tabular}{@{}llrrr@{}}
 \toprule
-\(\ell\) & Variant & Mean OOS (bps) & Max OOS (bps) & Mean IS (bps) \\
+\(\ell\) & Variant & Mean IS (bps) & Mean OOS (bps) & Max OOS (bps) \\
 \midrule
-2 & Baseline & 19.0  & 77.0    & 10.5  \\
-2 & Stable   & 127.6 & 1811.7  & 138.7 \\
-\midrule
-3 & Baseline & 66.5  & 632.6   & 11.6  \\
-3 & Stable   & 21.6  & 145.7   & 10.5  \\
-\midrule
-4 & Baseline & 100.5 & 691.8   & 9.3   \\
-4 & Stable   & 12.1  & 24.2    & 8.1   \\
+\input{Figures/Simulation/oos_summary_table}
 \bottomrule
 \end{tabular}
 \caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column reports the average rolling-window in-sample RMSE for reference. All models are trained for \(3500\) epochs. RMSE values are reported in basis points.}
-\label{tab:oos_summary}
+\label{tab:oos_summary_sim}
 \end{table}
 
-Table~\ref{tab:oos_summary} shows that the effect of the stability restrictions depends strongly on the latent dimension. For the baseline model, the mean out-of-sample RMSE worsens as the latent dimension increases, even though the mean in-sample RMSE remains low. This indicates that a good in-sample fit does not necessarily translate into robust out-of-sample reconstruction.
+The results show that the effect of the stability restrictions depend strongly on the latent dimension. At $\ell=2$, the baseline generalises well out of sample while the stable model struggles, with restrictions that appear too strong relative to the available latent degrees of freedom. As the dimension increases, the picture shifts. The baseline's out-of-sample RMSE worsens despite consistently low in-sample errors, consistent with overfitting to the training window, while the stable model improves substantially and at $\ell=4$ achieves the best out-of-sample performance across all configurations. The restrictions there require sufficient latent capacity to be effective.
 
-The stable variant shows the opposite pattern. At \(\ell=2\), the restrictions appear too strong relative to the limited latent dimension, leading to both high in-sample and out-of-sample RMSE. As the latent dimension increases, the stable model gains more flexibility while retaining the same stability restrictions. Its reconstruction performance therefore improves substantially, and at \(\ell=4\) it achieves the lowest mean out-of-sample RMSE, the lowest worst-window RMSE, and the lowest mean in-sample RMSE among all configurations in Table~\ref{tab:oos_summary}. This suggests that the stability restrictions are not inherently harmful for reconstruction, but require enough latent flexibility to represent the observed curve movements.
+
+
+
 
 To better understand where the out-of-sample errors arise, we next inspect the rolling-window errors over time. This is useful because the average and maximum RMSE values in Table~\ref{tab:oos_summary} may be driven by a small number of stressed market periods rather than by persistent differences across all windows.
 
