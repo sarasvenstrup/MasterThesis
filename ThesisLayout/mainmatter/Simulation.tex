@@ -462,8 +462,16 @@ The assessment begins with the two models from the simulation experiment. Table~
 
 \begin{table}[H]
 \centering
-\small
-\input{Figures/Simulation/sim_insample_rmse_table}
+{\small
+\pgfplotstableread[col sep=comma]{Figures/Simulation/sim_insample_rmse_table.csv}\datrmse
+\pgfplotstabletypeset[
+  columns={variant, rmse},
+  columns/variant/.style={column name={Variant}, string type, column type=l},
+  columns/rmse/.style={column name={In-sample RMSE (bps)}, column type=r, fixed, precision=2, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datrmse}
+}
 \caption{In-sample reconstruction RMSE for the baseline and stable models used in the simulation experiment. Both models are trained on EUR swap-rate data with latent dimension \(\ell=2\) for \(5000\) epochs. RMSE is reported in basis points.}
 \label{tab:sim_insample_rmse}
 \end{table}
@@ -485,8 +493,8 @@ In-sample accuracy alone does not confirm that the model generalises to unseen d
   columns/max_oos/.style={column name={Max OOS}, column type=r, fixed, precision=1, fixed zerofill},
   every head row/.style={before row=\toprule, after row=\midrule},
   every last row/.style={after row=\bottomrule},
-  every row 1 column 0/.style={after row=\midrule},
-  every row 3 column 0/.style={after row=\midrule},
+  every row 1/.style={after row=\midrule},
+  every row 3/.style={after row=\midrule},
 ]{\datoos}
 }
 \caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows
