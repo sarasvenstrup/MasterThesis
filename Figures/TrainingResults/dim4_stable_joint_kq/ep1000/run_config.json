@@ -5,7 +5,7 @@
   "variant": "stable",
   "epochs": 1000,
   "n_steps_per_epoch": 8,
-  "pretrain_ckpt": "C:\\Users\\Bruger\\PycharmProjects\\MasterThesis\\Figures\\TrainingResults\\dim4_stable\\ep5000\\checkpoint_dim4_ep5000.pt",
+  "pretrain_ckpt": "/Users/sarasvenstrup/PycharmProjects/MasterThesis/Figures/TrainingResults/dim4_stable/ep5000/checkpoint_dim4_ep5000.pt",
   "lr_kq": 0.0001,
   "lr_h": 5e-05,
   "lambda_price": 1.0,

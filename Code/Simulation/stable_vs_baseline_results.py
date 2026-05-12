@@ -289,12 +289,90 @@ def main():
     zb = _np(z_base); zs = _np(z_stab)
     rb = _np(r_base); rs = _np(r_stab)
 
+    print(f"Initial short rate — Baseline: {rb[0,0]*100:.2f}%  Stable: {rs[0,0]*100:.2f}%")
+
     disc_base = _np(compute_discount_paths(r_base, DT))
     disc_stab = _np(compute_discount_paths(r_stab, DT))
 
     # sample-path indices for overlay (fixed seed)
     sp_rng  = np.random.default_rng(99)
     sp_idx  = sp_rng.choice(N_PATHS, size=N_SAMPLE_PATHS, replace=False)
+
+    # =================================================================
+    # FIG 0: Training latent cloud — time series per factor
+    # =================================================================
+    print("\n-- Fig 0: Training latent cloud (time series) --")
+    if LATENT_DIM >= 2:
+        dates = pd.to_datetime(meta["as_of_date"].values)
+        init_date = pd.Timestamp("2010-01-29")
+        init_mask = dates == init_date
+
+        fig, axes = plt.subplots(LATENT_DIM, 1, figsize=(12, 4 * LATENT_DIM), sharex=True)
+        if LATENT_DIM == 1:
+            axes = [axes]
+
+        h_base = h_stab = h_band_base = h_band_stab = h_star_base = h_star_stab = None
+
+        for dd in range(LATENT_DIM):
+            ax = axes[dd]
+
+            # ±2σ horizontal bands
+            for z_train, c, alpha in [
+                (z_np_base, C_BASE, 0.12),
+                (z_np_stab, C_STAB, 0.12),
+            ]:
+                mean_d = z_train[:, dd].mean()
+                std_d  = z_train[:, dd].std()
+                h = ax.axhspan(mean_d - 2*std_d, mean_d + 2*std_d,
+                               color=c, alpha=alpha, zorder=0)
+                if dd == 0:
+                    if c == C_BASE:
+                        h_band_base = h
+                    else:
+                        h_band_stab = h
+
+            # Training dots
+            sc_base = ax.scatter(dates, z_np_base[:, dd],
+                                 color=C_BASE, alpha=0.45, s=12, zorder=2)
+            sc_stab = ax.scatter(dates, z_np_stab[:, dd],
+                                 color=C_STAB, alpha=0.45, s=12, zorder=2)
+            if dd == 0:
+                h_base = sc_base
+                h_stab = sc_stab
+
+            # Initial state stars
+            if init_mask.any():
+                idx = np.where(init_mask)[0][0]
+                st_base = ax.scatter(dates[idx], z_np_base[idx, dd],
+                                     color=C_BASE, s=150, marker="*", zorder=5,
+                                     edgecolors="black", linewidths=0.5)
+                st_stab = ax.scatter(dates[idx], z_np_stab[idx, dd],
+                                     color=C_STAB, s=150, marker="*", zorder=5,
+                                     edgecolors="black", linewidths=0.5)
+                if dd == 0:
+                    h_star_base = st_base
+                    h_star_stab = st_stab
+
+            ax.set_ylabel(f"$z_{{{dd+1}}}$")
+            ax.grid(True, alpha=0.3)
+
+        axes[-1].set_xlabel("")
+
+        # single legend below, moved slightly closer to the x-axis
+        fig.legend(
+            [h_base, h_stab, h_band_base, h_band_stab, h_star_base, h_star_stab],
+            ["Baseline", "Stable",
+             r"$\pm 2\sigma$ region (Baseline)", r"$\pm 2\sigma$ region (Stable)",
+             "Initial state, Baseline (29 Jan 2010)",
+             "Initial state, Stable (29 Jan 2010)"],
+            loc="upper center", bbox_to_anchor=(0.5, 0.08),
+            frameon=False, fontsize=8, ncol=3,
+        )
+        fig.tight_layout()
+        fig.subplots_adjust(bottom=0.14)
+        p = os.path.join(OUT_DIR, "fig_training_cloud.png")
+        fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
+        print(f"  Saved {p}")
 
     # =================================================================
     # FIG 1: Eigenvalues of the drift matrix M
@@ -476,6 +554,7 @@ def main():
             if k == 0:
                 h_samp = line
         ax.axhline(0, color="black", linewidth=0.7, linestyle="--", alpha=0.4)
+        ax.set_title(lbl)
         ax.set_xlabel("Years")
         if ax_idx == 0:
             ax.set_ylabel("Short rate (%)")
@@ -618,13 +697,13 @@ def main():
             ax.set_ylabel(r"$\log_{10}(\mathrm{mean}\;|z_d|)$")
         ax.grid(True, alpha=0.3)
 
-    # shared legend to the right of the second column
+    # shared legend below the figures
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels,
-               loc="center left", bbox_to_anchor=(0.88, 0.5),
-               frameon=False, fontsize=8)
+               loc="upper center", bbox_to_anchor=(0.5, -0.02),
+               frameon=False, fontsize=8, ncol=3)
     fig.tight_layout()
-    fig.subplots_adjust(right=0.85)
+    fig.subplots_adjust(bottom=0.18)
     p = os.path.join(OUT_DIR, "fig_log_growth.png")
     fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
     print(f"  Saved {p}")

@@ -1,7 +1,8 @@
 """
-Runner script: runs OOS roll for baseline ℓ=4 only.
+Runner script: runs missing OOS rolls for baseline ℓ=2 and ℓ=4.
 
-  Stage 1 — OOS roll (baseline): LATENT_DIM = 4
+  Stage 1 — OOS roll (baseline): LATENT_DIM = 2
+  Stage 2 — OOS roll (baseline): LATENT_DIM = 4
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -20,6 +21,14 @@ except NameError:
 OOS_ROLL_PATH  = os.path.join(REPO_ROOT, "Code", "OutOfSampleRoll.py")
 
 STAGES = [
+    # ── OOS roll — baseline ℓ=2 ─────────────────────────────────────────────
+    {
+        "name":          "OOS roll (baseline ℓ=2)",
+        "script":        OOS_ROLL_PATH,
+        "dims":          [2],
+        "model_variant": "baseline",
+        "patches":       {},          # EPOCHS already 3500 in OutOfSampleRoll.py
+    },
     # ── OOS roll — baseline ℓ=4 ─────────────────────────────────────────────
     {
         "name":          "OOS roll (baseline ℓ=4)",
