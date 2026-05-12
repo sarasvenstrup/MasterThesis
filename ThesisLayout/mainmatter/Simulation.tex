@@ -463,14 +463,7 @@ The assessment begins with the two models from the simulation experiment. Table~
 \begin{table}[H]
 \centering
 {\small
-\pgfplotstableread[col sep=comma]{Figures/Simulation/sim_insample_rmse_table.csv}\datrmse
-\pgfplotstabletypeset[
-  columns={variant, rmse},
-  columns/variant/.style={column name={Variant}, string type, column type=l},
-  columns/rmse/.style={column name={In-sample RMSE (bps)}, column type=r, fixed, precision=2, fixed zerofill},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={after row=\bottomrule},
-]{\datrmse}
+\input{Figures/Simulation/sim_insample_rmse_table}
 }
 \caption{In-sample reconstruction RMSE for the baseline and stable models used in the simulation experiment. Both models are trained on EUR swap-rate data with latent dimension \(\ell=2\) for \(5000\) epochs. RMSE is reported in basis points.}
 \label{tab:sim_insample_rmse}
@@ -483,19 +476,13 @@ In-sample accuracy alone does not confirm that the model generalises to unseen d
 \begin{table}[H]
 \centering
 {\small
-\pgfplotstableread[col sep=comma]{Figures/Simulation/oos_summary_table.csv}\datoos
-\pgfplotstabletypeset[
-  columns={dim, variant, mean_is, mean_oos, max_oos},
-  columns/dim/.style={column name={\(\ell\)}, string type, column type=c},
-  columns/variant/.style={column name={Variant}, string type, column type=l},
-  columns/mean_is/.style={column name={Mean IS}, column type=r, fixed, precision=1, fixed zerofill},
-  columns/mean_oos/.style={column name={Mean OOS}, column type=r, fixed, precision=1, fixed zerofill},
-  columns/max_oos/.style={column name={Max OOS}, column type=r, fixed, precision=1, fixed zerofill},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every last row/.style={after row=\bottomrule},
-  every row 1/.style={after row=\midrule},
-  every row 3/.style={after row=\midrule},
-]{\datoos}
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+\(\ell\) & Variant & Mean IS & Mean OOS & Max OOS \\
+\midrule
+\input{Figures/Simulation/oos_summary_table}
+%\bottomrule
+\end{tabular}
 }
 \caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows
 for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column
