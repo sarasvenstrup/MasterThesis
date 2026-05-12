@@ -472,7 +472,29 @@ The stable variant achieves \(8.49\) bps compared to \(17.61\) bps for the basel
 
 In-sample accuracy alone does not confirm that the model generalises to unseen data. Table \ref{tab:oos_summary_sim} extends the comparison to a rolling out-of-sample evaluation across latent dimensions $\ell\in\{2,3,4\}$, following the protocol from Chapter \ref{chap:evaluation}, with each model trained for 3500 epochs.
 
-
+\begin{table}[H]
+\centering
+{\small
+\pgfplotstableread[col sep=comma]{Figures/Simulation/oos_summary_table.csv}\datoos
+\pgfplotstabletypeset[
+  columns={dim, variant, mean_is, mean_oos, max_oos},
+  columns/dim/.style={column name={\(\ell\)}, string type, column type=c},
+  columns/variant/.style={column name={Variant}, string type, column type=l},
+  columns/mean_is/.style={column name={Mean IS}, column type=r, fixed, precision=1, fixed zerofill},
+  columns/mean_oos/.style={column name={Mean OOS}, column type=r, fixed, precision=1, fixed zerofill},
+  columns/max_oos/.style={column name={Max OOS}, column type=r, fixed, precision=1, fixed zerofill},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+  every row 1 column 0/.style={after row=\midrule},
+  every row 3 column 0/.style={after row=\midrule},
+]{\datoos}
+}
+\caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows
+for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column
+reports the average rolling-window in-sample RMSE for reference. All models are
+trained for \(3500\) epochs. RMSE values are reported in basis points.}
+\label{tab:oos_summary_sim}
+\end{table}
 
 The results show that the effect of the stability restrictions depend strongly on the latent dimension. At $\ell=2$, the baseline generalises well out of sample while the stable model struggles, with restrictions that appear too strong relative to the available latent degrees of freedom. As the dimension increases, the picture shifts. The baseline's out-of-sample RMSE worsens despite consistently low in-sample errors, consistent with overfitting to the training window, while the stable model improves substantially and at $\ell=4$ achieves the best out-of-sample performance across all configurations. The restrictions there require sufficient latent capacity to be effective.
 
