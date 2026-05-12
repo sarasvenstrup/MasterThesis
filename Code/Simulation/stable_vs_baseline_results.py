@@ -933,7 +933,7 @@ def main():
             df["neg_flag"] = (actual < 0).any(axis=1)
             return df
 
-        fig9, axes9 = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=True)
+        fig9, axes9 = plt.subplots(2, 1, figsize=(11, 7), sharex=True, sharey=False)
 
         _legend_handles9 = []
         for ax9, variant, lbl_model in zip(axes9,
@@ -971,23 +971,231 @@ def main():
         _all_handles9 = []
         _all_labels9  = []
         for lbl, inv_flag, neg_flag, col in _REGIME_GROUPS:
+            if lbl == "Inverted, Negative":
+                continue
             import matplotlib.lines as _mlines
             _all_handles9.append(_mlines.Line2D([], [], marker="o", color=col,
                                                 linestyle="None", markersize=5))
             _all_labels9.append(lbl)
-        axes9[0].legend(_all_handles9, _all_labels9,
-                        fontsize=7, frameon=True, facecolor="white", edgecolor="none",
-                        loc="center left", bbox_to_anchor=(1.02, 0.5), markerscale=1)
+        axes9[-1].legend(_all_handles9, _all_labels9,
+                         fontsize=7, frameon=True, facecolor="white", edgecolor="none",
+                         loc="upper center", bbox_to_anchor=(0.5, -0.15),
+                         ncol=4, markerscale=1)
 
         axes9[-1].xaxis.set_major_formatter(_mdates.DateFormatter("%Y"))
         fig9.autofmt_xdate()
         fig9.tight_layout()
-        fig9.subplots_adjust(right=0.88)
+        fig9.subplots_adjust(bottom=0.15)
         p = os.path.join(OUT_DIR, "fig_regime_scatter.png")
         fig9.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig9)
         print(f"  Saved {p}")
     except Exception as e:
         print(f"  [Fig 9 regime scatter] failed: {e}")
+        import traceback; traceback.print_exc()
+
+    # =================================================================
+    # FIG 10: Learned short rate r̃(z_t) on training data
+    #         One figure per latent dimension (2, 3, 4)
+    #         Two panels per figure (baseline / stable), one line per currency
+    # =================================================================
+    print("\n-- Fig 10: Learned short rate on training data (per dim, per currency) --")
+    try:
+        from Code.load_swapdata import custom_palette as _cp10
+        import matplotlib.dates as _mdates10
+
+        _CCY_ORDER10 = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
+        _ccy_colors10 = {ccy: _cp10[i % len(_cp10)] for i, ccy in enumerate(_CCY_ORDER10)}
+
+        # load all-currency training data once
+        _meta10, _X10, *_ = my_data(use=USE, ccy_filter=None)
+
+        for _dim10 in [2, 3, 4]:
+            print(f"  dim={_dim10} ...")
+
+            def _load_model10(variant, dim=_dim10):
+                ckpt = os.path.join(
+                    THESIS_ROOT, "Figures", "TrainingResults",
+                    f"dim{dim}_{variant}", f"ep5000",
+                    f"checkpoint_dim{dim}_ep5000.pt",
+                )
+                if not os.path.exists(ckpt):
+                    print(f"    [Fig 10] checkpoint not found: {ckpt}")
+                    return None
+                return _load_model(variant, ckpt, dim, DEVICE, DTYPE)
+
+            _m10_base = _load_model10("baseline")
+            _m10_stab = _load_model10("stable")
+
+            if _m10_base is None or _m10_stab is None:
+                print(f"    [Fig 10] skipping dim={_dim10} — checkpoint missing.")
+                continue
+
+            fig10, axes10 = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+            _legend_handles10 = []
+            _legend_labels10  = []
+
+            for _model10, _mlbl, _mcol, _ax10 in [
+                (_m10_base, "Baseline", C_BASE, axes10[0]),
+                (_m10_stab, "Stable",   C_STAB, axes10[1]),
+            ]:
+                for ccy in _CCY_ORDER10:
+                    _mask_ccy = _meta10["ccy"].values == ccy
+                    if not _mask_ccy.any():
+                        continue
+                    _dates_ccy = pd.to_datetime(_meta10["as_of_date"].values[_mask_ccy])
+                    _X_ccy = _X10[_mask_ccy].to(device=DEVICE, dtype=DTYPE)
+
+                    with torch.no_grad():
+                        _z_ccy = _model10.encoder(_X_ccy)
+                        _r_ccy = _model10.R(_z_ccy).squeeze(-1)
+
+                    _r_ccy_np = _np(_r_ccy) * 100
+                    _col_ccy  = _ccy_colors10.get(ccy, "grey")
+
+                    ln, = _ax10.plot(_dates_ccy, _r_ccy_np,
+                                     color=_col_ccy, linewidth=0.8, alpha=0.80,
+                                     label=ccy)
+                    if ccy not in _legend_labels10:
+                        _legend_handles10.append(ln)
+                        _legend_labels10.append(ccy)
+
+                _ax10.axhline(0, color="black", linewidth=0.6, linestyle="--", alpha=0.35)
+                _ax10.set_ylabel("$\\tilde{r}(z_t)$ (%)")
+                _ax10.grid(True, alpha=0.3)
+                _ax10.annotate(_mlbl, xy=(0.01, 0.95), xycoords="axes fraction",
+                               ha="left", va="top", fontsize=10, fontweight="bold",
+                               color=_mcol)
+
+            axes10[-1].legend(_legend_handles10, _legend_labels10,
+                              fontsize=8, frameon=False,
+                              loc="upper center", bbox_to_anchor=(0.5, -0.12),
+                              ncol=len(_CCY_ORDER10))
+            axes10[-1].xaxis.set_major_formatter(_mdates10.DateFormatter("%Y"))
+            fig10.autofmt_xdate()
+            fig10.tight_layout()
+            fig10.subplots_adjust(bottom=0.12)
+
+            p = os.path.join(OUT_DIR, f"fig_short_rate_training_dim{_dim10}.png")
+            fig10.savefig(p, dpi=300, bbox_inches="tight")
+            plt.close(fig10)
+            print(f"    Saved {p}")
+
+    except Exception as e:
+        print(f"  [Fig 10 short rate training] failed: {e}")
+        import traceback; traceback.print_exc()
+
+    # =================================================================
+    # FIG 11: Drift components M·z_t on training data
+    #         One figure per latent dimension (2, 3, 4)
+    #         dim rows × 2 cols (baseline left, stable right)
+    #         one line per currency per subplot
+    # =================================================================
+    print("\n-- Fig 11: Drift components on training data (per dim, per currency) --")
+    try:
+        from Code.load_swapdata import custom_palette as _cp11
+        import matplotlib.dates as _mdates11
+
+        _CCY_ORDER11 = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
+        _ccy_colors11 = {ccy: _cp11[i % len(_cp11)] for i, ccy in enumerate(_CCY_ORDER11)}
+
+        # load all-currency training data once
+        _meta11, _X11, *_ = my_data(use=USE, ccy_filter=None)
+
+        for _dim11 in [2, 3, 4]:
+            print(f"  dim={_dim11} ...")
+
+            def _load_model11(variant, dim=_dim11):
+                ckpt = os.path.join(
+                    THESIS_ROOT, "Figures", "TrainingResults",
+                    f"dim{dim}_{variant}", f"ep5000",
+                    f"checkpoint_dim{dim}_ep5000.pt",
+                )
+                if not os.path.exists(ckpt):
+                    print(f"    [Fig 11] checkpoint not found: {ckpt}")
+                    return None
+                return _load_model(variant, ckpt, dim, DEVICE, DTYPE)
+
+            _m11_base = _load_model11("baseline")
+            _m11_stab = _load_model11("stable")
+            if _m11_base is None or _m11_stab is None:
+                print(f"    [Fig 11] skipping dim={_dim11} — checkpoint missing.")
+                continue
+
+            fig11, axes11 = plt.subplots(
+                _dim11, 2,
+                figsize=(13, 3.2 * _dim11),
+                sharex=True,
+            )
+            if _dim11 == 1:
+                axes11 = axes11[np.newaxis, :]   # ensure 2-D indexing
+
+            _legend_handles11 = []
+            _legend_labels11  = []
+
+            for _col11, (_model11, _mlbl, _mcol) in enumerate([
+                (_m11_base, "Baseline", C_BASE),
+                (_m11_stab, "Stable",   C_STAB),
+            ]):
+                # encode full training set once per model, then compute full drift μ(z) = Mz + N
+                _X11_t = _X11.to(device=DEVICE, dtype=DTYPE)
+                with torch.no_grad():
+                    _Z11_t  = _model11.encoder(_X11_t)          # (N, dim)
+                    _MU11   = _np(_model11.K(_Z11_t))           # (N, dim)  full drift incl. bias
+                    _Z11    = _np(_Z11_t)
+
+                for _row11 in range(_dim11):
+                    _ax11 = axes11[_row11, _col11]
+
+                    for ccy in _CCY_ORDER11:
+                        _mask_ccy = _meta11["ccy"].values == ccy
+                        if not _mask_ccy.any():
+                            continue
+                        _dates_ccy = pd.to_datetime(
+                            _meta11["as_of_date"].values[_mask_ccy]
+                        )
+                        _drift_ccy = _MU11[_mask_ccy, _row11]  # (T_ccy,)  full μ_d(z_t)
+
+                        _col_ccy = _ccy_colors11.get(ccy, "grey")
+                        ln, = _ax11.plot(
+                            _dates_ccy, _drift_ccy,
+                            color=_col_ccy, linewidth=0.8, alpha=0.80,
+                            label=ccy,
+                        )
+                        if _col11 == 0 and ccy not in _legend_labels11:
+                            _legend_handles11.append(ln)
+                            _legend_labels11.append(ccy)
+
+                    _ax11.axhline(0, color="black", linewidth=0.6,
+                                  linestyle="--", alpha=0.35)
+                    _ax11.grid(True, alpha=0.3)
+                    _lbl11 = r"\ell" if _row11 == _dim11 - 1 else str(_row11 + 1)
+                    _ax11.set_ylabel(f"$\\mu_{{{_lbl11}}}(z_t)$")
+
+                    # column header on top row only
+                    if _row11 == 0:
+                        _ax11.set_title(_mlbl, fontsize=10,
+                                        fontweight="bold", color=_mcol)
+
+            # single legend below the figure
+            fig11.legend(
+                _legend_handles11, _legend_labels11,
+                fontsize=8, frameon=False,
+                loc="upper center", bbox_to_anchor=(0.5, 0.01),
+                ncol=len(_CCY_ORDER11),
+            )
+            axes11[-1, 0].xaxis.set_major_formatter(_mdates11.DateFormatter("%Y"))
+            axes11[-1, 1].xaxis.set_major_formatter(_mdates11.DateFormatter("%Y"))
+            fig11.autofmt_xdate()
+            fig11.tight_layout()
+            fig11.subplots_adjust(bottom=0.08)
+
+            p = os.path.join(OUT_DIR, f"fig_drift_components_dim{_dim11}.png")
+            fig11.savefig(p, dpi=300, bbox_inches="tight")
+            plt.close(fig11)
+            print(f"    Saved {p}")
+
+    except Exception as e:
+        print(f"  [Fig 11 drift components] failed: {e}")
         import traceback; traceback.print_exc()
 
     # =================================================================
