@@ -3,13 +3,9 @@
 \label{chap:pricing_methodology}
 %=========================================================
 
-%The previous chapter examined whether the autoencoder model can be used as a stable forward scenario generator. We now use the same simulation framework for derivative pricing. In fixed-income applications, accurate reconstruction of the current swap curve is not sufficient: the value of an interest-rate derivative depends on the distribution of future discount factors, swap rates and short rates under the risk-neutral measure.
-
-%The encoder--decoder framework provides a natural simulation-based pricing setup. Starting from an observed swap curve, the encoder gives an initial latent state. The learned risk-neutral dynamics are then simulated forward, and the decoder maps each simulated latent state into an arbitrage-free zero-coupon bond curve. This makes it possible to compute pathwise swap rates, annuities and discounted payoffs.
-
 The previous chapter examined whether the trained encoder--decoder model can be used as a stable forward scenario generator. We now ask whether the same model can be used for swaption pricing. This is a stronger requirement than curve reconstruction: pricing depends not only on the current decoded curve, but also on the distribution of future swap rates, discount factors and annuities under the risk-neutral measure.
 
-The chapter is structured as an investigation. We first define the Monte Carlo pricing pipeline and apply it to the pretrained checkpoints. We then test whether joint training can repair the pricing failure, and whether a simpler diffusion-scale calibration is sufficient. The remaining pricing error is diagnosed through the model-implied forward bias, which reveals a mismatch between the historical drift learned from encoded yield-curve dynamics and the risk-neutral drift required for pricing. This motivates a specification with separate drifts \(K^{\mathbb P}\) and \(K^{\mathbb Q}\). The chapter ends by evaluating the remaining errors and discussing volatility-regime dependence as future work.
+The chapter is structured as an investigation. We first define the Monte Carlo pricing pipeline and apply it to the pretrained checkpoints. We then test whether joint training can repair the pricing failure, and whether a simpler diffusion-scale calibration is sufficient. The remaining pricing error is diagnosed through the model-implied forward bias, which reveals a mismatch between the historical drift learned from encoded yield-curve dynamics and the risk-neutral drift required for pricing. This motivates a specification with separate historical and risk-neutral drifts, \(\mathcal K^{\mathbb P}\) and \(\mathcal K^{\mathbb Q}\). The chapter ends by evaluating the remaining errors and discussing volatility-regime dependence as future work.
 
 %=========================================================
 \section{Monte Carlo Swaption Pricing}
@@ -18,7 +14,7 @@ The chapter is structured as an investigation. We first define the Monte Carlo p
 
 We now specialise the simulation-based pricing framework to European swaptions. The objective is to compute the option payoff on each simulated path and then average the discounted payoffs to obtain a time-zero price.
 
-The section first defines the underlying swap and the at-the-money strike. It then derives the pathwise swap rate and payoff at expiry, before introducing the Monte Carlo estimator and the Bachelier normal-volatility convention used for reporting prices.
+The section first defines the underlying swap and the at-the-money strike. It then derives the pathwise swap rate and payoff at expiry, before introducing the Monte Carlo estimator and the Bachelier convention used to express prices as implied normal volatilities.
 
 \subsection{Swaption payoff and pathwise swap rate}
 \label{subsec:swaption_payoff}
@@ -217,16 +213,17 @@ At the money, \(d=0\), so
 =
 \frac12\mathcal N\mathcal A_0.
 \]
-This identity is used later as a benchmark: under a correctly centred annuity-measure model, a market at-the-money payer swaption has exercise probability \(50\%\).
+This identity is used later as a benchmark: in the Bachelier model, a correctly centred market at-the-money payer swaption has \(d=0\), so the annuity-measure exercise probability \(\Phi(d)\) is \(50\%\).
+
 
 %=========================================================
 \section{Can the Pretrained Model Price?}
 \label{sec:can_pretrained_model_price}
 %=========================================================
 
-The autoencoder model from Chapter~\ref{chap:encoderdecodermodel} was trained to minimise reconstruction error on observed swap curves. This objective ensures that the model can reproduce curves close to the training data. Swaption pricing, however, places an additional requirement on the model. The pricing pipeline from Section~\ref{sec:swaption_pricing_methodology} encodes the initial swap curve into a latent state, simulates the latent SDE forward to the option expiry, and then decodes the simulated latent states into zero-coupon bond curves. These simulated latent states need not coincide with the encoded historical states seen during reconstruction training.
+The encoder--decoder model from Chapter~\ref{chap:encoderdecodermodel} was trained to minimise reconstruction error on observed swap curves. This objective ensures that the model can reproduce curves close to the training data. Swaption pricing, however, places an additional requirement on the model. The pricing pipeline from Section~\ref{sec:swaption_pricing_methodology} encodes the initial swap curve into a latent state, simulates the latent SDE forward to the option expiry, and then decodes the simulated latent states into zero-coupon bond curves. These simulated latent states need not coincide with the encoded historical states seen during reconstruction training.
 
-We begin by applying the pricing pipeline directly to the pretrained checkpoints, without any additional calibration. This provides a diagnostic test of whether reconstruction-trained models can be used for swaption pricing out of the box. The baseline and stable checkpoints fail in different ways. The baseline model produces finite numerical outputs, but the resulting swaption prices are economically unreasonable. The stable model avoids explosive latent dynamics, but a large fraction of simulated paths lead to non-finite decoded bond curves. The rest of this section investigates the source of these failures.
+We begin by applying this pipeline directly to the pretrained checkpoints, without any additional calibration. This provides a diagnostic test of whether a reconstruction-trained model can be used for swaption pricing without further adjustment. The direct pricing attempt reveals two different failure modes. The baseline model returns finite numerical outputs, but the resulting swaption prices are economically unreasonable. The stable model avoids explosive latent dynamics, but a large fraction of simulated paths lead to non-finite decoded bond curves. The remainder of this section investigates why these failures occur.
 
 \begin{description}[
     style=unboxed,
@@ -236,7 +233,7 @@ We begin by applying the pricing pipeline directly to the pretrained checkpoints
 ]
 
 \item[The pricing pipeline as an off-manifold test.]
-The Monte Carlo swaption pricing framework developed above can be viewed as a test of the trained autoencoder model away from the pure reconstruction setting. Starting from an observed swap curve, the encoder produces an initial latent state \(z_0\). The latent SDE is then simulated forward to the option expiry, producing a terminal latent state \(z_{T_e}^{(m)}\) on each Monte Carlo path. Finally, the decoder maps \(z_{T_e}^{(m)}\) into a zero-coupon bond curve, from which the pathwise swap rate, annuity and payoff are computed.
+The Monte Carlo swaption pricing framework can be viewed as a test of the trained encoder--decoder model away from the pure reconstruction setting. Starting from an observed swap curve, the encoder produces an initial latent state \(z_0\). The latent SDE is then simulated forward to the option expiry, producing a terminal latent state \(z_{T_e}^{(m)}\) on each Monte Carlo path. Finally, the decoder maps \(z_{T_e}^{(m)}\) into a zero-coupon bond curve, from which the pathwise swap rate, annuity and payoff are computed.
 
 For reconstruction, the decoder is only required to behave well at encoded historical states of the form \(z=E(S)\), where \(S\) is an observed swap curve. For pricing, however, it must also behave well at simulated latent states reached by the SDE. This is a stronger requirement. If the simulated states lie outside the region where the decoder has learned to produce valid discount curves, the resulting swaption prices can become unreliable even if the reconstruction error on observed curves is small.
 
@@ -280,7 +277,9 @@ Figure~\ref{fig:latent_displacement_cdf} plots the cumulative distribution funct
 This explains the different pricing failures. The baseline model sends the latent state far outside the region represented in the training data. Even if the decoder returns finite numerical outputs, these outputs are extreme extrapolations and should not be interpreted as reliable discount curves. The stable model avoids this explosive behaviour, which is the intended effect of the stability restriction. However, the stable paths still move far enough away from the encoded starting point that they enter the range where the decoder robustness test showed frequent failures. Hence the stable model is dynamically well behaved, but the decoder is not necessarily reliable on all latent states visited during pricing.
 
 \item[Drift and diffusion contributions.]
-To understand where the stable model's latent movement comes from, we decompose the simulated motion into drift-only and diffusion-only contributions. This separates the roles of the drift network \(\mathcal K\) and the diffusion network \(\mathcal H\).
+To understand where the stable model's latent movement comes from, we decompose the
+simulated motion into drift-only and diffusion-only contributions. This separates the roles
+of the drift network \(\mathcal K\) and the diffusion network \(\mathcal H\).
 
 \input{Figures/Pricing/tab_hk_decomposition}
 
@@ -310,14 +309,23 @@ This motivates the next question. If the decoder fails on the simulated states r
 \label{sec:joint_training_attempt}
 %=========================================================
 
-The previous section showed that the pretrained stable model cannot be used directly for pricing: the latent dynamics are stable, but the simulated states still move outside the region where the reconstruction-trained model produces reliable discount curves. A natural response is to include swaption prices directly in the training objective. The hope is that the model can then adjust its dynamics so that simulated paths lead to meaningful decoded bond curves and realistic implied volatilities.
+The previous section showed that the pretrained stable model cannot be used directly for
+pricing: the latent dynamics are stable, but the simulated states still move outside the
+region where the reconstruction-trained decoder produces reliable discount curves. A
+natural response is to include swaption prices directly in the training objective. The hope
+is that the model can then adjust its latent dynamics so that simulated paths lead to
+meaningful decoded bond curves and realistic implied volatilities.
 
-This section investigates that possibility. Starting from the pretrained stable checkpoint, we add a pricing loss to the reconstruction objective and examine whether joint training can improve pricing without destroying the curve reconstruction.
+This section investigates that possibility. Starting from the pretrained stable checkpoint, we
+add a pricing loss to the reconstruction objective and examine whether joint training can
+improve pricing without destroying the curve reconstruction.
 
 \subsection{Setup}
 \label{subsec:joint_training_setup}
 
-Starting from the pretrained stable checkpoint, we add a pricing loss to the training objective. For each training date, the latent SDE is simulated forward to the option expiry, the terminal states are decoded into zero-coupon bond curves, and the resulting model-implied normal volatility is compared to the market quote. The combined loss is
+For each training date, the latent SDE is simulated forward to the option expiry, the
+terminal latent states are decoded into zero-coupon bond curves, and the resulting
+model-implied normal volatility is compared to the market quote. The combined loss is
 \begin{equation}
     \mathcal{L}
     =
@@ -328,14 +336,30 @@ Starting from the pretrained stable checkpoint, we add a pricing loss to the tra
     \lambda_{\mathrm{eig}}\,\mathcal{L}_{\mathrm{eig}},
     \label{eq:joint_loss}
 \end{equation}
-where \(\mathcal{L}_{\mathrm{recon}}\) is the mean-squared reconstruction error on observed swap curves, \(\mathcal{L}_{\mathrm{price}}\) is a Huber loss on the error between model-implied and market normal volatilities, and \(\mathcal{L}_{\mathrm{eig}}\) is an eigenvalue floor penalty that keeps the real parts of the drift eigenvalues strictly negative.
+where \(\mathcal{L}_{\mathrm{recon}}\) is the mean-squared reconstruction error on observed
+swap curves, \(\mathcal{L}_{\mathrm{price}}\) is a Huber loss on the error between
+model-implied and market normal volatilities, and \(\mathcal{L}_{\mathrm{eig}}\) is an
+eigenvalue floor penalty that keeps the real parts of the drift eigenvalues strictly negative.
 
-The network \(\mathcal G\) is frozen throughout the experiment. Without this restriction, the pricing loss can reduce option values by reshaping the decoder response at simulated terminal states, which risks destroying the reconstruction map on encoded historical states. With \(\mathcal G\) frozen, the pricing signal flows through the drift and diffusion networks, \(\mathcal K\) and \(\mathcal H\). The experiment therefore tests whether the latent dynamics can be adjusted to make the pricing pipeline work while preserving the trained decoder structure.
+The decoder network \(\mathcal G\) is frozen throughout the experiment. Without this
+restriction, the pricing loss could reduce option values by reshaping the decoder response
+at simulated terminal states, risking damage to the reconstruction map on encoded
+historical states. With \(\mathcal G\) frozen, the pricing signal flows through the drift and
+diffusion networks, \(\mathcal K\) and \(\mathcal H\). The experiment therefore tests whether
+the latent dynamics can be adjusted to make the pricing pipeline work while preserving the
+trained decoder structure.
 
 \subsection{Finding: reconstruction collapses}
 \label{subsec:joint_training_finding}
 
-Table~\ref{tab:joint_training_result} reports the reconstruction RMSE and pricing outcomes at selected checkpoints. At the pretrained checkpoint, the reconstruction RMSE is approximately \(5\) bp, but the pricing experiment from the previous section showed that the stable model does not yet produce reliable swaption prices. During joint training, the reconstruction RMSE grows rapidly. The first run was stopped at epoch \(557\), where the RMSE had already increased to \(210\) bp. A second run was allowed to continue to epoch \(3{,}500\), at which point the reconstruction RMSE reached approximately \(2{,}200\) bp. At this checkpoint, the pricing evaluation produced \(100\%\) non-finite outputs.
+Table~\ref{tab:joint_training_result} reports the reconstruction RMSE and pricing outcomes
+at selected checkpoints. At the pretrained checkpoint, the reconstruction RMSE is
+approximately \(5\) bp, but the pricing experiment from the previous section showed that
+the stable model does not yet produce reliable swaption prices. During joint training, the
+reconstruction RMSE grows rapidly. The first run was stopped at epoch \(557\), where the
+RMSE had already increased to \(210\) bp. A second run was allowed to continue to epoch
+\(3{,}500\), at which point the reconstruction RMSE reached approximately \(2{,}200\) bp.
+At this checkpoint, the pricing evaluation produced \(100\%\) non-finite outputs.
 
 \begin{table}[H]
 \centering
@@ -353,12 +377,17 @@ Joint ep 3500 (completed) & 2{,}200  & 100\% NaN \\
 \end{tabular}
 \end{table}
 
-The two objectives fail together. The model that no longer reconstructs curves also cannot price swaptions. Allowing training to continue does not recover either objective: reconstruction continues to deteriorate, and the pricing pipeline produces no finite prices. This suggests that the failure is not simply due to too few epochs or insufficient optimisation.
+The two objectives fail together. The model that no longer reconstructs curves also cannot
+price swaptions. Allowing training to continue does not recover either objective:
+reconstruction continues to deteriorate, and the pricing pipeline produces no finite prices.
+This suggests that the failure is not simply due to too few epochs or insufficient
+optimisation.
 
 \subsection{Why joint training fails}
 \label{subsec:joint_training_diagnosis}
 
-The failure has a structural cause. The drift network \(\mathcal K\) appears in two distinct places in the model.
+The failure has a structural cause. The drift network \(\mathcal K\) appears in two distinct
+places in the model.
 
 \begin{enumerate}
     \item In the simulation step,
@@ -375,27 +404,55 @@ The failure has a structural cause. The drift network \(\mathcal K\) appears in 
     reconstructed swap curve.
 \end{enumerate}
 
-Both losses therefore write gradients to the same drift network, but through different roles. The pricing loss pushes \(\mathcal K\) toward dynamics that produce realistic risk-neutral swaption prices. The reconstruction loss pushes \(\mathcal K\) toward values that help reproduce the cross-section of observed swap curves. These targets need not be the same. In particular, reconstruction is based on historical curve observations, whereas pricing requires risk-neutral dynamics.
+Both losses therefore write gradients to the same drift network, but through different
+roles. The pricing loss pushes \(\mathcal K\) toward dynamics that produce realistic
+risk-neutral swaption prices. The reconstruction loss pushes \(\mathcal K\) toward values
+that help reproduce the cross-section of observed swap curves. These targets need not be
+the same. In particular, reconstruction is based on historical curve observations, whereas
+pricing requires risk-neutral dynamics.
 
-Freezing \(\mathcal G\) does not remove this coupling. Even when \(\mathcal G\) is fixed, the bond prices used for reconstruction are still computed from \(A_{z_t}(\tau)\) and \(B_{z_t}(\tau)\), and these ODE solutions depend on \(\mathcal K\). Any meaningful pricing update to \(\mathcal K\) therefore changes the reconstructed bond prices as well.
+Freezing \(\mathcal G\) does not remove this coupling. Even when \(\mathcal G\) is fixed, the
+bond prices used for reconstruction are still computed from \(A_{z_t}(\tau)\) and
+\(B_{z_t}(\tau)\), and these ODE solutions depend on \(\mathcal K\). Any meaningful pricing
+update to \(\mathcal K\) therefore changes the reconstructed bond prices as well.
 
-This is an architectural constraint rather than a simple tuning problem. Adjusting the pricing-loss weight, the number of swaptions per batch, or the learning-rate schedule did not change the qualitative outcome across runs: once the pricing loss meaningfully updates \(\mathcal K\), reconstruction deteriorates.
+This is an architectural constraint rather than a simple tuning problem. Adjusting the
+pricing-loss weight, the number of swaptions per batch, or the learning-rate schedule did
+not change the qualitative outcome across runs: once the pricing loss meaningfully updates
+\(\mathcal K\), reconstruction deteriorates.
 
-The finding from this section is therefore that joint training with a single shared \(\mathcal K\) cannot cleanly reconcile reconstruction and pricing. A different approach is needed. Rather than asking only how to extend decoder coverage, we now ask why the drift needed for pricing differs from the drift learned during reconstruction.
+The finding from this section is therefore that joint training with a single shared
+\(\mathcal K\) cannot cleanly reconcile reconstruction and pricing. A different approach is
+needed. Rather than asking only how to extend decoder coverage, we now ask why the drift
+needed for pricing differs from the drift learned during reconstruction.
+
 
 %=========================================================
 \section{Can a Diffusion Scale Be Calibrated Instead?}
 \label{sec:hscale_calibration}
 %=========================================================
 
-The previous section showed that joint training with a single shared drift network \(\mathcal K\) does not provide a stable solution: once the pricing loss meaningfully updates \(\mathcal K\), the reconstruction map deteriorates. We therefore consider a simpler and less invasive calibration question. Instead of changing the trained networks, can we keep the pretrained checkpoint fixed and calibrate only the scale of the simulated diffusion?
+The previous section showed that joint training with a single shared drift network
+\(\mathcal K\) does not provide a stable solution: once the pricing loss meaningfully updates
+\(\mathcal K\), the reconstruction map deteriorates. We therefore consider a simpler and
+less invasive calibration question. Instead of changing the trained networks, can we keep
+the pretrained checkpoint fixed and calibrate only the scale of the simulated diffusion?
 
-In the numerical experiments in this section, the notional is set to \(\mathcal N=1\). We focus on at-the-money payer swaptions, so the strike is set equal to the time-zero forward swap rate, \(K=F_0\). The quantities \(F_0\) and \(\mathcal A_0\) are computed from the decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and \(\mathcal A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry. Since bond prices are extracted directly from the model grids, the option expiry \(T_e\) must lie on the simulation time grid. The maturities needed for the initial forward swap rate, \(T_e\) and \(T_e+j\delta\), and the expiry-time maturities \(j\delta\), must lie on the decoder maturity grid.
+In the numerical experiments in this section, the notional is set to \(\mathcal N=1\). We
+focus on at-the-money payer swaptions, so the strike is set equal to the time-zero forward
+swap rate, \(K=F_0\). The quantities \(F_0\) and \(\mathcal A_0\) are computed from the
+decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and
+\(\mathcal A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry. Since
+bond prices are extracted directly from the model grids, the option expiry \(T_e\) must lie
+on the simulation time grid. The maturities needed for the initial forward swap rate,
+\(T_e\) and \(T_e+j\delta\), and the expiry-time maturities \(j\delta\), must lie on the
+decoder maturity grid.
 
 \subsection{Calibration procedure}
 \label{subsec:hscale_procedure}
 
-We introduce a scalar diffusion scale \(s>0\), applied only at simulation time. The Euler--Maruyama simulation uses
+We introduce a scalar diffusion scale \(s>0\), applied only at simulation time. The
+Euler--Maruyama simulation uses
 \[
 dz_t
 =
@@ -415,154 +472,24 @@ s\,\mathcal H(z_t)\sqrt{\Delta t}\,\varepsilon_t,
 \qquad
 \varepsilon_t\sim\mathcal N(0,I).
 \]
-The ODE system and decoder are left unchanged. Thus, the scale changes the amount of stochastic variation along simulated paths, but it does not modify the trained bond-price reconstruction for a given latent state.
-
-For each swaption quote \(j\), let \(\sigma_{\mathrm{mkt},j}\) denote the market normal volatility and let \(\sigma_{\mathrm{mod},j}(1)\) denote the model-implied normal volatility obtained from Monte Carlo pricing at diffusion scale \(s=1\). Since the at-the-money Bachelier price is linear in the normal volatility, and since scaling the diffusion approximately scales the spread of the terminal swap-rate distribution, we use the working approximation
-\[
-    \sigma_{\mathrm{mod},j}(s)
-    \approx
-    s\,\sigma_{\mathrm{mod},j}(1).
-\]
-This approximation is not exact, because the decoder, the annuity and the swaption payoff are nonlinear functions of the latent state. It nevertheless gives a simple first-order calibration rule.
-
-The global scale is chosen by minimising squared errors in normal-volatility space:
-\begin{equation}
-    s^*
-    =
-    \operatorname*{arg\,min}_{s>0}
-    \sum_{j:\,\sigma_{\mathrm{mkt},j}>0}
-    \bigl(
-        s\,\sigma_{\mathrm{mod},j}(1)
-        -
-        \sigma_{\mathrm{mkt},j}
-    \bigr)^2.
-    \label{eq:hscale_objective}
-\end{equation}
-This is an origin-constrained ordinary least-squares problem with closed-form solution
-\begin{equation}
-    s^*
-    =
-    \frac{
-        \sum_j
-        \sigma_{\mathrm{mod},j}(1)\,
-        \sigma_{\mathrm{mkt},j}
-    }{
-        \sum_j
-        \sigma_{\mathrm{mod},j}(1)^2
-    }.
-    \label{eq:hscale_ols}
-\end{equation}
-The calibrated scale is applied through a \texttt{diffusion\_scale} argument in the simulator. No weights in \(\mathcal H\) are modified.
-
-\subsection{Calibration results}
-\label{subsec:hscale_results}
-
-The global calibration is estimated on the EUR at-the-money swaption quotes for which the unscaled pricing run produces finite model-implied volatilities. This leaves \(1{,}246\) observations. At \(s=1\), the reconstruction-trained diffusion produces model-implied normal volatilities far above market levels, with a volatility MAE of \(315\) bp. The OLS estimate is
-\[
-s^*=0.151,
-\]
-so the unscaled diffusion is roughly \(1/0.151\approx 6.6\) times larger than the level needed to match market swaption volatilities on average. Applying this scale during simulation reduces the volatility MAE to \(91\) bp.
-
-The global scale corrects the average level, but not the shape of the volatility surface. Because the diffusion scale acts over the option horizon, a natural refinement is to fit one scale per expiry row, pooling all tenors for a given expiry. This gives
-\[
-  s^*(1\mathrm{Y}) = 0.129, \qquad
-  s^*(5\mathrm{Y}) = 0.133, \qquad
-  s^*(10\mathrm{Y}) = 0.141.
-\]
-The three values are close to one another and to the global estimate, suggesting that most of the calibration effect is a common reduction in diffusion scale. The expiry-level calibration reduces the out-of-sample MAE to \(72\) bp.
-
-As a further check, we also fit one scale factor per expiry--tenor cell. This gives nine parameters instead of three, but the out-of-sample MAE is \(73\) bp, essentially unchanged relative to the expiry-level calibration. Thus, increasing the number of scale parameters does not materially improve pricing accuracy.
-
-\begin{table}[H]
-\centering
-\caption{Out-of-sample vol MAE for diffusion-scale calibration methods. All methods keep the pretrained checkpoint fixed and apply the scale only during simulation.}
-\label{tab:hscale_calibration_summary}
-\begin{tabular}{@{}lrr@{}}
-\toprule
-\textbf{Method} & \textbf{Number of scale parameters} & \textbf{OOS vol MAE (bp)} \\
-\midrule
-Global scale              & 1 & 91 \\
-Expiry-level scale        & 3 & 72 \\
-Per-cell scale            & 9 & 73 \\
-\midrule
-Daily recalibration       & --- & 74 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The daily recalibration row is included only as a diagnostic lower bound: it uses each out-of-sample date's own market volatility as the calibration target and is therefore not an implementable pricing method. The fact that it does not improve materially on the expiry-level calibration suggests that the remaining error is not mainly a scale-selection problem.
-
-The conclusion from this section is therefore twofold. First, a scalar diffusion scale is useful: it turns the pretrained stable model into a functioning pricing baseline and reduces the volatility error substantially. Second, the error appears to have a floor around \(72\)--\(74\) bp that is not removed by adding more scale parameters. The next section investigates whether this remaining error reflects a structural bias in the model dynamics rather than a miscalibrated diffusion level.
-
-
-
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%% LEFT OVERS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-
-
-
-%=========================================================
-\section{Diffusion-Scale Calibration}
-\label{sec:hscale_calibration}
-%=========================================================
-
-So now we want to actually try to price...
-
-
-In the implementation, the notional \(\mathcal N\) is set to \(1\) for simplicity. The time-zero quantities \(F_0\) and \(\mathcal A_0\) are computed directly from the decoded initial discount curve, while the pathwise quantities \(S^{(m)}(T_e)\) and \(\mathcal A^{(m)}(T_e)\) are computed from the decoded discount curve at expiry on each simulated path. Because the pricing routine extracts bond prices directly from the model grids, the option expiry \(T_e\) must lie on the simulation time grid. Moreover, the maturities needed for the initial forward swap rate, \(T_e\) and \(T_e+j\delta\), and the expiry-time maturities \(j\delta\), must lie on the decoder maturity grid. In the numerical examples below, we focus on at-the-money payer swaptions, for which the strike is set equal to the time-zero forward swap rate.
-
-
-The Bachelier formula serves two distinct roles in the implementation. First, it converts market normal volatility quotes into price targets for calibration. Second, it converts model prices back into implied normal volatilities for reporting and comparison.
-
-For the calibration step, market swaption data are quoted as at-the-money normal volatilities \(\sigma^{(i)}_{\mathrm{mkt}}\), typically in basis points. Before applying the formula, these volatilities are converted to decimal rate units. The market volatility is then converted into a price using the at-the-money formula~\eqref{eq:bachelier_atm}:
-\begin{equation}
-    V^{(i)}_{\mathrm{mkt}}
-    =
-    \mathcal N \mathcal A^{(i)}_0
-    \frac{\sigma^{(i)}_{\mathrm{mkt}}\sqrt{T_e^{(i)}}}{\sqrt{2\pi}}.
-    \label{eq:pricing_target}
-\end{equation}
-This gives a fixed price target computed once per market observation, using the annuity \(\mathcal A_0^{(i)}\) associated with the corresponding quote date, expiry and underlying swap tenor. The model Monte Carlo price \(\widehat V_{\mathrm{MC}}^{(i)}\), computed as in Section~\ref{subsec:mc_estimator}, is then trained to match this target.
-
-After pricing, the model price is converted back into a normal implied volatility for comparison with market quotes. In the at-the-money case, the inversion is explicit:
-\begin{equation}
-    \widehat{\sigma}_{N,\mathrm{mod}}
-    =
-    \frac{\widehat V_{\mathrm{MC}}\sqrt{2\pi}}
-    {\mathcal N \mathcal A_0\sqrt{T_e}}.
-    \label{eq:implied_vol}
-\end{equation}
-For off-at-the-money strikes, the Bachelier formula can instead be inverted numerically. Reporting model outputs in basis-point normal-volatility units makes the pricing errors directly comparable to market quoting conventions.
-
-
-The previous section showed that reconstruction-only training does not automatically yield a reliable swaption pricing model. The stable specification controls the latent dynamics, but the scale of the simulated diffusion is not calibrated to market option prices. When the model is used directly for pricing \textcolor{red}{hmm we have not reported that? that we have tried that? so it seems off to say}, corresponding to diffusion scale \(s=1\), the resulting model-implied normal volatilities are substantially above market levels across the expiry--tenor grid \textcolor{red}{we have not seen that eihteR? we are talking about results not reported?}. This indicates that the diffusion network \(\mathcal H\), although learned as part of the reconstruction-based term-structure model, does not by itself produce the risk-neutral volatility level implied by market swaption prices.
-
-A natural response would be to retrain the drift and diffusion networks jointly against swaption volatilities \textcolor{red}{so why dont we do that? well actually because we have done, but it did not work...}. In the present architecture, however, this is not available as an isolated calibration step \textcolor{red}{why is it not avaible? what does that mean}. Both \(\mathcal K\) and \(\mathcal H\) enter the no-arbitrage ODE system used to compute \(A_{z_t}(\tau)\) and \(B_{z_t}(\tau)\). Changing their weights therefore changes not only the simulated latent paths, but also the reconstructed zero-coupon bond curves. This would interfere with the reconstruction fit obtained in the previous chapters. \textcolor{red}{well I guess that could be okay for a trade off? but it is not ? }
-
-Instead, we introduce a scalar diffusion scale \(s>0\), applied only at simulation time. When we simulate the latent paths, the diffusion term is replaced by \(s\,\mathcal H(z_t)\), while the ODE system and decoder are left unchanged. 
-$$z = ....s *$$
-This changes the amount of stochastic variation along simulated paths without changing the trained bond-price reconstruction conditional on a given latent state. The scalar \(s\) is then calibrated to market swaption normal volatilities. EXPLAIN HOW WE CALIBTRATE?
-
-\subsection{Calibration procedure}
-\label{subsec:hscale_procedure}
+The ODE system and decoder are left unchanged. Thus, the scale changes the amount of
+stochastic variation along simulated paths, but it does not modify the trained bond-price
+reconstruction for a given latent state.
 
 For each swaption quote \(j\), let \(\sigma_{\mathrm{mkt},j}\) denote the market normal
 volatility and let \(\sigma_{\mathrm{mod},j}(1)\) denote the model-implied normal volatility
-obtained from Monte Carlo pricing at diffusion scale \(s=1\). Since the at-the-money
-Bachelier price is linear in the normal volatility, and since scaling the diffusion approximately
-scales the spread of the terminal swap-rate distribution, we use the working approximation
+obtained from Monte Carlo pricing at the unscaled diffusion level \(s=1\). Since the
+at-the-money Bachelier price is linear in the normal volatility, and since scaling the
+diffusion approximately scales the spread of the terminal swap-rate distribution, we use
+the working approximation
 \[
     \sigma_{\mathrm{mod},j}(s)
     \approx
     s\,\sigma_{\mathrm{mod},j}(1).
 \]
 This approximation is not exact, because the decoder, the annuity and the swaption payoff
-are nonlinear functions of the latent state. It nevertheless provides a simple and interpretable
-first-order calibration rule.
+are nonlinear functions of the latent state. It nevertheless gives a simple first-order
+calibration rule.
 
 The global scale is chosen by minimising squared errors in normal-volatility space:
 \begin{equation}
@@ -592,408 +519,386 @@ This is an origin-constrained ordinary least-squares problem with closed-form so
     \label{eq:hscale_ols}
 \end{equation}
 The calibrated scale is applied through a \texttt{diffusion\_scale} argument in the simulator.
-No weights in \(\mathcal H\) are modified when producing the calibrated pricing results.
+No weights in \(\mathcal H\) are modified.
 
-\subsection{Global calibration results}
+\subsection{Calibration results}
 \label{subsec:hscale_results}
 
-The global calibration is run on \(1{,}246\) EUR at-the-money swaptions for which all
-simulated paths survive at \(s=1\). The OLS estimate is
+The global calibration is estimated on the EUR at-the-money swaption quotes for which the
+unscaled pricing run produces finite model-implied volatilities. This leaves \(1{,}246\)
+observations. At \(s=1\), the reconstruction-trained diffusion produces model-implied
+normal volatilities far above market levels, with a volatility MAE of \(315\) bp. The OLS
+estimate is
 \[
-s^* = 0.151.
+s^*=0.151.
 \]
-Thus, the diffusion scale implied by the reconstruction-trained model is approximately
-\(1/0.151 \approx 6.6\) times larger than the level needed to match market swaption
-volatilities on average.
+Thus, the volatility level implied by the unscaled diffusion is approximately
+\(1/0.151\approx 6.6\) times larger than the level needed to match market swaption
+volatilities on average. Applying this scale during simulation reduces the volatility MAE to
+\(91\) bp.
 
-Table~\ref{tab:hscale_results} summarises the aggregate volatility errors before and after
-calibration. Applying \(s^*\) only during simulation reduces the vol MAE from \(315\) bp to
-\(91\) bp, while the reconstruction RMSE remains unchanged at \(5.3\) bp. This confirms
-that simulation-only scaling affects the Monte Carlo paths without altering the trained
-bond-price reconstruction.
-
-\begin{table}[H]
-\centering
-\caption{Aggregate vol-pricing errors before and after diffusion-scale calibration. The calibrated column applies \(s^* = 0.151\) to the simulation only, leaving the original \(\mathcal H\) weights and the ODE computations unchanged. Baking \(s^*\) into the \(\mathcal H\) weights changes the ODE-computed bond prices and therefore gives a different, worse pricing result.}
-\label{tab:hscale_results}
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-\textbf{Metric} & \textbf{\(s=1\)} & \textbf{\(s^*=0.151\) (sim only)} & \textbf{\(s^*\) baked into weights} \\
-\midrule
-Vol MAE (bp)          & 315.0 & 91.0  & 278.0 \\
-Vol RMSE (bp)         & 350.5 & 108.0 & 299.0 \\
-Recon RMSE (bp)       & 5.3   & 5.3   & 45.9  \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The third column of Table~\ref{tab:hscale_results} illustrates why the scale should not be
-baked directly into the \(\mathcal H\) weights. Although multiplying the last layer of
-\(\mathcal H\) by \(s^*\) may look equivalent to applying a simulation-time scale, the two
-operations are not equivalent in this architecture. Since \(\mathcal H\) enters the
-no-arbitrage ODE, changing its weights changes the ODE coefficients and hence the
-reconstructed bond prices. The reconstruction RMSE rises from \(5.3\) bp to \(45.9\) bp,
-and the resulting vol MAE is \(278\) bp rather than \(91\) bp. The correct calibrated
-pricing procedure is therefore to keep the original checkpoint fixed and pass
-\texttt{diffusion\_scale} \(=s^*\) to the simulator.
-
-Table~\ref{tab:hscale_per_cell} gives the per-cell breakdown. At \(s=1\), the model
-overstates normal volatilities in every expiry--tenor cell. The ratio
-\(\sigma_{\mathrm{mod}}(1)/\sigma_{\mathrm{mkt}}\) is largest at short expiries and smallest at
-longer expiries. A single global scale can therefore correct the average volatility level, but
-it cannot fully correct the shape of the volatility surface.
-
-\begin{table}[H]
-\centering
-\caption{Per-cell normal-volatility errors (bp) before and after calibration, averaged over all available EUR quote dates. Market vols are average ATM normal vols in basis points. Errors are \(|\sigma_{\mathrm{mod}}-\sigma_{\mathrm{mkt}}|\) in basis points.}
-\label{tab:hscale_per_cell}
-\begin{tabular}{@{}ccrrrr@{}}
-\toprule
-\textbf{Expiry (Y)} & \textbf{Tenor (Y)} & \textbf{Mkt (bp)} & \textbf{Model at \(s=1\) (bp)} & \textbf{Error at \(s=1\)} & \textbf{Error at \(s^*\)} \\
-\midrule
- 1 &  1 & 60  &  647 & 587 & 202 \\
- 1 &  5 & 73  &  546 & 474 &  74 \\
- 1 & 10 & 90  &  528 & 441 &  95 \\
- 5 &  1 & 56  &  434 & 378 & 130 \\
- 5 &  5 & 58  &  343 & 285 &  80 \\
- 5 & 10 & 53  &  291 & 238 &  71 \\
-10 &  1 & 48  &  282 & 234 &  92 \\
-10 &  5 & 45  &  222 & 177 &  63 \\
-10 & 10 & 43  &  182 & 139 &  50 \\
-\midrule
-\multicolumn{5}{l}{MAE (bp)} & 91 \\
-\multicolumn{5}{l}{RMSE (bp)} & 108 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Two observations follow from Table~\ref{tab:hscale_per_cell}. First, the reconstruction-trained
-diffusion is too large for pricing: at \(s=1\), model volatilities are several times larger than
-market volatilities in all cells. Second, the overstatement is not constant across the grid.
-For example, the ratio is about \(10.7\) at the 1Y\(\times\)1Y cell and about \(4.2\) at the
-10Y\(\times\)10Y cell. The global scale \(s^*\) therefore improves the overall level but leaves
-a systematic residual pattern. In particular, the 1Y\(\times\)1Y cell retains an error of
-\(202\) bp, while the 10Y\(\times\)10Y cell falls to \(50\) bp.
-
-Figures~\ref{fig:vol_heatmap_stable}--\ref{fig:vol_scatter_stable_cal} visualise the same
-effect. The uncalibrated model shows large errors across the grid. The global scale reduces
-errors substantially, but the remaining deviations are not uniform across expiries and tenors.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.72\textwidth]{Figures/Pricing/vol_comparison/fig_vol_heatmap_stable.png}
-    \caption{Per-cell vol MAE (bp) for the recon-only stable model (\(s=1\)).}
-    \label{fig:vol_heatmap_stable}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.72\textwidth]{Figures/Pricing/vol_comparison/fig_vol_heatmap_stable_cal.png}
-    \caption{Per-cell vol MAE (bp) after applying the global scale \(s^*=0.151\). Calibration reduces errors across all cells, but a residual shape mismatch remains.}
-    \label{fig:vol_heatmap_stable_cal}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.72\textwidth]{Figures/Pricing/vol_comparison/fig_vol_scatter_stable_cal.png}
-    \caption{Model-implied versus market normal volatility (bp) for the calibrated stable model with \(s^*=0.151\). Each point is one date--expiry--tenor observation; the diagonal corresponds to perfect fit.}
-    \label{fig:vol_scatter_stable_cal}
-\end{figure}
-
-\input{Figures/Pricing/vol_comparison/vol_summary_table}
-
-\subsection{Per-cell calibration and out-of-sample validation}
-\label{subsec:per_cell_calibration}
-
-The global scale \(s^*=0.151\) corrects the average level of model-implied volatilities, but
-the residual errors in Table~\ref{tab:hscale_per_cell} suggest that the required correction
-differs across the expiry--tenor grid. As a more flexible alternative, we estimate one scale
-factor per cell:
-\begin{equation}
-    s^*(e,t)
-    =
-    \frac{
-        \sum_{d \in \mathcal D_{\mathrm{train}}}
-        \sigma_{\mathrm{mod},d}(1;\,e,t)\,
-        \sigma_{\mathrm{mkt},d}(e,t)
-    }{
-        \sum_{d \in \mathcal D_{\mathrm{train}}}
-        \sigma_{\mathrm{mod},d}(1;\,e,t)^2
-    },
-    \label{eq:per_cell_ols}
-\end{equation}
-where \(e\) denotes expiry, \(t\) denotes tenor, and \(\mathcal D_{\mathrm{train}}\) is the
-set of training dates. This is the same origin-constrained OLS formula as
-\eqref{eq:hscale_ols}, applied independently to each expiry--tenor cell.
-
-\paragraph{Train/test split.}
-All available EUR quote dates are sorted chronologically. The first \(70\%\), covering
-October 2010 to June 2019, form the training window. The remaining \(30\%\), covering
-July 2019 to February 2024, are held out for out-of-sample testing. The test period includes
-both the COVID-19 volatility episode and the 2022--23 rate-hiking cycle. The scale factors
-\(s^*(e,t)\) are fitted exclusively on the training dates.
-
-\paragraph{Fitted scale factors.}
-Table~\ref{tab:per_cell_scales} reports the nine fitted scale factors. They lie in the interval
-\([0.098,0.183]\), close to the global estimate \(s^*=0.151\), but with noticeable variation
-across cells. The smallest estimate is obtained for the 1Y\(\times\)10Y cell, while the largest
-is obtained for the 10Y\(\times\)10Y cell. This confirms that some of the residual error under
-the global scale is cell-specific.
-
-\input{Figures/TrainingResults/dim4_stable_hscale/per_cell/tab_per_cell_scales}
-
-\paragraph{R-squared and explanatory power.}
-The \(R^2\) values of the origin-constrained regressions range from \(0.11\) to \(0.33\) across
-the nine cells, as reported in Table~\ref{tab:per_cell_mae}. These values are low. They
-indicate that the model's time-series variation in \(\sigma_{\mathrm{mod}}(1)\) explains only a
-limited fraction of the variation in market normal volatilities. The per-cell scales can
-therefore correct average levels, but they cannot make the reconstruction-trained dynamics
-track changes in the market volatility regime.
-
-\paragraph{In-sample and out-of-sample results.}
-Table~\ref{tab:per_cell_mae} and Figures~\ref{fig:per_cell_train}--\ref{fig:per_cell_oos}
-report the per-cell volatility MAE on the training and test periods. The Monte Carlo prices
-at cell-specific scales are recomputed directly, rather than inferred from the linear
-approximation, so the reported errors reflect actual pricing output.
-
-\input{Figures/TrainingResults/dim4_stable_hscale/per_cell/tab_per_cell_mae}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.72\textwidth]{Figures/TrainingResults/dim4_stable_hscale/per_cell/fig_mae_train.png}
-    \caption{Per-cell vol MAE (bp) for the per-cell calibrated model on the training window.}
-    \label{fig:per_cell_train}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.72\textwidth]{Figures/TrainingResults/dim4_stable_hscale/per_cell/fig_mae_oos.png}
-    \caption{Per-cell vol MAE (bp) for the per-cell calibrated model on the out-of-sample test window.}
-    \label{fig:per_cell_oos}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.60\textwidth]{Figures/TrainingResults/dim4_stable_hscale/per_cell/fig_scatter.png}
-    \caption{Model-implied versus market normal volatility (bp) after per-cell calibration. Training and out-of-sample observations are shown separately.}
-    \label{fig:per_cell_scatter}
-\end{figure}
-
-The aggregate results are modestly better than the global calibration. The per-cell model
-achieves an in-sample MAE of \(83\) bp, an out-of-sample MAE of \(73\) bp and an overall
-MAE of \(81\) bp, compared with \(91\) bp for the global single-scale calibration. The limited
-improvement is consistent with the low \(R^2\) values: because the model-implied volatility
-series explain only a small fraction of market volatility variation, adding cell-specific scale
-factors cannot fully correct the pricing errors.
-
-The cell-level results are more informative. Several mid- and long-expiry cells show stable
-out-of-sample performance, with test errors comparable to or smaller than training errors.
-This suggests that the fitted scales are reasonably robust for these parts of the grid. The
-short-expiry cells are more problematic. The 1Y\(\times\)1Y cell retains a large error even after
-per-cell scaling, indicating a structural limitation for very short expiries. The 1Y\(\times\)10Y
-cell shows the strongest sign of temporal overfitting: it has a very low in-sample MAE but
-a much larger out-of-sample MAE. This suggests that the scale fitted on the 2010--2019
-period does not generalise well to the later volatility regime.
-
-\subsection{Expiry-level calibration and structural diagnosis}
-\label{subsec:calibration_improvements}
-
-The per-cell calibration improves flexibility, but it also introduces nine separate parameters.
-Because the scale \(s\) multiplies the diffusion during the simulation over the option horizon,
-it is more naturally associated with expiry than with the tenor of the underlying swap. This
-motivates an intermediate specification with one scale per expiry row, pooling all tenors for
-a given expiry.
-
-The fitted expiry-level scales are
+The global scale corrects the average level, but not the shape of the volatility surface.
+Because the diffusion scale acts over the option horizon, a natural refinement is to fit one
+scale per expiry row, pooling all tenors for a given expiry. This gives
 \[
   s^*(1\mathrm{Y}) = 0.129, \qquad
   s^*(5\mathrm{Y}) = 0.133, \qquad
   s^*(10\mathrm{Y}) = 0.141.
 \]
-These values are close to each other and to the global estimate, suggesting that most of the
-calibration effect is a common reduction in diffusion scale. The expiry-level model achieves
-an out-of-sample MAE of \(72\) bp, slightly better than the nine-parameter per-cell model
-and substantially more parsimonious. Table~\ref{tab:expiry_comparison} gives the
-cell-level comparison. This makes the expiry-level calibration the preferred practical
-specification among the scale-based methods considered here.
+The three values are close to one another and to the global estimate, suggesting that most
+of the calibration effect is a common reduction in diffusion scale. The expiry-level
+calibration reduces the out-of-sample MAE to \(72\) bp.
 
-\input{Figures/TrainingResults/dim4_stable_hscale/expiry_scale/tab_expiry_comparison}
-
-\paragraph{Why the residual error is structural.}
-The expiry-level and per-cell calibrations both converge to an out-of-sample MAE around
-\(72\)--\(73\) bp. Even a daily recalibration, which uses each out-of-sample date's own market
-volatility as the calibration target and is therefore not implementable in practice, does not
-materially improve the error. This suggests that the remaining pricing error is not primarily
-caused by the choice of scale factor. Instead, it points to a structural limitation of the
-reconstruction-trained dynamics.
-
-The issue is that the drift network \(\mathcal K\) was identified through the reconstruction
-objective, not through derivative prices. The model uses the risk-neutral latent dynamics
-\[
-  dz_t = \mathcal K(z_t)\,dt + \mathcal H(z_t)\,dW_t^{\mathbb Q},
-\]
-and \(\mathcal K\) enters the no-arbitrage ODE coefficients that shape the decoded
-bond-price curve. During reconstruction training, \(\mathcal K\) is selected to help fit the
-cross-section of swap rates at each date. It is not directly calibrated to enforce the
-annuity-measure martingale condition for the forward swap rate,
-\[
-\mathbb E^{\mathbb Q^{\mathcal A}}[S_{T_e}] = F_0.
-\]
-As a result, the simulated distribution of \(S_{T_e}\) need not be centred on the initial
-forward swap rate. A scalar diffusion scale can adjust the amount of randomness, but it
-cannot remove a drift-induced forward bias.
-
-\paragraph{The drift floor as a diagnostic.}
-We can measure this effect by pricing swaptions at a near-zero diffusion scale,
-\(s=0.01\). This largely removes the stochastic contribution and leaves the deterministic
-movement induced by \(\mathcal K\). Any non-zero implied volatility in this limit is referred
-to as a drift floor. It indicates that the drift alone moves the swap rate away from the
-at-the-money strike and thereby creates option value.
+As a further check, we also fit one scale factor per expiry--tenor cell. This gives nine
+parameters instead of three, but the out-of-sample MAE is \(73\) bp, essentially unchanged
+relative to the expiry-level calibration. Thus, increasing the number of scale parameters
+does not materially improve pricing accuracy.
 
 \begin{table}[H]
 \centering
-\caption{Average drift floor \(\sigma_{\mathrm{drift}}\) (bp) at \(s=0.01\) versus average market vol \(\sigma_{\mathrm{mkt}}\) (bp) on training dates. A non-zero drift floor indicates that \(\mathcal K(z)\) alone moves the swap rate away from \(F_0\).}
-\label{tab:drift_floor}
-\begin{tabular}{@{}ccrrr@{}}
-\toprule
-\textbf{Exp} & \textbf{Ten} & \(\sigma_{\mathrm{drift}}\) \textbf{(bp)} & \(\sigma_{\mathrm{mkt}}\) \textbf{(bp)} & \textbf{Floor \(>\) mkt (\% dates)} \\
-\midrule
- 1 &  1 & 133 & 62 & 25\% \\
- 1 &  5 &   6 & 77 &  7\% \\
- 1 & 10 &   4 & 50 &  0\% \\
-\addlinespace[2pt]
- 5 &  1 &  10 & 58 & 10\% \\
- 5 &  5 &  16 & 43 &  0\% \\
- 5 & 10 &   3 & 37 &  0\% \\
-\addlinespace[2pt]
-10 &  1 &   9 & 35 &  0\% \\
-10 &  5 &   2 & 32 &  0\% \\
-10 & 10 &   0 & 33 &  0\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The 1Y\(\times\)1Y cell is the clearest example. Its drift floor is \(133\) bp, exceeding the
-average market volatility of \(62\) bp, and the floor is above the market volatility on
-\(25\%\) of training dates. On such dates, no positive diffusion scale can reproduce the
-market volatility, because the deterministic drift contribution alone already produces too
-much option value. For the remaining cells the drift floor is smaller, but the table still
-shows that part of the residual error comes from the drift dynamics rather than from the
-diffusion scale.
-
-\paragraph{Temporal overfitting in short-expiry cells.}
-The 1Y\(\times\)10Y cell illustrates a different limitation. It achieves a low in-sample error
-under per-cell calibration but a much larger out-of-sample error. Ridge regression with
-leave-one-year-out cross-validation was tested to shrink the cell-specific scale toward the
-global estimate. The cross-validation procedure selected essentially no shrinkage. This
-indicates that the fitted scale is not merely a noisy statistical artefact within the training
-period; rather, the out-of-sample period represents a different volatility regime. Ridge
-regularisation reduces within-sample variance, but it does not solve temporal regime
-change.
-
-\paragraph{A direct test of forward-rate bias.}
-A further diagnostic is obtained by comparing payer and receiver pricing. If the model
-distribution of \(S_{T_e}\) were centred correctly under the annuity measure, payer and
-receiver at-the-money prices would be consistent through the Bachelier framework. If,
-instead, the model has a directional drift bias, then the receiver and payer prices will be
-affected asymmetrically.
-
-To test this, we compute a straddle-implied volatility based on the average of the payer and
-receiver prices,
-\[
-  \sigma_{\mathrm{str}}
-  =
-  \frac{V_{\mathrm{pay}} + V_{\mathrm{rec}}}{2}
-  \cdot
-  \frac{\sqrt{2\pi}}{\mathcal A_0\sqrt{T_e}}.
-\]
-Under a correctly centred at-the-money distribution, this should be consistent with the
-payer-implied volatility. In the experiment, however, the out-of-sample MAE rises sharply
-when the straddle measure is used. The reason is that the model's forward bias is
-systematically negative across the grid, as shown in Section~\ref{sec:pricing_diagnostics}.
-The simulated swap rate distribution tends to lie below \(F_0\), inflating receiver payoffs.
-Averaging payer and receiver prices therefore does not cancel the bias; instead, it
-introduces the inflated receiver component into the reported volatility.
-
-\input{Figures/TrainingResults/dim4_stable_hscale/straddle/tab_straddle}
-
-\paragraph{Comparison of calibration approaches.}
-Table~\ref{tab:calibration_comparison} summarises the out-of-sample performance of the
-calibration methods. The global scale already gives most of the improvement relative to the
-uncalibrated model. Expiry-level calibration gives the best out-of-sample performance among
-the implementable approaches and is more parsimonious than per-cell calibration. More
-adaptive alternatives, such as rolling-window scales or state-dependent scales, perform
-worse, suggesting that the scale signal is too noisy to estimate reliably from short windows
-or simple functions of the latent state.
-
-\begin{table}[H]
-\centering
-\caption{OOS vol MAE (bp) for calibration approaches, evaluated on the held-out test period. All methods use the original \(\mathcal H\) weights with the scale applied only at simulation time.}
-\label{tab:calibration_comparison}
+\caption{Out-of-sample vol MAE for diffusion-scale calibration methods. All methods keep the pretrained checkpoint fixed and apply the scale only during simulation.}
+\label{tab:hscale_calibration_summary}
 \begin{tabular}{@{}lrr@{}}
 \toprule
-\textbf{Method} & \textbf{Params} & \textbf{OOS MAE (bp)} \\
+\textbf{Method} & \textbf{Number of scale parameters} & \textbf{OOS vol MAE (bp)} \\
 \midrule
-Global OLS               & 1   & 91 \\
-Expiry-level OLS         & 3   & 72 \\
-Per-cell OLS             & 9   & 73 \\
-Daily recalibration      & --- & 74 \\
+Global scale              & 1 & 91 \\
+Expiry-level scale        & 3 & 72 \\
+Per-cell scale            & 9 & 73 \\
 \midrule
-Rolling window (\(W=12\)M) & --- & 98 \\
-Adaptive \(z_t\) scale      & 45  & 102 \\
+Daily recalibration       & --- & 74 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The overall conclusion is that diffusion-scale calibration is useful, but limited. It provides
-a practical way to reduce the volatility level implied by the reconstruction-trained model
-without changing the no-arbitrage decoder. However, it cannot correct drift-induced
-forward bias, nor can it make the model track volatility-regime changes that are absent
-from the reconstructed swap curve dynamics. Further improvements would require
-calibrating the dynamics directly to derivative prices, for example through a joint objective
-including swaption volatilities or through an additional volatility factor. Such extensions are
-outside the fixed reconstruction-trained framework considered here.
+The daily recalibration row is included only as a diagnostic lower bound: it uses each
+out-of-sample date's own market volatility as the calibration target and is therefore not an
+implementable pricing method. The fact that it does not improve materially on the
+expiry-level calibration suggests that the remaining error is not mainly a scale-selection
+problem.
+
+The conclusion from this section is therefore twofold. First, a scalar diffusion scale is
+useful: it turns the pretrained stable model into a functioning pricing baseline and reduces
+the volatility error substantially. Second, the error appears to have a floor around
+\(72\)--\(74\) bp that is not removed by adding more scale parameters. The next section
+investigates whether this remaining error reflects a structural bias in the model dynamics
+rather than a miscalibrated diffusion level.
+
 
 %=========================================================
 \section{Forward Bias and Effective Exercise Probabilities}
 \label{sec:pricing_diagnostics}
 %=========================================================
 
-The Bachelier Greeks of Section~\ref{sec:bachelier_greeks} provide a useful lens for reading the model's pricing behaviour. At the money, the Bachelier Delta is
-\[
-  \Delta^{\mathrm{ATM}} = \tfrac{1}{2}\,\mathcal{N}\,\mathcal{A}_0,
-\]
-exactly, for any volatility level: the distribution of $S_T$ is symmetric around $F_0$, so the exercise probability is precisely $50\%$. This is the defining property of a model in which $F_0 = \mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T]$ --- i.e.\ one that satisfies the annuity-measure martingale condition.
+The previous section showed that diffusion-scale calibration improves pricing substantially, but that the error appears to have a floor around \(72\)--\(74\) bp. This section investigates whether the remaining error is only a volatility-scale problem, or whether the model dynamics introduce a systematic bias in the simulated swap-rate distribution.
 
-A model with $\mathcal{K}$ identified from cross-sectional reconstruction rather than from the martingale condition will in general have $\mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] \neq F_0$. This forward bias is directly measurable from put-call parity. Pricing both the payer and receiver at the expiry-level calibrated scales gives
+The Bachelier Delta identity from Section~\ref{subsec:bachelier_formula} provides a useful benchmark. In the Bachelier model, the payer Delta is
+\[
+\Delta
+=
+\mathcal N\mathcal A_0\Phi(d),
+\qquad
+d=
+\frac{F-K}{\sigma_N\sqrt{T_e}}.
+\]
+For a correctly centred at-the-money swaption, \(F=K=F_0\), so \(d=0\). The corresponding exercise probability is therefore
+\[
+\Phi(0)=50\%.
+\]
+Equivalently, under the annuity measure, the forward swap rate should satisfy the martingale condition
+\[
+\mathbb E^{\mathbb Q^{\mathcal A}}[S_{T_e}] = F_0.
+\]
+If the simulated distribution of \(S_{T_e}\) is not centred at \(F_0\), then the market at-the-money strike \(K=F_0\) is no longer at the money from the model's perspective.
+
+This forward bias can be estimated from payer--receiver parity. For payer and receiver prices computed at the same strike \(K=F_0\), the model-implied forward is
+\[
+F_{\mathrm{mod}}
+=
+F_0
++
+\frac{
+V_{\mathrm{pay}}-V_{\mathrm{rec}}
+}{
+\mathcal N\mathcal A_0
+},
+\]
+so the forward bias is
 \begin{equation}
-  \text{forward bias} = \frac{V_{\mathrm{pay}} - V_{\mathrm{rec}}}{\mathcal{A}_0}
-  = \mathbb{E}^{\mathbb{Q}_\mathcal{A}}[S_T] - F_0,
+  \text{forward bias}
+  =
+  F_{\mathrm{mod}}-F_0
+  =
+  \frac{
+  V_{\mathrm{pay}}-V_{\mathrm{rec}}
+  }{
+  \mathcal N\mathcal A_0
+  }.
   \label{eq:forward_bias}
 \end{equation}
-and the effective ATM exercise probability follows by standardising relative to the model's own distribution width:
+A negative value means that the model-implied distribution is centred below the market forward rate. In that case, a market at-the-money payer swaption is effectively out of the money under the model.
+
+To express the size of the bias in probability terms, we standardise it by a volatility scale. We use the straddle-implied volatility
+\[
+  \sigma_{\mathrm{str}}
+  =
+  \frac{V_{\mathrm{pay}} + V_{\mathrm{rec}}}{2}
+  \cdot
+  \frac{\sqrt{2\pi}}{\mathcal N\mathcal A_0\sqrt{T_e}},
+\]
+as a simple scale proxy for the model's dispersion around the strike. This gives
 \begin{equation}
-  d_{\mathrm{eff}} = \frac{\text{forward bias}}{\sigma_{\mathrm{str}}\sqrt{T_e}},
+  d_{\mathrm{eff}}
+  =
+  \frac{\text{forward bias}}{\sigma_{\mathrm{str}}\sqrt{T_e}},
   \qquad
-  p_{\mathrm{eff}} = \Phi(d_{\mathrm{eff}}),
+  p_{\mathrm{eff}}
+  =
+  \Phi(d_{\mathrm{eff}}).
   \label{eq:p_eff}
 \end{equation}
-where $\sigma_{\mathrm{str}} = (V_{\mathrm{pay}} + V_{\mathrm{rec}})/2 \cdot \sqrt{2\pi}/(\mathcal{A}_0\sqrt{T_e})$ is the straddle vol, which measures distribution width without directional contamination. Under a correctly specified model: $d_{\mathrm{eff}} = 0$ and $p_{\mathrm{eff}} = 50\%$.
+Under a correctly centred at-the-money Bachelier model, \(d_{\mathrm{eff}}=0\) and
+\(p_{\mathrm{eff}}=50\%\). Deviations from \(50\%\) therefore provide a diagnostic for whether the model prices the market at-the-money strike as truly at the money.
 
 \paragraph{Results.}
 Table~\ref{tab:delta_diagnostic} reports the per-cell forward bias and effective exercise probability at the expiry-level calibrated scales. Two findings stand out.
 
-First, the forward bias is \emph{consistently negative} across all nine cells, ranging from $-18$ bp for the 10Y$\times$1Y cell to $-694$ bp for the 1Y$\times$5Y cell. The model's $\mathbb{Q}$ distribution of $S_T$ is systematically below $F_0$ at every expiry--tenor combination. This reflects $\mathcal{K}$ being identified on 2010--2019 EUR data, a period of persistently falling rates: the fitted drift encodes a downward-rate prior that is entirely appropriate for in-sample reconstruction but inconsistent with the martingale condition. Applied out-of-sample to the 2022--23 rate-hiking cycle, this prior is wrong in direction as well as magnitude.
+First, the forward bias is consistently negative across all nine cells, ranging from \(-18\) bp for the 10Y\(\times\)1Y cell to \(-694\) bp for the 1Y\(\times\)5Y cell. Thus, the model-implied distribution of \(S_{T_e}\) is systematically below \(F_0\) across the expiry--tenor grid. This is consistent with the interpretation that the drift \(\mathcal K\), estimated from historical yield-curve dynamics, carries information about the historical direction of rates rather than the risk-neutral martingale condition required for pricing.
 
-Second, the effective exercise probabilities range from $24\%$ (1Y$\times$5Y) to $49\%$ (10Y$\times$1Y), with an overall average of $35\%$ versus the Bachelier benchmark of $50\%$. The 10Y$\times$1Y cell is closest to the benchmark ($p_{\mathrm{eff}} = 48.8\%$): over a ten-year horizon the drift's cumulative effect is still small relative to the diffusion, so $\mathcal{K}$'s mis-calibration matters less. The 1Y expiry cells are the most affected, since the one-year drift contribution is large relative to diffusion at the calibrated scale $s^* \approx 0.13$.
-
-These results also explain why the straddle experiment of Section~\ref{subsec:calibration_improvements} fails: the receiver payoff is inflated at every cell, so the straddle average $(V_{\mathrm{pay}} + V_{\mathrm{rec}})/2$ is dominated by the inflated receiver and produces a vol far above market. No symmetric averaging can improve the payer fit when the bias is uniformly negative.
+Second, the effective exercise probabilities range from \(24\%\) for the 1Y\(\times\)5Y cell to \(49\%\) for the 10Y\(\times\)1Y cell, with an overall average of approximately \(35\%\). The Bachelier benchmark is \(50\%\). The 10Y\(\times\)1Y cell is closest to the benchmark, while the short-expiry cells are furthest away. This indicates that the residual pricing error after diffusion-scale calibration is not only a matter of volatility level. The model also shifts the swap-rate distribution relative to the market forward.
 
 \input{Figures/TrainingResults/dim4_stable_hscale/delta_diagnostic/tab_delta_diagnostic}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.72\textwidth]{Figures/TrainingResults/dim4_stable_hscale/delta_diagnostic/fig_exercise_prob.png}
-  \caption{Effective ATM exercise probability $p_{\mathrm{eff}}$ per cell at the expiry-level calibrated scale. Bachelier benchmark is $50\%$ (white). All cells are below $50\%$, confirming a systematic downward bias in the model's $\mathbb{Q}$ distribution. The 10Y$\times$1Y cell (48.8\%) is the closest to correct; the 1Y$\times$5Y cell (24.2\%) is the furthest.}
+  \caption{Effective ATM exercise probability \(p_{\mathrm{eff}}\) per cell at the expiry-level calibrated scale. The Bachelier benchmark is \(50\%\). All cells are below \(50\%\), indicating a systematic downward bias in the model-implied swap-rate distribution.}
   \label{fig:exercise_prob}
 \end{figure}
+
+The diagnostic explains why adding more diffusion-scale parameters did not remove the remaining pricing error. A scalar diffusion scale can adjust the spread of the simulated distribution, but it cannot recenter the distribution around \(F_0\). The source of the remaining error is therefore structural: the same drift \(\mathcal K\) is being used both as the historical drift learned from encoded yield-curve dynamics and as the risk-neutral drift required for swaption pricing. The next section addresses this mismatch by introducing a separate risk-neutral drift.
+
+
+%=========================================================
+\section{A Separate Risk-Neutral Drift: the \(\mathcal K^{\mathbb Q}\) Approach}
+\label{sec:kq_training}
+%=========================================================
+
+The forward-bias analysis in the previous section suggests that the remaining pricing error is not only a diffusion-scale problem. The drift network \(\mathcal K\) was learned from historical yield-curve dynamics, but it is then used as the risk-neutral drift in both the pricing simulation and the no-arbitrage ODE. These two roles make different demands on the same parameters.
+
+The joint-training experiment of Section~\ref{sec:joint_training_attempt} tried to resolve this by updating the shared \(\mathcal K\) with a pricing loss. That approach failed because any pricing-gradient update to \(\mathcal K\) also changes the ODE-derived bond prices, thereby corrupting reconstruction. The problem is architectural: a single shared drift cannot simultaneously act as the historical drift needed for reconstruction and the risk-neutral drift needed for pricing.
+
+A natural modification is therefore to introduce a separate risk-neutral drift network, denoted \(\mathcal K^{\mathbb Q}\), used during pricing. The original drift, denoted \(\mathcal K^{\mathbb P}\), remains the historical drift associated with the reconstruction-trained model. The pricing SDE becomes
+\[
+    dz_t
+    =
+    \mathcal K^{\mathbb Q}(z_t)\,dt
+    +
+    \mathcal H(z_t)\,dW_t^{\mathbb Q}.
+\]
+For pricing consistency, \(\mathcal K^{\mathbb Q}\) is also used in the no-arbitrage ODE when decoding the simulated terminal states. Thus, the same risk-neutral drift governs both the simulated latent paths and the bond curves used to compute the swaption payoff.
+
+\subsection{Architecture}
+\label{subsec:kq_architecture}
+
+The separation is implemented through a subclass \texttt{FullModelPrice}, which adds an optional \texttt{k\_override} argument to the decoding step. When \texttt{k\_override} \(= \mathcal K^{\mathbb Q}\) is passed, the subclass temporarily replaces the model drift by \(\mathcal K^{\mathbb Q}\) for the duration of the ODE solve and then restores the original \(\mathcal K^{\mathbb P}\). The base model \texttt{FullModel} is not modified. The simulator is extended analogously: when a \texttt{k\_override} is provided, the Euler--Maruyama drift step uses \(\mathcal K^{\mathbb Q}(z_t)\) instead of \(\mathcal K^{\mathbb P}(z_t)\).
+
+The network \(\mathcal K^{\mathbb Q}\) is initialised as a copy of the pretrained \(\mathcal K^{\mathbb P}\) and is then trained against the swaption pricing loss. The encoder and decoder \(\mathcal G\) are frozen throughout. In this experiment, the diffusion network \(\mathcal H\) is also unfrozen, so that the pricing loss can adjust the volatility level as well as the drift. Since the reconstruction-trained diffusion produced volatilities roughly six times above market levels, the output layer of \(\mathcal H\) is pre-scaled by a factor of \(0.1\) before training begins.
+
+This experiment should therefore be read as an unconstrained pricing-training experiment with a separate risk-neutral drift, rather than as a final pricing architecture. It tests whether introducing \(\mathcal K^{\mathbb Q}\) can reduce the forward-bias problem, while also revealing whether allowing \(\mathcal H\) to move creates new reconstruction or decoding issues.
+
+\subsection{Training setup}
+\label{subsec:kq_training_setup}
+
+The pricing loss is a mean-squared error on normal-volatility errors:
+\begin{equation}
+    \mathcal L_{\mathrm{price}}
+    =
+    \frac{1}{|\mathcal S|}
+    \sum_{(e,t,d)\in\mathcal S}
+    \left(
+        \frac{\sigma_{\mathrm{mod},d}(e,t)-\sigma_{\mathrm{mkt},d}(e,t)}
+        {100\,\mathrm{bp}}
+    \right)^2,
+    \label{eq:kq_price_loss}
+\end{equation}
+where \(\mathcal S\) is a random subsample of expiry--tenor--date triples drawn at each step, and volatilities are expressed in basis points. At each epoch, \(N_{\mathrm{steps}}=8\) gradient steps are taken, each using \(N_{\mathrm{MC}}=512\) simulated paths and \(N_{\mathrm{sw}}=16\) randomly selected swaption quotes. The optimiser is Adam with an initial learning rate of \(10^{-3}\), warmed up linearly over the first \(200\) epochs.
+
+\subsection{Results}
+\label{subsec:kq_results}
+
+Table~\ref{tab:kq_training_progress} reports the key metrics at selected checkpoints over the \(1{,}000\)-epoch run.
+
+\begin{table}[H]
+\centering
+\caption{Training progress for the \(\mathcal K^{\mathbb Q}\) run. Pricing loss is MSE in volatility space, \((\sigma_{\mathrm{mod}}-\sigma_{\mathrm{mkt}})^2/(100\,\mathrm{bp})^2\). Reconstruction RMSE is evaluated using the frozen \(\mathcal K^{\mathbb P}\) and the evolving \(\mathcal H\). Path finite fraction is the share of \(N_{\mathrm{MC}}=512\) paths that produce finite decoded bond curves.}
+\label{tab:kq_training_progress}
+\small
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+\textbf{Epoch} & \textbf{Pricing loss} & \textbf{Path finite} & \textbf{Recon RMSE (bp)} & \textbf{EUR RMSE (bp)} & \(\boldsymbol{\lambda_{\min}(\mathcal K^{\mathbb Q})}\) \\
+\midrule
+    0 & 7.891 & 52\% & 49.1 & 44.5 & 0.0016 \\
+  200 & 3.491 & 44\% & 50.1 & 45.4 & 0.012  \\
+  400 & 0.924 & 36\% & 53.8 & 58.0 & 0.061  \\
+  600 & \textbf{0.230} & 34\% & 61.6 & 80.0 & 0.108  \\
+  800 & 0.429 & 31\% & 65.4 & 90.3 & 0.119  \\
+  999 & 0.571 & 32\% & 66.0 & 91.9 & 0.120  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The pricing loss decreases substantially over the first \(600\) epochs, from \(7.891\) to \(0.230\). This shows that the additional risk-neutral drift can learn a meaningful pricing correction. After epoch \(600\), the loss no longer improves and becomes noisier, suggesting that the run has reached the useful part of the optimisation. However, two problems emerge in parallel.
+
+\paragraph{First failure mode: \(\mathcal H\)-ODE coupling.}
+The reconstruction RMSE rises from \(49.1\) bp to \(66.0\) bp over the run. The initial RMSE is already far above the pretrained reconstruction level of \(5.3\) bp because the output layer of \(\mathcal H\) is pre-scaled before training begins. This matters because \(\mathcal H\) enters the no-arbitrage ODE through the diffusion covariance
+\[
+\Sigma(z)
+=
+\mathcal H(z)\mathcal H(z)^\top.
+\]
+Changing \(\mathcal H\) therefore changes the ODE coefficients and hence the reconstructed bond prices, even when \(\mathcal K^{\mathbb P}\) and \(\mathcal G\) are frozen. Subsequent pricing updates to \(\mathcal H\) push the reconstruction RMSE further upward. Thus, the same coupling problem identified for \(\mathcal K\) in Section~\ref{sec:joint_training_attempt} reappears through \(\mathcal H\).
+
+\paragraph{Second failure mode: decoder coverage.}
+The path finite fraction falls from \(52\%\) at the start of the run to \(32\%\) by epoch \(999\). As \(\mathcal K^{\mathbb Q}\) changes, the simulated risk-neutral paths move into different regions of latent space. If these regions are outside the domain where the reconstruction-trained decoder produces valid curves, the decoded bond curves become non-finite. Thus, although \(\mathcal K^{\mathbb Q}\) improves the pricing loss, it also moves the pricing distribution into latent regions where decoder coverage remains incomplete.
+
+\paragraph{What \(\mathcal K^{\mathbb Q}\) learned.}
+Inspecting the final checkpoint gives insight into the correction learned by \(\mathcal K^{\mathbb Q}\). The smallest eigenvalue of the stability matrix associated with \(\mathcal K^{\mathbb Q}\) increases from \(0.0016\) at initialisation to approximately \(0.120\) by the end of training. In mean-reversion terms, the slowest latent direction therefore changes from being nearly non-stationary to reverting on a horizon of roughly \(8\) years.
+
+This suggests that the pricing loss pushes the risk-neutral drift toward stronger mean reversion in the slowest latent direction. Economically, this direction is naturally interpreted as a level-like factor of the yield curve. Under the historical measure, the EUR rate level in the training period behaves close to a random walk, whereas the pricing loss favours a risk-neutral drift that reduces the forward bias identified in Section~\ref{sec:pricing_diagnostics}. The learned \(\mathcal K^{\mathbb Q}\) therefore moves in the expected direction: it changes the drift most strongly in the low-frequency component that dominates swap-rate levels.
+
+\paragraph{Summary.}
+The \(\mathcal K^{\mathbb Q}\) experiment confirms that separating the historical and risk-neutral drifts is a meaningful direction. The pricing loss decreases substantially, and the learned drift correction targets the slowest, level-like latent direction where the forward-bias problem is most naturally located. However, the unconstrained version of the experiment does not yet provide a satisfactory pricing architecture.
+
+Two limitations remain. First, allowing \(\mathcal H\) to move introduces reconstruction damage, because \(\mathcal H\) also enters the no-arbitrage ODE. Second, the learned \(\mathcal K^{\mathbb Q}\) can move simulated paths into regions of latent space where the decoder was not trained to produce valid curves. Both limitations point toward a more constrained specification: keep \(\mathcal H\) fixed, and parameterise the risk-neutral drift as a controlled deviation from \(\mathcal K^{\mathbb P}\). This motivates the structural framework discussed next.
+
+%=========================================================
+\section{A Structural Extension: Market Price of Risk Parameterisation}
+\label{sec:lyashenko}
+%=========================================================
+
+The \(\mathcal K^{\mathbb Q}\) approach of the previous section is pragmatic: it introduces
+a second drift and trains it against observed swaption prices without imposing an explicit
+relationship between \(\mathcal K^{\mathbb P}\) and \(\mathcal K^{\mathbb Q}\). A more
+structured approach is suggested by Girsanov's theorem. If the historical and risk-neutral
+dynamics have the same diffusion coefficient, then the difference between the two drifts is
+determined by a market price of risk.
+
+Let \(W^{\mathbb P}\) be a Brownian motion under the historical measure and let
+\(\lambda_t\) denote the market price of risk. Under the change of measure,
+\[
+    W^{\mathbb Q}_t
+    =
+    W^{\mathbb P}_t
+    +
+    \int_0^t \lambda_s\,ds
+\]
+is a Brownian motion under the risk-neutral measure. If the latent dynamics under
+\(\mathbb P\) are
+\begin{equation}
+    dz_t
+    =
+    \mathcal K^{\mathbb P}(z_t)\,dt
+    +
+    \mathcal H(z_t)\,dW^{\mathbb P}_t,
+    \label{eq:P_sde}
+\end{equation}
+then the corresponding \(\mathbb Q\)-measure dynamics are
+\begin{equation}
+    dz_t
+    =
+    \Bigl[
+        \mathcal K^{\mathbb P}(z_t)
+        -
+        \mathcal H(z_t)\lambda(z_t)
+    \Bigr]dt
+    +
+    \mathcal H(z_t)\,dW^{\mathbb Q}_t.
+    \label{eq:Q_sde}
+\end{equation}
+Hence the risk-neutral drift is
+\[
+    \mathcal K^{\mathbb Q}(z)
+    =
+    \mathcal K^{\mathbb P}(z)
+    -
+    \mathcal H(z)\lambda(z),
+\]
+where \(\lambda\) is the market-price-of-risk function.
+
+This decomposition is the natural theoretical counterpart to the separate-drift experiment.
+Instead of estimating \(\mathcal K^{\mathbb Q}\) freely, one keeps the historical drift
+\(\mathcal K^{\mathbb P}\) fixed and estimates the market-price-of-risk component. In this
+form, the risk-neutral drift is not an arbitrary second network; it is a controlled adjustment
+of the historical drift through the diffusion directions of the model. This is closely related
+to the framework of \citet{Lyashenko2019}, where the separation between historical and
+risk-neutral term-structure dynamics is imposed at the model-design level rather than
+recovered by unconstrained pricing training.
+
+\paragraph{Relation to the \(\mathcal K^{\mathbb Q}\) experiment.}
+The experiment in Section~\ref{sec:kq_training} estimated the composite drift
+\(\mathcal K^{\mathbb Q}\) directly, without decomposing it into
+\(\mathcal K^{\mathbb P}\) and \(\mathcal H\lambda\). The learned correction was
+economically interpretable: the largest change occurred in the slowest, level-like latent
+direction, increasing its mean-reversion speed under the pricing measure. In the
+market-price-of-risk representation, this corresponds to a large risk-premium adjustment in
+the level factor.
+
+However, the unconstrained \(\mathcal K^{\mathbb Q}\) experiment also revealed two
+limitations. First, allowing \(\mathcal H\) to move contaminated the reconstruction ODE,
+because \(\mathcal H\) enters the bond-pricing equations through the diffusion covariance
+\[
+    \Sigma(z)=\mathcal H(z)\mathcal H(z)^\top.
+\]
+Second, the freely trained \(\mathcal K^{\mathbb Q}\) could move the risk-neutral latent
+distribution into regions where the decoder was not trained to produce valid curves. This
+reduced the finite-path fraction during pricing.
+
+The market-price-of-risk parameterisation addresses both issues more directly. The diffusion
+network \(\mathcal H\) can be kept fixed, avoiding reconstruction damage. The drift
+correction is also constrained to lie in the directions spanned by \(\mathcal H(z)\). For
+example, with an affine specification
+\[
+    \lambda(z)=\Lambda z,
+\]
+the risk-neutral drift becomes
+\[
+    \mathcal K^{\mathbb Q}(z)
+    =
+    \mathcal K^{\mathbb P}(z)
+    -
+    \mathcal H(z)\Lambda z.
+\]
+The learnable object is then the matrix \(\Lambda\), rather than an entirely unrestricted
+second drift network. With regularisation on \(\Lambda\), the risk-neutral correction is kept
+close to the historical dynamics unless the swaption pricing loss provides evidence for a
+larger adjustment.
+
+\paragraph{Implementation as future work.}
+A natural extension of the present framework is therefore to train only the market-price-of-risk
+parameter \(\Lambda\). In this setup, all original network weights
+\(\mathcal K^{\mathbb P}\), \(\mathcal H\), and \(\mathcal G\) remain frozen. The simulation and
+pricing ODE use
+\[
+    \mathcal K^{\mathbb Q}(z)
+    =
+    \mathcal K^{\mathbb P}(z)
+    -
+    \mathcal H(z)\Lambda z,
+\]
+while reconstruction continues to use the original \(\mathcal K^{\mathbb P}\). The volatility
+level can still be controlled by the expiry-level diffusion scales estimated in
+Section~\ref{sec:hscale_calibration}, since those scales are applied only at simulation time
+and do not change any network weights.
+
+This parameterisation is implemented in \texttt{Training\_lambda\_mpr.py}. For the
+four-dimensional stable model, \(\Lambda\) is a \(4\times4\) matrix initialised at zero. Thus,
+training starts from
+\[
+    \mathcal K^{\mathbb Q}=\mathcal K^{\mathbb P},
+\]
+with the original reconstruction fit preserved. The pricing loss then updates only
+\(\Lambda\), pushing the risk-neutral drift away from the historical drift only through an
+explicit market-price-of-risk channel. This provides a more constrained and interpretable
+route to correcting the forward bias identified in Section~\ref{sec:pricing_diagnostics}.
+A full empirical evaluation of this extension is left for future work.
