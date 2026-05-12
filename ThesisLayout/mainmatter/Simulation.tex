@@ -457,8 +457,8 @@ The experiment shows that the stability restrictions turn out to be a practical 
 
 Imposing stability comes at a cost in model flexibility. This section examines whether that cost shows up in reconstruction accuracy.
 
-We first compare the in-sample reconstruction errors for the two models used in the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports the in-sample EUR swap-curve reconstruction RMSE for both models from the simulation experiment. Both models are trained on multi-currency swap-rate data, but the error is measured on the EUR curve only.
 
+We start off by comparing the in-sample reconstruction errors for the two models used in the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports the in-sample EUR swap-curve reconstruction RMSE for both models from the simulation experiment. Both models are trained on multi-currency swap-rate data, but the error is measured on the EUR curve only.
 
 \begin{table}[H]
 \centering
@@ -469,6 +469,9 @@ We first compare the in-sample reconstruction errors for the two models used in 
 \end{table}
 
 Table~\ref{tab:sim_insample_rmse} shows that the stable variant does not sacrifice in-sample reconstruction accuracy in this experiment. It achieves a lower in-sample RMSE than the baseline model, with \(8.49\) bps compared to \(17.61\) bps. Thus, in this experiment, the stable simulation behaviour is not obtained by giving up reconstruction accuracy. 
+
+
+
 
 We also compare the two variants out of sample using the rolling-window evaluation protocol from Chapter~\ref{chap:evaluation}. The experiment is repeated for latent dimensions \(\ell\in\{2,3,4\}\), with each model trained for \(3500\) epochs. Reconstruction accuracy is measured by the rolling out-of-sample RMSE.
 
