@@ -1080,7 +1080,7 @@ def main():
     print(df_diag.to_string(index=False))
 
     # =================================================================
-    # TABLE: OOS summary across latent dimensions
+    # TABLE: OOS summary across latent dimensions (CSV for pgfplots)
     # =================================================================
     print("\n-- OOS summary table --")
     try:
@@ -1088,7 +1088,7 @@ def main():
         _roll_epochs = 3500
         _dims        = [2, 3, 4]
         _variants    = [("baseline", "Baseline"), ("stable", "Stable")]
-        _tex_rows    = []
+        _tex_rows = []
 
         for i, dim in enumerate(_dims):
             for variant, label in _variants:
