@@ -1079,6 +1079,47 @@ def main():
 
     print(df_diag.to_string(index=False))
 
+    # =================================================================
+    # TABLE: OOS summary across latent dimensions
+    # =================================================================
+    print("\n-- OOS summary table --")
+    try:
+        _roll_subdir = "train5Y_test6M_step6M"
+        _roll_epochs = 3500
+        _dims        = [2, 3, 4]
+        _variants    = [("baseline", "Baseline"), ("stable", "Stable")]
+        _tex_rows    = []
+
+        for i, dim in enumerate(_dims):
+            for variant, label in _variants:
+                fname    = f"oos_rolling_bbg_dim{dim}_{_roll_subdir}.csv"
+                csv_path = os.path.join(
+                    THESIS_ROOT, "Figures", "OOSResults", "Roll",
+                    f"OOS_roll_dim{dim}_{variant}",
+                    _roll_subdir, f"ep{_roll_epochs}", fname,
+                )
+                if not os.path.exists(csv_path):
+                    print(f"  [OOS table] missing: {csv_path}")
+                    _tex_rows.append(f"    {dim} & {label} & -- & -- & -- \\\\")
+                    continue
+                _df      = pd.read_csv(csv_path)
+                mean_is  = _df["avg_in_rmse_bps"].mean()
+                mean_oos = _df["avg_rmse_bps"].mean()
+                max_oos  = _df["avg_rmse_bps"].max()
+                _tex_rows.append(
+                    f"    {dim} & {label} & {mean_is:.1f} & {mean_oos:.1f} & {max_oos:.1f} \\\\"
+                )
+            if i < len(_dims) - 1:
+                _tex_rows.append(r"    \midrule")
+
+        oos_tex_path = os.path.join(OUT_DIR, "oos_summary_table.tex")
+        with open(oos_tex_path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(_tex_rows) + "\n")
+        print(f"  Saved {oos_tex_path}")
+    except Exception as e:
+        print(f"  [OOS table] failed: {e}")
+        import traceback; traceback.print_exc()
+
     # -- console summary --------------------------------------------------
     SEP = "=" * 65
     print(f"\n{SEP}")
