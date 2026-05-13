@@ -275,17 +275,18 @@ r_{\mathrm{center}}+r_{\mathrm{scale}}
 The range is now set by trainable parameters rather than by activation saturation. 
 \end{description}
 
-Together, these restrictions define the stable variant considered in the simulation experiment. 
 
-%Together, these restrictions define the stable variant considered in the simulation experiment. Relative to the baseline model, the drift restriction imposes mean reversion in the deterministic latent dynamics, the volatility bounds control the diffusion scale, the correlation construction ensures a valid covariance matrix, and the short-rate specification makes the rate range explicit and learnable. The empirical comparison below investigates how these changes affect the simulated latent paths and the resulting model-generated swap-rate curve scenarios.
+
+Together, these restrictions define the stable variant. Section~\ref{sec:sim_evidence} compares it against the baseline through a simulation experiment, and Section~\ref{sec:sim_reconstruction_accuracy} then examines whether the restrictions affect reconstruction accuracy.
+
 
 
 %========================================================
-\subsection{A Simulation Experiment}
-\label{subsec:sim_evidence}
+\section{A Simulation Experiment}
+\label{sec:sim_evidence}
 %========================================================
 
-We compare the baseline and stable models by simulating latent paths over a $10$-year horizon. Both models use the latent dimension \(\ell=2\), are trained for 5000 epochs, and are initialised from the observed EUR swap curve on 29 January 2010. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial latent states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
+We compare the baseline and stable models by simulating latent paths over a $10$-year horizon. Both models use the latent dimension \(\ell=2\), are trained for 5{,}000 epochs on swap curves from all nine currencies jointly, and are initialised from the observed EUR swap curve on 29 January 2010. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial latent states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
 
 \begin{figure}[H]
 \centering
@@ -364,7 +365,7 @@ The baseline drift violates the mean reversion condition of Proposition \ref{pro
 
 
 
-\item[Short-rate behaviour.] We next examine how the latetn path behaviour affects the simulated short rate in Figure \ref{fig:comp_short_rate_fan}.
+\item[Short-rate behaviour.] We next examine how the latent path behaviour affects the simulated short rate in Figure \ref{fig:comp_short_rate_fan}.
 
 \begin{figure}[H]
     \centering
@@ -394,9 +395,9 @@ Beyond how paths evolve over time, Figure~\ref{fig:comp_terminal} examines where
 \end{figure}
 
 
-For the baseline, the terminal latent state collapse onto a near-straight line. The annotated direction $\lambda_1^{\text{base}}=+5.571$ identifies the dominant eigenvector of M. Because this eigenvalue is positive, any component along it grows without bound, and after ten years all paths are dominated by that single mode. The short histogram reflects this degeneracy, with virtually all mass concetrated at extreme values near \(\pm125\%\).
+For the baseline, the terminal latent state collapse onto a near-straight line. The annotated direction $\lambda_1^{\text{base}}=+5.571$ identifies the dominant eigenvector of M. Because this eigenvalue is positive, any component along it grows without bound, and after ten years all paths are dominated by that single mode. The short histogram reflects this degeneracy, with virtually all mass concentrated at extreme values near \(\pm125\%\).
 
-The stable model cloud is quite different. The annotated direction $\lambda_2^{\text{stable}}=+5.571$ corresponds to the dominant eigenvector. The cloud is compressed along $z_2$ relative to $z_1$, reflecting stronger mean reversion in that direction. While paths extend somewhat beyond the training region, no dominant direction emerges, and the terminal short-rate distribution spans a more plausible range of approximately \([-11\%,11\%]\).
+The stable model cloud is quite different. The annotated direction $\lambda_2^{\text{stable}}=-10.846$ corresponds to the dominant eigenvector. The cloud is compressed along $z_2$ relative to $z_1$, reflecting stronger mean reversion in that direction. While paths extend somewhat beyond the training region, no dominant direction emerges, and the terminal short-rate distribution spans a more plausible range of approximately \([-11\%,11\%]\).
 
 
 \item[Volatility bounds.] We now inspect the learned volatility functions. This is useful because the volatility functions determine the size of the Brownian shock term in the latent SDE,
@@ -451,8 +452,8 @@ The experiment shows that the stability restrictions turn out to be a practical 
 
 
 %========================================================
-\subsection{Reconstruction Accuracy under Stability Constraints}
-\label{subsec:sim_reconstruction_accuracy}
+\section{Reconstruction Accuracy under Stability Constraints}
+\label{sec:sim_reconstruction_accuracy}
 %========================================================
 
 Imposing stability restrictions improves simulation behaviour. The question is whether this comes at the cost of the model's primary objective of reconstructing observed swap curves.
@@ -465,7 +466,7 @@ The assessment begins with the two models from the simulation experiment. Table~
 {\small
 \input{Figures/Simulation/sim_insample_rmse_table}
 }
-\caption{In-sample reconstruction RMSE for the baseline and stable models used in the simulation experiment. Both models are trained on EUR swap-rate data with latent dimension \(\ell=2\) for \(5000\) epochs. RMSE is reported in basis points.}
+\caption{In-sample reconstruction RMSE for the baseline and stable models used in the simulation experiment. Both models are trained on multi-currency data with latent dimension \(\ell=2\) for \(5000\) epochs but evaluated on the EUR curve only. RMSE is reported in basis points.}
 \label{tab:sim_insample_rmse}
 \end{table}
 The stable variant achieves \(8.49\) bps compared to \(17.61\) bps for the baseline, so the improved behavior does not come at the cost of in-sample fit. 
@@ -515,3 +516,6 @@ For the baseline model, error spikes cluster around the ECB quantitative easing 
 \end{figure}
 
 
+The panels use separate vertical scales, the baseline reaching 7,000 bps against 200 bps for the stable model, which reflects the nature of the difference. Normal non-negative observations (blue) remain near zero for both models throughout most of the sample, but the baseline produces a single extreme failure close to 7,000 bps in 2022, confirming that even familiar regime observations become problematic as the rate environment shifts sharply. Negative-rate observations (pink) drive sustained elevated errors, with individual spikes reaching around 4,800 bps in 2016 and 3,500 bps around 2019. Inverted non-negative curves (black), which appear from 2022 onward, reach close to 3,000 bps for the baseline. The stable model reduces these errors substantially across all three regimes, though negative-rate observations still produce the highest errors within the stable panel, reaching around 150 to 210 bps in the 2015 to 2016 period, well above the typical level for normal non-negative observations.
+
+The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter all point in the same direction. At $\ell=4$, the stability restrictions reduce both in-sample and out-of-sample errors relative to the baseline and contain the most severe regime-specific failures, though the negative-rate environment remains the most challenging for both models. 
