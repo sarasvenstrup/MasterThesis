@@ -95,24 +95,24 @@
 \node[neuron, fill=red!70, minimum size=13mm, font=\small, inner sep=1pt] (CO) at (18.5, 1.0) {$x_h^{(j)}$};
 
 % Weighted arrows inside detail box
-\draw[->, draw=darkgray] (CX1) -- node[above, sloped, font=\scriptsize] {$w_{j1}$} (CN);
-\draw[->, draw=darkgray] (CX2) -- node[above, font=\scriptsize]         {$w_{j2}$} (CN);
-\draw[->, draw=darkgray] (CXM) -- node[below, sloped, font=\scriptsize] {$w_{jM_{h-1}}$} (CN);
+\draw[->, draw=darkgray] (CX1) -- node[above, sloped, font=\scriptsize] {$w_{h,j1}$} (CN);
+\draw[->, draw=darkgray] (CX2) -- node[above, font=\scriptsize]         {$w_{h,j2}$} (CN);
+\draw[->, draw=darkgray] (CXM) -- node[below, sloped, font=\scriptsize] {$w_{h,jM_{h-1}}$} (CN);
 \draw[->, draw=darkgray] (CN)  -- (CO);
 
 % Bias annotation
-\node[font=\scriptsize, darkgray] at (15.5, -0.4) {bias $b_j$};
+\node[font=\scriptsize, darkgray] at (15.5, -0.4) {bias $b_{h,j}$};
 \draw[darkgray, thin] (15.5, -0.2) -- (15.5, 0.2);
 
 % Equation inside detail box
 \node[font=\small] at (15.0, -3.8)
-    {$x_h^{(j)} = \psi_h\!\left(w_j^\top x_{h-1} + b_j\right)$};
+    {$x_h^{(j)} = \psi_h\!\left(w_{h,j}^\top x_{h-1} + b_{h,j}\right)$};
 
 \end{tikzpicture}
 \caption{General feedforward network of depth $H$. Each node $x_h^{(j)}$
 denotes the $j$-th neuron in layer $h$, for $j = 1,\ldots,M_h$.
 The detail panel shows how neuron $x_h^{(j)}$ computes its output from the
-previous layer $x_{h-1}$ via weights $w_j$, bias $b_j$, and
+previous layer $x_{h-1}$ via weights $w_{h,j}$, bias $b_{h,j}$, and
 activation function $\psi_h$.}
 \label{fig:nn_general}
 \end{figure}

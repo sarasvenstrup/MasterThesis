@@ -3,13 +3,14 @@
 \label{chap:ml_theory}
 %========================================================
 
-This chapter introduces the machine learning concepts that form the second theoretical pillar of this thesis. We cover feedforward neural networks, encoder--decoder architectures and the procedures used to train such models.
+This chapter forms the second theoretical pillar of this thesis, introducing the machine learning concepts used to model the interest rate term structures established in the first. We cover feedforward neural networks, encoder--decoder architectures and the procedures used to train such models.
+
+
 
 %--------------------------------------------------------
 \section{Neural Networks}
 \label{sec:neural_networks}
 %--------------------------------------------------------
-
 
 
 A neural network is built from neurons and layers, with the full network obtained by composing layers, as illustrated in Figure \ref{fig:nn_general}. We introduce each in turn.
@@ -20,7 +21,7 @@ A neural network is built from neurons and layers, with the full network obtaine
 
 \begin{description}
     \item[Neurons]
-A \emph{neuron} is a map from a vector $x \in \mathbb{R}^n$ to a scalar $N(x)\in \mathbb{R}$:
+A \emph{neuron} is a map from a vector $x \in \mathbb{R}^n$ to a scalar $\mathcal{N}(x)\in \mathbb{R}$:
 \begin{equation}
     \mathcal{N}(x)
     = \psi(w^\top x + b),
@@ -137,7 +138,7 @@ Given a dataset $\mathcal{D} = \{(x_t,y_t)\}_{t=1}^N$ with $N$ data points, trai
 \end{equation}
 where $\ell$ is a \emph{loss function} measuring the discrepancy between the target $y_t$ and the model output $f(x_t;\Omega)$. The quantity $\mathcal{L}(\Omega)$ is the corresponding \emph{empirical risk}, that is, the average loss over the dataset \citep[Ch.~6]{Goodfellow2016}. Since the target and predicted outputs are vectors, a natural choice is the squared Euclidean norm,
 \[
-    \ell(y,\hat{y}) = \|y-\hat{y}\|_2^2.
+    \ell(y,\hat{y}) = \|y-\hat{y}\|^2.
 \]
 
 which sums the squared errors across all vector components.
