@@ -48,7 +48,7 @@ from Code.utils import helpers as H_utils
 from Code.load_swapdata import my_data
 from Code.model.full_model_stable import FullModel
 from Code.Pricing.load_swapvol_ois import load_swaption_vol_data
-from Code.Pricing.pricing import swap_rate_torch
+from Code.Pricing.pricing import swap_rate_torch, forward_swap_rate_torch
 from Code.Simulation.simulate_model import simulate_latent_paths, compute_discount_paths
 
 print("Active variant:", config.VARIANT)
@@ -176,8 +176,7 @@ def price_swaption(date, expiry, tenor, diffusion_scale=1.0):
 
     # Time-0 anchor
     _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True)
-    F0_t, A0_t = swap_rate_torch(aux0["P_full"], tenor=tenor)
-    F0 = float(F0_t[0]); A0 = float(A0_t[0])
+    F0, A0 = forward_swap_rate_torch(aux0["P_full"][0], expiry, tenor)
     if not (math.isfinite(F0) and math.isfinite(A0) and A0 > 0):
         return None
 

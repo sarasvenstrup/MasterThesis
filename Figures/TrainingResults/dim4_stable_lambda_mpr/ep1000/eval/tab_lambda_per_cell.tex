@@ -1,0 +1,23 @@
+\begin{table}[H]
+\centering
+\caption{Per-cell ATM vol errors at the final $\Lambda$-MPR checkpoint (ep\,999, EUR test set). Model implied vol is the payer-derived ATM normal vol (basis points). Forward bias $= (V_{\mathrm{pay}} - V_{\mathrm{rec}})/\mathcal{A}_0 \times 10{,}000$\,bp; the risk-neutral benchmark is $0$.}
+\label{tab:lambda_per_cell_final}
+\small
+\begin{tabular}{@{}ccrrrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten} & \textbf{Mkt vol (bp)} & \textbf{Mod vol (bp)} & \textbf{MAE (bp)} & \textbf{RMSE (bp)} & \textbf{Fwd bias (bp)} \\
+\midrule
+  1Y & 1Y & 56 & 79 & 28.4 & 39.9 & -501.3 \\
+  1Y & 5Y & 55 & 15 & 39.7 & 42.1 & -772.3 \\
+  1Y & 10Y & 191 & 64 & 126.4 & 221.0 & -261.4 \\
+  \midrule
+  5Y & 1Y & 47 & 20 & 26.8 & 28.0 & -488.4 \\
+  5Y & 5Y & 102 & 27 & 74.3 & 101.2 & -996.9 \\
+  5Y & 10Y & 92 & 36 & 56.2 & 82.1 & -343.2 \\
+  \midrule
+  10Y & 1Y & 79 & 29 & 49.6 & 65.5 & -325.4 \\
+  10Y & 5Y & 75 & 22 & 53.1 & 69.2 & -1060.9 \\
+  10Y & 10Y & 69 & 22 & 49.2 & 63.0 & -389.9 \\
+\bottomrule
+\end{tabular}
+\end{table}

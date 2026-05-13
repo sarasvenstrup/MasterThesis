@@ -67,7 +67,7 @@ from Code import config
 from Code.load_swapdata import my_data
 from Code.model.full_model_stable import FullModel
 from Code.Pricing.load_swapvol_ois import load_swaption_vol_data
-from Code.Pricing.pricing import swap_rate_torch
+from Code.Pricing.pricing import swap_rate_torch, forward_swap_rate_torch
 from Code.Simulation.simulate_model import simulate_latent_paths, compute_discount_paths
 
 # ================================================================
@@ -201,8 +201,7 @@ def price_payer_receiver(date, expiry, tenor, s):
     F_T, A_T, D_k = F_T[sane], A_T[sane], D_k[sane]
 
     _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True)
-    F0, A0  = swap_rate_torch(aux0["P_full"], tenor=tenor)
-    F0, A0  = float(F0[0]), float(A0[0])
+    F0, A0 = forward_swap_rate_torch(aux0["P_full"][0], expiry, tenor)
     if not (math.isfinite(F0) and math.isfinite(A0) and A0 > 0):
         return None
 

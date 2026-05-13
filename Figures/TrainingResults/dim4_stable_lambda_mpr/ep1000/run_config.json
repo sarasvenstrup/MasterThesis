@@ -1,0 +1,29 @@
+{
+  "version": "lambda_mpr_v1",
+  "seed": 0,
+  "latent_dim": 4,
+  "variant": "stable",
+  "epochs": 1000,
+  "n_steps_per_epoch": 4,
+  "pretrain_ckpt": "C:\\Users\\Bruger\\PycharmProjects\\MasterThesis\\Figures\\TrainingResults\\dim4_stable\\ep5000\\checkpoint_dim4_ep5000.pt",
+  "lr_lambda": 0.0005,
+  "lambda_price": 1.0,
+  "lambda_eig": 2.0,
+  "lambda_l2": 0.0001,
+  "eig_min": 0.05,
+  "n_swaptions_per_batch": 8,
+  "n_paths_pricing": 256,
+  "dt_pricing": 0.16666666666666666,
+  "loss": "mse_vol_bp_div100",
+  "ccy_filter": "EUR",
+  "save_every": 200,
+  "expiry_scales": {
+    "1": 0.129,
+    "5": 0.133,
+    "10": 0.141
+  },
+  "default_scale": 0.135,
+  "h_frozen": true,
+  "kp_frozen": true,
+  "n_lambda_params": 96
+}

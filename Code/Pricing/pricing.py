@@ -104,6 +104,48 @@ def swap_rate_torch(
     return F, A
 
 
+def forward_swap_rate_torch(
+    P_full_0 : torch.Tensor,   # (tau_max+1,)  discount curve at time 0
+    expiry   : int,            # option expiry in years
+    tenor    : int,            # swap tenor in years
+    accrual  : float = 1.0,
+) -> tuple[float, float]:
+    """
+    Correct ATM forward swap rate and forward annuity for a swaption.
+
+    F_0   = (P(0, expiry) - P(0, expiry+tenor)) / A_fwd
+    A_fwd = sum_{j=1}^{tenor}  P(0, expiry + j)
+
+    This is the ATM strike for a swaption expiring at T=expiry into a
+    tenor-year swap starting at T.  It is DIFFERENT from the spot swap
+    rate  (1 - P(0,tenor)) / A_spot  which starts today.
+
+    Parameters
+    ----------
+    P_full_0 : 1-D tensor of length tau_max+1.  P_full_0[t] = P(0, t).
+    expiry   : swaption expiry in integer years
+    tenor    : swap tenor in integer years
+    accrual  : payment frequency (default 1 = annual)
+
+    Returns
+    -------
+    F_0   : float  forward swap rate
+    A_fwd : float  forward annuity (time-0 value of 1 paid at each payment date)
+    """
+    fwd_idx = [int(round(expiry + accrual * j)) for j in range(1, tenor + 1)]
+    if fwd_idx[-1] >= P_full_0.shape[0]:
+        raise ValueError(
+            f"forward_swap_rate_torch: expiry+tenor={fwd_idx[-1]} exceeds "
+            f"tau_max={P_full_0.shape[0]-1}.  Cannot compute forward rate."
+        )
+    P_fwd   = P_full_0[fwd_idx]                       # (tenor,)
+    A_fwd   = float(P_fwd.sum().item())
+    P_exp   = float(P_full_0[int(round(expiry))].item())
+    P_end   = float(P_fwd[-1].item())
+    F_0     = (P_exp - P_end) / A_fwd
+    return F_0, A_fwd
+
+
 def extract_discount(P_full_0, tau_grid, tau):
     P = np.asarray(P_full_0, dtype=float)
     if P.ndim == 2:

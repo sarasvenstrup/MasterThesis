@@ -1,0 +1,23 @@
+\begin{table}[H]
+\centering
+\caption{Per-cell ATM vol errors: $\Lambda$-MPR model with mean-correction control variate (ep\,999, EUR test set). The MC paths are shifted so that $\hat{E}^A[F_T] = F_0$ exactly. Forward bias is zero by construction; raw bias (pre-correction) is shown for reference.}
+\label{tab:lambda_per_cell_cv}
+\small
+\begin{tabular}{@{}ccrrrrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten} & \textbf{Mkt (bp)} & \textbf{Mod (bp)} & \textbf{MAE (bp)} & \textbf{RMSE (bp)} & \textbf{Fwd bias} & \textbf{Raw bias} \\
+\midrule
+  1Y & 1Y & 56 & 738 & 681.8 & 692.5 & +0.0 & -499.7 \\
+  1Y & 5Y & 55 & 1067 & 1012.6 & 1043.5 & -0.0 & -135.7 \\
+  1Y & 10Y & 191 & 365 & 258.7 & 275.3 & -0.0 & -24.6 \\
+  \midrule
+  5Y & 1Y & 47 & 245 & 198.3 & 205.7 & +0.0 & -510.6 \\
+  5Y & 5Y & 102 & 628 & 526.6 & 545.3 & +0.0 & -171.9 \\
+  5Y & 10Y & 92 & 200 & 130.2 & 140.9 & -0.0 & -32.2 \\
+  \midrule
+  10Y & 1Y & 79 & 147 & 82.3 & 93.3 & +0.0 & -348.4 \\
+  10Y & 5Y & 75 & 471 & 396.0 & 408.6 & -0.0 & -183.2 \\
+  10Y & 10Y & 69 & 146 & 89.5 & 98.5 & +0.0 & -36.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
