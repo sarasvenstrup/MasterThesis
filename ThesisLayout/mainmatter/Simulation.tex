@@ -455,7 +455,7 @@ The experiment shows that the stability restrictions turn out to be a practical 
 \label{subsec:sim_reconstruction_accuracy}
 %========================================================
 
-Imposing stability restrictions improves simulation behaviour. The question is whether this comes at the cost of the model's primary objective of reconstructing observed swap curves and the zero-coupon bond prices derived from them.
+Imposing stability restrictions improves simulation behaviour. The question is whether this comes at the cost of the model's primary objective of reconstructing observed swap curves.
 
 
 The assessment begins with the two models from the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports their in-sample RMSE on the EUR swap curve. Both models are trained on multi-currency data but evaluated on the EUR curve only.
@@ -468,7 +468,6 @@ The assessment begins with the two models from the simulation experiment. Table~
 \caption{In-sample reconstruction RMSE for the baseline and stable models used in the simulation experiment. Both models are trained on EUR swap-rate data with latent dimension \(\ell=2\) for \(5000\) epochs. RMSE is reported in basis points.}
 \label{tab:sim_insample_rmse}
 \end{table}
-
 The stable variant achieves \(8.49\) bps compared to \(17.61\) bps for the baseline, so the improved behavior does not come at the cost of in-sample fit. 
 
 In-sample accuracy alone does not confirm that the model generalises to unseen data. Table \ref{tab:oos_summary_sim} extends the comparison to a rolling out-of-sample evaluation across latent dimensions $\ell\in\{2,3,4\}$, following the protocol from Chapter \ref{chap:evaluation}, with each model trained for 3500 epochs.
@@ -490,14 +489,12 @@ reports the average rolling-window in-sample RMSE for reference. All models are
 trained for \(3500\) epochs. RMSE values are reported in basis points.}
 \label{tab:oos_summary_sim}
 \end{table}
-
-The results show that the effect of the stability restrictions depend strongly on the latent dimension. At $\ell=2$, the baseline generalises well out of sample while the stable model struggles, with restrictions that appear too strong relative to the available latent degrees of freedom. As the dimension increases, the picture shifts. The baseline's out-of-sample RMSE worsens despite consistently low in-sample errors, consistent with overfitting to the training window, while the stable model improves substantially and at $\ell=4$ achieves the best out-of-sample performance across all configurations. The restrictions there require sufficient latent capacity to be effective.
-
+The results show that the effect of the stability restrictions depend strongly on the latent dimension. At $\ell=2$, the baseline generalises well out of sample while the stable model struggles both in and out of sample, suggesting the restrictions are too restrictive relative to the available latent degrees of freedom. As the dimension increases, the baseline's out-of-sample RMSE worsens despite consistently low in-sample errors, consistent with overfitting to the training window. The stable model, however, improves substantially and at $\ell=4$ achieves the best in-sample and out-of-sample performance across all configurations. The restrictions there require sufficient latent capacity to be effective.
 
 
+% make this part more introducing the rest of the evaluation!
+In Chapter~\ref{chap:evaluation}, the baseline model was shown to struggle in specific market regimes, including periods of negative rates and inverted yield curves. Figure~\ref{fig:rolling_oos_rmse} examines whether the stable model addresses these weaknesses, tracing the rolling RMSE over time for all three latent dimensions.
 
-
-To better understand where the out-of-sample errors arise, we next inspect the rolling-window errors over time. This is useful because the average and maximum RMSE values in Table~\ref{tab:oos_summary} may be driven by a small number of stressed market periods rather than by persistent differences across all windows.
 
 \begin{figure}[H]
     \centering
@@ -506,13 +503,9 @@ To better understand where the out-of-sample errors arise, we next inspect the r
     \label{fig:rolling_oos_rmse}
 \end{figure}
 
-The rolling-window errors show that a large part of the worst-case behaviour is concentrated in the second half of 2022. This period is a natural stress test for the model, since the European Central Bank, the Federal Reserve and other major central banks raised policy rates rapidly after several years of low interest rates. Models trained on the preceding five-year window were therefore fitted mostly to a low-rate environment, while the test curves came from a substantially different market regime.
+For the baseline model, error spikes cluster around the ECB quantitative easing in 2015, the onset of COVID-19 in 2020, and the rate hiking cycle beginning in 2022, each marking a significant departure from the rate environment in the training window. The $\ell=4$ stable model performs more consistently across all three episodes, with errors remaining low where the baseline spikes. At lower latent dimensions, the stable model also struggles around these transitions, confirming that the stability restrictions require sufficient latent capacity to generalise under regime change.
 
-The 2022 window separates the variants clearly. The dim-3 and dim-4 baseline models produce large rolling RMSEs of \(296\) and \(395\) bps, respectively, with the dim-4 baseline additionally producing ten test rows with non-finite ODE output. The lower-dimensional stable variants also struggle: the dim-2 stable model reaches \(266\) bps and the dim-3 stable model reaches \(146\) bps. By contrast, the dim-4 stable model reconstructs this period much more accurately, with a rolling RMSE of \(23.7\) bps and no decoder failures.
 
-This pattern suggests that the stable restrictions are most useful when combined with sufficient latent flexibility. In lower dimensions, the restrictions may leave too little capacity to represent a stressed rate environment. With \(\ell=4\), however, the stable model has enough latent degrees of freedom to reconstruct curves from a regime that is far from the training window, while still avoiding the unstable behaviour seen in the baseline simulations. Outside the 2022 stress period and a small number of structural-shift windows, the two variants are more similar, with errors typically in the \(7\)--\(25\) bps range.
-
-The main conclusion is therefore that the preferred specification depends on the intended use. For benign reconstruction windows, the baseline and stable variants can perform similarly. However, when the model is intended for simulation or for reconstruction under stressed market regimes, the stable variant becomes more attractive, provided the latent dimension is sufficiently large. Among the configurations considered here, the stable model with \(\ell=4\) provides the strongest combination of reconstruction accuracy, simulation stability and robustness in the 2022 stress window.
 
 \begin{figure}[H]
     \centering
