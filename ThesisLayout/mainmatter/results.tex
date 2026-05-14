@@ -194,6 +194,27 @@ The in-sample reconstruction results show that the autoencoder captures swap rat
 
 
 
+
+
+
+
+
+This section will try to assess the implied terms tructure look reasonable. and also about the short rate.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/r_tilde_all_dims.png}
+    \caption{Implied short rate $\tilde{r}(z_t)$ over time for the baseline 
+    model with $\ell \in \{2,3,4\}$ latent factors, evaluated on the full 
+    in-sample dataset. Each line corresponds to one currency.}
+    \label{fig:r_tilde_all_dims}
+\end{figure}
+
+
+
+
+
+
 \subsection{No-Arbitrage PDE Residual Diagnostic}
 
 We next verify that the model satisfies the no-arbitrage restriction by computing the residual of the bond-pricing PDE in \eqref{eq:bond_pricing_pde}. Since the decoder constructs zero-coupon bond prices by solving the ODE system derived from this PDE, the residual should be close to zero up to numerical approximation error."
@@ -221,37 +242,9 @@ Figure~\ref{fig:Q7_pde_residual} reports the in-sample PDE residual for the $\el
 
 
 
-\subsection{Assessment of the resulting Term structure}
-
-This section will try to assess the implied terms tructure look reasonable. and also about the short rate.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/r_tilde_all_dims.png}
-    \caption{Implied short rate $\tilde{r}(z_t)$ over time for the baseline 
-    model with $\ell \in \{2,3,4\}$ latent factors, evaluated on the full 
-    in-sample dataset. Each line corresponds to one currency.}
-    \label{fig:r_tilde_all_dims}
-\end{figure}
 
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_yield_curves_all_dims.png}
-    \caption{Model-implied zero-coupon yield curves for $\ell \in \{2, 3, 4\}$
-    across two representative dates and four currencies. Yields are computed
-    as $y(\tau) = -\frac{1}{\tau}\log P(\tau)$, where $P(\tau)$ is the
-    zero-coupon bond price implied by the model.
-    Rows correspond to market regimes and columns to EUR, USD, JPY, and CAD.
-    Specifications:
-    $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
-    $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
-    $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).}
-    \label{fig:Q1d_yield_curves}
-\end{figure}
 
-
-I dont think it gives that much to see the resulting yield of the term strucutre. 
 
 
 % ─────────────────────────────────────────────────────────────
