@@ -1,21 +1,24 @@
-\chapter{Evaluation of the Arbitrage-Free Autoencoder}
+\chapter{Evaluation of the Arbitrage-Free Encoder--Decoder}
 \label{chap:evaluation}
 
-%This chapter evaluates the empirical performance of the arbitrage-free autoencoder model introduced in Chapter~\ref{chap:encoderdecodermodel}. The model is fitted to swap rate curves across the nine currencies described in Chapter~\ref{chap:datadescription}. The evaluation has three objectives. First, the in-sample analysis assesses whether the model can accurately reconstruct the swap rate curves used for estimation. Second, it examines whether the implied zero-coupon bond prices preserve the no-arbitrage structure imposed in Section~\ref{subsec:no_arbitrage_ode_system}. Third, the out-of-sample analysis evaluates whether reconstruction accuracy generalises to unseen data. The in-sample analysis is conducted across latent factor specifications $\ell \in \{1,2,3,4\}$, while out-of-sample performance is evaluated using a rolling window scheme across different market environments.
-
-This chapter evaluates the empirical performance of the arbitrage-free autoencoder introduced in Chapter~\ref{chap:encoderdecodermodel}, trained on the swap rate curves described in Chapter~\ref{chap:datadescription}. The model is evaluated across four latent specifications, $\ell \in \{1,2,3,4\}$, proceeding in two stages. First, in-sample performance is assessed across all four specifications. Second, out-of-sample generalization is evaluated using a rolling window scheme, examining performance across different market regimes.
+This chapter evaluates the empirical performance of the arbitrage-free encoder--decoder introduced in Chapter~\ref{chap:encoderdecodermodel}, trained on the swap rate data described in Chapter~\ref{chap:datadescription}. Four models are considered, one for each latent dimension $\ell \in \{1,2,3,4\}$, with all other architectural and training choices
+held fixed. Each model is referred to by its latent dimension, e.g.\ the \textit{$\ell=3$ model}.
+The evaluation in carried out in two steps. First, in-sample reconstruction accuracy
+is assessed across all four models. Second, out-of-sample performance is
+examined using a rolling window scheme, testing how well each model reconstructs
+unseen swap rate curves.
 
 
 % ─────────────────────────────────────────────────────────────
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-Two criteria are used to assess in-sample performance. First, the model must accurately reconstruct the swap rate curves used for training. Following \citet{MatinWanPoulsen2025}, reconstruction accuracy is measured by the root mean squared error (RMSE) in basis points. Second, the implied zero-coupon bond prices must satisfy the no-arbitrage restriction, which is evaluated numerically via the residual of the bond-pricing PDE in \eqref{eq:bond_pricing_pde}. By construction, the decoder solves the ODE system derived from this PDE, so the residual should be close to zero up to numerical precision.
+Two criteria are used to assess in-sample performance. First, the model must accurately reconstruct the swap rate curves used for training. Following \citet{MatinWanPoulsen2025}, reconstruction accuracy is measured by the root mean squared error (RMSE) in basis points. Second, the implied zero-coupon bond prices must satisfy the no-arbitrage restriction, which is evaluated numerically via the residual of the bond-pricing PDE in \eqref{eq:pde_residual}. 
 
 \subsection{Reconstruction Accuracy}
 \label{subsec:reconstruction_accuracy} 
 
-We begin by examining how reconstruction error evolves over 5\,000 training epochs. As seen in Figure~\ref{fig:training_loss}, the largest reduction in reconstruction error occurs early in training, after which the loss curves flatten considerably. For $\ell=3$ and $\ell=4$, the loss curves exhibit brief upward spikes around 2\,500 epochs before stabilising. By 3\,500 epochs, all specifications have settled into a stable training regime with only marginal improvements thereafter. Notably, the $\ell=1$ specification settles at a markedly higher reconstruction error than the remaining specifications.
+We begin by examining how reconstruction error evolves over 5\,000 training epochs. As seen in Figure~\ref{fig:training_loss}, the largest reduction in reconstruction error occurs early in training, after which the loss curves flatten considerably. For models $\ell=3$ and $\ell=4$, the loss curves exhibit brief upward spikes around 2\,500 epochs before stabilising. By 3\,500 epochs, all models have settled into a stable training regime with only marginal improvements thereafter. Notably, the $\ell=1$ model settles at a markedly higher reconstruction error than the remaining models.
 
 \begin{figure}[H]
     \centering
@@ -140,7 +143,7 @@ Moving beyond aggregate error metrics, Figure~\ref{fig:Q1d} examines the visual 
 In the calmer period, the observed curves are generally reconstructed well across all specifications, although JPY already displays some short-end mismatch. During the COVID-19 shock, the reconstruction task becomes more challenging, especially for EUR and JPY, where all three specifications struggle similarly. For these currencies, the observed swap rates reach low and negative levels, with the short end turning negative and the curve sloping upward with maturity. The fitted curves, however, remain closer to zero and fail to capture this shape across all three specifications. This suggests that the difficulty in reconstructing low- and negative-rate curves is not resolved by increasing the number of latent factors, pointing to a more fundamental limitation of the model. It is therefore of interest to examine whether reconstruction accuracy varies more broadly with the shape and level of the curve, not only for negative-rate curves, but also for structurally different shapes such as inverted curves.
 
 
-Figure~\ref{fig:q6e_scatter_regime}plots the per-observation RMSE over time, coloured by interest rate regime, where each observation is classified by whether the curve is normal or inverted and whether rates are positive or negative. Normal, non-negative curves are reconstructed most accurately, while both inverted and negative rate curves exhibit notably higher errors. This is particularly evident for EUR and JPY, which experienced prolonged negative-rate periods and show the largest aggregate errors. The higher errors suggest that the model finds structurally atypical curve shapes harder to represent, particularly given that is was trained predominantly on a globally declining rate environment.
+Figure~\ref{fig:q6e_scatter_regime} plots the per-observation RMSE over time, coloured by interest rate regime, where each observation is classified by whether the curve is normal or inverted and whether rates are positive or negative. Normal, non-negative curves are reconstructed most accurately, while both inverted and negative rate curves exhibit notably higher errors. This is particularly evident for EUR and JPY, which experienced prolonged negative-rate periods and show the largest aggregate errors. The higher errors suggest that the model finds structurally atypical curve shapes harder to represent, particularly given that is was trained predominantly on a globally declining rate environment.
 
 \begin{figure}[H]
     \centering
@@ -187,7 +190,7 @@ Table~\ref{tab:q6e_combined} quantifies this further. Normal, non-negative curve
 
 
 
-The in-sample reconstruction results show that the autoencoder captures swap rate curves with reasonable accuracy once at least two latent factors are used. Increasing the latent dimension improves reconstruction accuracy, though with diminishing gains. The remaining errors are concentrated at the short and long ends of the curve, during periods of abrupt market movements, and for structurally atypical curve shapes such as inverted and negative-rate curves. The latter is particularly evident for EUR and JPY during the COVID-19 shock. 
+The in-sample reconstruction results show that the autoencoder captures swap rate curves with o accuracy once at least two latent factors are used. Increasing the latent dimension improves reconstruction accuracy, though with diminishing gains. The remaining errors are concentrated at the short and long ends of the curve, during periods of abrupt market movements, and for structurally atypical curve shapes such as inverted and negative-rate curves. The latter is particularly evident for EUR and JPY during the COVID-19 shock. 
 
 
 
@@ -218,7 +221,37 @@ Figure~\ref{fig:Q7_pde_residual} reports the in-sample PDE residual for the $\el
 
 
 
+\subsection{Assessment of the resulting Term structure}
 
+This section will try to assess the implied terms tructure look reasonable. and also about the short rate.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/r_tilde_all_dims.png}
+    \caption{Implied short rate $\tilde{r}(z_t)$ over time for the baseline 
+    model with $\ell \in \{2,3,4\}$ latent factors, evaluated on the full 
+    in-sample dataset. Each line corresponds to one currency.}
+    \label{fig:r_tilde_all_dims}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_yield_curves_all_dims.png}
+    \caption{Model-implied zero-coupon yield curves for $\ell \in \{2, 3, 4\}$
+    across two representative dates and four currencies. Yields are computed
+    as $y(\tau) = -\frac{1}{\tau}\log P(\tau)$, where $P(\tau)$ is the
+    zero-coupon bond price implied by the model.
+    Rows correspond to market regimes and columns to EUR, USD, JPY, and CAD.
+    Specifications:
+    $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
+    $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).}
+    \label{fig:Q1d_yield_curves}
+\end{figure}
+
+
+I dont think it gives that much to see the resulting yield of the term strucutre. 
 
 
 % ─────────────────────────────────────────────────────────────

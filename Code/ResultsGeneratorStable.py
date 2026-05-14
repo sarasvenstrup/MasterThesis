@@ -63,9 +63,9 @@ ROLL_EP                = 3500
 
 EVENTS = {
     "GFC\n(15 Sep 2008)":       "2008-09-15",
-    "ECB QE\n(22 Jan 2015)":    "2015-01-22",
+    "QE\n(22 Jan 2015)":    "2015-01-22",
     "COVID\n(1 Mar 2020)":      "2020-03-01",
-    "Rate hikes\n(1 Mar 2022)": "2022-03-01",
+    "Inflation\n(1 Mar 2022)": "2022-03-01",
 }
 
 set_paper_theme()
@@ -663,5 +663,105 @@ else:
         save_fig(fig, "Q4c_stable_oos_scatter_regime")
 
         print(f"  Loaded {len(_df_oos)} OOS test observations.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1d stable — Fitted vs actual, all dims (ℓ=2,3,4) overlaid
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1d stable: Fitted vs actual — all dims overlaid ──")
+
+_rep_dates_st = {
+    "Normal (2014-08-29)": "2014-08-29",
+    "Crisis (2020-03-31)": "2020-03-31",
+}
+_show_ccys_st  = ["EUR", "USD", "JPY", "CAD"]
+_dims_st       = [2, 3, 4]
+_dim_colors_st = {d: DIM_COLORS[d] for d in _dims_st}
+_dim_labels_st = {d: r"$\ell$=" + str(d) for d in _dims_st}
+
+# load models and pre-compute S_hat for each dim
+_st_models  = {}
+_st_S_hat   = {}
+_st_masks   = {}
+meta_train["as_of_date"] = pd.to_datetime(meta_train["as_of_date"])
+
+for _dim in _dims_st:
+    _m = load_stable_model(_dim)
+    if _m is None:
+        continue
+    _st_models[_dim] = _m
+    with torch.no_grad():
+        _S_all = []
+        for _i in range(0, len(X_train), 256):
+            _xb = X_train[_i:_i+256]
+            _S_all.append(_m(_xb).cpu())
+    _S_all = torch.cat(_S_all)
+    _st_S_hat[_dim]  = _S_all
+    _st_masks[_dim]  = finite_mask(X_train, _S_all)
+
+_tenors_st   = list(TARGET_TENORS)
+_scale_st    = 100.0   # data stored as decimals, convert to bps-friendly %
+
+_n_rows_st = len(_rep_dates_st)
+_n_cols_st = len(_show_ccys_st)
+
+fig_st, axes_st = plt.subplots(
+    _n_rows_st, _n_cols_st,
+    figsize=(4 * _n_cols_st, 3.5 * _n_rows_st),
+    sharey=False,
+)
+
+for _row_i, (_label, _date_str) in enumerate(_rep_dates_st.items()):
+    _target_date = pd.Timestamp(_date_str)
+    for _col_i, _ccy in enumerate(_show_ccys_st):
+        ax = axes_st[_row_i][_col_i]
+
+        # find closest observation for this currency
+        _mask_ccy = (meta_train["ccy"] == _ccy).values
+        if _mask_ccy.sum() == 0:
+            ax.set_visible(False)
+            continue
+        _dates_ccy  = meta_train.loc[_mask_ccy, "as_of_date"]
+        _idx_local  = (_dates_ccy - _target_date).abs().argmin()
+        _actual_date = _dates_ccy.iloc[_idx_local]
+        _global_idx  = np.where(_mask_ccy)[0][_idx_local]
+
+        # actual swap rates
+        _actual = X_train[_global_idx].numpy() * _scale_st
+        ax.plot(_tenors_st, _actual, "o-", color="black",
+                linewidth=2.0, markersize=5, label="Actual", zorder=5)
+
+        # reconstructions per dim
+        for _dim in _dims_st:
+            if _dim not in _st_S_hat:
+                continue
+            _fitted = _st_S_hat[_dim][_global_idx].numpy() * _scale_st
+            ax.plot(_tenors_st, _fitted,
+                    color=_dim_colors_st[_dim],
+                    linewidth=1.8,
+                    label=_dim_labels_st[_dim])
+
+        if _row_i == 0:
+            ax.set_title(_ccy, fontsize=12, fontweight="bold")
+        if _col_i == 0:
+            ax.set_ylabel(f"{_label}\n(%)", fontsize=11)
+        if _row_i == _n_rows_st - 1:
+            ax.set_xlabel("Maturity", fontsize=11)
+        ax.set_xticks(_tenors_st)
+        if _row_i == _n_rows_st - 1:
+            ax.set_xticklabels([str(int(t)) for t in _tenors_st], fontsize=9)
+        else:
+            ax.set_xticklabels([])
+        ax.tick_params(axis="y", labelsize=10)
+        ax.text(0.97, 0.05, _actual_date.strftime("%Y-%m-%d"),
+                transform=ax.transAxes, fontsize=9, ha="right", color="0.4")
+
+# unified legend at bottom
+_h_st, _l_st = axes_st[0][0].get_legend_handles_labels()
+fig_st.legend(_h_st, _l_st, loc="lower center",
+              bbox_to_anchor=(0.5, -0.02),
+              ncol=len(_dims_st) + 1, frameon=False, fontsize=10)
+fig_st.tight_layout()
+fig_st.subplots_adjust(bottom=0.12)
+save_fig(fig_st, "Q1d_fitted_vs_actual_stable_all_dims")
 
 print("\nResultsGeneratorStable complete.")
