@@ -29,7 +29,6 @@ where \(W_t^{\mathbb{Q}}\) is an \(\ell\)-dimensional Brownian motion under the 
 Under the regularity conditions established in Appendix~\ref{app:???}, the latent SDE admits a unique non-explosive solution for both models considered in this chapter, ensuring that the simulated processes are mathematically well defined.
 
 
-
 The latent SDE is discretised using the Euler--Maruyama scheme \citep{Glasserman2004}. For a time step \(\Delta t>0\) and grid points \(t_n=n\Delta t\), \(n=0,1,\ldots,N\), where $N$ is the total number of steps and \(T=N\Delta t\) is the terminal horizon, the simulated paths satisfy
 \[
 z_{t_{n+1}}
@@ -504,14 +503,15 @@ The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter
 
 
 
-% just placeholder for now:
+
+\section{PLACEHOLDER FOR MODEL COMPARISON FOR NOW}
+
 
 
 \begin{table}[H]
 \centering
-{\small
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/all_models_is_oos_summary.csv}\datmodelsummary
-\resizebox{\textwidth}{!}{%
+{\footnotesize
 \pgfplotstabletypeset[
   columns={Model, ell, IS_Avg, IS_Median, IS_Max, OOS_Avg, OOS_Median, OOS_Max},
   columns/Model/.style={column name={Model}, string type, column type=l},
@@ -531,8 +531,22 @@ The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter
     after row=\midrule
   },
   every last row/.style={after row=\bottomrule},
-]{\datmodelsummary}}
+]{\datmodelsummary}
 }
 \caption{In-sample and out-of-sample RMSE (bps) across the four model variants. OOS results are from the rolling window evaluation scheme with 5-year training windows and 6-month test windows. The stable variant uses $\ell=4$ latent factors; all other variants use $\ell=3$.}
 \label{tab:all_models_is_oos_summary}
 \end{table}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/all_models_fitted_vs_actual.png}
+    \caption{Fitted versus actual swap curves for a normal market date (2014-08-29) and a crisis date (2020-03-31), shown for four selected currencies. Each panel overlays the fitted curves from the baseline ($\ell=3$), stable ($\ell=4$), augmented ($\ell=3$), and augmented stable ($\ell=3$) models.}
+    \label{fig:all_models_fitted_vs_actual}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/oos_regime_scatter_all_models.png}
+    \caption{Out-of-sample RMSE (bps) over the rolling evaluation period (2015--2023) for all four model variants, coloured by market regime. Each panel corresponds to one model; points are coloured by whether the curve is inverted and/or exhibits negative rates.}
+    \label{fig:oos_regime_scatter_all_models}
+\end{figure}
