@@ -63,18 +63,27 @@ sqrt_2pi = math.sqrt(2.0 * math.pi)
 print(f"Output directory: {OUT_DIR}")
 
 # ── module ─────────────────────────────────────────────────────────────────────
-class LambdaMPR_v2(nn.Module):
-    """Must match Training_lambda_v2.py exactly for checkpoint loading."""
+class LambdaPricingAdjustment(nn.Module):
+    """
+    Low-dimensional pricing adjustment for swaption calibration.
+    Must match Training_lambda_v2.py exactly for checkpoint loading.
+
+    K_price(z) = K_base(z) + L_base(z) @ Lambda @ z
+
+    Pricing under Q:  V_0 = E^Q[ D_T * A_T * payoff(F_T) ]
+    Lambda: market-price-of-risk-type drift correction.
+    sigma_vec: per-dimension diffusion calibration parameter (not a Girsanov term).
+    """
     def __init__(self, kp_module, h_module, latent_dim):
         super().__init__()
-        self.kp = kp_module   # base Q-drift K(z) — frozen
-        self.h  = h_module
+        self.kp = kp_module   # base drift K_base(z) — frozen
+        self.h  = h_module    # diffusion H(z)       — frozen
         self.latent_dim = latent_dim
         self.Lambda        = nn.Parameter(torch.zeros(latent_dim, latent_dim))
         self.log_sigma_vec = nn.Parameter(torch.full((latent_dim,), -1.8))
 
     def forward(self, z):
-        """K^{Q^A}(z) = K(z) + L(z) @ Lambda @ z"""
+        """K_price(z) = K_base(z) + L_base(z) @ Lambda @ z"""
         with torch.no_grad():
             k_base       = self.kp(z)
             sigmas, rhos = self.h(z)
@@ -97,7 +106,7 @@ for p in model.parameters():
     p.requires_grad_(False)
 model.eval()
 
-lm = LambdaMPR_v2(model.K, model.H, LATENT_DIM).to(device)
+lm = LambdaPricingAdjustment(model.K, model.H, LATENT_DIM).to(device)
 print(f"Loading checkpoint: {LM_CKPT}")
 raw_lm = torch.load(LM_CKPT, map_location=device, weights_only=False)
 lm_state = raw_lm["lm_state_dict"]
@@ -195,19 +204,23 @@ def price_cell(date, expiry, tenor):
         return None
     F_T, A_T, D_k = F_T[sane], A_T[sane], D_k[sane]
 
-    # Payer vol using correct ATM strike = F0 (forward rate)
+    # Pricing under Q:  V = E^Q[ D_T * A_T * payoff ]
+    # ATM strike = F0 (forward swap rate — correct for swaption expiring at T)
     V_pay = float((D_k * A_T * torch.relu(F_T - F0)).mean())
     V_rec = float((D_k * A_T * torch.relu(F0 - F_T)).mean())
     if not (math.isfinite(V_pay) and math.isfinite(V_rec)):
         return None
 
-    sigma_pay_bp    = V_pay * sqrt_2pi / (A0 * math.sqrt(expiry)) * 1e4
+    # Straddle-implied ATM normal vol (robust to forward bias):
+    #   sigma_str = (V_pay + V_rec)/2 * sqrt(2*pi) / (A0 * sqrt(T))
+    sigma_str_bp    = (V_pay + V_rec) * 0.5 * sqrt_2pi / (A0 * math.sqrt(expiry)) * 1e4
+    # Parity-based forward bias: (V_pay - V_rec) / A0
     forward_bias_bp = (V_pay - V_rec) / A0 * 1e4
     path_frac       = float(ok.float().mean())
 
     return {
         "F0": F0, "A0": A0,
-        "sigma_pay_bp":    sigma_pay_bp,
+        "sigma_str_bp":    sigma_str_bp,      # now straddle-implied (consistent with training)
         "forward_bias_bp": forward_bias_bp,
         "path_frac":       path_frac,
     }
@@ -246,8 +259,8 @@ for counter, (_, row) in enumerate(combos.iterrows()):
         "date": date, "expiry": expiry, "tenor": tenor,
         "split":           split,
         "mkt_bp":          mkt_bp,
-        "sigma_pay_bp":    result["sigma_pay_bp"],
-        "vol_error_bp":    result["sigma_pay_bp"] - mkt_bp,
+        "sigma_str_bp":    result["sigma_str_bp"],
+        "vol_error_bp":    result["sigma_str_bp"] - mkt_bp,
         "forward_bias_bp": result["forward_bias_bp"],
         "path_frac":       result["path_frac"],
     })
@@ -272,7 +285,7 @@ def cell_stats(e, t, split=None):
         "bias_bp":     sub["vol_error_bp"].mean(),
         "fwd_bias_bp": sub["forward_bias_bp"].mean(),
         "mkt_bp":      sub["mkt_bp"].mean(),
-        "mod_bp":      sub["sigma_pay_bp"].mean(),
+        "mod_bp":      sub["sigma_str_bp"].mean(),
     }
 
 for split_label, split_key in [("TEST SET", "test"), ("TRAIN SET", "train")]:
@@ -337,10 +350,10 @@ for i, e in enumerate(EXPIRY_VALS):
         sub = df[(df["expiry"] == e) & (df["tenor"] == t)]
         if len(sub) == 0:
             ax.set_visible(False); continue
-        ax.scatter(sub["mkt_bp"], sub["sigma_pay_bp"], s=14, alpha=0.7,
+        ax.scatter(sub["mkt_bp"], sub["sigma_str_bp"], s=14, alpha=0.7,
                    color="#2563eb", rasterized=True)
-        mn = min(sub["mkt_bp"].min(), sub["sigma_pay_bp"].min()) * 0.92
-        mx = max(sub["mkt_bp"].max(), sub["sigma_pay_bp"].max()) * 1.08
+        mn = min(sub["mkt_bp"].min(), sub["sigma_str_bp"].min()) * 0.92
+        mx = max(sub["mkt_bp"].max(), sub["sigma_str_bp"].max()) * 1.08
         ax.plot([mn, mx], [mn, mx], "k--", lw=0.8)
         ax.set_title(f"{e}Yx{t}Y", fontsize=9)
         ax.set_xlabel("Market (bp)", fontsize=7); ax.set_ylabel("Model (bp)", fontsize=7)
