@@ -772,6 +772,254 @@ Because the scheme is explicit and differentiable, it integrates naturally with 
 
 The Runge--Kutta 3/8 method provides a fourth-order explicit approximation to the ODE solution while remaining compatible with gradient-based optimization.
 
+\section{Well-posedness of the Stable Latent Dynamics}
+\label{app:stable_sde_wellposed}
+
+This appendix verifies that the stable latent dynamics introduced in
+Chapter~\ref{chap:simulation} define a well-posed stochastic process. In
+particular, we show that the drift and diffusion coefficients satisfy the
+global Lipschitz and linear growth conditions of
+Proposition~\ref{prop:sde_existence}. It follows that the stable latent SDE
+admits a unique non-explosive solution.
+
+The stable latent dynamics are given by
+\begin{equation}
+    dz_t
+    =
+    \mu_{\mathrm{st}}(z_t)\,dt
+    +
+    L_{\mathrm{st}}(z_t)\,dW_t^{\mathbb Q},
+    \label{eq:app_stable_sde}
+\end{equation}
+where \(z_t\in\mathbb{R}^{\ell}\), \(W^{\mathbb Q}\) is an
+\(\ell\)-dimensional Brownian motion, and
+\[
+    \mu_{\mathrm{st}}(z)
+    =
+    Mz+N,
+    \qquad
+    M=-(V^\top V+\varepsilon I_\ell),
+    \qquad
+    \varepsilon>0.
+\]
+The diffusion matrix is constructed from bounded volatility levels and a valid
+correlation matrix. Let
+\[
+    a_i(z),
+    \qquad
+    c_{ij}(z),
+    \quad 1\leq j<i\leq \ell,
+\]
+denote the raw outputs of the stable volatility network corresponding,
+respectively, to volatility levels and correlation angles. The volatility
+levels are defined by
+\begin{equation}
+    \log \sigma_i(z)
+    =
+    \log \sigma_{\min}
+    +
+    \bigl(\log\sigma_{\max}-\log\sigma_{\min}\bigr)
+    \operatorname{sigmoid}(a_i(z)),
+    \label{eq:app_stable_vol}
+\end{equation}
+where \(0<\sigma_{\min}<\sigma_{\max}<\infty\). The raw correlation outputs
+are mapped to angles by
+\[
+    \theta_{ij}(z)
+    =
+    \pi\,\operatorname{sigmoid}(c_{ij}(z))
+    \in(0,\pi).
+\]
+These angles define the hyperspherical Cholesky factor \(L_R(z)\), and hence
+the correlation matrix
+\[
+    R(z)=L_R(z)L_R(z)^\top.
+\]
+The diffusion loading matrix is then
+\[
+    L_{\mathrm{st}}(z)
+    =
+    D(z)L_R(z),
+    \qquad
+    D(z)=\operatorname{diag}(\sigma_1(z),\ldots,\sigma_\ell(z)).
+\]
+Thus
+\[
+    L_{\mathrm{st}}(z)L_{\mathrm{st}}(z)^\top
+    =
+    D(z)R(z)D(z)
+\]
+is the covariance matrix used in the latent SDE.
+
+\begin{proposition}[Well-posedness of the stable latent SDE]
+\label{prop:stable_sde_wellposed}
+Suppose all neural network weights are finite and that
+\[
+    \varepsilon>0,
+    \qquad
+    0<\sigma_{\min}<\sigma_{\max}<\infty.
+\]
+Then the coefficients \(\mu_{\mathrm{st}}\) and \(L_{\mathrm{st}}\) are
+globally Lipschitz and satisfy a linear growth condition. Consequently, for
+every initial state \(z_0\in\mathbb{R}^{\ell}\), the SDE
+\eqref{eq:app_stable_sde} admits a unique strong solution on every finite time
+interval \([0,T]\). The solution is non-explosive and has continuous sample
+paths.
+\end{proposition}
+
+\begin{proof}
+We verify the drift and diffusion conditions separately.
+
+First, consider the drift
+\[
+    \mu_{\mathrm{st}}(z)=Mz+N.
+\]
+Since \(V\) and \(N\) are finite learned parameters and \(\varepsilon>0\), the
+matrix
+\[
+    M=-(V^\top V+\varepsilon I_\ell)
+\]
+is finite, and hence \(\|M\|<\infty\). For any
+\(z,y\in\mathbb{R}^{\ell}\),
+\[
+    \|\mu_{\mathrm{st}}(z)-\mu_{\mathrm{st}}(y)\|
+    =
+    \|M(z-y)\|
+    \leq
+    \|M\|\,\|z-y\|.
+\]
+Thus the drift is globally Lipschitz. Moreover,
+\[
+    \|\mu_{\mathrm{st}}(z)\|
+    \leq
+    \|M\|\,\|z\|+\|N\|
+    \leq
+    C(1+\|z\|)
+\]
+for some constant \(C>0\). Hence the drift satisfies a linear growth condition.
+
+We next consider the diffusion. The raw functions \(a_i(z)\) and \(c_{ij}(z)\)
+are outputs of neural networks consisting of affine maps and smooth activation
+functions with bounded derivatives. For any fixed finite set of network
+weights, these raw output maps are therefore globally Lipschitz.
+
+The volatility map in \eqref{eq:app_stable_vol} is a composition of globally
+Lipschitz functions. Since the sigmoid takes values in \((0,1)\),
+\[
+    \log\sigma_i(z)
+    \in
+    (\log\sigma_{\min},\log\sigma_{\max}),
+\]
+and therefore
+\[
+    \sigma_i(z)
+    \in
+    (\sigma_{\min},\sigma_{\max})
+    \qquad
+    \text{for all }z\in\mathbb{R}^{\ell}.
+\]
+Because the exponential function has bounded derivative on the compact
+interval
+\[
+    [\log\sigma_{\min},\log\sigma_{\max}],
+\]
+each map \(z\mapsto\sigma_i(z)\) is globally Lipschitz and bounded.
+
+The hyperspherical angles satisfy
+\[
+    \theta_{ij}(z)
+    =
+    \pi\,\operatorname{sigmoid}(c_{ij}(z)).
+\]
+They are therefore globally Lipschitz as compositions of globally Lipschitz
+functions. The entries of \(L_R(z)\) are finite products of sine and cosine
+functions evaluated at these angles. Since sine and cosine have bounded
+derivatives, and products of bounded Lipschitz functions are Lipschitz, the map
+\(z\mapsto L_R(z)\) is globally Lipschitz. Furthermore, the entries of
+\(L_R(z)\) are bounded by construction.
+
+It follows that
+\[
+    L_{\mathrm{st}}(z)=D(z)L_R(z)
+\]
+is a product of bounded globally Lipschitz matrix-valued functions. Hence
+\(L_{\mathrm{st}}\) is globally Lipschitz. Moreover, since the volatility
+levels are bounded and \(L_R(z)\) has bounded entries, there exists a constant
+\(C_L>0\) such that
+\[
+    \|L_{\mathrm{st}}(z)\|
+    \leq
+    C_L
+    \leq
+    C_L(1+\|z\|)
+    \qquad
+    \text{for all }z\in\mathbb{R}^{\ell}.
+\]
+Thus the diffusion also satisfies a linear growth condition.
+
+The drift and diffusion coefficients therefore satisfy the assumptions of
+Proposition~\ref{prop:sde_existence}. Consequently, the stable latent SDE
+\eqref{eq:app_stable_sde} admits a unique strong solution on every finite
+horizon. The linear growth condition rules out finite-time explosion, so the
+stable latent dynamics are well defined.
+\end{proof}
+
+The stable drift also has an explicit mean-reverting structure. For any
+non-zero \(x\in\mathbb{R}^{\ell}\),
+\[
+    x^\top(V^\top V+\varepsilon I_\ell)x
+    =
+    \|Vx\|^2+\varepsilon\|x\|^2
+    >
+    0.
+\]
+Therefore \(V^\top V+\varepsilon I_\ell\) is symmetric positive definite, and
+all eigenvalues of
+\[
+    M=-(V^\top V+\varepsilon I_\ell)
+\]
+are strictly negative. The deterministic part of the stable dynamics is
+therefore globally mean-reverting around the fixed point
+\[
+    z^*=-M^{-1}N.
+\]
+
+Finally, the short-rate function in the stable model is bounded by
+construction. It is specified as
+\[
+    r(z)
+    =
+    r_{\mathrm{center}}
+    +
+    r_{\mathrm{scale}}\tanh(f(z)),
+\]
+where
+\[
+    r_{\mathrm{scale}}
+    =
+    \operatorname{softplus}(\eta)+s_{\min}
+    >
+    0.
+\]
+Since \(\tanh(f(z))\in(-1,1)\), we have
+\[
+    r(z)
+    \in
+    \bigl(
+    r_{\mathrm{center}}-r_{\mathrm{scale}},
+    \;
+    r_{\mathrm{center}}+r_{\mathrm{scale}}
+    \bigr).
+\]
+Consequently, for every finite horizon \(T\), the simulated discount factor
+\[
+    D_T
+    =
+    \exp\left(-\int_0^T r(z_s)\,ds\right)
+\]
+is finite and strictly positive. Thus both the latent paths and the associated
+discount factors used in the simulation experiment are mathematically
+well-defined.
 
 \section{Estimated Model Parameter Dynamics}
 \label{app:model_parameter_dynamics}
