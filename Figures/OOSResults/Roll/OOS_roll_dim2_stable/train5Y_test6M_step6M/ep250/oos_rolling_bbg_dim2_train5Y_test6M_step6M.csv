@@ -1,1 +1,0 @@
-roll_start,train_start,train_end,test_start,test_end,n_train,n_test,n_test_good,n_test_bad,time_train_sec,time_test_sec,avg_rmse_bps,rmse_bps_AUD,rmse_bps_CAD,rmse_bps_DKK,rmse_bps_EUR,rmse_bps_JPY,rmse_bps_NOK,rmse_bps_SEK,rmse_bps_GBP,rmse_bps_USD
