@@ -38,7 +38,7 @@
 % Hidden layer (10 nodes)
 % ======================
 \foreach \i in {1,...,10} {
-    \node[neuron, fill=red!40] (H\i) at (8, {(5.5-\i)*1.15}) {$h_{\i}$};
+    \node[neuron, fill=red!40] (H\i) at (8, {(5.5-\i)*1.15}) {$x_{1,\mathcal{G}}^{(\i)}$};
 }
 
 % ======================
@@ -116,9 +116,9 @@
 % ======================
 \large
 \node at (0,  -6.2)  {Input};
-\node at (4,  -6.2)  {Layer 1};
-\node at (8,  -6.2)  {Layer 2};
-\node at (12, -6.2)  {Layer 3};
+\node at (4,  -6.2)  {Latent};
+\node at (8,  -6.2)  {Hidden};
+\node at (12, -6.2)  {Prices};
 \node at (16, -6.2)  {Output};
 \normalsize
 
