@@ -64,26 +64,28 @@ print(f"Output directory: {OUT_DIR}")
 
 # ── module ─────────────────────────────────────────────────────────────────────
 class LambdaMPR_v2(nn.Module):
+    """Must match Training_lambda_v2.py exactly for checkpoint loading."""
     def __init__(self, kp_module, h_module, latent_dim):
         super().__init__()
-        self.kp = kp_module
+        self.kp = kp_module   # base Q-drift K(z) — frozen
         self.h  = h_module
         self.latent_dim = latent_dim
-        self.Lambda          = nn.Parameter(torch.zeros(latent_dim, latent_dim))
-        self.log_sigma_scale = nn.Parameter(torch.tensor(0.0))
+        self.Lambda        = nn.Parameter(torch.zeros(latent_dim, latent_dim))
+        self.log_sigma_vec = nn.Parameter(torch.full((latent_dim,), -1.8))
 
     def forward(self, z):
+        """K^{Q^A}(z) = K(z) + L(z) @ Lambda @ z"""
         with torch.no_grad():
-            mu_p         = self.kp(z)
+            k_base       = self.kp(z)
             sigmas, rhos = self.h(z)
             L            = L_from_sigmas_rhos(sigmas, rhos, validate=False)
-        lam        = torch.matmul(self.Lambda, z.unsqueeze(-1)).squeeze(-1)
-        correction = torch.einsum('bij,bj->bi', L, lam)
-        return mu_p - correction
+        lam = torch.matmul(self.Lambda, z.unsqueeze(-1)).squeeze(-1)
+        return k_base + torch.einsum('bij,bj->bi', L, lam)
 
     @property
-    def sigma_scale(self):
-        return self.log_sigma_scale.exp()
+    def sigma_vec(self):
+        """Per-dimension diffusion scales: shape (d,)"""
+        return self.log_sigma_vec.exp()
 
 # ── load model ─────────────────────────────────────────────────────────────────
 print("\nLoading base model ...")
@@ -98,10 +100,17 @@ model.eval()
 lm = LambdaMPR_v2(model.K, model.H, LATENT_DIM).to(device)
 print(f"Loading checkpoint: {LM_CKPT}")
 raw_lm = torch.load(LM_CKPT, map_location=device, weights_only=False)
-lm.load_state_dict(raw_lm["lm_state_dict"])
+lm_state = raw_lm["lm_state_dict"]
+# Backward compat: old checkpoints have log_sigma_scale (scalar), new have log_sigma_vec (d-vector)
+if "log_sigma_scale" in lm_state and "log_sigma_vec" not in lm_state:
+    scalar_val = lm_state.pop("log_sigma_scale")
+    lm_state["log_sigma_vec"] = scalar_val.expand(LATENT_DIM).clone()
+    print("(converted scalar log_sigma_scale → log_sigma_vec for backward compat)")
+lm.load_state_dict(lm_state)
 lm.eval()
 print(f"Lambda loaded: ||Lambda||_F = {lm.Lambda.norm():.4f}")
-print(f"sigma_scale = {lm.sigma_scale.item():.4f}")
+sv = lm.sigma_vec.detach().cpu().numpy()
+print(f"sigma_vec = {sv.round(4)}  (mean={sv.mean():.4f})")
 
 # ── data ───────────────────────────────────────────────────────────────────────
 meta, X_tensor, *_ = my_data(use="bbg")
@@ -120,9 +129,10 @@ date_to_idx = {
     for i, r in meta_eur.iterrows()
 }
 
-all_dates  = sorted(df_vol["as_of_date"].unique())
-n_train    = int(len(all_dates) * TRAIN_FRAC)
-test_dates = set(all_dates[n_train:])
+all_dates   = sorted(df_vol["as_of_date"].unique())
+n_train     = int(len(all_dates) * TRAIN_FRAC)
+train_dates = set(all_dates[:n_train])
+test_dates  = set(all_dates[n_train:])
 print(f"EUR: {len(meta_eur)} curve dates, {len(all_dates)} vol dates")
 print(f"Train: {n_train}  Test: {len(test_dates)}")
 
@@ -151,15 +161,17 @@ def price_cell(date, expiry, tenor):
     dt_eff  = min(1.0 / 12.0, expiry / 10.0)
     n_steps = max(12, int(round(expiry / dt_eff)))
     half    = N_PATHS // 2
-    scale   = float(lm.sigma_scale.item())
 
     with torch.no_grad():
         eps_half = torch.randn(half, n_steps, LATENT_DIM, device=device)
-        eps      = torch.cat([eps_half, -eps_half], dim=0) * scale
 
         z_T, D_T = simulate_to_expiry_differentiable(
             model, z0, n_steps=n_steps, dt=dt_eff,
-            n_paths=N_PATHS, eps=eps, k_override=lm,
+            n_paths=N_PATHS, eps=eps_half,
+            k_override=lm,
+            sigma_scale=lm.sigma_vec,
+            antithetic=True,
+            freeze_H=True,
         )
 
     ok = torch.isfinite(z_T).all(1) & torch.isfinite(D_T)
@@ -168,7 +180,7 @@ def price_cell(date, expiry, tenor):
     z_k, D_k = z_T[ok], D_T[ok]
 
     with torch.no_grad():
-        _, aux_T = model.decode_from_z(z_k, tau=None, return_aux=True, k_override=lm)
+        _, aux_T = model.decode_from_z(z_k, tau=None, return_aux=True)
     P_T = aux_T["P_full"]
     dok = torch.isfinite(P_T).all(1)
     if dok.sum() < 16:
@@ -205,10 +217,10 @@ EXPIRY_VALS  = [1, 5, 10]
 TENOR_VALS   = [1, 5, 10]
 VALID_EXPIRY = set(EXPIRY_VALS)
 
-print(f"\nPricing {len(test_dates)} test dates x 9 cells ...")
+print(f"\nPricing {len(all_dates)} dates ({n_train} train + {len(test_dates)} test) x 9 cells ...")
 t0 = time.time()
 
-combos = df_vol[df_vol["as_of_date"].isin(test_dates)][
+combos = df_vol[
     ["as_of_date", "option_maturity", "swap_tenor", "market_vol"]
 ].drop_duplicates().sort_values("as_of_date")
 
@@ -229,8 +241,10 @@ for counter, (_, row) in enumerate(combos.iterrows()):
     if result is None:
         continue
 
+    split = "train" if date in train_dates else "test"
     rows.append({
         "date": date, "expiry": expiry, "tenor": tenor,
+        "split":           split,
         "mkt_bp":          mkt_bp,
         "sigma_pay_bp":    result["sigma_pay_bp"],
         "vol_error_bp":    result["sigma_pay_bp"] - mkt_bp,
@@ -245,8 +259,10 @@ print(f"\nPriced {len(df)} observations in {time.time()-t0:.0f}s")
 # ── summary ────────────────────────────────────────────────────────────────────
 CELLS = [(e, t) for e in EXPIRY_VALS for t in TENOR_VALS]
 
-def cell_stats(e, t):
+def cell_stats(e, t, split=None):
     sub = df[(df["expiry"] == e) & (df["tenor"] == t)]
+    if split is not None:
+        sub = sub[sub["split"] == split]
     if len(sub) == 0:
         return None
     return {
@@ -259,19 +275,26 @@ def cell_stats(e, t):
         "mod_bp":      sub["sigma_pay_bp"].mean(),
     }
 
-print(f"\n{'Cell':>9}  {'MAE':>7}  {'RMSE':>7}  {'Bias':>8}  {'Fwd bias':>10}  {'N':>5}")
-print("-" * 58)
-for e, t in CELLS:
-    s = cell_stats(e, t)
-    if s:
-        print(f"  {e}Yx{t}Y  {s['mae_bp']:>7.1f}  {s['rmse_bp']:>7.1f}  "
-              f"{s['bias_bp']:>+8.1f}  {s['fwd_bias_bp']:>+10.1f}  {s['n']:>5}")
+for split_label, split_key in [("TEST SET", "test"), ("TRAIN SET", "train")]:
+    df_split = df[df["split"] == split_key]
+    print(f"\n── {split_label} ({len(df_split[['date']].drop_duplicates())} dates, {len(df_split)} obs) ──")
+    print(f"{'Cell':>9}  {'MAE':>7}  {'RMSE':>7}  {'Bias':>8}  {'Fwd bias':>10}  {'N':>5}")
+    print("-" * 58)
+    for e, t in CELLS:
+        s = cell_stats(e, t, split=split_key)
+        if s:
+            print(f"  {e}Yx{t}Y  {s['mae_bp']:>7.1f}  {s['rmse_bp']:>7.1f}  "
+                  f"{s['bias_bp']:>+8.1f}  {s['fwd_bias_bp']:>+10.1f}  {s['n']:>5}")
+    if len(df_split):
+        print(f"  Overall MAE:   {df_split['vol_error_bp'].abs().mean():.1f} bp")
+        print(f"  Mean fwd bias: {df_split['forward_bias_bp'].mean():+.1f} bp")
 
 overall_mae = df["vol_error_bp"].abs().mean()
-print(f"\nOverall MAE:      {overall_mae:.1f} bp")
+print(f"\nAll-dates MAE:    {overall_mae:.1f} bp")
 print(f"Mean fwd bias:    {df['forward_bias_bp'].mean():+.1f} bp")
 print(f"Mean path finite: {df['path_frac'].mean()*100:.1f}%")
-print(f"\nsigma_scale = {lm.sigma_scale.item():.4f}")
+sv_final = lm.sigma_vec.detach().cpu().numpy()
+print(f"\nsigma_vec = {sv_final.round(4)}  (mean={sv_final.mean():.4f})")
 print(f"||Lambda||_F = {lm.Lambda.norm():.4f}")
 
 # ── LaTeX table ────────────────────────────────────────────────────────────────
@@ -418,5 +441,5 @@ print(f"\nAll outputs written to: {OUT_DIR}")
 print(f"\nSummary:")
 print(f"  Overall MAE:   {overall_mae:.1f} bp")
 print(f"  Fwd bias:      {df['forward_bias_bp'].mean():+.1f} bp")
-print(f"  sigma_scale:   {lm.sigma_scale.item():.4f}")
+print(f"  sigma_vec:     {lm.sigma_vec.detach().cpu().numpy().round(4)}")
 print(f"  ||Lambda||_F:  {lm.Lambda.norm():.4f}")
