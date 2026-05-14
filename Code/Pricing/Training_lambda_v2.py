@@ -8,18 +8,19 @@ Clean Lambda MPR training with three key fixes over v1:
   2. VARIANCE-BASED VOL LOSS: Match std^A(F_T)/sqrt(T) to market vol directly.
      Avoids gradient vanishing when paths are OTM (which killed v1 training).
 
-  3. TRAINABLE DIFFUSION SCALE: One scalar log_sigma_scale replaces manual s*.
-     Gradient through variance loss trains it to the right level automatically.
+  3. ANISOTROPIC DIFFUSION SCALE: Per-dimension log_sigma_vec (d-vector) replaces
+     scalar log_sigma_scale.  Each z-dimension has its own vol scale, so the model
+     can fit the *shape* of the swaption vol surface, not just the overall level.
 
 Two decoupled losses:
   loss_vol   : (sigma_mod - sigma_mkt)^2  -- trains sigma_scale
   loss_drift : (E^A[F_T] - F_0)^2        -- trains Lambda
 
-Lambda initialised to cancel K^P drift (paths near F_0 from epoch 0).
+Lambda initialised to zero; base Q-dynamics (K) active from epoch 0.
 
 Trainable parameters (17 total):
-  Lambda          4x4  (16)   K^Q = K^P - L @ Lambda @ z
-  log_sigma_scale  (1)         diffusion scaling (init=0 -> scale=1)
+  Lambda          4x4  (16)   K^{Q^A} = K(z) + L(z) @ Lambda @ z
+  log_sigma_vec    (d)         per-dim diffusion scaling (init=-1.8 -> scale≈0.165 per dim)
 
 Output: Figures/TrainingResults/dim4_lambda_v2/ep{EPOCHS}/
 """
@@ -77,6 +78,7 @@ from Code.model.full_model_price import FullModelPrice as FullModel
 from Code.Pricing.load_swapvol_ois import load_swaption_vol_data
 from Code.Pricing.pricing import swap_rate_torch, forward_swap_rate_torch
 from Code.model.sigma_matrix import L_from_sigmas_rhos
+from Code.Simulation.simulate_model import simulate_to_expiry_differentiable
 
 print("Torch:", torch.__version__)
 print("CUDA:", torch.cuda.is_available())
@@ -96,7 +98,7 @@ SAVE_EVERY   = 200
 
 N_STEPS_PER_EPOCH     = 4
 N_SWAPTIONS_PER_BATCH = 8
-N_PATHS_PRICING       = 256    # antithetic 128+128
+N_PATHS_PRICING       = 512    # antithetic 256+256  (variance ~ O(1/N): 2x paths = sqrt(2) better std)
 DT_PRICING            = 1 / 6
 
 PRETRAIN_CKPT = os.path.join(
@@ -105,14 +107,14 @@ PRETRAIN_CKPT = os.path.join(
 )
 
 # Loss weights
-LAMBDA_VOL    = 1.0    # variance-based vol MSE
-LAMBDA_DRIFT  = 5.0    # forward rate martingale: E^A[F_T] = F_0
-LAMBDA_EIG    = 2.0    # eigenvalue floor on K^Q
+LAMBDA_VOL    = 1.0    # V_pay-based ATM vol MSE
+LAMBDA_DRIFT  = 0.5    # mild drift regulariser: E^A[F_T] ≈ F_0
+LAMBDA_EIG    = 0.0    # disabled: eig floor not meaningful for K^Q = -L@Lambda@z
 LAMBDA_L2     = 1e-4   # L2 on Lambda entries
 EIG_MIN       = 0.05
 
 LR = 5e-4
-LR_WARMUP_EPOCHS = 200
+LR_WARMUP_EPOCHS = 50
 
 MIN_FINITE_PATHS_FRAC = 0.10
 MIN_FINITE_PATHS_ABS  = 16
@@ -131,34 +133,51 @@ os.makedirs(FIGURES_DIR, exist_ok=True)
 
 class LambdaMPR_v2(nn.Module):
     """
-    K^Q(z) = K^P(z) - L(z) @ Lambda @ z
+    Pricing-measure drift:  K^{Q^A}(z) = K(z) + L(z) @ Lambda @ z
 
-    Trainable: Lambda (drift correction) + log_sigma_scale (vol level).
-    K^P and H are frozen.
+    Per Poulsen et al. (2025), z is defined under the risk-neutral measure Q:
+    the base model's K network is already K^Q, calibrated via the no-arbitrage
+    ODE system so that bond prices are Q-martingales.
+
+    Lambda parameterises the Q -> Q^A (annuity measure) market price of risk:
+        lambda(z) = Lambda @ z   (linear Girsanov kernel)
+
+    so the full drift under Q^A is K^Q(z) + L(z) @ Lambda @ z.
+
+    At Lambda = 0 the simulation runs under the base Q-dynamics; the forward
+    bias is then only the convexity adjustment (~50-200 bp), not the full
+    risk-premium offset seen when K is excluded entirely.
+
+    Trainable: Lambda (d×d) + log_sigma_vec (d-vector, anisotropic diffusion scale).
+    K and H are frozen (from pre-trained base model).
     """
 
     def __init__(self, kp_module, h_module, latent_dim):
         super().__init__()
-        self.kp         = kp_module
-        self.h          = h_module
+        self.kp         = kp_module   # base Q-drift  K(z) — frozen
+        self.h          = h_module    # diffusion H(z)      — frozen
         self.latent_dim = latent_dim
 
-        self.Lambda           = nn.Parameter(torch.zeros(latent_dim, latent_dim))
-        self.log_sigma_scale  = nn.Parameter(torch.tensor(0.0))   # scale = exp(0) = 1
+        self.Lambda      = nn.Parameter(torch.zeros(latent_dim, latent_dim))
+        # log_sigma_vec: per-dimension diffusion scale (replaces scalar log_sigma_scale).
+        # Each z-dimension gets its own scale, letting the model fit the *shape*
+        # of the swaption vol surface rather than just the overall level.
+        # Init exp(-1.8) ~ 0.165 per dim: base Q-diffusion at scale=1 is ~6x market vol.
+        self.log_sigma_vec = nn.Parameter(torch.full((latent_dim,), -1.8))
 
     def forward(self, z):
-        """Return K^Q(z) = K^P(z) - L(z) @ Lambda @ z"""
+        """K^{Q^A}(z) = K(z) + L(z) @ Lambda @ z"""
         with torch.no_grad():
-            mu_p         = self.kp(z)
+            k_base       = self.kp(z)                                         # (batch, d)
             sigmas, rhos = self.h(z)
-            L            = L_from_sigmas_rhos(sigmas, rhos, validate=False)
-        lam        = torch.matmul(self.Lambda, z.unsqueeze(-1)).squeeze(-1)
-        correction = torch.einsum('bij,bj->bi', L, lam)
-        return mu_p - correction
+            L            = L_from_sigmas_rhos(sigmas, rhos, validate=False)   # (batch, d, d)
+        lam = torch.matmul(self.Lambda, z.unsqueeze(-1)).squeeze(-1)          # (batch, d)
+        return k_base + torch.einsum('bij,bj->bi', L, lam)
 
     @property
-    def sigma_scale(self):
-        return self.log_sigma_scale.exp()
+    def sigma_vec(self):
+        """Per-dimension diffusion scales: shape (d,)"""
+        return self.log_sigma_vec.exp()
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -216,65 +235,6 @@ def grad_norm(params):
 # forward_swap_rate_torch imported from pricing.py — canonical implementation
 
 
-# ── simulation ─────────────────────────────────────────────────────────────────
-
-def simulate_to_expiry(
-    model,
-    lm,           # LambdaMPR_v2 module
-    z0,           # (1, d)
-    n_steps,
-    dt,
-    half,         # n_paths = 2*half (antithetic)
-    eps_z,        # (half, n_steps, d)  — N(0,1), no pre-scaling
-):
-    """
-    Euler-Maruyama under K^Q with trainable diffusion scale.
-
-    dz = K^Q(z) dt  +  sigma_scale * L(z) sqrt(dt) eps_z
-
-    Returns
-    -------
-    z_T : (2*half, d)   terminal state WITH gradient
-    D_T : (2*half,)     discount factor, detached
-    """
-    n_paths = 2 * half
-    sqrt_dt = math.sqrt(dt)
-    dtype   = z0.dtype
-    dev     = z0.device
-
-    z     = z0.expand(n_paths, -1).clone()
-    log_D = torch.zeros(n_paths, device=dev, dtype=dtype)
-
-    # Antithetic noise
-    eps_full = torch.cat([eps_z, -eps_z], dim=0)   # (n_paths, n_steps, d)
-
-    with torch.no_grad():
-        r_prev = model.R(z).squeeze(-1)
-
-    for t in range(n_steps):
-        # Diffusion — frozen H, grad through sigma_scale
-        with torch.no_grad():
-            sigmas, rhos = model.H(z.detach())
-            L = L_from_sigmas_rhos(sigmas, rhos, validate=False)   # (n_paths, d, d)
-
-        dW    = eps_full[:, t, :]                                    # (n_paths, d)
-        shock = lm.sigma_scale * sqrt_dt * torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
-
-        # Drift — grad through Lambda
-        drift = lm(z) * dt
-
-        z = z + drift + shock
-
-        # Trapezoidal discount — detached
-        with torch.no_grad():
-            r_next = model.R(z.detach()).squeeze(-1)
-            log_D  = log_D - 0.5 * (r_prev + r_next) * dt
-            r_prev = r_next
-
-    D_T = log_D.clamp(min=-30.0, max=30.0).exp().detach()
-    return z, D_T
-
-
 # ── pricing loss ───────────────────────────────────────────────────────────────
 
 def compute_pricing_loss_v2(
@@ -286,17 +246,18 @@ def compute_pricing_loss_v2(
     return_diagnostics=False,
 ):
     """
-    Variance-based vol loss with correct forward-rate ATM strike.
+    V_pay-based vol loss with correct forward-rate ATM strike.
 
-    sigma_mod = sqrt(Var^A[F_T]) / sqrt(expiry) * 1e4   [bp/yr]
+    sigma_mod = V_pay * sqrt(2*pi) / (A_0 * sqrt(expiry)) * 1e4   [bp/yr]
     loss_vol  = ((sigma_mod - sigma_mkt) / 100)^2
 
-    Drift constraint (martingale condition):
-    loss_drift = ((E^A[F_T] - F_0) * 100)^2
+    This is the Bachelier ATM vol implied directly from the payer price.
+    It naturally penalises both wrong vol level AND any forward bias
+    (a drifted distribution inflates V_pay), so Lambda and sigma_scale
+    are trained jointly on the quantity we actually care about.
 
-    Decoupling:
-      loss_vol   -> gradient mainly through sigma_scale
-      loss_drift -> gradient mainly through Lambda
+    A mild drift regulariser is kept to prevent explosive forward bias:
+    loss_drift = ((E^A[F_T] - F_0) * 1e4 / 100)^2   (weight LAMBDA_DRIFT)
     """
     if len(df_vol) == 0 or n_swaptions == 0:
         zero = torch.tensor(0.0, device=device, dtype=dtype)
@@ -348,10 +309,15 @@ def compute_pricing_loss_v2(
             eps_z = torch.randn(half, n_steps, LATENT_DIM, device=device, dtype=dtype)
 
         try:
-            z_T, D_T = simulate_to_expiry(
-                model, lm, z0,
+            z_T, D_T = simulate_to_expiry_differentiable(
+                model, z0,
                 n_steps=n_steps, dt=dt_eff,
-                half=half, eps_z=eps_z,
+                n_paths=2 * half,
+                eps=eps_z,
+                k_override=lm,
+                sigma_scale=lm.sigma_vec,
+                antithetic=True,
+                freeze_H=True,
             )
 
             # Path validity
@@ -361,7 +327,7 @@ def compute_pricing_loss_v2(
 
             with torch.no_grad():
                 _, aux_T = model.decode_from_z(
-                    z_T, tau=None, return_aux=True, k_override=lm
+                    z_T, tau=None, return_aux=True
                 )
                 p_ok = torch.isfinite(aux_T["P_full"]).all(1)
 
@@ -374,7 +340,7 @@ def compute_pricing_loss_v2(
             # F_T from simulated paths (spot swap rate at T — correct payoff variable)
             z_keep = z_T[mask]
             _, aux_keep = model.decode_from_z(
-                z_keep, tau=None, return_aux=True, k_override=lm
+                z_keep, tau=None, return_aux=True
             )
             F_T, A_T = swap_rate_torch(aux_keep["P_full"], tenor=tenor)
             D_keep   = D_T[mask]
@@ -387,26 +353,24 @@ def compute_pricing_loss_v2(
 
             F_T, A_T, D_keep = F_T[fa_ok], A_T[fa_ok], D_keep[fa_ok]
 
-            # ── VARIANCE-BASED VOL (annuity-measure weights) ──────────────
-            w       = D_keep * A_T                            # unnormalized A-measure weights
-            w_sum   = w.sum()
-            if not torch.isfinite(w_sum) or w_sum < 1e-10:
+            # ── V_PAY-BASED VOL (Bachelier ATM implied vol) ───────────────
+            V_pay = (D_keep * A_T * torch.relu(F_T - F_0)).mean()
+            if not torch.isfinite(V_pay) or float(V_pay.detach()) < 0:
                 continue
-            w_norm  = w / w_sum
 
-            F_bar   = (w_norm * F_T).sum()                   # E^A[F_T]
-            F_var   = (w_norm * (F_T - F_bar).pow(2)).sum()  # Var^A[F_T]
-            F_std   = F_var.clamp(min=1e-12).sqrt()
-
-            sigma_mod_bp = F_std / math.sqrt(expiry) * 1e4   # annualised bp/yr
+            sqrt_2pi     = math.sqrt(2 * math.pi)
+            sigma_mod_bp = V_pay * sqrt_2pi / (A_0 * math.sqrt(expiry)) * 1e4
             # ─────────────────────────────────────────────────────────────
 
             loss_vol_ij = ((sigma_mod_bp - sigma_mkt_bp) / 100.0).pow(2)
             if not torch.isfinite(loss_vol_ij) or float(loss_vol_ij.detach()) > LOSS_SKIP_THRESH:
                 continue
 
-            # ── DRIFT CONSTRAINT: E^A[F_T] = F_0 ────────────────────────
-            fwd_bias_bp = (F_bar - F_0) * 1e4          # signed, in bp
+            # ── DRIFT REGULARISER: mild penalty on E^A[F_T] ≠ F_0 ───────
+            w         = D_keep * A_T                         # D_keep already detached from sim; A_T grad flows to Lambda
+            w_norm    = w / w.sum().clamp(min=1e-10)
+            F_bar     = (w_norm * F_T).sum()
+            fwd_bias_bp = (F_bar - F_0) * 1e4
             loss_drift_ij = (fwd_bias_bp / 100.0).pow(2)
             if not torch.isfinite(loss_drift_ij):
                 continue
@@ -417,6 +381,17 @@ def compute_pricing_loss_v2(
             n_valid    += 1
 
             if return_diagnostics:
+                # ── Q-martingale checks (bond pricing consistency) ────────
+                # Under Q: E[D_T] = P(0,T)  and  E[D_T * A_T] = A_0^fwd
+                # These verify that the simulation is consistent with the
+                # no-arbitrage bond price conditions from the base model.
+                with torch.no_grad():
+                    P0_T      = float(P0[int(round(expiry))].item())    # P(0, T)
+                    E_DT      = float(D_keep.mean().item())              # E[D_T]
+                    E_DT_AT   = float((D_keep * A_T).mean().item())      # E[D_T * A_T]
+                    dt_err_bp = (E_DT - P0_T) * 1e4                     # should be ~0
+                    ann_err   = (E_DT_AT - A_0) / A_0                   # should be ~0 (relative)
+
                 diagnostics.append({
                     "date":     date.date(),
                     "exp":      expiry,
@@ -427,7 +402,12 @@ def compute_pricing_loss_v2(
                     "bias_bp":  round(float(fwd_bias_bp.detach()), 1),
                     "F0":       round(F_0 * 1e4, 1),
                     "Fbar":     round(float(F_bar.detach()) * 1e4, 1),
-                    "scale":    round(float(lm.sigma_scale.detach()), 4),
+                    "scale":    [round(v, 4) for v in lm.sigma_vec.detach().cpu().tolist()],
+                    # Q-martingale checks
+                    "E_DT":     round(E_DT, 5),
+                    "P0T":      round(P0_T, 5),
+                    "DT_err_bp":round(dt_err_bp, 1),   # E[D_T] - P(0,T) in bp; target 0
+                    "ann_err":  round(ann_err * 100, 2), # (E[D_T*A_T]-A_0)/A_0 in %; target 0
                 })
 
         except Exception:
@@ -443,27 +423,14 @@ def compute_pricing_loss_v2(
 
 # ── Lambda initialisation ──────────────────────────────────────────────────────
 
-def init_lambda_cancel_kp(model, latent_dim, device, dtype):
+def init_lambda_zero(latent_dim, device, dtype):
     """
-    Initialise Lambda so K^Q ≈ 0 at the linear level:
-      L(z0) @ Lambda @ z ≈ K^P(z)   =>   Lambda ≈ L(z0)^{-1} @ J_kp
-    where J_kp is the Jacobian of K^P at z=0.
-
-    This puts the initial drift near zero so paths don't drift away from F_0.
+    Lambda = 0  →  K^{Q^A} = K(z)  →  pure Q-dynamics at epoch 0.
+    Bond martingale conditions E[D_T]=P(0,T) and E[D_T*A_T]=A_0 should hold
+    approximately. Training adjusts Lambda to correct the Q -> Q^A tilt needed
+    for swaption vol calibration.
     """
-    try:
-        z0   = torch.zeros(1, latent_dim, device=device, dtype=dtype)
-        J_kp = get_K_matrix(model.K, latent_dim, device, dtype)   # (d, d)
-        with torch.no_grad():
-            sigmas, rhos = model.H(z0)
-            L0 = L_from_sigmas_rhos(sigmas, rhos, validate=False)[0]  # (d, d)
-        Lambda_init = torch.linalg.solve(L0, J_kp)
-        if not torch.isfinite(Lambda_init).all():
-            raise RuntimeError("non-finite Lambda_init")
-        return Lambda_init
-    except Exception as e:
-        print(f"  Lambda init fallback (zero): {e}")
-        return torch.zeros(latent_dim, latent_dim, device=device, dtype=dtype)
+    return torch.zeros(latent_dim, latent_dim, device=device, dtype=dtype)
 
 
 # ── load data ──────────────────────────────────────────────────────────────────
@@ -491,20 +458,25 @@ print("Base model loaded and frozen.")
 
 lm = LambdaMPR_v2(model.K, model.H, LATENT_DIM).to(device)
 
-# Initialise Lambda to cancel K^P drift
-print("Initialising Lambda to cancel K^P linear drift ...")
-Lambda_init = init_lambda_cancel_kp(model, LATENT_DIM, device, torch.float32)
-with torch.no_grad():
-    lm.Lambda.copy_(Lambda_init)
-print(f"  ||Lambda_init||_F = {Lambda_init.norm():.4f}")
-print(f"  sigma_scale init  = {lm.sigma_scale.item():.4f}  (log={lm.log_sigma_scale.item():.4f})")
+# Lambda = 0: start at base Q-dynamics (K already calibrated under Q by ODE system)
+print("Lambda initialised to zero (base Q-dynamics active from epoch 0).")
+print(f"  ||Lambda_init||_F = {lm.Lambda.norm():.4f}")
+sv_init = lm.sigma_vec.detach().cpu().numpy()
+print(f"  sigma_vec init    = {sv_init.round(4)}  (mean={sv_init.mean():.4f})")
 
 n_params = sum(p.numel() for p in lm.parameters() if p.requires_grad)
-print(f"LambdaMPR_v2: {n_params} trainable params  (Lambda 16 + log_sigma_scale 1)")
+print(f"LambdaMPR_v2: {n_params} trainable params  (Lambda 16 + log_sigma_vec {LATENT_DIM})")
 
 model.train()
 
-optim = torch.optim.Adam(lm.parameters(), lr=LR)
+# Separate param groups: sigma_vec gets 20x higher LR so its gradient (from vol loss)
+# is not drowned out by Lambda's gradient (from drift loss, which is ~10x larger).
+# Separate clip_grad_norm_ calls below prevent joint clipping from silencing sigma_vec.
+LR_SCALE_MULT = 20.0
+optim = torch.optim.Adam([
+    {'params': [lm.Lambda],         'lr': LR,                  'name': 'Lambda'},
+    {'params': [lm.log_sigma_vec],  'lr': LR * LR_SCALE_MULT,  'name': 'sigma_vec'},
+], lr=LR)
 scheduler_warmup = torch.optim.lr_scheduler.LinearLR(
     optim, start_factor=1e-3, end_factor=1.0, total_iters=LR_WARMUP_EPOCHS
 )
@@ -543,8 +515,9 @@ csv_cols  = (
      "loss_vol", "loss_drift", "loss_eig", "loss_l2",
      "swaption_priced_frac", "path_finite_frac",
      "recon_rmse_bps", "nan_batches",
-     "gnorm", "lr",
-     "lambda_min_KQ", "Lambda_norm_fro", "sigma_scale",
+     "gnorm", "gnorm_scale", "lr",
+     "lambda_min_KQ", "Lambda_norm_fro",
+     "sigma_scale_mean", "sigma_s1", "sigma_s2", "sigma_s3", "sigma_s4",
      "fwd_bias_diag_bp"]
     + [f"rmse_bps_{c}" for c in ccy_order]
 )
@@ -585,13 +558,14 @@ t0         = time.perf_counter()
 t_last_log = t0
 
 print("\n" + "=" * 100)
-print("LAMBDA MPR v2 TRAINING  —  three fixes applied")
-print("  1. Forward swap rate as ATM strike")
-print("  2. Variance-based vol loss  (no OTM gradient problem)")
-print("  3. Trainable sigma_scale  (replaces manual s*)")
-print("  4. Lambda init cancels K^P drift")
+print("LAMBDA MPR v2 TRAINING")
+print("  1. Correct ATM strike: forward swap rate F_0 = (P(0,exp)-P(0,exp+ten)) / A_fwd")
+print("  2. V_pay-based vol loss: sigma_mod = V_pay*sqrt(2pi)/(A_0*sqrt(T))*1e4")
+print("  3. Anisotropic sigma_vec (4-vector, init≈0.165/dim): fits vol *shape*, not just level")
+print("  4. K^{Q^A}(z) = K(z) + L(z)@Lambda@z  (K is Q-drift per Poulsen et al. 2025)")
+print("  5. Lambda init = 0 -> pure diffusion at epoch 0")
 print("=" * 100)
-print(f"Trainable params: {n_params}  (Lambda 16 + log_sigma_scale 1)")
+print(f"Trainable params: {n_params}  (Lambda 16 + log_sigma_vec {LATENT_DIM})")
 print("=" * 100 + "\n")
 
 for epoch in range(EPOCHS):
@@ -665,7 +639,10 @@ for epoch in range(EPOCHS):
             optim.zero_grad(set_to_none=True)
             continue
 
-        torch.nn.utils.clip_grad_norm_(lm.parameters(), max_norm=1.0)
+        # Clip Lambda and sigma_vec gradients SEPARATELY so sigma_vec update
+        # is not diluted by the much larger drift-driven Lambda gradient.
+        torch.nn.utils.clip_grad_norm_([lm.Lambda],        max_norm=5.0)
+        torch.nn.utils.clip_grad_norm_([lm.log_sigma_vec], max_norm=2.0)
         optim.step()
 
         running_vol   += float(loss_vol.detach().cpu())
@@ -685,7 +662,8 @@ for epoch in range(EPOCHS):
     path_finite = float(np.mean(ep_pfracs)) if ep_pfracs else 0.0
 
     with torch.no_grad():
-        scale_now       = float(lm.sigma_scale.cpu())
+        sigma_vec_now   = lm.sigma_vec.detach().cpu()          # (d,)
+        scale_now       = float(sigma_vec_now.mean())           # scalar for display
         lambda_norm_fro = float(lm.Lambda.norm().cpu())
         try:
             M_now          = get_K_matrix(lm, LATENT_DIM, device, torch.float32)
@@ -696,17 +674,19 @@ for epoch in range(EPOCHS):
     for k, v in [("vol", ep_vol), ("drift", ep_drift), ("eig", ep_eig), ("l2", ep_l2),
                  ("swp_priced", swp_priced), ("path_finite", path_finite),
                  ("lambda_min", lambda_min_now), ("lambda_norm", lambda_norm_fro),
-                 ("sigma_scale", scale_now)]:
+                 ("sigma_scale", scale_now)]:   # sigma_scale stores mean of sigma_vec
         hist[k].append(v)
 
     # Reconstruction RMSE
     do_eval = ((epoch + 1) % EVAL_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
     if do_eval:
         rmse_per_ccy, avg_rmse_bps, _ = eval_rmse_bps(model, X_tensor, meta)
-        gn = grad_norm(lm.parameters())
+        gn        = grad_norm([lm.Lambda])
+        gn_scale  = grad_norm([lm.log_sigma_vec])
     else:
         rmse_per_ccy, avg_rmse_bps = None, float('nan')
-        gn = 0.0
+        gn       = 0.0
+        gn_scale = 0.0
 
     # Bias diagnostic from diag list
     if batch_diag:
@@ -731,9 +711,12 @@ for epoch in range(EPOCHS):
         "loss_eig": ep_eig, "loss_l2": ep_l2,
         "swaption_priced_frac": swp_priced, "path_finite_frac": path_finite,
         "recon_rmse_bps": float(avg_rmse_bps), "nan_batches": nan_batches,
-        "gnorm": gn, "lr": lr_now,
+        "gnorm": gn, "gnorm_scale": gn_scale, "lr": lr_now,
         "lambda_min_KQ": lambda_min_now, "Lambda_norm_fro": lambda_norm_fro,
-        "sigma_scale": scale_now, "fwd_bias_diag_bp": mean_bias_diag,
+        "sigma_scale_mean": scale_now,
+        "sigma_s1": float(sigma_vec_now[0]), "sigma_s2": float(sigma_vec_now[1]),
+        "sigma_s3": float(sigma_vec_now[2]), "sigma_s4": float(sigma_vec_now[3]),
+        "fwd_bias_diag_bp": mean_bias_diag,
     }
     for c in ccy_order:
         row[f"rmse_bps_{c}"] = (
@@ -747,10 +730,10 @@ for epoch in range(EPOCHS):
         print(
             f"\n{'ep':>5} {'vol':>10} {'drift':>9} {'eig':>9} {'l2':>8} "
             f"{'swp%':>5} {'pth%':>5} {'recon':>7} "
-            f"{'|l|min':>7} {'||L||':>7} {'scale':>7} "
-            f"{'bias_bp':>8} {'gnorm':>9} {'lr':>8} {'t/ep':>6} {'ETA':>8}  diag"
+            f"{'|l|min':>7} {'||L||':>7} {'sv_mean':>7} {'sv_min':>6} {'sv_max':>6} "
+            f"{'bias_bp':>8} {'gn_L':>9} {'gn_s':>7} {'lr':>8} {'t/ep':>6} {'ETA':>8}  diag"
         )
-        print("-" * 190)
+        print("-" * 215)
 
     # Diagnostics string
     if batch_diag and (epoch % DIAG_EVERY == 0 or epoch == EPOCHS - 1):
@@ -762,13 +745,16 @@ for epoch in range(EPOCHS):
     else:
         diag_str = ""
 
+    sv_min = float(sigma_vec_now.min())
+    sv_max = float(sigma_vec_now.max())
     print(
         f"{epoch:>5d} "
         f"{ep_vol:>10.4e} {ep_drift:>9.3e} {ep_eig:>9.3e} {ep_l2:>8.4e} "
         f"{swp_priced*100:>4.0f}% {path_finite*100:>4.0f}% "
         f"{avg_rmse_bps:>7.2f} "
-        f"{lambda_min_now:>7.4f} {lambda_norm_fro:>7.4f} {scale_now:>7.4f} "
-        f"{mean_bias_diag:>+8.1f} {gn:>9.2e} {lr_now:>8.2e} "
+        f"{lambda_min_now:>7.4f} {lambda_norm_fro:>7.4f} "
+        f"{scale_now:>7.4f} {sv_min:>6.4f} {sv_max:>6.4f} "
+        f"{mean_bias_diag:>+8.1f} {gn:>9.2e} {gn_scale:>7.2e} {lr_now:>8.2e} "
         f"{dt_ep:>5.1f}s {eta_str:>8}  {diag_str}"
     )
 
@@ -777,8 +763,9 @@ for epoch in range(EPOCHS):
         torch.save({
             "lm_state_dict":    lm.state_dict(),
             "Lambda_matrix":    lm.Lambda.detach().cpu(),
-            "log_sigma_scale":  lm.log_sigma_scale.detach().cpu(),
-            "sigma_scale":      scale_now,
+            "log_sigma_vec":    lm.log_sigma_vec.detach().cpu(),
+            "sigma_vec":        lm.sigma_vec.detach().cpu(),
+            "sigma_scale_mean": scale_now,
             "lambda_norm_fro":  lambda_norm_fro,
             "latent_dim":       LATENT_DIM,
             "epoch":            epoch + 1,
@@ -791,13 +778,14 @@ print("\nTraining done.")
 # ── final checkpoint + plots ───────────────────────────────────────────────────
 
 torch.save({
-    "lm_state_dict":   lm.state_dict(),
-    "Lambda_matrix":   lm.Lambda.detach().cpu(),
-    "log_sigma_scale": lm.log_sigma_scale.detach().cpu(),
-    "sigma_scale":     float(lm.sigma_scale.detach()),
-    "latent_dim":      LATENT_DIM,
-    "epochs":          EPOCHS,
-    "variant":         config.VARIANT,
+    "lm_state_dict":    lm.state_dict(),
+    "Lambda_matrix":    lm.Lambda.detach().cpu(),
+    "log_sigma_vec":    lm.log_sigma_vec.detach().cpu(),
+    "sigma_vec":        lm.sigma_vec.detach().cpu(),
+    "sigma_scale_mean": float(lm.sigma_vec.mean().detach()),
+    "latent_dim":       LATENT_DIM,
+    "epochs":           EPOCHS,
+    "variant":          config.VARIANT,
 }, os.path.join(FIGURES_DIR, f"checkpoint_lambda_v2_ep{EPOCHS}.pt"))
 
 fig, axes = plt.subplots(4, 1, figsize=(9, 13), dpi=150)
@@ -814,8 +802,8 @@ axes[1].plot([100*p for p in hist["path_finite"]], lw=1.0, color="navy",     lab
 axes[1].set_ylim(-2, 102); axes[1].legend()
 axes[1].set_xlabel("Epoch"); axes[1].set_ylabel("%"); axes[1].grid(True, alpha=0.3)
 
-axes[2].plot(hist["sigma_scale"], lw=1.2, color="purple", label="sigma_scale (vol level)")
-axes[2].set_xlabel("Epoch"); axes[2].set_title("Diffusion Scale"); axes[2].legend()
+axes[2].plot(hist["sigma_scale"], lw=1.2, color="purple", label="mean(sigma_vec)")
+axes[2].set_xlabel("Epoch"); axes[2].set_title("Diffusion Scale (mean of sigma_vec)"); axes[2].legend()
 axes[2].grid(True, alpha=0.3)
 
 axes[3].plot(hist["lambda_norm"], lw=1.2, color="purple", label="||Lambda||_F")
@@ -831,7 +819,7 @@ print("LAMBDA v2 TRAINING COMPLETE")
 print("=" * 90)
 print(f"Final vol loss    : {hist['vol'][-1]:.6e}")
 print(f"Final drift loss  : {hist['drift'][-1]:.6e}  (implies ~{math.sqrt(hist['drift'][-1])*100:.0f} bp bias)")
-print(f"Final sigma_scale : {hist['sigma_scale'][-1]:.4f}")
+print(f"Final sigma_vec   : {lm.sigma_vec.detach().cpu().numpy().round(4)}  (mean={hist['sigma_scale'][-1]:.4f})")
 print(f"Final ||Lambda||_F: {hist['lambda_norm'][-1]:.4f}")
 print(f"Lambda matrix:\n{lm.Lambda.detach().cpu().numpy()}")
 print("=" * 90)

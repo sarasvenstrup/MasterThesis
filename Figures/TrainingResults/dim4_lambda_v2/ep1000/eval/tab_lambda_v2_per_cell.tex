@@ -1,0 +1,23 @@
+\begin{table}[H]
+\centering
+\caption{Per-cell ATM vol errors: $\Lambda$-MPR v2 (correct forward strike, variance vol loss, trainable $\sigma$-scale). EUR test set.}
+\label{tab:lambda_v2_per_cell}
+\small
+\begin{tabular}{@{}ccrrrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten} & \textbf{Mkt (bp)} & \textbf{Mod (bp)} & \textbf{MAE (bp)} & \textbf{RMSE (bp)} & \textbf{Fwd bias (bp)} \\
+\midrule
+  1Y & 1Y & 60 & 250 & 196.7 & 234.2 & -82.5 \\
+  1Y & 5Y & 73 & 33 & 46.7 & 78.1 & -301.6 \\
+  1Y & 10Y & 90 & 47 & 50.8 & 128.8 & -109.6 \\
+  \midrule
+  5Y & 1Y & 56 & 138 & 83.8 & 96.7 & +97.3 \\
+  5Y & 5Y & 58 & 59 & 28.5 & 47.3 & -18.9 \\
+  5Y & 10Y & 53 & 60 & 30.4 & 40.0 & +13.3 \\
+  \midrule
+  10Y & 1Y & 48 & 355 & 307.8 & 315.7 & +443.0 \\
+  10Y & 5Y & 45 & 283 & 238.0 & 250.3 & +342.2 \\
+  10Y & 10Y & 43 & 218 & 175.1 & 188.8 & +267.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
