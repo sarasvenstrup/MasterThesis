@@ -6,7 +6,7 @@
     transform shape,
     >=stealth,
     neuron/.style={circle, minimum size=9mm, inner sep=0pt},
-    hnode/.style={circle, minimum size=8mm, inner sep=0pt},
+    hnode/.style={circle, minimum size=9mm, inner sep=0pt},
     outnode/.style={
         circle,
         minimum width=13mm,
@@ -39,13 +39,13 @@
 % =====================================
 \def\yG{5.0}
 \def\yK{2.5}
-\def\yH{0.0}
+\def\yH{0.5}
 \def\yR{-2.5}
 
 % =====================================
 % Hidden layers
 % =====================================
-\def\HiddenSep{0.8}
+\def\HiddenSep{0.9}
 
 \newcommand{\HiddenRange}[4]{%
   \node[hnode, fill=red!40] (#1hTop)  at (\xHidden, {#2+\HiddenSep}) {#3};
@@ -53,12 +53,12 @@
   \node[hnode, fill=red!40] (#1hBot)  at (\xHidden, {#2-\HiddenSep}) {#4};
 }
 
-% G: h1 ... h10
-\HiddenRange{G}{\yG}{$h_1^\mathcal{G}$}{$h_{10}^\mathcal{G}$}
-% H: h1 ... h4
-\HiddenRange{H}{\yH}{$h_1^\mathcal{H}$}{$h_{4}^\mathcal{H}$}
-% R: h1 ... h4
-\HiddenRange{R}{\yR}{$h_1^\mathcal{R}$}{$h_{4}^\mathcal{R}$}
+% G: x_{1,G}^(1) ... x_{1,G}^(10)
+\HiddenRange{G}{\yG}{$x_{1,\mathcal{G}}^{(1)}$}{$x_{1,\mathcal{G}}^{(10)}$}
+% H: x_{1,H}^(1) ... x_{1,H}^(4)
+\HiddenRange{H}{\yH}{$x_{1,\mathcal{H}}^{(1)}$}{$x_{1,\mathcal{H}}^{(4)}$}
+% R: x_{1,R}^(1) ... x_{1,R}^(4)
+\HiddenRange{R}{\yR}{$x_{1,\mathcal{R}}^{(1)}$}{$x_{1,\mathcal{R}}^{(4)}$}
 
 % =====================================
 % Output nodes
