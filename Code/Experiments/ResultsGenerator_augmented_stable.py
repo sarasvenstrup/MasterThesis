@@ -451,7 +451,8 @@ def _load_oos_preds(variant_key, dim):
 # ── figure: all-models fitted vs actual (mixed dims) ─────────────────────────
 print("\nGenerating all-models comparison figure (mixed dims)...")
 
-_comp_S_hat = {}
+_comp_S_hat   = {}
+_comp_r_tilde = {}
 for (_vkey_c, _lbl_c, _ModelClass_c, _use_aug_c, _dim_c), _col_c in zip(
         _COMP_VARIANTS_MIXED, _COMP_COLORS):
     _ckpt_c = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
@@ -477,13 +478,16 @@ for (_vkey_c, _lbl_c, _ModelClass_c, _use_aug_c, _dim_c), _col_c in zip(
     _m_c.load_state_dict(_sd_c, strict=False)
     _m_c.eval()
     print(f"  Loaded {_lbl_c}")
-    _s_list_c = []
+    _s_list_c, _r_list_c = [], []
     with torch.no_grad():
         for _i_c in range(0, X_tensor.shape[0], BATCH_SIZE):
-            _xb_c = X_tensor[_i_c:_i_c + BATCH_SIZE].to(device)
+            _xb_c  = X_tensor[_i_c:_i_c + BATCH_SIZE].to(device)
             _inp_c = augment(_xb_c) if _use_aug_c else _xb_c
-            _s_list_c.append(_m_c(_inp_c).cpu())
-    _comp_S_hat[_lbl_c] = torch.cat(_s_list_c).numpy()
+            _out_c, _aux_c = _m_c(_inp_c, return_aux=True)
+            _s_list_c.append(_out_c.cpu())
+            _r_list_c.append(_aux_c["r_tilde"].cpu())
+    _comp_S_hat[_lbl_c]   = torch.cat(_s_list_c).numpy()
+    _comp_r_tilde[_lbl_c] = torch.cat(_r_list_c).numpy()
 
 _n_rows_comp = len(_REP_DATES_COMP)
 _n_cols_comp = len(_SHOW_CCYS_COMP)
@@ -541,6 +545,56 @@ fig_comp.legend(_h_comp, _l_comp, loc="lower center",
 fig_comp.tight_layout()
 fig_comp.subplots_adjust(bottom=0.12)
 save_fig(fig_comp, "all_models_fitted_vs_actual")
+
+# ── figure: short rate over time — 2×2 grid, one panel per model, all 9 ccys ─
+print("\nGenerating short rate time series figure (all models)...")
+
+_SR_SCALE   = 100.0 if SCALE_IS_PERCENT else 1.0
+_SR_YLABEL  = "Short rate (%)" if SCALE_IS_PERCENT else "Short rate"
+_CCY_COLORS = plt.cm.tab10.colors
+
+dates_all_sr = pd.to_datetime(meta["as_of_date"].values)
+ccys_all_sr  = meta["ccy"].values
+
+fig_sr, axes_sr = plt.subplots(2, 2, figsize=(14, 8), sharex=True, sharey=False)
+axes_sr_flat = axes_sr.flatten()
+
+for _ax_i, ((_vkey_sr, _lbl_sr, _, _, _), _col_sr) in enumerate(
+        zip(_COMP_VARIANTS_MIXED, _COMP_COLORS)):
+    ax_sr = axes_sr_flat[_ax_i]
+
+    if _lbl_sr not in _comp_r_tilde:
+        print(f"  ⚠️  No r_tilde for {_lbl_sr} — skipping.")
+        ax_sr.set_visible(False)
+        continue
+
+    _r_sr = _comp_r_tilde[_lbl_sr] * _SR_SCALE
+
+    for _ci, _ccy_sr in enumerate(CCY_ORDER):
+        _mask_sr  = ccys_all_sr == _ccy_sr
+        if not _mask_sr.any():
+            continue
+        _dates_sr = dates_all_sr[_mask_sr]
+        _r_ccy    = _r_sr[_mask_sr]
+        _sort_idx = np.argsort(_dates_sr)
+        ax_sr.plot(_dates_sr[_sort_idx], _r_ccy[_sort_idx],
+                   linewidth=1.0, label=_ccy_sr, color=_CCY_COLORS[_ci])
+
+    ax_sr.set_title(_lbl_sr, fontsize=11, fontweight="bold")
+    if _ax_i % 2 == 0:
+        ax_sr.set_ylabel(_SR_YLABEL, fontsize=10)
+    ax_sr.xaxis.set_major_formatter(_mdates.DateFormatter("%Y"))
+    ax_sr.xaxis.set_major_locator(_mdates.YearLocator(2))
+    ax_sr.grid(True, alpha=0.25)
+
+fig_sr.autofmt_xdate()
+
+_h_sr, _l_sr = axes_sr_flat[0].get_legend_handles_labels()
+fig_sr.legend(_h_sr, _l_sr, loc="lower center", bbox_to_anchor=(0.5, -0.04),
+              ncol=len(CCY_ORDER), fontsize=9, frameon=False)
+fig_sr.tight_layout()
+fig_sr.subplots_adjust(bottom=0.12)
+save_fig(fig_sr, "all_models_short_rate")
 
 # ── figure: OOS regime scatter — all models (mixed dims) ─────────────────────
 print("\nGenerating OOS regime scatter — all models (mixed dims) figure...")

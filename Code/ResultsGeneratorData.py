@@ -39,7 +39,7 @@ EVENTS = {
 
 # ── apply paper theme ──────────────────────────────────────────────────────────
 set_paper_theme()
-currency_color_map = {ccy: custom_palette[i % len(custom_palette)]
+currency_color_map = {ccy: plt.cm.tab10.colors[i % 10]
                       for i, ccy in enumerate(CCY_ORDER)}
 
 # ── save helpers ───────────────────────────────────────────────────────────────

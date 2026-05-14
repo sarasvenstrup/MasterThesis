@@ -71,7 +71,7 @@ EVENTS = {
 
 # ── apply paper theme ──────────────────────────────────────────────────────────
 set_paper_theme()
-currency_color_map = {ccy: custom_palette[i % len(custom_palette)]
+currency_color_map = {ccy: plt.cm.tab10.colors[i % 10]
                       for i, ccy in enumerate(CCY_ORDER)}
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -979,7 +979,7 @@ ax.text(_to_x(_data_start) - 1.3,
         va="center", ha="center", fontsize=11, rotation=90, color="dimgray")
 ax.spines[["left", "top", "right"]].set_visible(False)
 ax.legend(fontsize=11, frameon=False,
-          loc="lower center", bbox_to_anchor=(0.5, -0.18), ncol=2)
+          loc="lower center", bbox_to_anchor=(0.5, -0.28), ncol=2)
 fig.tight_layout()
 fig.subplots_adjust(bottom=0.18)
 save_extra_fig(fig, "rolling_window_diagram")
@@ -2049,8 +2049,8 @@ if _m is not None:
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Parameter plots ──")
 
-# CCY colours (cycle through custom_palette)
-_ccy_colors = {ccy: custom_palette[i % len(custom_palette)]
+# CCY colours
+_ccy_colors = {ccy: plt.cm.tab10.colors[i % 10]
                for i, ccy in enumerate(CCY_ORDER)}
 
 def extract_parameters(model, X_data, meta_df, mask):
@@ -2336,8 +2336,8 @@ if _m is not None:
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n── Parameter plots ──")
 
-# CCY colours (cycle through custom_palette)
-_ccy_colors = {ccy: custom_palette[i % len(custom_palette)]
+# CCY colours
+_ccy_colors = {ccy: plt.cm.tab10.colors[i % 10]
                for i, ccy in enumerate(CCY_ORDER)}
 
 def extract_parameters(model, X_data, meta_df, mask):

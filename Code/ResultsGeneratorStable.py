@@ -398,7 +398,7 @@ def extract_sharpe(model, X, batch=256):
         sr_list.append(aux["arb"]["SR_tau"].cpu())
     return torch.cat(sr_list, dim=0)
 
-_ccy_colors = {ccy: custom_palette[i]
+_ccy_colors = {ccy: plt.cm.tab10.colors[i % 10]
                for i, ccy in enumerate(CCY_ORDER)}
 
 # ─────────────────────────────────────────────────────────────────────────────

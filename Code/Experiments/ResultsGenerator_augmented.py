@@ -159,7 +159,7 @@ for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
 
         actual = X_np_all[global_idx] * scale
         fitted = S_np_all[global_idx] * scale
-        fitted_color = custom_palette[CCY_ORDER.index(ccy) % len(custom_palette)]
+        fitted_color = plt.cm.tab10.colors[CCY_ORDER.index(ccy) % 10]
 
         ax.plot(tenors, actual, "o-",  color="black",        linewidth=2.0, markersize=5)
         ax.plot(tenors, fitted, "s--", color=fitted_color,   linewidth=2.0, markersize=5)
@@ -207,7 +207,7 @@ for row_i, (label, date_str) in enumerate(_rep_dates.items()):
 
         actual = X_np_all[global_idx] * _scale
         fitted = S_np_all[global_idx] * _scale
-        fitted_color = custom_palette[CCY_ORDER.index(ccy) % len(custom_palette)]
+        fitted_color = plt.cm.tab10.colors[CCY_ORDER.index(ccy) % 10]
 
         ax.plot(tenors, actual, "o-",  color="black",      linewidth=2.0,
                 markersize=5, label="Actual", zorder=5)

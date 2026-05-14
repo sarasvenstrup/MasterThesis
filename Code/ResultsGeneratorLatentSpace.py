@@ -49,9 +49,7 @@ CCY_ORDER = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
 def set_paper_theme():
     sns.set_theme(context="paper", style="darkgrid", font_scale=1.05)
-    full_palette = sns.color_palette("tab20b", 20)
-    selected_indices = [0, 1, 2, 3, 12, 13, 14, 15, 8]
-    palette = [full_palette[i] for i in selected_indices]
+    palette = list(plt.cm.tab10.colors[:9])
     mpl.rcParams.update({
         "figure.dpi": 180,
         "savefig.dpi": 300,
