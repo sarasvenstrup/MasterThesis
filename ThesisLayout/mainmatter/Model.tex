@@ -2,11 +2,11 @@
 {Affine-Inspired Arbitrage-Free\\Encoder-Decoder Framework}
 \label{chap:encoderdecodermodel}
 
-% This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}. While the original paper is formulated for two latent factors, the notation below is written for a general number \(\ell\) of latent factors. In the implementation, special care is required for \(\ell>2\) to ensure that the volatility correlation matrix remains positive definite.
 
-This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}, formulated here in a generalized framework that accommodates an arbitrary number of latent factors and currencies. The model combines a low-dimensional latent representation with an arbitrage-free bond-pricing structure to reconstruct observed par swap rate curves while enforcing the no-arbitrage condition by construction. 
 
-The encoder maps observed swap rates into a low-dimensional latent state. The decoder then transforms this latent state into a continuous zero-coupon bond price curve consistent with arbitrage-free term structure dynamics, ensuring that the reconstructed swap rates are arbitrage-free by construction. Figure~\ref{fig:rolf_architecture} provides a graphical overview of the architecture.
+This chapter presents the affine-inspired encoder--decoder model proposed by \citet{MatinWanPoulsen2025}, formulated here in a generalized framework that accommodates an arbitrary number of latent factors and input vector dimension. The model combines a low-dimensional latent representation with an arbitrage-free bond-pricing structure to reconstruct observed par swap rate curves while enforcing the no-arbitrage condition by construction. Figure~\ref{fig:rolf_architecture} provides a graphical overview of the architecture. 
+
+%The encoder maps observed swap rates into a low-dimensional latent state. The decoder then transforms this latent state into a continuous zero-coupon bond price curve consistent with arbitrage-free term structure dynamics, ensuring that the reconstructed swap rates are arbitrage-free by construction. 
 
 \input{ThesisLayout/figures/Fig_RolfsMethodVisual}
 
@@ -24,12 +24,10 @@ where $S_t^{(i)}:=S(t,\tau_i)$ denotes the par swap rate for maturity $\tau_i$. 
 \mathbf{S}_t=(S_t^{(1)},\dots,S_t^{(M)})^\top \in \mathbb{R}^M.
 \]
 The encoder maps the observed swap curve into a low-dimensional latent state through a linear transformation,
-
 \begin{equation}
 z_t = A_1 \mathbf{S}_t,
 \label{eq:linear_encoder}
 \end{equation}
-
 where $A_1 \in \mathbb{R}^{\ell \times M}$ and
 \[
 z_t=(z_1(t),\dots,z_\ell(t))^\top \in \mathbb{R}^\ell.
@@ -38,7 +36,7 @@ Thus, the encoder compresses the observed swap curve into an $\ell$-dimensional 
 
 
 
-\section{Decoder}
+\section{Internal Structure of the Decoder}
 
 With the latent state $z_t$ as input, the decoder is constructed to map it directly to zero-coupon bond prices $P(z_t,\tau)$. In the Markovian setting imposed below, bond prices depend on calendar time only through the current latent state and time to maturity. We therefore write
 \[
@@ -61,7 +59,7 @@ Following \cite{MatinWanPoulsen2025}, we adopt a single-curve framework and assu
 {\sum_{\tau' \leq \tau} P(z_t,\tau')}
 \label{estimatedswaprates}
 \end{equation}
-where the sum runs over all maturities on the grid specified with $\tau_i\leq\tau$. Since swap rates are functions of zero-coupon bond prices, arbitrage-freeness of the reconstructed swap rates follows from that of the bond prices.
+where the sum runs over all maturities on the grid specified with $\tau_i\leq\tau$. 
 
 
 %--------------------------------------------------------
@@ -71,11 +69,11 @@ Having specified the input and output of the decoder, we now describe its intern
 
 \input{ThesisLayout/figures/Fig_RolfsMethodVisual2}
 
-The network $\mathcal{G}$ takes as input $(z_t^\top,\tau)^\top\in\mathbb{R}^{\ell+1}$ and has one hidden layer of width 10 \citep{MatinWanPoulsen2025}, with neurons $h_1,...,h_{10}$ as illustrated in Figure \ref{fig:rolf_architecture_details}.
+The network $\mathcal{G}$ takes as input $(z_t^\top,\tau)^\top\in\mathbb{R}^{\ell+1}$ and has one hidden layer of width 10 \citep{MatinWanPoulsen2025}, with neurons $x_{1,\mathcal{G}}^{(1)},\ldots,x_{1,\mathcal{G}}^{(10)}$ as illustrated in Figure \ref{fig:rolf_architecture_details}.
 
 The network computes
 \[
-\mathcal{G}(z_t,\tau) = W_2\, \overbrace{\psi\!\left(W_1\begin{pmatrix}z_t\\\tau\end{pmatrix} + b_1\right)}^{=\,h} + b_2.
+\mathcal{G}(z_t,\tau) = W_2\, \overbrace{\psi\!\left(W_1\begin{pmatrix}z_t\\\tau\end{pmatrix} + b_1\right)}^{=\,x_{1,\mathcal{G}}} + b_2.
 \]
 where \(W_1\in\mathbb{R}^{10\times(\ell+1)}\),
 \(b_1\in\mathbb{R}^{10}\), \(W_2\in\mathbb{R}^{1\times 10}\), and
@@ -126,8 +124,8 @@ This condition is referred to as the \textit{hard constraint}. Unlike \citet{And
 
 The affine-inspired representation \eqref{affineinspiredzcbprices}
 specifies bond prices as functions of the current latent state \(z_t\) and time
-to maturity \(\tau\). To be consistent with
-risk-neutral pricing, we assume that the latent state follows a Markov process under \(\mathbb Q\). 
+to maturity \(\tau\). 
+
 
 Following \citet{MatinWanPoulsen2025}, we further specify the latent-state dynamics as the diffusion
 \begin{equation}
@@ -153,8 +151,6 @@ filtration \(\mathcal F_t\) only through the current state \(z_t\). Hence bond p
 \[
 P(t,T)=P(z_t,\tau), \qquad \tau=T-t.
 \]
-
- 
 %The short rate admits two representations that must coincide: it is defined as the instantaneous forward rate at zero maturity
 %\[
 %r(t)=\lim_{\tau\to0} f(t,\tau),
@@ -164,8 +160,6 @@ P(t,T)=P(z_t,\tau), \qquad \tau=T-t.
 %\lim_{\tau\to0} f(t,\tau)=\tilde r(z_t)
 %\]
 %holds exactly for every state $z_t$.
-
-
 Assuming sufficient smoothness of $P$, in particular that $P$ is twice continuously differentiable in $z$ and once in $\tau$, we apply Itô's lemma. Since $d\tau=-dt$
 \begin{align}
 dP(z_t,\tau)
@@ -215,7 +209,6 @@ Setting the drift to zero and using $r(t)=\tilde{r}(z_t)$ from \eqref{shortrated
 0
 \label{eq:bond_pricing_pde}
 \end{equation}
-
 with boundary condition $P(z_t,0)=1$. 
 
 % NÅET HER TIL - HUSK AT TJEKEK OM HELE DETTE DERIVATION AFSNIT HÆNGER SAMMEN NÅR ALT ER RETTET FÆRDIGT.
@@ -476,6 +469,11 @@ z_\ell(t)
 
 To summarize, the decoder first evaluates the four neural networks $\mathcal{G},\mathcal{K},\mathcal{H}$ and $\mathcal{R}$ at the latent state $z_t$. The outputs determine the coefficients $\alpha_{z_t}(\tau),\beta_{z_t}(\tau)$ and $\gamma_{z_t}(\tau)$ of the no-arbitrage ODE system, which is solved numerically for each realized $z_t$ to yield $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$. Zero-coupon bond prices are then obtained via \eqref{affineinspiredzcbprices} and converted into model-implied swap rates using \eqref{estimatedswaprates}.
 
+
+
+
+
+
 \section{Training Objective and Numerical Implementation}
 \label{sec:model_estimation_training_choices}
 
@@ -542,4 +540,23 @@ The point \(\tau=0\) is included to impose the initial conditions
 
 Gradients are propagated through the full pricing pipeline, including the Runge--Kutta solver, the solved functions \(A_{z_t}(\tau)\) and \(B_{z_t}(\tau)\), the zero-coupon bond prices, and the reconstructed swap rates. To improve numerical stability, gradients are clipped before each optimiser step using a maximum norm of 1.0. The training loop also checks for non-finite values; if the forward pass, loss, or gradients contain NaN or infinite values, the update is discarded for that mini-batch.
 
-For diagnostic purposes, the implementation can also evaluate the residual of the bond-pricing PDE on the maturity grid. These diagnostics are not included as penalty terms in the loss function, but are used only to assess the numerical accuracy of the arbitrage-free construction.
+For diagnostic purposes, the implementation can also evaluate the residual of
+the bond-pricing PDE on the maturity grid. Specifically, we
+substitute the solved $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ into
+\eqref{eq:bond_pricing_pde} and divide by $P > 0$, giving the PDE residual
+\begin{equation}
+R(\tau)
+=
+-\tilde{r}(z_t)
+- \partial_\tau A_{z_t}
++ \mathcal{G}(z_t,\tau)\,\partial_\tau B_{z_t}
++ B_{z_t}(\tau)\!\left(
+    \partial_\tau\mathcal{G}
+    - (\nabla_{z_t}\mathcal{G})^\top\mu(z_t)
+    - \tfrac{1}{2}\mathrm{Tr}\!\left[\sigma\sigma^\top H_{z_t}\mathcal{G}\right]
+  \right).
+\label{eq:pde_residual}
+\end{equation}
+If the ODE system \eqref{ODEA}--\eqref{ODEB} is solved exactly, $R(\tau)=0$
+for all $\tau$, so deviations from zero reflect numerical error introduced by
+the Runge--Kutta solver.

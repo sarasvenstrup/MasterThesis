@@ -1,5 +1,105 @@
-\chapter{Model Background and Motivation}
+\chapter{Title?}
 \label{ch:model-background}
+
+% Section 1 — Classical representations
+% Q1: Why is a low-dimensional representation desirable — is it purely
+%     computational, or is there a deeper economic reason?
+
+
+
+
+% Q2: What is the key limitation of Nelson-Siegel specifically — is it
+%     that the factors are fixed, or something else?
+
+
+% Section 2 — Nonlinear neural representations
+% Q3: In your own words, what does Kondratyev add that PCA cannot do?
+
+% Q4: Why is it important that the same network works across currencies
+%     — what does that tell us about yield curves?
+
+
+% Section 3 — Towards arbitrage-free models
+% Q5: Why is it not enough that the model reconstructs swap rates
+%     accurately — what goes wrong if no-arbitrage is violated?
+
+% Q6: Why does Andreasen decode to ZCB prices rather than swap rates
+%     — what does that enable?
+
+% Q7: What is the concrete problem with a soft constraint — why is it
+%     insufficient for risk-neutral pricing?
+
+
+% Section 4 — Motivation
+% Q8: In one sentence, what does Matin, Wan and Poulsen add that none
+%     of the previous papers had?
+
+
+
+
+\newpage
+
+NOTES FROM LITERATURE:
+he aim of this section, is to set the scene of yield curve modeling.
+
+
+According to \citep{MatinWanPoulsen2025}: 
+
+\begin{itemize}
+    \item Yield curve modeling has traditionally been dominated by parametric representations from the Nelson-Siegel family or classical linear principal component analysis. The extension to nonlinear representations using autoencoders was pioneered by \cite{Kondratyev2018} in 2018. 
+    \item points out that non-linear or non-parametric dimensionality reduction is fitting for modeling curve dynamics in finance, which was conducted by \cite{Sokol2022} and \cite{Kondratyev2018}. These models however are not AF.
+    \item Impose the no-arbitrage condition at the decoding stage as a hard constraint, which enables them to specify and train a model in which the encoder-decoder itself produces a continuous representation that is exactly arbitrage-free by construction.
+    
+\end{itemize}
+
+
+ACcording to \cite{Andreasen2023}: 
+
+\begin{itemize}
+    \item \cite{Kondratyev2018} and more recently \cite{Sokol2022} show that the question can be answered by fitting so-called auto-encoder neural networks to empirically observed yield curves. Suprisingly, the answer to that is two to three factors are sufficient. Further, that same auto-encoder can be used across all-currencies. 
+    \item Contrary to the work by \cite{Kondratyev2018} and \cite{Sokol2022} , Jesper Andreasen does not interpret the output of the neural network directly as swap rates but rather as ZCB-prices. These are first splined and converted to zero-coupon bond prices and the secondly to swap rates through the formula from Bjork.
+    \item Why does Jesper execute this additional step? Well, because he will make explcit use of the ZCB prices to infer information about the stochastic nature of the yield curve dynamics.
+    \item It is assumed that yield curves are weighted equally, such that Jesper us treating the different currencies and numeraires equally, essentially assuming that they can be represented by the same Neural Network. This approach is in line with the analysis by Sokol (2018), who concludes that there doesn't seem to be much empirical support for using seperate networks or additional input to seperate the currencies.
+    \item states that \cite{Kondratyev2018} and \cite{Sokol2022} answer the question of how many factors are required to describe the dynamics of the yield curves. They do so by fitting so-called auto-encoder neural networks to empirically observed yield curves, and that 2 to 3 factors are sufficient. Jesper Andreasen confirms this empirically. He further shows that these autoencoder networks are \underline{close} to being dynamically AF. AND that can be decoded to identify the risk-neutral dynamics of the encoded factors and thereby the full yield curve.
+    \item contrary to \cite{Kondratyev2018} and \cite{Sokol2022}, Jesper Andreasen does not interpret the output of the neural network directly at as swap rates but rather as zero coupon rates, the splined and converted in into zeroc coupon bond prices and then to swap rates.
+    \item All yield curves are weighted equally. So we are treating the different currencies and numeraires equally, essentially assuming they can be represented by the same NN. This is in line with Sokole 2018? IS THIS A  MISTAKE?
+    \item As mentioned earlier, in this analysis, we are treating the yield curves of different currencies as if they represent the same numeraire but observed at
+    different levels of the encoded state variable $z$. In other words, as if the same SDE governs all yield curves --- only the current states differ. It seems
+    like a strict assumption, but the empirical results do not seem to contradict this assumption. \citet{Sokol2022} does a more in-depth analysis of this and reaches a similar conclusion.
+\end{itemize}
+
+
+ACcording to \cite{Sokol2022}:
+\begin{itemize}
+    \item He says that \cite{Kondratyev2018} demonstrated that feed forward neural networks outperform classical regression techniques such as PCA in describing the evolution of interest rate curve shapes in P-measure. This was one of the early successes of using machine learning for dimensionality reduction.
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+All three of this authors preceding Rolf, agree that the three factors result in a better fit than the two factor.
+
+
+
+
+
+
+
+
+
+
+
+\newpage
 
 This chapter motivates the modelling framework developed later in the thesis by placing it within the literature on low-dimensional yield-curve representations and arbitrage-free term-structure modelling. 
 

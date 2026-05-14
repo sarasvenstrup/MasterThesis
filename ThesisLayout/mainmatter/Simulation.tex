@@ -25,7 +25,10 @@ dz_t = \mu(z_t)\,dt + \sigma(z_t)\,dW_t^{\mathbb{Q}},
 \]
 where \(W_t^{\mathbb{Q}}\) is an \(\ell\)-dimensional Brownian motion under the risk-neutral measure \(\mathbb{Q}\), \(\mu(z_t)\) is the learned drift vector and \(\sigma(z_t)\) is the volatility matrix defined in Section~\ref{subsec:neural-modelling-dynamics}.
 
-\textcolor{red}{Under the regularity conditions in Proposition~\ref{prop:sde_existence}, the latent SDE therefore has a unique non-explosive solution. This ensures that the simulated process is mathematically well defined.[Vi skal lige snakke om hvordan vi skal have dette med.]}
+
+Under the regularity conditions established in Appendix~\ref{app:???}, the latent SDE admits a unique non-explosive solution for both models considered in this chapter, ensuring that the simulated processes are mathematically well defined.
+
+
 
 The latent SDE is discretised using the Euler--Maruyama scheme \citep{Glasserman2004}. For a time step \(\Delta t>0\) and grid points \(t_n=n\Delta t\), \(n=0,1,\ldots,N\), where $N$ is the total number of steps and \(T=N\Delta t\) is the terminal horizon, the simulated paths satisfy
 \[
@@ -71,8 +74,7 @@ Hence, each simulated path yields a time series of latent states, short rates, d
 \label{sec:stability_analysis}
 %========================================================
 
-When the learned latent dynamics are iterated over a multi-year simulation horizon, a mathematically well-defined SDE does not by itself ensure that the simulated paths remain on a controlled scale. Several stability issues may arise, stemming from the drift, diffusion, and short rate components of the latent model. The following identifies a set of such issues and the corresponding modifications introduced in the stable variant.
-
+The baseline latent dynamics admit a unique non-explosive solution under the regularity conditions verified in Appendix~\ref{app:???}, establishing that the model is mathematically well-defined independently of any simulation scheme. When iterated over a multi-year horizon, however, this does not by itself ensure that simulated paths remain on a controlled scale. Several stability issues may arise, stemming from the drift, diffusion, and short rate components of the latent model. The following identifies these issues and the corresponding modifications introduced in the stable variant.
 
 \begin{description}[
     style=unboxed,
@@ -204,29 +206,22 @@ and therefore
 The bounds $\sigma_{\min}$ and $\sigma_{\max}$ are fixed numerical hyperparameters, not learned from data.
 
 
+\item[Correlation structure.] The volatility levels alone do not determine the full diffusion matrix. In the baseline model, the last $\ell(\ell-1)/2$ outputs of $\mathcal{H}(z)$ are used as raw parameters for the pairwise correlations, and are denoted
+\[
+g_{ij}(z) := [\mathcal{H}(z)]_{\ell+k}, \qquad k = 1,\ldots,\ell(\ell-1)/2,
+\]
+where $k$ enumerates the pairs $(i,j)$ with $i=2,\ldots,\ell$ and $j=1,\ldots,i-1$ in row-wise order. Each raw parameter is mapped to a pairwise correlation via
+\[
+\rho_{ij}(z) = \tanh \bigl(g_{ij}(z)\bigr) \in (-1,1).
+\]
+While each $\rho_{ij}$ lies in $(-1,1)$, specifying pairwise correlations  independently does not guarantee that the full correlation matrix is  positive definite for $\ell \geq 3$.
 
-\item[Correlation structure.] The volatility levels alone do not determine the full diffusion matrix. In the baseline model, the network \(\mathcal{H}\) also outputs raw pairwise correlation parameters, which are transformed as
+The stable variant therefore constructs the correlation matrix through a 
+hyperspherical Cholesky representation \citep{PourahmadiWang2015}. The outputs $g_{ij}(z)$ are instead transformed into angles via
 \[
-\rho_{ij}(z)=\tanh([\mathcal{H}(z)]_{ij}).
+\theta_{ij}(z) = \pi\,\operatorname{sigmoid} \bigl(g_{ij}(z)\bigr) \in (0,\pi),
 \]
-This ensures that each individual correlation lies in \((-1,1)\). For \(\ell=2\), this is sufficient to define a valid \(2\times2\) correlation matrix. For \(\ell\geq3\), however, specifying pairwise correlations separately does not in general guarantee that the full correlation matrix is positive definite. Hence the resulting covariance matrix may fail to be valid in higher dimensions.
-
-The stable variant therefore constructs the correlation matrix through a hyperspherical Cholesky representation. \textcolor{red}{reference!} Instead of predicting pairwise correlations directly, the network outputs \(\ell(\ell-1)/2\) unconstrained values \(g_k(z)\), which are transformed into angles
-\[
-\theta_k(z)
-=
-\pi\,\operatorname{sigmoid}(g_k(z)).
-\]
-Since the sigmoid function takes values in \((0,1)\), the angles satisfy
-\[
-\theta_k(z)\in(0,\pi).
-\]
-These angles are used to construct a lower-triangular matrix \(L_R(z)\) with unit row norms and strictly positive diagonal entries, as described in Appendix~\ref{app:hyperspherical_cholesky}. The correlation matrix is then defined by
-\[
-R(z)=L_R(z)L_R(z)^\top.
-\]
-Because \(L_R(z)\) has full rank, \(R(z)\) is positive definite. Moreover, since the rows of \(L_R(z)\) have unit norm, the diagonal entries of \(R(z)\) are equal to one. Thus \(R(z)\) is a valid correlation matrix by construction for any latent dimension \(\ell\).
-
+which are used to construct $L_R(z)$ as described in Appendix~\ref{app:hyperspherical_cholesky}. Since $L_R(z)$ has full rank and unit row norms, $R(z) = L_R(z)L_R(z)^\top$ is symmetric, positive definite with unit diagonal, and hence a valid correlation matrix by construction for any $\ell$.
 
 \item[Short-rate behaviour.] In the baseline model, the short-rate network uses the centered soft-step activation from \eqref{eq:activation}:
 \[
@@ -286,7 +281,7 @@ Together, these restrictions define the stable variant. Section~\ref{sec:sim_evi
 \label{sec:sim_evidence}
 %========================================================
 
-We compare the baseline and stable models by simulating latent paths over a $10$-year horizon. Both models use the latent dimension \(\ell=2\), are trained for 5{,}000 epochs on swap curves from all nine currencies jointly, and are initialised from the observed EUR swap curve on 29 January 2010. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial latent states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise.
+We compare the baseline and stable models by simulating latent paths over a $10$-year horizon. Both models use the latent dimension \(\ell=2\), are trained for 5{,}000 epochs on swap curves from all nine currencies jointly, and are initialised from the observed EUR swap curve on 29 January 2010. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial latent states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise. \textcolor{red}{(add a reference to appendix with a table of all hyperparameters chosen, like the sigma bounds r scale and etc.)}
 
 \begin{figure}[H]
 \centering
@@ -295,8 +290,6 @@ We compare the baseline and stable models by simulating latent paths over a $10$
 \label{fig:training_cloud}
 \end{figure}
 Before examining the simulated paths, Figure \ref{fig:training_cloud} shows the encoded training latent cloud for both models, with the initial state marked. This establishes a reference for the training region, against which the behaviour of simulated paths can be assessed throughout the analysis. 
-
-
 
 
 \begin{description}[
@@ -316,12 +309,11 @@ The simulated latent paths, visualized in Figure~\ref{fig:comp_fans}, reveal an 
     \centering
     \includegraphics[width=0.95\textwidth]{Figures/Simulation/fig_latent_fans.png}
     \caption{Percentile fan charts for the simulated latent factors \(z_1(t)\)
-    and \(z_2(t)\). At each time step, percentiles are computed across the
+    and \(z_2(t)\) for both the baseline and stable model. At each time step, percentiles are computed across the
     \(M=500\) simulated paths. The dark line shows the median, the shaded
     regions show the 25--75 and 5--95 percentile ranges, and eight individual
-    sample paths are overlaid. Top row: baseline. Note the vertical-axis units
-    of \(10^{19}\), which compress most of the early trajectory toward zero.
-    Bottom row: stable.}
+    sample paths are overlaid. Note the vertical-axis units
+    of \(10^{19}\), which compress most of the early trajectory toward zero.}
     \label{fig:comp_fans}
 \end{figure}
 
@@ -400,25 +392,7 @@ For the baseline, the terminal latent state collapse onto a near-straight line. 
 The stable model cloud is quite different. The annotated direction $\lambda_2^{\text{stable}}=-10.846$ corresponds to the dominant eigenvector. The cloud is compressed along $z_2$ relative to $z_1$, reflecting stronger mean reversion in that direction. While paths extend somewhat beyond the training region, no dominant direction emerges, and the terminal short-rate distribution spans a more plausible range of approximately \([-11\%,11\%]\).
 
 
-\item[Volatility bounds.] We now inspect the learned volatility functions. This is useful because the volatility functions determine the size of the Brownian shock term in the latent SDE,
-\[
-dz_t=\mu(z_t)\,dt+\sigma(z_t)\,dW_t^{\mathbb Q}.
-\]
-Larger volatility values therefore lead to larger random movements in the simulated latent state.
-
-Figure~\ref{fig:sigma_bounds} compares the learned volatility functions \(\sigma_1(z)\) and \(\sigma_2(z)\) for the baseline and stable models. It evaluates the volatility networks at two sets of latent states. The first set is the encoded training cloud, meaning the latent states obtained by applying the encoder to the observed training swap curves. The second set is an expanded diagnostic set, constructed by sampling latent states around the mean of the training cloud with three times the empirical latent standard deviation. These expanded points are used to check how the volatility functions behave if simulated paths move away from the latent states observed during training.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/Simulation/fig_sigma_bounds.png}
-    \caption{Distributions of \(\sigma_i(z)\) for the baseline and stable
-    models, evaluated on the encoded training cloud and on an expanded
-    diagnostic set around the training cloud. The dotted vertical lines mark
-    the stable bounds \(\sigma_{\min}=10^{-4}\) and \(\sigma_{\max}=2\).}
-    \label{fig:sigma_bounds}
-\end{figure}
-
-Table~\ref{tab:sigma_ranges} reports the corresponding volatility ranges. On the encoded training cloud, the baseline and stable models produce volatility values of comparable order. This indicates that the stable volatility bounds do not force the model into an unrealistically narrow volatility range on the latent states used for training. On the expanded diagnostic set, however, the baseline volatility functions can produce substantially larger values. This matters for simulation because larger volatility values increase the size of the Brownian shock term and can push the latent state further away from the training region.
+\item[Volatility bounds.] The volatility function scales the Brownian shock in \eqref{latentdynamics}, and large values can cause simulated paths to diverge over long horizons. To assess how the learned volatility function behaves away from the training region, each model is evaluated on two sets of latent states. The first is the encoded training cloud, visualised in Figure~\ref{fig:training_cloud}. The second is an expanded set, constructed by sampling around the training cloud mean with three times the empirical latent standard deviation.
 
 \begin{table}[H]
 \centering
@@ -428,7 +402,11 @@ Table~\ref{tab:sigma_ranges} reports the corresponding volatility ranges. On the
 \label{tab:sigma_ranges}
 \end{table}
 
-The stable model behaves differently. Its volatility values remain inside the prescribed interval \((\sigma_{\min},\sigma_{\max})\) for all latent states. Thus, the stable specification does not remove state-dependent volatility, but it prevents the diffusion scale from becoming extreme when the model is evaluated outside the encoded training region.
+Table~\ref{tab:sigma_ranges} reports the volatility ranges over both evaluation sets. For the stable model, the ranges do widen on the expanded diagnostic set, but only marginally so, remaining within the prescribed bounds $\sigma_{\min}$ and $\sigma_{\max}$. For the baseline model, the picture is very different, with both $\sigma_1$ and $\sigma_2$ approaching values near $5$ on the expanded set against roughly $1.1$ on the training cloud. Since large volatility values amplify the Brownian shock in \eqref{latentdynamics} and can push the latent state further from the training region, this difference matters for long-horizon simulation. 
+
+It is worth noting that the stable $\sigma_1$ reaches $1.9949$ on the expanded set, approaching $\sigma_{\max} = 2$, which suggests that a more careful calibration of the bounds would be warranted in practice. A thorough 
+investigation of this is left outside the scope of the present experiment.
+
 
 \item[Decoded swap-rate curves.] Whether latent instability matters in practice becomes clear when the simulated states are decoded back into swap rate curves. Figure \ref{fig:yield_curves} shows decoded curves at $t=1,5$ and $10$ years for both models.
 
@@ -448,7 +426,7 @@ The baseline distribution already fills the clipped \(\pm 50\%\) range at the on
 \end{description}
 
 
-The experiment shows that the stability restrictions turn out to be a practical requirement, not only a theoretical one. Constraining the drift, diffusion scale and the short-rate output together is what keeps the paths and decoded curves on a interpretable scale throughout the ten-year horizon.
+The experiment shows that the stability restrictions turn out to be a practical requirement, \textcolor{red}{not only a theoretical one}. Constraining the drift, diffusion scale and the short-rate output together is what keeps the paths and decoded curves on a interpretable scale throughout the ten-year horizon.
 
 
 %========================================================
@@ -519,3 +497,42 @@ For the baseline model, error spikes cluster around the ECB quantitative easing 
 The panels use separate vertical scales, the baseline reaching 7,000 bps against 200 bps for the stable model, which reflects the nature of the difference. Normal non-negative observations (blue) remain near zero for both models throughout most of the sample, but the baseline produces a single extreme failure close to 7,000 bps in 2022, confirming that even familiar regime observations become problematic as the rate environment shifts sharply. Negative-rate observations (pink) drive sustained elevated errors, with individual spikes reaching around 4,800 bps in 2016 and 3,500 bps around 2019. Inverted non-negative curves (black), which appear from 2022 onward, reach close to 3,000 bps for the baseline. The stable model reduces these errors substantially across all three regimes, though negative-rate observations still produce the highest errors within the stable panel, reaching around 150 to 210 bps in the 2015 to 2016 period, well above the typical level for normal non-negative observations.
 
 The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter all point in the same direction. At $\ell=4$, the stability restrictions reduce both in-sample and out-of-sample errors relative to the baseline and contain the most severe regime-specific failures, though the negative-rate environment remains the most challenging for both models. 
+
+
+
+
+
+
+
+% just placeholder for now:
+
+
+\begin{table}[H]
+\centering
+{\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/all_models_is_oos_summary.csv}\datmodelsummary
+\resizebox{\textwidth}{!}{%
+\pgfplotstabletypeset[
+  columns={Model, ell, IS_Avg, IS_Median, IS_Max, OOS_Avg, OOS_Median, OOS_Max},
+  columns/Model/.style={column name={Model}, string type, column type=l},
+  columns/ell/.style={column name={$\ell$}, string type, column type=c},
+  columns/IS_Avg/.style={column name={Avg}, string type, column type=r},
+  columns/IS_Median/.style={column name={Median}, string type, column type=r},
+  columns/IS_Max/.style={column name={Max}, string type, column type=r},
+  columns/OOS_Avg/.style={column name={Avg}, string type, column type=r},
+  columns/OOS_Median/.style={column name={Median}, string type, column type=r},
+  columns/OOS_Max/.style={column name={Max}, string type, column type=r},
+  every head row/.style={
+    before row={%
+      \toprule
+      & & \multicolumn{3}{c}{In-sample RMSE (bps)} & \multicolumn{3}{c}{OOS RMSE (bps)} \\
+      \cmidrule(lr){3-5}\cmidrule(lr){6-8}
+    },
+    after row=\midrule
+  },
+  every last row/.style={after row=\bottomrule},
+]{\datmodelsummary}}
+}
+\caption{In-sample and out-of-sample RMSE (bps) across the four model variants. OOS results are from the rolling window evaluation scheme with 5-year training windows and 6-month test windows. The stable variant uses $\ell=4$ latent factors; all other variants use $\ell=3$.}
+\label{tab:all_models_is_oos_summary}
+\end{table}
