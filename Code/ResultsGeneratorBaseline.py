@@ -1683,8 +1683,10 @@ if _has_main_model:
     ax.set_ylabel("RMSE (bps)", fontsize=12)
     ax.set_xlabel("Maturity", fontsize=12)
     ax.set_xticks(TENOR_COLS)
-    ax.legend(frameon=False, fontsize=12)
+    ax.legend(frameon=False, fontsize=12, loc="center left",
+              bbox_to_anchor=(1.02, 0.5))
     fig.tight_layout()
+    fig.subplots_adjust(right=0.85)
     save_fig(fig, "Q6a_rmse_by_tenor")
 
 

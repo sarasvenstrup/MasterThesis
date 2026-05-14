@@ -403,7 +403,7 @@ import matplotlib.lines as _mlines
 
 _INPUT_DIM_BASE = X_tensor.shape[1]               # 8  (no augmentation)
 _INPUT_DIM_AUG  = augment(X_tensor[:1]).shape[1]  # 11 (with augmentation)
-_COMP_COLORS    = [custom_palette[2], custom_palette[4], custom_palette[0], custom_palette[6]]
+_COMP_COLORS    = ["#2c4f8c", "#c0392b", "#ff2222", custom_palette[6]]
 _REP_DATES_COMP = {"Normal (2014-08-29)": "2014-08-29",
                    "Crisis (2020-03-31)":  "2020-03-31"}
 _SHOW_CCYS_COMP = ["EUR", "USD", "JPY", "CAD"]
@@ -541,7 +541,7 @@ for _row_c, (_label_c, _date_str_c) in enumerate(_REP_DATES_COMP.items()):
 _h_comp, _l_comp = axes_comp[0][0].get_legend_handles_labels()
 fig_comp.legend(_h_comp, _l_comp, loc="lower center",
                 bbox_to_anchor=(0.5, -0.02),
-                ncol=len(_COMP_VARIANTS_MIXED) + 1, frameon=False, fontsize=10)
+                ncol=len(_COMP_VARIANTS_MIXED) + 1, frameon=False, fontsize=12)
 fig_comp.tight_layout()
 fig_comp.subplots_adjust(bottom=0.12)
 save_fig(fig_comp, "all_models_fitted_vs_actual")
@@ -620,7 +620,8 @@ for _ax_i, (_vkey, _lbl_oos, _, _, _dim_oos) in enumerate(_COMP_VARIANTS_MIXED):
             s=3, alpha=0.35, color=_col_r, marker="o", label=_lbl_r, zorder=3,
         )
 
-    _ax_oos.set_ylabel("RMSE (bps)", fontsize=9)
+    if _ax_i % 2 == 0:
+        _ax_oos.set_ylabel("RMSE (bps)", fontsize=9)
     _ax_oos.annotate(_lbl_oos, xy=(0.99, 0.97), xycoords="axes fraction",
                      ha="right", va="top", fontsize=10, fontweight="bold")
     _ax_oos.grid(True, alpha=0.3)
@@ -638,7 +639,7 @@ _leg_labels_oos = [
 ]
 fig_oos.legend(_leg_handles_oos, _leg_labels_oos,
                loc="lower center", bbox_to_anchor=(0.5, -0.04),
-               ncol=4, fontsize=8, frameon=True, facecolor="white", edgecolor="none",
+               ncol=4, fontsize=11, frameon=True, facecolor="white", edgecolor="none",
                markerscale=1.5)
 fig_oos.tight_layout()
 fig_oos.subplots_adjust(bottom=0.12)
