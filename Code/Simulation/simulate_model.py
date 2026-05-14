@@ -546,26 +546,36 @@ def run_simulation(
 
 def simulate_to_expiry_differentiable(
     model,
-    z0      : torch.Tensor,    # (1, d)  — initial latent state, detached
-    n_steps : int,
-    dt      : float,
-    n_paths : int,
-    eps     : torch.Tensor,    # (n_paths, n_steps, d) — PRE-DRAWN, no grad
-    k_override=None,           # optional Q-measure drift module; if None uses model.K
+    z0          : torch.Tensor,     # (1, d)  — initial latent state, detached
+    n_steps     : int,
+    dt          : float,
+    n_paths     : int,
+    eps         : torch.Tensor,     # (n_paths, n_steps, d) — PRE-DRAWN N(0,1), no grad
+    k_override  = None,             # callable z -> drift; if None uses model.K (K^P)
+    sigma_scale = None,             # scalar tensor, (d,) vector tensor, or float; None → 1.0
+                                    # (d,) vector: per-dimension anisotropic scaling
+    antithetic  : bool = False,     # if True, n_paths must be even; mirrors eps to -eps
+    freeze_H    : bool = False,     # if True, H is evaluated under no_grad (freeze diffusion direction)
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Differentiable Euler-Maruyama simulation for optimization/calibration.
+    Euler-Maruyama simulation under a Q-measure drift, with optional:
+      - antithetic variance reduction  (antithetic=True, n_paths even)
+      - trainable diffusion scaling    (sigma_scale=lm.sigma_scale)
+      - frozen H network               (freeze_H=True, grad only through sigma_scale and K^Q)
 
-    Gradients flow through H (diffusion) and K (drift) at every step.
-    R (short rate) is always evaluated under no_grad — it shapes the discount
-    factor but is not optimised by the pricing loss.
+    When antithetic=True the first n_paths//2 rows of eps are used as-is and the
+    second half are their negatives; pass eps of shape (n_paths//2, n_steps, d).
 
     Returns
     -------
-    z_T : (n_paths, d)  — terminal latent state WITH gradients
-    D_T : (n_paths,)    — pathwise discount factor exp(-∫r dt), detached
+    z_T : (n_paths, d)   terminal latent state WITH gradients
+    D_T : (n_paths,)     pathwise discount factor exp(-∫r dt), detached
     """
     sqrt_dt = math.sqrt(dt)
+
+    if antithetic:
+        # eps is (half, n_steps, d); expand to full batch with mirrored paths
+        eps = torch.cat([eps, -eps], dim=0)     # (n_paths, n_steps, d)
 
     z = z0.expand(n_paths, -1).clone()          # (n_paths, d)
 
@@ -575,25 +585,31 @@ def simulate_to_expiry_differentiable(
     log_D = torch.zeros(n_paths, device=z.device, dtype=z.dtype)
 
     for t in range(n_steps):
-        # Volatility — gradient flows through H
-        sigmas, rhos = model.H(z)
-        L = L_from_sigmas_rhos(sigmas, rhos, validate=False)    # (n_paths, d, d)
+        # Diffusion — optionally freeze H so grad flows only through sigma_scale
+        if freeze_H:
+            with torch.no_grad():
+                sigmas, rhos = model.H(z.detach())
+                L = L_from_sigmas_rhos(sigmas, rhos, validate=False)
+        else:
+            sigmas, rhos = model.H(z)
+            L = L_from_sigmas_rhos(sigmas, rhos, validate=False)
+
+        dW    = eps[:, t, :] * sqrt_dt                                  # (n_paths, d)
+        scale = sigma_scale if sigma_scale is not None else 1.0
+        shock = scale * torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
 
         # Drift — use k_override (K^Q) if provided, else model.K (K^P)
         drift = (k_override(z) if k_override is not None else model.K(z)) * dt
 
-        # Euler step with fixed noise
-        dW    = eps[:, t, :] * sqrt_dt          # (n_paths, d)
-        shock = torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
-        z     = z + drift + shock
+        z = z + drift + shock
 
-        # Trapezoid discount (detached — R is frozen)
+        # Trapezoid discount (detached — R is frozen, not optimised)
         with torch.no_grad():
             r_next = model.R(z.detach()).squeeze(-1)
             log_D  = log_D - 0.5 * (r_prev + r_next) * dt
             r_prev = r_next
 
-    D_T = log_D.exp().detach()                  # (n_paths,)
+    D_T = log_D.clamp(min=-30.0, max=30.0).exp().detach()   # (n_paths,)
     return z, D_T
 
 

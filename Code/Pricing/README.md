@@ -1,141 +1,259 @@
-# Code/Pricing — Swaption Pricing Scripts
+# Code/Pricing — Swaption Pricing Pipeline
 
-All scripts price EUR ATM swaptions using the trained Neural SDE encoder-decoder
-checkpoint (`checkpoint_dim4_ep5000.pt`).  Outputs go to
-`Figures/Pricing/` and `Figures/TrainingResults/dim4_stable_hscale/`.
+This folder implements the full swaption pricing pipeline for the pricing chapter
+of the thesis. The chapter has three sections and the scripts map directly onto them:
 
----
+| Chapter section | Scripts |
+|-----------------|---------|
+| §1 Methodology | *(no script — LaTeX only)* |
+| §2 Diagnostics (decoder coverage + forward bias) | `pretraining_diagnostics.py`, `calibrate_H_scale.py`, `calibrate_expiry_scale.py`, `delta_diagnostic.py` |
+| §3 The Lambda MPR Fix | `Training_lambda_mpr.py`, `eval_lambda_mpr.py` |
 
-## Overview of files
-
-| File | Purpose |
-|------|---------|
-| `pricing.py` | Core pricing library (Bachelier formula, MC swaption pricer, implied-vol inversion). Imported by all calibration scripts — do not run directly. |
-| `load_swapvol_ois.py` | Data loader for the EUR ATM vol surface (`SwapData/SwapVol.xlsx`). Imported by all calibration scripts — do not run directly. |
-| `pretraining_diagnostics.py` | Produces all figures/tables for the "Why the stable model cannot price" chapter section: decoder robustness probe, latent displacement CDF, H-vs-K decomposition, eigenvector alignment. |
-| `make_greeks_table.py` | Generates the analytic ATM Bachelier Greeks table (`Figures/Pricing/tab_atm_greeks.tex`). |
-| `calibrate_H_scale.py` | **Global OLS calibration.** Finds a single diffusion scale `s*` minimising vol-space RMSE across all 1 246 swaptions. Entry point for the whole calibration workflow — run this first. |
-| `make_vol_comparison.py` | Produces vol heatmaps, scatter plots, and summary table comparing three models (baseline, stable, stable-calibrated). Run after `calibrate_H_scale.py`. |
-| `calibrate_per_cell.py` | **Per-cell OLS calibration.** Fits one scale per (expiry, tenor) cell (9 parameters) with a 70/30 train/OOS time split. Reuses `baseline_vols_s1.csv` cached by `calibrate_H_scale.py`. |
-| `calibrate_expiry_scale.py` | **Expiry-level OLS calibration (recommended).** Pools all tenors within each expiry row → 3 parameters (`s_1Y`, `s_5Y`, `s_10Y`). Physically motivated (scale affects SDE horizon, not payoff tenor) and more robust than per-cell. OOS MAE 72 bp. |
-| `calibrate_rolling.py` | Rolling-window OLS: refits per-cell scales using the most recent W months of history at each OOS date. Cross-validates window length. Result: worse than fixed expiry-level (OOS ~98 bp); included as a diagnostic. |
-| `calibrate_improved.py` | Experiments with ridge regularisation (LOO-year CV) and an adaptive scale conditioned on the latent state `z_t`. Result: ridge selects λ=0; adaptive scale OOS ~102 bp. Confirms the residual error is structural. |
-| `calibrate_straddle.py` | Straddle diagnostic: prices payer + receiver at `s=1`, computes straddle vol, fits OLS scale on straddle. Tests whether a uniform forward-rate bias from `K` is responsible for the residual error. Result: OOS MAE jumps 75→287 bp (bias is sign-inconsistent across cells). |
+Supporting libraries used by all scripts: `pricing.py`, `load_swapvol_ois.py`.
 
 ---
 
-## Recommended run order
+## Script reference
 
-### Step 1 — Diagnostics: why the model cannot price without calibration
+### `pricing.py`
+Core pricing library. **Not run directly — imported by all other scripts.**
+
+- `bachelier_price_torch(F, K, sigma, T, N, A)` — Bachelier payer/receiver price (batch, differentiable)
+- `swap_rate_torch(P_full, tenor)` — pathwise par swap rate and annuity from decoded bond grid
+- `implied_vol_atm(price, A0, T)` — ATM implied normal vol from a Monte Carlo price
+
+---
+
+### `load_swapvol_ois.py`
+Data loader for the EUR ATM swaption vol surface. **Not run directly — imported by all other scripts.**
+
+- Reads `SwapData/SwapVol.xlsx`
+- Returns a tidy DataFrame with columns `as_of_date`, `option_maturity`, `swap_tenor`, `vol` (in bp)
+
+---
+
+### `pretraining_diagnostics.py`
+Produces the §2.1 (decoder coverage) figures and tables.
+
+**Run first.** No dependencies on other pricing scripts.
 
 ```
 python Code/Pricing/pretraining_diagnostics.py
 ```
 
-Outputs to `Figures/Pricing/`:
-- `fig_decoder_robustness.png`, `tab_decoder_robustness.tex`
-- `fig_latent_displacement_cdf.png`, `tab_displacement_summary.tex`
-- `tab_hk_decomposition.tex`, `tab_eigenvector_alignment.tex`
+**Outputs** → `Figures/Pricing/`:
+
+| File | Content |
+|------|---------|
+| `fig_decoder_robustness.png` | Finite-decode fraction vs isotropic perturbation ε |
+| `tab_decoder_robustness.tex` | Tabular summary of the robustness probe |
+| `fig_latent_displacement_cdf.png` | CDF of ‖z_T − z_0‖ at T=5Y (baseline vs stable) |
+| `tab_displacement_summary.tex` | Displacement percentiles |
+| `tab_hk_decomposition.tex` | Drift-only vs full displacement decomposition |
+| `tab_eigenvector_alignment.tex` | Alignment of z* − z_0 with slowest eigenvector |
 
 ---
 
-### Step 2 — ATM Greeks table
-
-```
-python Code/Pricing/make_greeks_table.py
-```
-
-Output: `Figures/Pricing/tab_atm_greeks.tex`
-
----
-
-### Step 3 — Global calibration  *(run before any per-cell scripts)*
+### `calibrate_H_scale.py`
+Prices all swaptions at the unscaled diffusion (`s=1`) and caches the result.
+This is an **upstream dependency** for `calibrate_expiry_scale.py` and `delta_diagnostic.py`.
+Run it once before any calibration step.
 
 ```
 python Code/Pricing/calibrate_H_scale.py
 ```
 
-This prices all swaptions at `s=1` and caches the result as
-`Figures/TrainingResults/dim4_stable_hscale/baseline_vols_s1.csv`.
-All downstream calibration scripts read this cache instead of re-pricing.
+**Outputs** → `Figures/TrainingResults/dim4_stable_hscale/`:
 
-Key outputs:
-- `baseline_vols_s1.csv` — model vols at `s=1` (shared cache)
-- `calibration_summary.json` — global `s*`, MAE before/after
-- `vol_mae_sweep.png` — MAE vs diffusion scale sweep
-- `checkpoint_dim4_hscale_0.1509.pt` — calibrated checkpoint (for inspection only; use `diffusion_scale=s*` with the original checkpoint for pricing)
+| File | Content |
+|------|---------|
+| `baseline_vols_s1.csv` | **Key shared cache.** Model implied vols at s=1 per (date, expiry, tenor). Read by `calibrate_expiry_scale.py`. |
+| `calibration_summary.json` | Global s* = 0.151, MAE before/after |
+| `vol_mae_sweep.png` | MAE vs diffusion-scale sweep |
 
----
-
-### Step 4 — Vol comparison figures
-
-```
-python Code/Pricing/make_vol_comparison.py
-```
-
-Requires `baseline_vols_s1.csv` from Step 3.
-Outputs to `Figures/Pricing/vol_comparison/`:
-- `fig_vol_heatmap_stable.png`, `fig_vol_heatmap_stable_cal.png`
-- `fig_vol_scatter_stable_cal.png`
-- `vol_summary_table.tex`
+> **Note:** The global scale s*=0.151 reduces average vol level but leaves the forward bias
+> intact. It is documented here for completeness but not used in the chapter.
 
 ---
 
-### Step 5 — Per-cell calibration and OOS validation
-
-```
-python Code/Pricing/calibrate_per_cell.py
-```
-
-Requires `baseline_vols_s1.csv` from Step 3.
-Outputs to `Figures/TrainingResults/dim4_stable_hscale/per_cell/`:
-- `tab_per_cell_scales.tex`, `tab_per_cell_mae.tex`
-- `fig_mae_train.png`, `fig_mae_oos.png`, `fig_scatter.png`
-
----
-
-### Step 6 — Expiry-level calibration  *(recommended calibration)*
+### `calibrate_expiry_scale.py`
+Fits one diffusion scale per expiry row (3 parameters: s_1Y, s_5Y, s_10Y) using
+pooled OLS on the training split.
 
 ```
 python Code/Pricing/calibrate_expiry_scale.py
 ```
 
-Requires `baseline_vols_s1.csv` from Step 3.
-Outputs to `Figures/TrainingResults/dim4_stable_hscale/expiry_scale/`:
-- `tab_expiry_comparison.tex`
-- `expiry_scales.json` — the three recommended scale factors
+**Requires:** `baseline_vols_s1.csv` from `calibrate_H_scale.py`.
+
+**Outputs** → `Figures/TrainingResults/dim4_stable_hscale/expiry_scale/`:
+
+| File | Content |
+|------|---------|
+| `expiry_scales.json` | **Key output.** `{"1": 0.129, "5": 0.133, "10": 0.141}` — read at runtime by `delta_diagnostic.py` |
+| `expiry_results.csv` | Per-(date, cell) vol errors at the expiry-level scales |
+| `expiry_summary.json` | Aggregate MAE / RMSE |
+| `tab_expiry_comparison.tex` | LaTeX comparison table |
+
+> **How the s\* values reach `Training_lambda_mpr.py`:**
+>
+> `calibrate_expiry_scale.py` writes the three scale factors to `expiry_scales.json`.
+> `delta_diagnostic.py` reads this JSON automatically at runtime (dynamic link).
+>
+> `Training_lambda_mpr.py` and `eval_lambda_mpr.py` have the values **hardcoded**:
+> ```python
+> EXPIRY_SCALES = {1: 0.129, 5: 0.133, 10: 0.141}
+> DEFAULT_SCALE = 0.135
+> ```
+> These were read from `expiry_scales.json` and manually copied into the training
+> script. If you re-run `calibrate_expiry_scale.py` and the values change, you must
+> update `EXPIRY_SCALES` in both `Training_lambda_mpr.py` and `eval_lambda_mpr.py`
+> before retraining.
 
 ---
 
-### Step 7 — Diagnostic experiments (optional)
-
-These confirm that the ~72–75 bp OOS floor is structural and cannot be closed
-by more sophisticated calibration:
+### `delta_diagnostic.py`
+Produces the §2.2 (forward bias) tables and figures.
 
 ```
-python Code/Pricing/calibrate_rolling.py     # rolling-window OLS
-python Code/Pricing/calibrate_improved.py    # ridge CV + adaptive z_t scale
-python Code/Pricing/calibrate_straddle.py    # straddle forward-bias test
+python Code/Pricing/delta_diagnostic.py
 ```
 
-All three require `baseline_vols_s1.csv` from Step 3.
-`calibrate_rolling.py` also reads `per_cell/per_cell_scales.json` from Step 5.
+**Requires:** `expiry_scales.json` from `calibrate_expiry_scale.py`.
+
+Prices every EUR (date, expiry, tenor) triple at the calibrated expiry-level scales,
+using both payer and receiver to extract the forward bias from put–call parity.
+
+**Outputs** → `Figures/TrainingResults/dim4_stable_hscale/delta_diagnostic/`:
+
+| File | Content |
+|------|---------|
+| `delta_results.csv` | Per-(date, expiry, tenor): sigma_pay, sigma_rec, sigma_str, forward_bias_bp, d_eff, p_eff |
+| `tab_delta_diagnostic.tex` | LaTeX table of per-cell forward bias and p_eff (included in §2.2 via `\input`) |
+| `fig_forward_bias.png` | Heatmap of mean forward bias per cell |
+| `fig_exercise_prob.png` | Heatmap of p_eff per cell (included in §2.2 via `\includegraphics`) |
 
 ---
 
-## Key result summary
+### `Training_lambda_mpr.py`
+Trains the 16-parameter Lambda market-price-of-risk matrix for §3.
 
-| Calibration | Params | OOS MAE (bp) |
-|-------------|--------|-------------|
-| Global OLS | 1 | 91 |
-| Expiry-level OLS | 3 | 72 |
-| Per-cell OLS | 9 | 73 |
-| Daily recalibration (lower bound) | — | 74 |
-| Rolling window (12 M) | — | 98 |
-| Adaptive z_t scale | 45 | 102 |
+```
+python Code/Pricing/Training_lambda_mpr.py
+```
 
-The 72–74 bp floor is structural: `K` was identified from yield-curve
-reconstruction, not from the martingale condition E^{Q_A}[S_T] = F_0.
-The straddle experiment confirms the forward bias is sign-inconsistent
-across cells (+239 bp for 5Y×1Y, −401 bp for 1Y×5Y), ruling out a simple
-directional drift correction.
+**Requires:**
+- Pretrained stable checkpoint: `Figures/TrainingResults/dim4_stable/ep5000/checkpoint_dim4_ep5000.pt`
+- `expiry_scales.json` values hardcoded as `EXPIRY_SCALES` (see note under `calibrate_expiry_scale.py`)
+
+**What it trains:** A single `4×4` matrix `Λ` such that
+```
+K^Q(z) = K^P(z) - L(z) @ Lambda @ z
+```
+where `K^P` (model.K), `H` (model.H), and `G` (decoder) are all **frozen**.
+`Lambda` is the only trainable object (16 parameters).
+
+The diffusion vol is controlled by the pre-calibrated s* values applied as
+`eps_scaled = eps * s*(expiry)` at each simulation step.
+
+**Outputs** → `Figures/TrainingResults/dim4_stable_lambda_mpr/ep1000/`:
+
+| File | Content |
+|------|---------|
+| `train_lambda_mpr_log_dim4_ep1000.csv` | Per-epoch: loss_price, loss_eig, loss_l2, path_finite_frac, recon_rmse_bps, lambda_min_KQ, Lambda_norm_fro |
+| `checkpoint_lambda_ep200.pt` | Checkpoint at epoch 200 (also 400, 600, 800) |
+| `checkpoint_lambda_ep1000.pt` | Final checkpoint. Contains `Lambda_matrix` (4×4 tensor) |
+| `lambda_mpr_loss_dim4_ep1000.png` | Training loss curve |
+| `run_status.json` | Compact summary of key metrics + Lambda matrix at final epoch |
+
+---
+
+### `eval_lambda_mpr.py`
+Post-training evaluation of the Lambda MPR model. Produces the §3 results figures and tables.
+
+```
+python Code/Pricing/eval_lambda_mpr.py
+```
+
+**Requires:**
+- Pretrained stable checkpoint (same as above)
+- Lambda checkpoints at `dim4_stable_lambda_mpr/ep1000/checkpoint_lambda_ep*.pt`
+- `expiry_scales.json` values hardcoded as `EXPIRY_SCALES` (same values as training)
+
+Prices the full EUR test set with the final (ep999) Lambda checkpoint and
+reports per-cell ATM vol errors across historical calendar dates.
+
+**Outputs** → `Figures/TrainingResults/dim4_stable_lambda_mpr/ep1000/eval/`:
+
+| File | Content | Used in thesis |
+|------|---------|----------------|
+| `tab_lambda_per_cell.tex` | Per-cell vol MAE/RMSE/bias | §3 via `\input` |
+| `fig_vol_surface.png` | 3×3 scatter: model vs market vol per cell | §3 via `\includegraphics` |
+| `fig_vol_error_timeseries.png` | 3×3 time-series: vol error (model−market) over calendar dates | §3 via `\includegraphics` |
+| `fig_forward_bias_timeseries.png` | Forward bias over calendar time per cell | §3 via `\includegraphics` |
+| `fig_vol_heatmap.png` | Heatmap of final vol MAE per cell | §3 (optional) |
+| `per_cell_final.csv` | Raw per-(date, expiry, tenor) results | — |
+
+---
+
+## Full pipeline run order
+
+```
+# §2.1 — Decoder coverage diagnostics
+python Code/Pricing/pretraining_diagnostics.py
+
+# §2.2 — Forward bias (run steps 2a and 2b first to build the cache)
+python Code/Pricing/calibrate_H_scale.py       # 2a: build baseline_vols_s1.csv cache
+python Code/Pricing/calibrate_expiry_scale.py  # 2b: fit s*(1Y,5Y,10Y) → expiry_scales.json
+python Code/Pricing/delta_diagnostic.py        # 2c: forward bias analysis
+
+# §3 — Lambda MPR training and evaluation
+python Code/Pricing/Training_lambda_mpr.py     # ~4 hours on CPU; saves checkpoints every 200 epochs
+python Code/Pricing/eval_lambda_mpr.py         # ~1-2 hours on CPU; produces all §3 figures/tables
+```
+
+> **If calibrate_expiry_scale.py produces different s\* values than {0.129, 0.133, 0.141},**
+> update the `EXPIRY_SCALES` dict in both `Training_lambda_mpr.py` and
+> `eval_lambda_mpr.py` before running the Lambda training.
+
+---
+
+## Dependency graph
+
+```
+pretraining_diagnostics.py ─────────────────────────────► Figures/Pricing/
+                                                           (decoder, displacement, decomp)
+
+calibrate_H_scale.py ──► baseline_vols_s1.csv
+                                │
+                                ▼
+         calibrate_expiry_scale.py ──► expiry_scales.json ──► delta_diagnostic.py
+                                │                               │
+                                │ (values manually              ▼
+                                │  hardcoded ↓)       Figures/.../delta_diagnostic/
+                                ▼                      (forward bias tables + figures)
+             Training_lambda_mpr.py ──► checkpoint_lambda_ep*.pt
+                                               │
+                                               ▼
+                               eval_lambda_mpr.py ──► Figures/.../eval/
+                                                       (per-cell tables + figures)
+```
+
+---
+
+## Archive
+
+The `archive/` subfolder contains scripts from earlier experiments that are
+**no longer needed for the current chapter** but are preserved for reference:
+
+| File | What it was for |
+|------|-----------------|
+| `Training_joint.py` | First joint training attempt (shared K in ODE + simulation). Failed because K appears in the no-arbitrage bond-pricing ODE, causing pricing gradients to corrupt reconstruction (5 bp → 2 200 bp). |
+| `Training_joint_kq.py` | Separate K^Q experiment (K^P frozen, K^Q + H trained). Failed because H also enters the ODE through the diffusion covariance, degrading reconstruction to 66 bp. |
+| `calibrate_per_cell.py` | Per-cell OLS calibration (9 scale parameters). OOS MAE 73 bp — no improvement over expiry-level (72 bp) despite 3× more parameters. |
+| `calibrate_improved.py` | Ridge regression + adaptive z_t-conditioned scale. Ridge selected λ=0; adaptive scale OOS 102 bp. Both worse than fixed expiry-level. |
+| `calibrate_rolling.py` | Rolling-window OLS: refits per-cell scales using most recent W months. OOS ~98 bp. Confirms the floor is not a vol-regime problem. |
+| `calibrate_straddle.py` | Precursor to `delta_diagnostic.py`. Straddle-based forward-bias test using a single pricing function (not the full payer+receiver split). Superseded by `delta_diagnostic.py`. |
+| `calibrate_forward_adjusted.py` | Attempted to estimate and remove the forward bias analytically before pricing. Forward bias is sign-inconsistent across cells, making this infeasible. |
+| `make_greeks_table.py` | Analytic ATM Bachelier Greeks table (Δ, vega, Γ, Θ). Not included in the current chapter. |
+| `make_vol_comparison.py` | Vol comparison figures for baseline vs stable vs calibrated models. From the removed §4 (diffusion-scale calibration section). |

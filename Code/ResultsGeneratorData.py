@@ -32,9 +32,9 @@ CCY_ORDER = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
 EVENTS = {
     "GFC\n(15 Sep 2008)":       "2008-09-15",
-    "ECB QE\n(22 Jan 2015)":    "2015-01-22",
+    "QE\n(22 Jan 2015)":    "2015-01-22",
     "COVID\n(1 Mar 2020)":      "2020-03-01",
-    "Rate hikes\n(1 Mar 2022)": "2022-03-01",
+    "Inflation\n(1 Mar 2022)": "2022-03-01",
 }
 
 # ── apply paper theme ──────────────────────────────────────────────────────────
@@ -136,6 +136,12 @@ ax_curves.set_xticks(tenor_cols)
 ax_curves.set_xticklabels([str(int(t)) for t in tenor_cols], fontsize=8)
 
 fig.tight_layout()
+fig.legend(
+    *ax_curves.get_legend_handles_labels(),
+    loc="lower center", bbox_to_anchor=(0.5, -0.02),
+    ncol=9, frameon=False, fontsize=8,
+)
+fig.subplots_adjust(bottom=0.14)
 save_fig(fig, "D2a_swap_curves")
 
 # ── D2b: 10Y swap rate time series ───────────────────────────────────────────
@@ -171,6 +177,12 @@ for label, date_str in EVENTS.items():
 ax_10y.set_ylabel("10Y swap rate", fontsize=10)
 
 fig.tight_layout()
+fig.legend(
+    *ax_10y.get_legend_handles_labels(),
+    loc="lower center", bbox_to_anchor=(0.5, -0.02),
+    ncol=9, frameon=False, fontsize=8,
+)
+fig.subplots_adjust(bottom=0.12)
 save_fig(fig, "D2b_10y_timeseries")
 
 print("\nAll data figures saved.")

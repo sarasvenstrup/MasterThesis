@@ -1,0 +1,23 @@
+{
+  "version": "lambda_v2",
+  "fixes": [
+    "correct_fwd_strike",
+    "variance_vol_loss",
+    "trainable_sigma_scale",
+    "lambda_init_cancel_kp"
+  ],
+  "seed": 0,
+  "latent_dim": 4,
+  "variant": "stable",
+  "epochs": 1000,
+  "lr": 0.0005,
+  "lambda_vol": 1.0,
+  "lambda_drift": 0.5,
+  "lambda_eig": 0.0,
+  "lambda_l2": 0.0001,
+  "eig_min": 0.05,
+  "n_swaptions_per_batch": 8,
+  "n_paths_pricing": 512,
+  "dt_pricing": 0.16666666666666666,
+  "n_trainable_params": 20
+}

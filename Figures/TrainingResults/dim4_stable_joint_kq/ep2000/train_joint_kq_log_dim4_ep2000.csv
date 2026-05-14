@@ -1,1 +1,0 @@
-epoch,time_total_sec,time_interval_sec,loss_price,loss_eig,swaption_priced_frac,path_finite_frac,recon_rmse_bps,nan_batches,gnorm_KQ,gnorm_H,lr_KQ,lr_H,lambda_min_KQ,rmse_bps_AUD,rmse_bps_CAD,rmse_bps_DKK,rmse_bps_EUR,rmse_bps_JPY,rmse_bps_NOK,rmse_bps_SEK,rmse_bps_GBP,rmse_bps_USD

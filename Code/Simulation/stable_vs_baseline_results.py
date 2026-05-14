@@ -417,8 +417,8 @@ def main():
     fig, axes = plt.subplots(1, LATENT_DIM, figsize=(5*LATENT_DIM, 4), squeeze=False)
     for d in range(LATENT_DIM):
         ax = axes[0, d]
-        ax.hist(sig_train_base[:, d], bins=60, density=True, alpha=0.5,  color=C_BASE, label="Baseline (train)")
-        ax.hist(sig_train_stab[:, d], bins=60, density=True, alpha=0.5,  color=C_STAB, label="Stable (train)")
+        ax.hist(sig_train_base[:, d], bins=60, density=True, alpha=0.5,  color=C_BASE, edgecolor=C_BASE, linewidth=0.3, label="Baseline (train)")
+        ax.hist(sig_train_stab[:, d], bins=60, density=True, alpha=0.5,  color=C_STAB, edgecolor=C_STAB, linewidth=0.3, label="Stable (train)")
         ax.hist(sig_extra_base[:, d], bins=60, density=True, alpha=0.25, color=C_BASE,
                 histtype="step", linewidth=1.5, linestyle="--", label="Baseline (expanded)")
         ax.hist(sig_extra_stab[:, d], bins=60, density=True, alpha=0.25, color=C_STAB,
@@ -428,10 +428,44 @@ def main():
                        label=f"$\\sigma_{{\\min}}={model_stab.H.sigma_min}$")
             ax.axvline(model_stab.H.sigma_max, color=C_GREY, linewidth=1, linestyle=":",
                        label=f"$\\sigma_{{\\max}}={model_stab.H.sigma_max}$")
-        ax.set_xlabel(f"$\\sigma_{{{d+1}}}$"); ax.set_ylabel("Density")
-        ax.legend(fontsize=7, frameon=False); ax.grid(True, alpha=0.3)
+        ax.set_xlabel(f"$\\sigma_{{{d+1}}}$", fontsize=10)
+        ax.set_ylabel("Density", fontsize=10)
+        ax.grid(True, alpha=0.3)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
+               ncol=len(labels), frameon=False, fontsize=9)
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.18)
     p = os.path.join(OUT_DIR, "fig_sigma_bounds.png")
+    fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
+    print(f"  Saved {p}")
+
+    # Same figure but sigma_2 x-axis clipped to [0, 1.5]
+    fig, axes = plt.subplots(1, LATENT_DIM, figsize=(5*LATENT_DIM, 4), squeeze=False)
+    for d in range(LATENT_DIM):
+        ax = axes[0, d]
+        ax.hist(sig_train_base[:, d], bins=60, density=True, alpha=0.5,  color=C_BASE, edgecolor=C_BASE, linewidth=0.3, label="Baseline (train)")
+        ax.hist(sig_train_stab[:, d], bins=60, density=True, alpha=0.5,  color=C_STAB, edgecolor=C_STAB, linewidth=0.3, label="Stable (train)")
+        ax.hist(sig_extra_base[:, d], bins=60, density=True, alpha=0.25, color=C_BASE,
+                histtype="step", linewidth=1.5, linestyle="--", label="Baseline (expanded)")
+        ax.hist(sig_extra_stab[:, d], bins=60, density=True, alpha=0.25, color=C_STAB,
+                histtype="step", linewidth=1.5, linestyle="--", label="Stable (expanded)")
+        if hasattr(model_stab.H, "sigma_min"):
+            ax.axvline(model_stab.H.sigma_min, color=C_GREY, linewidth=1, linestyle=":",
+                       label=f"$\\sigma_{{\\min}}={model_stab.H.sigma_min}$")
+            ax.axvline(model_stab.H.sigma_max, color=C_GREY, linewidth=1, linestyle=":",
+                       label=f"$\\sigma_{{\\max}}={model_stab.H.sigma_max}$")
+        if d == 1:
+            ax.set_xlim(right=1.5)
+        ax.set_xlabel(f"$\\sigma_{{{d+1}}}$", fontsize=10)
+        ax.set_ylabel("Density", fontsize=10)
+        ax.grid(True, alpha=0.3)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
+               ncol=len(labels), frameon=False, fontsize=9)
+    fig.tight_layout()
+    fig.subplots_adjust(bottom=0.18)
+    p = os.path.join(OUT_DIR, "fig_sigma_bounds_clipped.png")
     fig.savefig(p, dpi=300, bbox_inches="tight"); plt.close(fig)
     print(f"  Saved {p}")
 
@@ -811,9 +845,9 @@ def main():
         DIM_COLORS   = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
         EVENTS       = {
             "GFC\n(15 Sep 2008)":       "2008-09-15",
-            "ECB QE\n(22 Jan 2015)":    "2015-01-22",
+            "QE\n(22 Jan 2015)":    "2015-01-22",
             "COVID\n(1 Mar 2020)":      "2020-03-01",
-            "Rate hikes\n(1 Mar 2022)": "2022-03-01",
+            "Inflation\n(1 Mar 2022)": "2022-03-01",
         }
 
         def _load_roll(dim, variant):
