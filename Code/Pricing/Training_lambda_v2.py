@@ -1,26 +1,38 @@
-# ==================== Lambda MPR v2 Training ====================
+# ==================== Lambda Pricing Adjustment Training ====================
 """
-Clean Lambda MPR training with three key fixes over v1:
+Swaption pricing calibration on top of a frozen pretrained swap-curve model.
 
-  1. CORRECT STRIKE: Use forward swap rate F_0 = (P(0,exp) - P(0,exp+ten)) / A_fwd
-     instead of the spot swap rate. This puts options ATM from the start.
+The pretrained encoder-decoder reconstructs swap curves but does not, by
+itself, identify the option-implied risk-neutral distribution needed for
+swaption pricing.  We therefore introduce a low-dimensional pricing adjustment
+to the latent dynamics and calibrate it to the market swaption vol surface.
 
-  2. VARIANCE-BASED VOL LOSS: Match std^A(F_T)/sqrt(T) to market vol directly.
-     Avoids gradient vanishing when paths are OTM (which killed v1 training).
+Adjusted pricing dynamics:
+    K_price(z) = K_base(z) + L_base(z) @ Lambda @ z
 
-  3. ANISOTROPIC DIFFUSION SCALE: Per-dimension log_sigma_vec (d-vector) replaces
-     scalar log_sigma_scale.  Each z-dimension has its own vol scale, so the model
-     can fit the *shape* of the swaption vol surface, not just the overall level.
+where Lambda is a trainable d×d matrix.  Lambda can be interpreted as a
+market-price-of-risk-type drift correction.  A per-dimension diffusion scale
+sigma_vec is introduced as a parsimonious calibration parameter that allows
+the model-implied distribution to match the level and shape of market implied
+swaption volatilities.  It is not a pure Girsanov term.
 
-Two decoupled losses:
-  loss_vol   : (sigma_mod - sigma_mkt)^2  -- trains sigma_scale
-  loss_drift : (E^A[F_T] - F_0)^2        -- trains Lambda
+Pricing is done under the money-market risk-neutral formula:
+    V_0 = E^Q[ D_T * A_T * (F_T - K)^+ ]
 
-Lambda initialised to zero; base Q-dynamics (K) active from epoch 0.
+The decoder is kept frozen; the adjusted dynamics and the decoded bond prices
+are therefore not fully internally consistent (a fully consistent version would
+feed the adjusted dynamics into the no-arbitrage ODE decoder).
 
-Trainable parameters (17 total):
-  Lambda          4x4  (16)   K^{Q^A} = K(z) + L(z) @ Lambda @ z
-  log_sigma_vec    (d)         per-dim diffusion scaling (init=-1.8 -> scale≈0.165 per dim)
+Two losses:
+  loss_vol  : (sigma_str - sigma_mkt)^2   straddle-implied ATM normal vol
+              sigma_str = (V_pay + V_rec)/2 * sqrt(2*pi) / (A_0 * sqrt(T))
+  loss_bias : ((V_pay - V_rec) / A_0)^2   ATM payer-receiver parity penalty
+
+Lambda initialised to zero; base dynamics (K) active from epoch 0.
+
+Trainable parameters (20 total):
+  Lambda        d×d  (16)   pricing-dynamics drift correction
+  log_sigma_vec  (d)  (4)   per-dim diffusion scale (init=-1.8 → scale≈0.165)
 
 Output: Figures/TrainingResults/dim4_lambda_v2/ep{EPOCHS}/
 """
@@ -107,9 +119,9 @@ PRETRAIN_CKPT = os.path.join(
 )
 
 # Loss weights
-LAMBDA_VOL    = 1.0    # V_pay-based ATM vol MSE
-LAMBDA_DRIFT  = 0.5    # mild drift regulariser: E^A[F_T] ≈ F_0
-LAMBDA_EIG    = 0.0    # disabled: eig floor not meaningful for K^Q = -L@Lambda@z
+LAMBDA_VOL    = 1.0    # straddle-implied ATM vol MSE
+LAMBDA_BIAS   = 0.5    # ATM payer-receiver parity penalty: (V_pay - V_rec) / A_0 ≈ 0
+LAMBDA_EIG    = 0.0    # disabled
 LAMBDA_L2     = 1e-4   # L2 on Lambda entries
 EIG_MIN       = 0.05
 
@@ -131,46 +143,60 @@ os.makedirs(FIGURES_DIR, exist_ok=True)
 
 # ── module ─────────────────────────────────────────────────────────────────────
 
-class LambdaMPR_v2(nn.Module):
+class LambdaPricingAdjustment(nn.Module):
     """
-    Pricing-measure drift:  K^{Q^A}(z) = K(z) + L(z) @ Lambda @ z
+    Low-dimensional pricing adjustment for swaption calibration.
 
-    Per Poulsen et al. (2025), z is defined under the risk-neutral measure Q:
-    the base model's K network is already K^Q, calibrated via the no-arbitrage
-    ODE system so that bond prices are Q-martingales.
+    The pretrained encoder-decoder is fitted to swap-curve reconstruction and
+    therefore does not, by itself, identify the option-implied risk-neutral
+    distribution needed for swaption pricing.
 
-    Lambda parameterises the Q -> Q^A (annuity measure) market price of risk:
-        lambda(z) = Lambda @ z   (linear Girsanov kernel)
+    We introduce a trainable drift correction
 
-    so the full drift under Q^A is K^Q(z) + L(z) @ Lambda @ z.
+        K_price(z) = K_base(z) + L_base(z) @ Lambda @ z
 
-    At Lambda = 0 the simulation runs under the base Q-dynamics; the forward
-    bias is then only the convexity adjustment (~50-200 bp), not the full
-    risk-premium offset seen when K is excluded entirely.
+    and a per-dimension diffusion scale sigma_vec.  The adjusted dynamics are
+    used for Monte Carlo pricing under the money-market risk-neutral formula
 
-    Trainable: Lambda (d×d) + log_sigma_vec (d-vector, anisotropic diffusion scale).
-    K and H are frozen (from pre-trained base model).
+        V_0 = E^Q[ D_T * A_T * payoff(F_T) ]
+
+    Lambda can be interpreted as a market-price-of-risk-type drift correction.
+    The diffusion scale sigma_vec is a parsimonious pricing-volatility
+    calibration parameter; it is not a pure Girsanov measure-change term.
+
+    The decoder is kept frozen, so this should be interpreted as a pricing
+    adjustment on top of the pretrained state-to-curve map.  A fully consistent
+    version would also feed the adjusted dynamics into the no-arbitrage ODE
+    decoder.
+
+    Trainable: Lambda (d×d) + log_sigma_vec (d-vector).
+    K_base and H are frozen (from the pretrained base model).
     """
 
     def __init__(self, kp_module, h_module, latent_dim):
         super().__init__()
-        self.kp         = kp_module   # base Q-drift  K(z) — frozen
-        self.h          = h_module    # diffusion H(z)      — frozen
+        self.kp         = kp_module   # base drift  K_base(z) — frozen
+        self.h          = h_module    # diffusion   H(z)      — frozen
         self.latent_dim = latent_dim
 
         self.Lambda      = nn.Parameter(torch.zeros(latent_dim, latent_dim))
-        # log_sigma_vec: per-dimension diffusion scale (replaces scalar log_sigma_scale).
+        # log_sigma_vec: per-dimension diffusion scale.
         # Each z-dimension gets its own scale, letting the model fit the *shape*
         # of the swaption vol surface rather than just the overall level.
-        # Init exp(-1.8) ~ 0.165 per dim: base Q-diffusion at scale=1 is ~6x market vol.
+        # Init exp(-1.8) ~ 0.165 per dim: base diffusion at scale=1 is ~6x market vol.
         self.log_sigma_vec = nn.Parameter(torch.full((latent_dim,), -1.8))
 
     def forward(self, z):
-        """K^{Q^A}(z) = K(z) + L(z) @ Lambda @ z"""
-        with torch.no_grad():
-            k_base       = self.kp(z)                                         # (batch, d)
-            sigmas, rhos = self.h(z)
-            L            = L_from_sigmas_rhos(sigmas, rhos, validate=False)   # (batch, d, d)
+        """K_price(z) = K_base(z) + L_base(z) @ Lambda @ z
+
+        Base network parameters are frozen (requires_grad=False at model load),
+        but we do NOT wrap in torch.no_grad() so that autograd can differentiate
+        K_base(z) and L_base(z) with respect to z.  This gives correct pathwise
+        gradients for Lambda and sigma_vec through the simulated latent states.
+        """
+        k_base       = self.kp(z)                                         # (batch, d)
+        sigmas, rhos = self.h(z)
+        L            = L_from_sigmas_rhos(sigmas, rhos, validate=False)   # (batch, d, d)
         lam = torch.matmul(self.Lambda, z.unsqueeze(-1)).squeeze(-1)          # (batch, d)
         return k_base + torch.einsum('bij,bj->bi', L, lam)
 
@@ -246,18 +272,18 @@ def compute_pricing_loss_v2(
     return_diagnostics=False,
 ):
     """
-    V_pay-based vol loss with correct forward-rate ATM strike.
+    Straddle-implied vol loss + ATM parity bias penalty.
 
-    sigma_mod = V_pay * sqrt(2*pi) / (A_0 * sqrt(expiry)) * 1e4   [bp/yr]
-    loss_vol  = ((sigma_mod - sigma_mkt) / 100)^2
+    Pricing uses the money-market risk-neutral formula:
+        V_pay = E^Q[ D_T * A_T * (F_T - F_0)^+ ]
+        V_rec = E^Q[ D_T * A_T * (F_0 - F_T)^+ ]
 
-    This is the Bachelier ATM vol implied directly from the payer price.
-    It naturally penalises both wrong vol level AND any forward bias
-    (a drifted distribution inflates V_pay), so Lambda and sigma_scale
-    are trained jointly on the quantity we actually care about.
+    Straddle-implied ATM normal vol (separates distribution width from forward bias):
+        sigma_str = (V_pay + V_rec)/2 * sqrt(2*pi) / (A_0 * sqrt(T))  [bp/yr]
+        loss_vol  = ((sigma_str - sigma_mkt) / 100)^2
 
-    A mild drift regulariser is kept to prevent explosive forward bias:
-    loss_drift = ((E^A[F_T] - F_0) * 1e4 / 100)^2   (weight LAMBDA_DRIFT)
+    ATM parity / centering penalty (enforces V_pay ≈ V_rec at the ATM strike):
+        loss_bias = ((V_pay - V_rec) / A_0 * 1e4 / 100)^2
     """
     if len(df_vol) == 0 or n_swaptions == 0:
         zero = torch.tensor(0.0, device=device, dtype=dtype)
@@ -265,8 +291,8 @@ def compute_pricing_loss_v2(
 
     sample = df_vol.sample(n=min(n_swaptions, len(df_vol)))
 
-    total_vol   = torch.zeros(1, device=device, dtype=dtype)
-    total_drift = torch.zeros(1, device=device, dtype=dtype)
+    total_vol  = torch.zeros(1, device=device, dtype=dtype)
+    total_bias = torch.zeros(1, device=device, dtype=dtype)
     n_valid     = 0
     n_attempted = 0
     diagnostics = []
@@ -353,61 +379,62 @@ def compute_pricing_loss_v2(
 
             F_T, A_T, D_keep = F_T[fa_ok], A_T[fa_ok], D_keep[fa_ok]
 
-            # ── V_PAY-BASED VOL (Bachelier ATM implied vol) ───────────────
+            # ── STRADDLE-IMPLIED VOL (separates width from forward bias) ─
+            # Pricing under Q: V = E^Q[ D_T * A_T * payoff ]
             V_pay = (D_keep * A_T * torch.relu(F_T - F_0)).mean()
-            if not torch.isfinite(V_pay) or float(V_pay.detach()) < 0:
+            V_rec = (D_keep * A_T * torch.relu(F_0 - F_T)).mean()
+            if not (torch.isfinite(V_pay) and torch.isfinite(V_rec)
+                    and float(V_pay.detach()) >= 0 and float(V_rec.detach()) >= 0):
                 continue
 
             sqrt_2pi     = math.sqrt(2 * math.pi)
-            sigma_mod_bp = V_pay * sqrt_2pi / (A_0 * math.sqrt(expiry)) * 1e4
+            V_str        = (V_pay + V_rec) * 0.5
+            sigma_str_bp = V_str * sqrt_2pi / (A_0 * math.sqrt(expiry)) * 1e4
             # ─────────────────────────────────────────────────────────────
 
-            loss_vol_ij = ((sigma_mod_bp - sigma_mkt_bp) / 100.0).pow(2)
+            loss_vol_ij = ((sigma_str_bp - sigma_mkt_bp) / 100.0).pow(2)
             if not torch.isfinite(loss_vol_ij) or float(loss_vol_ij.detach()) > LOSS_SKIP_THRESH:
                 continue
 
-            # ── DRIFT REGULARISER: mild penalty on E^A[F_T] ≠ F_0 ───────
-            w         = D_keep * A_T                         # D_keep already detached from sim; A_T grad flows to Lambda
-            w_norm    = w / w.sum().clamp(min=1e-10)
-            F_bar     = (w_norm * F_T).sum()
-            fwd_bias_bp = (F_bar - F_0) * 1e4
-            loss_drift_ij = (fwd_bias_bp / 100.0).pow(2)
-            if not torch.isfinite(loss_drift_ij):
+            # ── PARITY BIAS PENALTY: ATM payer ≈ receiver ────────────────
+            # (V_pay - V_rec) / A_0 ≈ 0 enforces correct forward centering
+            fwd_bias_bp   = (V_pay - V_rec) / A_0 * 1e4
+            loss_bias_ij  = (fwd_bias_bp / 100.0).pow(2)
+            if not torch.isfinite(loss_bias_ij):
                 continue
             # ─────────────────────────────────────────────────────────────
 
-            total_vol   = total_vol   + loss_vol_ij
-            total_drift = total_drift + loss_drift_ij
-            n_valid    += 1
+            total_vol  = total_vol  + loss_vol_ij
+            total_bias = total_bias + loss_bias_ij
+            n_valid   += 1
 
             if return_diagnostics:
                 # ── Q-martingale checks (bond pricing consistency) ────────
-                # Under Q: E[D_T] = P(0,T)  and  E[D_T * A_T] = A_0^fwd
-                # These verify that the simulation is consistent with the
-                # no-arbitrage bond price conditions from the base model.
+                # Under Q: E[D_T] ≈ P(0,T)  and  E[D_T * A_T] ≈ A_0
+                # Deviations indicate inconsistency between simulated dynamics
+                # and the frozen decoder's no-arbitrage bond prices.
                 with torch.no_grad():
                     P0_T      = float(P0[int(round(expiry))].item())    # P(0, T)
-                    E_DT      = float(D_keep.mean().item())              # E[D_T]
-                    E_DT_AT   = float((D_keep * A_T).mean().item())      # E[D_T * A_T]
-                    dt_err_bp = (E_DT - P0_T) * 1e4                     # should be ~0
-                    ann_err   = (E_DT_AT - A_0) / A_0                   # should be ~0 (relative)
+                    E_DT      = float(D_keep.mean().item())              # E^Q[D_T]
+                    E_DT_AT   = float((D_keep * A_T).mean().item())      # E^Q[D_T * A_T]
+                    dt_err_bp = (E_DT - P0_T) * 1e4                     # target 0
+                    ann_err   = (E_DT_AT - A_0) / A_0                   # target 0 (relative)
 
                 diagnostics.append({
                     "date":     date.date(),
                     "exp":      expiry,
                     "ten":      tenor,
                     "mkt_bp":   round(sigma_mkt_bp, 1),
-                    "mod_bp":   round(float(sigma_mod_bp.detach()), 1),
-                    "err_bp":   round(float(sigma_mod_bp.detach()) - sigma_mkt_bp, 1),
-                    "bias_bp":  round(float(fwd_bias_bp.detach()), 1),
+                    "mod_bp":   round(float(sigma_str_bp.detach()), 1),   # straddle vol
+                    "err_bp":   round(float(sigma_str_bp.detach()) - sigma_mkt_bp, 1),
+                    "bias_bp":  round(float(fwd_bias_bp.detach()), 1),    # (V_pay-V_rec)/A_0 in bp
                     "F0":       round(F_0 * 1e4, 1),
-                    "Fbar":     round(float(F_bar.detach()) * 1e4, 1),
                     "scale":    [round(v, 4) for v in lm.sigma_vec.detach().cpu().tolist()],
                     # Q-martingale checks
                     "E_DT":     round(E_DT, 5),
                     "P0T":      round(P0_T, 5),
-                    "DT_err_bp":round(dt_err_bp, 1),   # E[D_T] - P(0,T) in bp; target 0
-                    "ann_err":  round(ann_err * 100, 2), # (E[D_T*A_T]-A_0)/A_0 in %; target 0
+                    "DT_err_bp":round(dt_err_bp, 1),    # E^Q[D_T] - P(0,T) in bp; target 0
+                    "ann_err":  round(ann_err * 100, 2), # (E^Q[D_T*A_T]-A_0)/A_0 in %; target 0
                 })
 
         except Exception:
@@ -416,7 +443,7 @@ def compute_pricing_loss_v2(
     mean_pfrac = float(np.mean(path_fracs)) if path_fracs else 0.0
     zero = torch.tensor(0.0, device=device, dtype=dtype)
     if n_valid > 0:
-        return (total_vol / n_valid, total_drift / n_valid,
+        return (total_vol / n_valid, total_bias / n_valid,
                 diagnostics, n_attempted, n_valid, mean_pfrac)
     return zero, zero, diagnostics, n_attempted, 0, mean_pfrac
 
@@ -425,10 +452,10 @@ def compute_pricing_loss_v2(
 
 def init_lambda_zero(latent_dim, device, dtype):
     """
-    Lambda = 0  →  K^{Q^A} = K(z)  →  pure Q-dynamics at epoch 0.
-    Bond martingale conditions E[D_T]=P(0,T) and E[D_T*A_T]=A_0 should hold
-    approximately. Training adjusts Lambda to correct the Q -> Q^A tilt needed
-    for swaption vol calibration.
+    Lambda = 0  →  K_price(z) = K_base(z)  →  base dynamics at epoch 0.
+    Bond martingale conditions E^Q[D_T] ≈ P(0,T) and E^Q[D_T*A_T] ≈ A_0
+    should hold approximately.  Training adjusts Lambda to match the swaption
+    vol surface via the pricing-dynamics correction.
     """
     return torch.zeros(latent_dim, latent_dim, device=device, dtype=dtype)
 
@@ -456,21 +483,21 @@ for p in model.parameters():
     p.requires_grad_(False)
 print("Base model loaded and frozen.")
 
-lm = LambdaMPR_v2(model.K, model.H, LATENT_DIM).to(device)
+lm = LambdaPricingAdjustment(model.K, model.H, LATENT_DIM).to(device)
 
-# Lambda = 0: start at base Q-dynamics (K already calibrated under Q by ODE system)
-print("Lambda initialised to zero (base Q-dynamics active from epoch 0).")
+# Lambda = 0: start at base dynamics (pricing correction inactive at epoch 0)
+print("Lambda initialised to zero (base dynamics active from epoch 0).")
 print(f"  ||Lambda_init||_F = {lm.Lambda.norm():.4f}")
 sv_init = lm.sigma_vec.detach().cpu().numpy()
 print(f"  sigma_vec init    = {sv_init.round(4)}  (mean={sv_init.mean():.4f})")
 
 n_params = sum(p.numel() for p in lm.parameters() if p.requires_grad)
-print(f"LambdaMPR_v2: {n_params} trainable params  (Lambda 16 + log_sigma_vec {LATENT_DIM})")
+print(f"LambdaPricingAdjustment: {n_params} trainable params  (Lambda {LATENT_DIM**2} + log_sigma_vec {LATENT_DIM})")
 
 model.train()
 
 # Separate param groups: sigma_vec gets 20x higher LR so its gradient (from vol loss)
-# is not drowned out by Lambda's gradient (from drift loss, which is ~10x larger).
+# is not drowned out by Lambda's gradient (from bias loss, which can be ~10x larger).
 # Separate clip_grad_norm_ calls below prevent joint clipping from silencing sigma_vec.
 LR_SCALE_MULT = 20.0
 optim = torch.optim.Adam([
@@ -512,7 +539,7 @@ ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 csv_path  = os.path.join(FIGURES_DIR, f"train_lambda_v2_log_dim{LATENT_DIM}_ep{EPOCHS}.csv")
 csv_cols  = (
     ["epoch", "time_total_sec", "time_interval_sec",
-     "loss_vol", "loss_drift", "loss_eig", "loss_l2",
+     "loss_vol", "loss_bias", "loss_eig", "loss_l2",
      "swaption_priced_frac", "path_finite_frac",
      "recon_rmse_bps", "nan_batches",
      "gnorm", "gnorm_scale", "lr",
@@ -526,15 +553,15 @@ print("Logging to:", csv_path)
 
 run_config = {
     "version":              "lambda_v2",
-    "fixes":                ["correct_fwd_strike", "variance_vol_loss", "trainable_sigma_scale",
-                             "lambda_init_cancel_kp"],
+    "fixes":                ["correct_fwd_strike", "straddle_vol_loss", "anisotropic_sigma_vec",
+                             "lambda_init_zero_base_dynamics", "q_consistent_pricing_formula"],
     "seed":                 SEED,
     "latent_dim":           LATENT_DIM,
     "variant":              config.VARIANT,
     "epochs":               EPOCHS,
     "lr":                   LR,
     "lambda_vol":           LAMBDA_VOL,
-    "lambda_drift":         LAMBDA_DRIFT,
+    "lambda_bias":          LAMBDA_BIAS,
     "lambda_eig":           LAMBDA_EIG,
     "lambda_l2":            LAMBDA_L2,
     "eig_min":              EIG_MIN,
@@ -549,7 +576,7 @@ with open(os.path.join(FIGURES_DIR, "run_config.json"), "w") as f:
 # ── training loop ──────────────────────────────────────────────────────────────
 
 hist = {k: [] for k in [
-    "vol", "drift", "eig", "l2",
+    "vol", "bias", "eig", "l2",
     "swp_priced", "path_finite",
     "lambda_min", "lambda_norm", "sigma_scale",
 ]}
@@ -558,23 +585,25 @@ t0         = time.perf_counter()
 t_last_log = t0
 
 print("\n" + "=" * 100)
-print("LAMBDA MPR v2 TRAINING")
+print("LAMBDA PRICING ADJUSTMENT TRAINING")
 print("  1. Correct ATM strike: forward swap rate F_0 = (P(0,exp)-P(0,exp+ten)) / A_fwd")
-print("  2. V_pay-based vol loss: sigma_mod = V_pay*sqrt(2pi)/(A_0*sqrt(T))*1e4")
-print("  3. Anisotropic sigma_vec (4-vector, init≈0.165/dim): fits vol *shape*, not just level")
-print("  4. K^{Q^A}(z) = K(z) + L(z)@Lambda@z  (K is Q-drift per Poulsen et al. 2025)")
-print("  5. Lambda init = 0 -> pure diffusion at epoch 0")
+print("  2. Straddle vol loss:  sigma_str = (V_pay+V_rec)/2 * sqrt(2pi)/(A_0*sqrt(T))")
+print("  3. Parity bias loss:   (V_pay - V_rec) / A_0 -> 0")
+print("  4. Anisotropic sigma_vec (d-vector, init≈0.165/dim): fits vol *shape*, not just level")
+print("  5. K_price(z) = K_base(z) + L_base(z)@Lambda@z  (pricing-dynamics correction)")
+print("  6. Pricing formula:    V_0 = E^Q[ D_T * A_T * payoff(F_T) ]")
+print("  7. Lambda init = 0 -> base dynamics at epoch 0")
 print("=" * 100)
-print(f"Trainable params: {n_params}  (Lambda 16 + log_sigma_vec {LATENT_DIM})")
+print(f"Trainable params: {n_params}  (Lambda {LATENT_DIM**2} + log_sigma_vec {LATENT_DIM})")
 print("=" * 100 + "\n")
 
 for epoch in range(EPOCHS):
     model.train()
     lm.train()
-    running_vol   = 0.0
-    running_drift = 0.0
-    running_eig   = 0.0
-    running_l2    = 0.0
+    running_vol  = 0.0
+    running_bias = 0.0
+    running_eig  = 0.0
+    running_l2   = 0.0
     n_batches     = 0
     nan_batches   = 0
     batch_diag    = []
@@ -586,7 +615,7 @@ for epoch in range(EPOCHS):
         print(f"\r  ep {epoch}  step {step+1}/{N_STEPS_PER_EPOCH} ...", end="", flush=True)
         optim.zero_grad(set_to_none=True)
 
-        loss_vol, loss_drift_raw, diag, n_att, n_pri, p_frac = compute_pricing_loss_v2(
+        loss_vol, loss_bias_raw, diag, n_att, n_pri, p_frac = compute_pricing_loss_v2(
             model=model, lm=lm,
             X_batch=X_tensor_ccy, meta_batch=meta_ccy,
             df_vol=df_vol, date_to_idx=date_to_idx,
@@ -616,11 +645,11 @@ for epoch in range(EPOCHS):
         # L2 regularisation on Lambda
         loss_l2 = LAMBDA_L2 * lm.Lambda.pow(2).sum()
 
-        # Drift penalty
-        loss_drift = LAMBDA_DRIFT * loss_drift_raw
+        # Parity bias penalty
+        loss_bias = LAMBDA_BIAS * loss_bias_raw
 
         loss_total = (LAMBDA_VOL  * loss_vol
-                      + loss_drift
+                      + loss_bias
                       + LAMBDA_EIG * loss_eig
                       + loss_l2)
 
@@ -645,19 +674,19 @@ for epoch in range(EPOCHS):
         torch.nn.utils.clip_grad_norm_([lm.log_sigma_vec], max_norm=2.0)
         optim.step()
 
-        running_vol   += float(loss_vol.detach().cpu())
-        running_drift += float(loss_drift_raw.detach().cpu())
-        running_eig   += float(loss_eig.detach().cpu())
-        running_l2    += float(loss_l2.detach().cpu())
+        running_vol  += float(loss_vol.detach().cpu())
+        running_bias += float(loss_bias_raw.detach().cpu())
+        running_eig  += float(loss_eig.detach().cpu())
+        running_l2   += float(loss_l2.detach().cpu())
         n_batches     += 1
 
     print("\r" + " " * 40 + "\r", end="", flush=True)
     scheduler.step()
 
-    ep_vol   = running_vol   / max(n_batches, 1)
-    ep_drift = running_drift / max(n_batches, 1)
-    ep_eig   = running_eig   / max(n_batches, 1)
-    ep_l2    = running_l2    / max(n_batches, 1)
+    ep_vol  = running_vol  / max(n_batches, 1)
+    ep_bias = running_bias / max(n_batches, 1)
+    ep_eig  = running_eig  / max(n_batches, 1)
+    ep_l2   = running_l2   / max(n_batches, 1)
     swp_priced  = ep_priced  / max(ep_attempted, 1)
     path_finite = float(np.mean(ep_pfracs)) if ep_pfracs else 0.0
 
@@ -671,7 +700,7 @@ for epoch in range(EPOCHS):
         except Exception:
             lambda_min_now = float('nan')
 
-    for k, v in [("vol", ep_vol), ("drift", ep_drift), ("eig", ep_eig), ("l2", ep_l2),
+    for k, v in [("vol", ep_vol), ("bias", ep_bias), ("eig", ep_eig), ("l2", ep_l2),
                  ("swp_priced", swp_priced), ("path_finite", path_finite),
                  ("lambda_min", lambda_min_now), ("lambda_norm", lambda_norm_fro),
                  ("sigma_scale", scale_now)]:   # sigma_scale stores mean of sigma_vec
@@ -707,7 +736,7 @@ for epoch in range(EPOCHS):
     row = {
         "epoch": epoch, "time_total_sec": round(t_now - t0, 1),
         "time_interval_sec": round(dt_ep, 3),
-        "loss_vol": ep_vol, "loss_drift": ep_drift,
+        "loss_vol": ep_vol, "loss_bias": ep_bias,
         "loss_eig": ep_eig, "loss_l2": ep_l2,
         "swaption_priced_frac": swp_priced, "path_finite_frac": path_finite,
         "recon_rmse_bps": float(avg_rmse_bps), "nan_batches": nan_batches,
@@ -728,7 +757,7 @@ for epoch in range(EPOCHS):
     # Console header
     if (epoch // max(LOG_EVERY, 1)) % HEADER_EVERY == 0:
         print(
-            f"\n{'ep':>5} {'vol':>10} {'drift':>9} {'eig':>9} {'l2':>8} "
+            f"\n{'ep':>5} {'vol':>10} {'bias':>9} {'eig':>9} {'l2':>8} "
             f"{'swp%':>5} {'pth%':>5} {'recon':>7} "
             f"{'|l|min':>7} {'||L||':>7} {'sv_mean':>7} {'sv_min':>6} {'sv_max':>6} "
             f"{'bias_bp':>8} {'gn_L':>9} {'gn_s':>7} {'lr':>8} {'t/ep':>6} {'ETA':>8}  diag"
@@ -749,7 +778,7 @@ for epoch in range(EPOCHS):
     sv_max = float(sigma_vec_now.max())
     print(
         f"{epoch:>5d} "
-        f"{ep_vol:>10.4e} {ep_drift:>9.3e} {ep_eig:>9.3e} {ep_l2:>8.4e} "
+        f"{ep_vol:>10.4e} {ep_bias:>9.3e} {ep_eig:>9.3e} {ep_l2:>8.4e} "
         f"{swp_priced*100:>4.0f}% {path_finite*100:>4.0f}% "
         f"{avg_rmse_bps:>7.2f} "
         f"{lambda_min_now:>7.4f} {lambda_norm_fro:>7.4f} "
@@ -791,7 +820,7 @@ torch.save({
 fig, axes = plt.subplots(4, 1, figsize=(9, 13), dpi=150)
 
 axes[0].semilogy(hist["vol"],   lw=1.0, color="darkorange", label="Vol loss (variance)")
-axes[0].semilogy(hist["drift"], lw=1.0, color="deeppink",   label="Drift loss (E^A[F_T]-F_0)")
+axes[0].semilogy(hist["bias"],  lw=1.0, color="deeppink",   label="Bias loss (V_pay-V_rec)/A_0")
 axes[0].semilogy(hist["eig"],   lw=1.0, color="seagreen",   label="Eig floor")
 axes[0].semilogy(hist["l2"],    lw=1.0, color="royalblue",  label="L2 Lambda")
 axes[0].set_title("Lambda v2: Loss Components"); axes[0].legend()
@@ -818,7 +847,7 @@ print("\n" + "=" * 90)
 print("LAMBDA v2 TRAINING COMPLETE")
 print("=" * 90)
 print(f"Final vol loss    : {hist['vol'][-1]:.6e}")
-print(f"Final drift loss  : {hist['drift'][-1]:.6e}  (implies ~{math.sqrt(hist['drift'][-1])*100:.0f} bp bias)")
+print(f"Final bias loss   : {hist['bias'][-1]:.6e}  (implies ~{math.sqrt(hist['bias'][-1])*100:.0f} bp parity gap)")
 print(f"Final sigma_vec   : {lm.sigma_vec.detach().cpu().numpy().round(4)}  (mean={hist['sigma_scale'][-1]:.4f})")
 print(f"Final ||Lambda||_F: {hist['lambda_norm'][-1]:.4f}")
 print(f"Lambda matrix:\n{lm.Lambda.detach().cpu().numpy()}")

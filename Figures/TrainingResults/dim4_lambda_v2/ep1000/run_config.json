@@ -2,9 +2,10 @@
   "version": "lambda_v2",
   "fixes": [
     "correct_fwd_strike",
-    "variance_vol_loss",
-    "trainable_sigma_scale",
-    "lambda_init_cancel_kp"
+    "straddle_vol_loss",
+    "anisotropic_sigma_vec",
+    "lambda_init_zero_base_dynamics",
+    "q_consistent_pricing_formula"
   ],
   "seed": 0,
   "latent_dim": 4,
@@ -12,7 +13,7 @@
   "epochs": 1000,
   "lr": 0.0005,
   "lambda_vol": 1.0,
-  "lambda_drift": 0.5,
+  "lambda_bias": 0.5,
   "lambda_eig": 0.0,
   "lambda_l2": 0.0001,
   "eig_min": 0.05,
