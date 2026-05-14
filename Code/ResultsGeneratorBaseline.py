@@ -64,9 +64,9 @@ ALL_DIMS_PARAM   = [1, 2, 3, 4]
 # Key market event dates for annotation
 EVENTS = {
     "GFC\n(15 Sep 2008)":      "2008-09-15",
-    "ECB QE\n(22 Jan 2015)":   "2015-01-22",
+    "QE\n(22 Jan 2015)":   "2015-01-22",
     "COVID\n(1 Mar 2020)":     "2020-03-01",
-    "Rate hikes\n(1 Mar 2022)": "2022-03-01",
+    "Inflation\n(1 Mar 2022)": "2022-03-01",
 }
 
 # ── apply paper theme ──────────────────────────────────────────────────────────
@@ -261,12 +261,12 @@ for dim in [1, 2, 3, 4]:
 
 for ax in (ax_full, ax_zoom):
     ax.axvline(3500, color="black", linewidth=1.0, linestyle="--")
-    ax.set_xlabel("Epoch", fontsize=10)
-ax_full.set_ylabel("Average Training RMSE (bps)", fontsize=10)
+    ax.set_xlabel("Epoch", fontsize=12)
+ax_full.set_ylabel("Average Training RMSE (bps)", fontsize=12)
 
 ax_zoom.set_xlim(1000, TRAIN_LOG_EPOCHS)
 ax_zoom.set_ylim(0, 20)
-ax_zoom.legend(fontsize=10, frameon=False)
+ax_zoom.legend(fontsize=12, frameon=False)
 
 fig.tight_layout()
 save_fig(fig, "Q1e_training_loss_curves")
@@ -451,13 +451,14 @@ for ax_i, _dim in enumerate([2, 3, 4]):
     ax.axvline(np.percentile(resid_flat, 95), color="0.4", linewidth=1.0, linestyle=":")
     ax.set_xlim(_x_min, _x_max)
     ax.set_ylim(0, _y_max * 1.08)
-    ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11, fontweight="bold")
-    ax.set_xlabel("Residual (bps)")
-    ax.set_ylabel("Count")
+    ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Residual (bps)", fontsize=12)
+    if ax_i == 0:
+        ax.set_ylabel("Count", fontsize=12)
     ax.text(0.97, 0.95,
             f"N={len(resid_flat):,}\nStd={np.std(resid_flat):.2f} bps\n"
             f"Kurt={float(pd.Series(resid_flat).kurt()):.2f}",
-            transform=ax.transAxes, fontsize=8, ha="right", va="top",
+            transform=ax.transAxes, fontsize=10, ha="right", va="top",
             bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"))
 
 fig.tight_layout()
@@ -511,23 +512,89 @@ for row_i, (label, date_str) in enumerate(_rep_dates.items()):
                     label=DIM_LABELS[_dim])
 
         if row_i == 0:
-            ax.set_title(ccy, fontsize=10, fontweight="bold")
+            ax.set_title(ccy, fontsize=12, fontweight="bold")
         if col_i == 0:
             ax.set_ylabel(f"{label}\n({'%' if SCALE_IS_PERCENT else 'dec.'})",
-                          fontsize=9)
+                          fontsize=11)
         if row_i == _n_rows - 1:
-            ax.set_xlabel("Maturity", fontsize=9)
+            ax.set_xlabel("Maturity", fontsize=11)
         ax.set_xticks(tenors)
         if row_i == _n_rows - 1:
-            ax.set_xticklabels([str(int(t)) for t in tenors], fontsize=7)
+            ax.set_xticklabels([str(int(t)) for t in tenors], fontsize=9)
         else:
             ax.set_xticklabels([])
-        ax.tick_params(axis="y", labelsize=8)
+        ax.tick_params(axis="y", labelsize=10)
         ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
-                transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
+                transform=ax.transAxes, fontsize=9, ha="right", color="0.4")
 
 fig.tight_layout()
 save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1d_yc — Plot: Model-implied yield curves, all dims (ℓ=2,3,4)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1d_yc: Implied yield curves — all dims ──")
+
+_tau_grid = torch.arange(0, 31, dtype=torch.float32)   # 0,1,...,30
+
+fig_yc, axes_yc = plt.subplots(
+    _n_rows, _n_cols,
+    figsize=(4 * _n_cols, 3.5 * _n_rows),
+    sharey=False,
+)
+
+for row_i, (label, date_str) in enumerate(_rep_dates.items()):
+    target_date = pd.Timestamp(date_str)
+    for col_i, ccy in enumerate(_show_ccys_alldim):
+        ax = axes_yc[row_i][col_i]
+
+        # find the closest observation in the training set for this ccy
+        mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
+        if mask_ccy.sum() == 0:
+            ax.set_visible(False)
+            continue
+        dates_ccy = pd.to_datetime(meta_train.loc[mask_ccy, "as_of_date"])
+        idx_local  = (dates_ccy - target_date).abs().argmin()
+        actual_date = dates_ccy.iloc[idx_local]
+        global_idx  = np.where(mask_ccy)[0][idx_local]
+        x_obs = X_train[global_idx].unsqueeze(0).to(device)
+
+        for _dim in DIMS_PLOT:
+            _m = dim_models[_dim]
+            with torch.no_grad():
+                _, aux = _m(x_obs, return_aux=True)
+            P_full = aux["P_full"].squeeze(0).cpu()   # shape (31,)
+            # yield y(tau) = -1/tau * log P(tau), skip tau=0
+            taus = _tau_grid[1:]                       # 1,...,30
+            yields = -torch.log(P_full[1:]) / taus     # continuously compounded
+            ax.plot(taus.numpy(), yields.numpy(),
+                    color=_dim_colors[_dim],
+                    linewidth=1.8,
+                    label=DIM_LABELS[_dim])
+
+        if row_i == 0:
+            ax.set_title(ccy, fontsize=12, fontweight="bold")
+        if col_i == 0:
+            ax.set_ylabel(f"{label}\nYield", fontsize=11)
+        if row_i == _n_rows - 1:
+            ax.set_xlabel("Maturity", fontsize=11)
+        ax.set_xticks([1, 5, 10, 15, 20, 30])
+        if row_i == _n_rows - 1:
+            ax.set_xticklabels(["1", "5", "10", "15", "20", "30"], fontsize=9)
+        else:
+            ax.set_xticklabels([])
+        ax.tick_params(axis="y", labelsize=10)
+        ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
+                transform=ax.transAxes, fontsize=9, ha="right", color="0.4")
+
+# unified legend at bottom
+_handles_yc, _labels_yc = axes_yc[0][0].get_legend_handles_labels()
+fig_yc.legend(_handles_yc, _labels_yc, loc="lower center",
+              bbox_to_anchor=(0.5, -0.02), ncol=len(DIMS_PLOT),
+              frameon=False, fontsize=10)
+fig_yc.tight_layout()
+fig_yc.subplots_adjust(bottom=0.12)
+save_fig(fig_yc, "Q1d_yield_curves_all_dims")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -825,7 +892,7 @@ ax.barh(_top_y, _to_x(_data_end) - _to_x(_data_start),
         color=_col_full, edgecolor="none", zorder=2)
 ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
         _top_y, "Full series  (2010–2023)",
-        va="center", ha="center", fontsize=9, color="dimgray")
+        va="center", ha="center", fontsize=11, color="dimgray")
 
 # ── rolling windows (staggered) — W1 to W5 ───────────────────────────────────
 _extra_gap = 0.8   # extra space between W2 and W3 for bracket labels
@@ -843,7 +910,7 @@ for i, test_start in enumerate(_show):
             color=_col_test, edgecolor="none", zorder=2,
             label="Test" if i == 0 else "")
     ax.text(_to_x(_data_start) - 0.15, y, f"$W_{{{i+1}}}$",
-            va="center", ha="right", fontsize=9)
+            va="center", ha="right", fontsize=11)
 
 # ── dots row ──────────────────────────────────────────────────────────────────
 _dots_y = 1 - _extra_gap
@@ -885,35 +952,36 @@ ax.annotate("", xy=(_to_x(_w2_train_start), _bracket_y),
             xytext=(_to_x(_data_start), _bracket_y),
             arrowprops=_arrowprops)
 ax.text((_to_x(_data_start) + _to_x(_w2_train_start)) / 2, _text_y,
-        "6 months", ha="center", va="top", fontsize=7)
+        "6 months", ha="center", va="top", fontsize=9)
 
 # 5 years: train_start → test_start of W2
 ax.annotate("", xy=(_to_x(_w2_test_start), _bracket_y),
             xytext=(_to_x(_w2_train_start), _bracket_y),
             arrowprops=_arrowprops)
 ax.text((_to_x(_w2_train_start) + _to_x(_w2_test_start)) / 2, _text_y,
-        "5 years", ha="center", va="top", fontsize=7)
+        "5 years", ha="center", va="top", fontsize=9)
 
 # 6 months: test_start → test_end of W2
 ax.annotate("", xy=(_to_x(_w2_test_end), _bracket_y),
             xytext=(_to_x(_w2_test_start), _bracket_y),
             arrowprops=_arrowprops)
 ax.text((_to_x(_w2_test_start) + _to_x(_w2_test_end)) / 2, _text_y,
-        "6 months", ha="center", va="top", fontsize=7)
+        "6 months", ha="center", va="top", fontsize=9)
 
 # ── axes formatting ───────────────────────────────────────────────────────────
 ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
 ax.set_ylim(-1.2 - _extra_gap, _top_y + 0.8)
 ax.set_xticks(range(2010, 2025, 2))
-ax.set_xticklabels([str(y) for y in range(2010, 2025, 2)], fontsize=9)
+ax.set_xticklabels([str(y) for y in range(2010, 2025, 2)], fontsize=11)
 ax.set_yticks([])
 ax.text(_to_x(_data_start) - 1.3,
         (_n_show + 1) / 2, "Windows",
-        va="center", ha="center", fontsize=9, rotation=90, color="dimgray")
+        va="center", ha="center", fontsize=11, rotation=90, color="dimgray")
 ax.spines[["left", "top", "right"]].set_visible(False)
-ax.legend(fontsize=9, frameon=False,
-          loc="center left", bbox_to_anchor=(1.01, 0.5))
-fig.tight_layout(rect=[0, 0, 0.92, 1])
+ax.legend(fontsize=11, frameon=False,
+          loc="lower center", bbox_to_anchor=(0.5, -0.18), ncol=2)
+fig.tight_layout()
+fig.subplots_adjust(bottom=0.18)
 save_extra_fig(fig, "rolling_window_diagram")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1299,9 +1367,9 @@ else:
                 continue
             ax.scatter(_sub["as_of_date"], _sub["rmse_bps"],
                        s=4, alpha=0.4, color=_col, marker="o", label=_lbl, zorder=3)
-        ax.set_ylabel("RMSE (bps)")
+        ax.set_ylabel("RMSE (bps)", fontsize=12)
         ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
-                  ncol=1, fontsize=7, frameon=False, markerscale=3)
+                  ncol=1, fontsize=10, frameon=False, markerscale=3)
         fig.autofmt_xdate()
         fig.tight_layout()
         save_fig(fig, "Q4c_oos_scatter_regime")
@@ -1344,7 +1412,11 @@ else:
     for ev_label, ev_date in EVENTS.items():
         axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
                      ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
+    handles, labels = axes[0].get_legend_handles_labels()
     fig.tight_layout()
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
+               ncol=9, frameon=False, fontsize=8)
+    fig.subplots_adjust(bottom=0.08)
     save_fig(fig, "Q5a_latent_factors_over_time")
 
 
@@ -1594,10 +1666,10 @@ if _has_main_model:
         _rmse_dim   = np.sqrt(np.mean((X_eval[_finite] - _S_eval_dim[_finite])**2, axis=0)) * 10000
         ax.plot(TENOR_COLS, _rmse_dim, marker="o", linewidth=1.4, markersize=4,
                 color=DIM_COLORS[_dim], label=f"$\\ell={_dim}$")
-    ax.set_ylabel("RMSE (bps)", fontsize=10)
-    ax.set_xlabel("Maturity", fontsize=10)
+    ax.set_ylabel("RMSE (bps)", fontsize=12)
+    ax.set_xlabel("Maturity", fontsize=12)
     ax.set_xticks(TENOR_COLS)
-    ax.legend(frameon=False, fontsize=10)
+    ax.legend(frameon=False, fontsize=12)
 
     ax = axes[1]
     for ccy in CCY_ORDER:
@@ -1606,11 +1678,12 @@ if _has_main_model:
             continue
         rmse_ccy = np.sqrt(np.mean((X_eval[idx] - S_eval[idx])**2, axis=0)) * 10000
         ax.plot(TENOR_COLS, rmse_ccy, marker="o", linewidth=1.4,
-                markersize=4, color=currency_color_map[ccy])
+                markersize=4, color=currency_color_map[ccy], label=ccy)
 
-    ax.set_ylabel("RMSE (bps)", fontsize=10)
-    ax.set_xlabel("Maturity", fontsize=10)
+    ax.set_ylabel("RMSE (bps)", fontsize=12)
+    ax.set_xlabel("Maturity", fontsize=12)
     ax.set_xticks(TENOR_COLS)
+    ax.legend(frameon=False, fontsize=12)
     fig.tight_layout()
     save_fig(fig, "Q6a_rmse_by_tenor")
 
@@ -1816,11 +1889,13 @@ else:
             continue
         ax.scatter(sub["as_of_date"], sub["rmse_bps"],
                    s=4, alpha=0.4, color=col, marker="o", label=lbl, zorder=3)
-    ax.set_ylabel("RMSE (bps)")
-    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
-              ncol=1, fontsize=7, frameon=False, markerscale=3)
+    ax.set_ylabel("RMSE (bps)", fontsize=12)
     fig.autofmt_xdate()
     fig.tight_layout()
+    fig.legend(*ax.get_legend_handles_labels(), loc="lower center",
+               bbox_to_anchor=(0.5, -0.05), ncol=2, fontsize=10,
+               frameon=False, markerscale=3)
+    fig.subplots_adjust(bottom=0.22)
     save_fig(fig, "Q6e_scatter_regime")
 
     # ── 4. Heatmap: avg RMSE — currencies × regime ────────────────────────────
@@ -1872,19 +1947,22 @@ else:
             continue
         m_ccy = meta_eval_z.loc[idx_c].groupby("ym")["rmse_bps"].mean()
         ax.plot(m_ccy.index.to_timestamp(), m_ccy.values,
-                linewidth=1.1, alpha=0.75, color=currency_color_map[ccy])
+                linewidth=1.1, alpha=0.75, color=currency_color_map[ccy], label=ccy)
 
     ax.plot(monthly_dates, monthly_avg.values, linewidth=2.2, color="black",
             linestyle="--", label="All-ccy avg", zorder=5)
-    ax.set_ylabel("RMSE (bps)")
+    ax.set_ylabel("RMSE (bps)", fontsize=12)
 
     for ev_label, ev_date in EVENTS.items():
         ax.axvline(pd.Timestamp(ev_date), color="0.55", linewidth=1.0, linestyle="--")
         ax.text(pd.Timestamp(ev_date), ax.get_ylim()[1],
-                ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
+                ev_label, fontsize=12, ha="center", va="bottom", color="0.4")
 
     fig.autofmt_xdate()
     fig.tight_layout()
+    fig.legend(*ax.get_legend_handles_labels(), loc="lower center", bbox_to_anchor=(0.5, -0.02),
+               ncol=10, frameon=False, fontsize=10)
+    fig.subplots_adjust(bottom=0.12)
     save_fig(fig, "Q6b_rmse_over_time")
 
 
@@ -1956,7 +2034,296 @@ if _m is not None:
     ax.set_xlim(0, 30)
     ax.set_xlabel("Maturity", fontsize=10)
     ax.set_ylabel("PDE Residual", fontsize=10)
-    ax.legend().set_visible(False)
+    fig.legend(*ax.get_legend_handles_labels(), loc="lower center", bbox_to_anchor=(0.5, -0.02),
+               ncol=9, frameon=False, fontsize=8)
+    fig.subplots_adjust(bottom=0.14)
+    fig.tight_layout()
+    save_fig(fig, "Q7_sharpe_ratio_IS_dim3")
+    print("done")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P — Parameter plots over time (one figure per latent dimension)
+#     Source: ep5000 checkpoint (fallback: OOSSplit best seed)
+#     Data:   X_train (2004-2020)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Parameter plots ──")
+
+# CCY colours (cycle through custom_palette)
+_ccy_colors = {ccy: custom_palette[i % len(custom_palette)]
+               for i, ccy in enumerate(CCY_ORDER)}
+
+def extract_parameters(model, X_data, meta_df, mask):
+    """
+    Run encoder on X_data[mask] and extract μ, σ, ρ, r̃ per observation.
+    Returns a DataFrame with columns: as_of_date, ccy, mu_1..d,
+    sigma_1..d, rho_12.., r_tilde.
+    """
+    model.eval()
+    with torch.no_grad():
+        X_m   = X_data[mask]
+        z     = model.encoder(X_m)                    # (N, d)
+        mu    = model.K(z)                            # (N, d)
+        sigmas, rhos = model.H(z)                     # (N,d), (N,n_corr)
+        r_til = model.R(z).squeeze(-1)                # (N,)
+
+    d      = model.latent_dim
+    n_corr = d * (d - 1) // 2
+
+    rec = meta_df.loc[mask.numpy()].copy().reset_index(drop=True)
+    rec["as_of_date"] = pd.to_datetime(rec["as_of_date"])
+
+    for k in range(d):
+        rec[f"mu_{k+1}"]    = mu[:, k].cpu().numpy()
+        rec[f"sigma_{k+1}"] = sigmas[:, k].cpu().numpy()
+
+    idx = 0
+    for i in range(d):
+        for j in range(i + 1, d):
+            rec[f"rho_{i+1}{j+1}"] = rhos[:, idx].cpu().numpy()
+            idx += 1
+
+    rec["r_tilde"] = r_til.cpu().numpy()
+    return rec
+
+
+def _param_label(name):
+    """Convert column name to LaTeX-style label."""
+    if name.startswith("mu_"):
+        k = name.split("_")[1]
+        return r"$\mu_{" + k + r"}$"
+    if name.startswith("sigma_"):
+        k = name.split("_")[1]
+        return r"$\sigma_{" + k + r"}$"
+    if name.startswith("rho_"):
+        ij = name.split("_")[1]
+        return r"$\rho_{" + ",".join(ij) + r"}$"
+    if name == "r_tilde":
+        return r"$\tilde{r}$"
+    return name
+
+
+for _dim in ALL_DIMS_PARAM:
+    print(f"\n── Parameters: ℓ={_dim} ──")
+    _m, _src = load_ep5000_model(_dim)
+    if _m is None:
+        print(f"  No model for ℓ={_dim}, skipping.")
+        continue
+
+    # parameters live inside the training results folder for this dim/epoch
+    _dim_dir = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                            f"dim{_dim}_baseline", f"ep{TRAIN_LOG_EPOCHS}", "parameters")
+    os.makedirs(_dim_dir, exist_ok=True)
+
+    if _dim in dim_S_hat:
+        _mask = finite_mask(X_train, dim_S_hat[_dim])
+    else:
+        with torch.no_grad():
+            _S_tmp = _m(X_train)
+        _mask = finite_mask(X_train, _S_tmp)
+
+    df_p = extract_parameters(_m, X_train, meta_train, _mask)
+
+    # Build list of parameter columns in display order
+    d = _dim
+    mu_cols    = [f"mu_{k+1}"    for k in range(d)]
+    sig_cols   = [f"sigma_{k+1}" for k in range(d)]
+    rho_cols   = [f"rho_{i+1}{j+1}"
+                  for i in range(d) for j in range(i + 1, d)]
+    param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
+
+    for col in param_cols:
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+
+        for ccy in CCY_ORDER:
+            sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
+            if sub.empty:
+                continue
+            ax.plot(sub["as_of_date"], sub[col],
+                    color=_ccy_colors[ccy], linewidth=0.8,
+                    alpha=0.75)
+
+        ax.set_title(_param_label(col), fontsize=11)
+        ax.tick_params(axis="x", rotation=30, labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        fig.tight_layout()
+
+        # save to parameters/dim{N}/{col}.png
+        out_path = os.path.join(_dim_dir, col + ".png")
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  Saved: {out_path}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DONE — Output summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OK   = "✅"
+_WARN = "⚠️ "
+_SKIP = "❌"
+
+# determine model source for each dim
+def _model_src(dim):
+    src = dim_model_sources.get(dim, None)
+    if src is not None:
+        if "ep5000"   in src: return (_OK,   "ep5000 checkpoint")
+        if "OOSSplit" in src: return (_WARN, "fallback: OOSSplit ep2500 (rerun after ep5000 training)")
+        return (_OK, src)
+    # not loaded as a model — check file directly
+    ckpt = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        f"ep{TRAIN_LOG_EPOCHS}", f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
+    if os.path.exists(ckpt):
+        return (_OK, "ep5000 checkpoint")
+    return (_SKIP, "no checkpoint found")
+
+# determine rolling source for each dim
+def _roll_src(dim):
+    new_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                            ROLL_SUBDIR, f"ep{ROLL_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    old_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{ROLL_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+    if os.path.exists(new_path): return (_OK,   "train5Y_test6M_step6M")
+    if os.path.exists(old_path): return (_WARN, "fallback: train3Y_test3M_step6M (rerun OutOfSampleRoll.py)")
+    return (_SKIP, "no rolling CSV found — run OutOfSampleRoll.py")
+
+_manifest_ok = os.path.exists(MANIFEST_PATH)
+
+# ── per-dim split CSV check ────────────────────────────────────────────────────
+def _split_csv_ok(dim):
+    p = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split",
+                     f"OOS_split_dim{dim}_baseline", f"ep{SPLIT_EPOCHS}", "rmse_summary.csv")
+    return os.path.exists(p)
+
+print(f"\n{'='*65}")
+print(f"  OUTPUT SUMMARY")
+print(f"{'='*65}")
+
+# ── IN-SAMPLE ─────────────────────────────────────────────────────────────────
+print(f"\n  {'IN-SAMPLE':─<55}")
+# Q1a / Q1e only need CSV logs (no checkpoint)
+_csv_dims_ok = [d for d in [1, 2, 3, 4]
+                if os.path.exists(os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                                               f"dim{d}_baseline", f"ep{TRAIN_LOG_EPOCHS}",
+                                               f"train_rmse_log_bbg_dim{d}_ep{TRAIN_LOG_EPOCHS}.csv"))]
+_csv_icon = _OK if set(_csv_dims_ok) >= {2, 3, 4} else (_WARN if _csv_dims_ok else _SKIP)
+print(f"  {_csv_icon}  Q1a  IS RMSE table          — ep{TRAIN_LOG_EPOCHS} logs found for dims {_csv_dims_ok}")
+print(f"  {_csv_icon}  Q1e  Training loss curves   — ep{TRAIN_LOG_EPOCHS} logs found for dims {_csv_dims_ok}")
+
+# Q1b uses LATENT_DIM only
+icon_q1b, src_q1b = _model_src(LATENT_DIM)
+print(f"  {icon_q1b}  Q1b  Fitted vs actual (dim={LATENT_DIM}) — {src_q1b}")
+
+# Q1d / residuals / Q6a / Q6b use all dims
+print(f"  {'IN-SAMPLE (per dim)':─<52}")
+for _d in [1, 2, 3, 4]:
+    _icon_d, _src_d = _model_src(_d)
+    print(f"    {_icon_d}  dim={_d}  Q1d/Q1c/Q6a/Q6b/params — {_src_d}")
+
+# Q7 uses dim=3 hardcoded
+icon_q7, src_q7 = _model_src(3)
+print(f"  {icon_q7}  Q7   Sharpe ratio (dim=3)  — {src_q7}")
+
+# ── OUT-OF-SAMPLE (SPLIT) ─────────────────────────────────────────────────────
+print(f"\n  {'OUT-OF-SAMPLE (SPLIT)':─<55}")
+for _d in [1, 2, 3, 4]:
+    _icon_s = _OK if _split_csv_ok(_d) else _SKIP
+    _src_s  = f"ep{SPLIT_EPOCHS} OOSSplit CSV found" if _split_csv_ok(_d) \
+              else f"SKIPPED — run OutOfSampleSplit.py (dim={_d})"
+    print(f"  {_icon_s}  Q2a  IS vs OOS RMSE (dim={_d}) — {_src_s}")
+
+print(f"  {'✅' if _manifest_ok else _SKIP}  Q3a  Seed robustness table   — "
+      f"{'run_manifest.json found' if _manifest_ok else 'SKIPPED — run OutOfSampleSplit.py (all dims)'}")
+print(f"  {'✅'}  Q4a  AE vs EKF DNS table     — fixed split OOS")
+
+_q4b_dims_ok = [d for d in [2, 3, 4] if _split_csv_ok(d)]
+_q4b_icon = _OK if set(_q4b_dims_ok) >= {2, 3, 4} else (_WARN if _q4b_dims_ok else _SKIP)
+print(f"  {_q4b_icon}  Q4b  Per-currency bar chart — split OOS dims {_q4b_dims_ok} available")
+
+# ── OUT-OF-SAMPLE (ROLLING) ───────────────────────────────────────────────────
+print(f"\n  {'OUT-OF-SAMPLE (ROLLING)':─<55}")
+for _d in [2, 3, 4]:
+    icon_r, src_r = _roll_src(_d)
+    print(f"  {icon_r}  Q2b/Q3b  dim={_d}              — {src_r}")
+
+# ── LATENT FACTOR ─────────────────────────────────────────────────────────────
+print(f"\n  {'LATENT FACTOR':─<55}")
+icon_q5a, src_q5a = _model_src(LATENT_DIM)
+print(f"  {icon_q5a}  Q5a  Latent factors over time (dim={LATENT_DIM}) — {src_q5a}")
+print(f"  {_OK}  Q5b  PCA heatmap + projections — global PCA on IS data")
+print(f"  {_OK}  Q5b  Scree plot (PVE)           — global PCA on IS data")
+
+# ── ACTION REQUIRED ───────────────────────────────────────────────────────────
+_actions = []
+
+# Missing ep5000 checkpoints
+_missing_ckpt_dims = [d for d in [1, 2, 3, 4] if dim_model_sources.get(d) is None]
+_fallback_ckpt_dims = [d for d in [1, 2, 3, 4]
+                       if dim_model_sources.get(d) is not None and "OOSSplit" in dim_model_sources.get(d, "")]
+if _missing_ckpt_dims:
+    _actions.append(f"  🔴  Run Training.py for dims {_missing_ckpt_dims} at ep={TRAIN_LOG_EPOCHS} "
+                    f"→ regenerates checkpoint_dim{{N}}_ep{TRAIN_LOG_EPOCHS}.pt")
+if _fallback_ckpt_dims:
+    _actions.append(f"  🟡  Run Training.py for dims {_fallback_ckpt_dims} at ep={TRAIN_LOG_EPOCHS} "
+                    f"→ currently using OOSSplit ep{SPLIT_EPOCHS} fallback (results are approximate)")
+
+# Missing OOS split CSVs
+_missing_split_dims = [d for d in [1, 2, 3, 4] if not _split_csv_ok(d)]
+if _missing_split_dims:
+    _actions.append(f"  🔴  Run OutOfSampleSplit.py for dims {_missing_split_dims} "
+                    f"→ needed for Q2a, Q3a, Q4a, Q4b")
+
+# Missing rolling CSVs
+_missing_roll_dims = [d for d in [2, 3, 4] if _roll_src(d)[0] == _SKIP]
+_fallback_roll_dims = [d for d in [2, 3, 4] if _roll_src(d)[0] == _WARN]
+if _missing_roll_dims:
+    _actions.append(f"  🔴  Run OutOfSampleRoll.py for dims {_missing_roll_dims} "
+                    f"→ needed for Q2b, Q3b")
+if _fallback_roll_dims:
+    _actions.append(f"  🟡  Run OutOfSampleRoll.py for dims {_fallback_roll_dims} "
+                    f"→ currently using train3Y fallback (rerun for train5Y results)")
+
+# Missing seed manifest
+if not _manifest_ok:
+    _actions.append(f"  🔴  Run OutOfSampleSplit.py (generates run_manifest.json) "
+                    f"→ needed for Q3a seed robustness table")
+
+print(f"\n  {'ACTION REQUIRED':─<55}")
+if _actions:
+    for _a in _actions:
+        print(_a)
+else:
+    print("  ✅  All prerequisites met.")
+
+print(f"  ℓ={_dim} ...", end=" ")
+_m, _src = load_ep5000_model(_dim)
+if _m is not None:
+    R_all, SR_all = extract_sharpe(_m, X_train)
+    x_finite = torch.isfinite(X_train).all(1)
+    R_all    = R_all[x_finite].numpy()
+    SR_all   = SR_all[x_finite].numpy()
+    _meta_q7 = meta_train[x_finite.numpy()].reset_index(drop=True)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for ccy in CCY_ORDER:
+        _idx = (_meta_q7["ccy"].values == ccy)
+        if _idx.sum() == 0:
+            continue
+        _r_ccy = R_all[_idx].mean(axis=0)           # (30,)
+        ax.plot(TAU_GRID, _r_ccy,
+                color=currency_color_map[ccy], linewidth=1.4, label=ccy)
+    ax.axhline(0, color="black", linewidth=1.8, linestyle="--")
+    ax.set_xlim(0, 30)
+    ax.set_xlabel("Maturity", fontsize=10)
+    ax.set_ylabel("PDE Residual", fontsize=10)
+    fig.legend(*ax.get_legend_handles_labels(), loc="lower center", bbox_to_anchor=(0.5, -0.02),
+               ncol=9, frameon=False, fontsize=8)
+    fig.subplots_adjust(bottom=0.14)
     fig.tight_layout()
     save_fig(fig, "Q7_sharpe_ratio_IS_dim3")
     print("done")
@@ -2219,6 +2586,52 @@ if _actions:
         print(_a)
 else:
     print(f"  {_OK}  All figures generated — no missing inputs detected.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Short rate \tilde{r} across latent dimensions 2, 3, 4
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Short rate across dims ──")
+
+_dims_r = [2, 3, 4]
+fig_r, axes_r = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
+
+for ax_i, _dim in enumerate(_dims_r):
+    ax = axes_r[ax_i]
+    _m, _src = load_ep5000_model(_dim)
+    if _m is None:
+        ax.set_visible(False)
+        continue
+
+    # run inference on full training data to get r_tilde
+    with torch.no_grad():
+        r_all = []
+        for i in range(0, X_full.shape[0], 256):
+            xb = X_full[i:i+256].to(device)
+            _, aux = _m(xb, return_aux=True)
+            r_all.append(aux["r_tilde"].cpu())
+    r_all = torch.cat(r_all).numpy()
+
+    df_r = meta_full_df.copy()
+    df_r["r_tilde"] = r_all
+    df_r = df_r[df_r["as_of_date"] >= "2010-01-01"].sort_values("as_of_date")
+
+    for ccy in CCY_ORDER:
+        ccy_df = df_r[df_r["ccy"] == ccy]
+        ax.plot(ccy_df["as_of_date"], ccy_df["r_tilde"],
+                color=currency_color_map[ccy], linewidth=0.8, label=ccy)
+
+    ax.set_title(f"$\\ell={_dim}$", fontsize=11)
+    ax.grid(True, alpha=0.3)
+    if ax_i == 0:
+        ax.set_ylabel(r"$\tilde{r}$", fontsize=11)
+
+handles_r, labels_r = axes_r[0].get_legend_handles_labels()
+fig_r.legend(handles_r, labels_r, loc="lower center",
+             bbox_to_anchor=(0.5, -0.02), ncol=len(CCY_ORDER),
+             frameon=False, fontsize=9)
+fig_r.tight_layout()
+fig_r.subplots_adjust(bottom=0.15)
+save_fig(fig_r, "r_tilde_all_dims")
 
 print(f"\n{'='*65}")
 print(f"  Figures → {FIGURES_OUT}")

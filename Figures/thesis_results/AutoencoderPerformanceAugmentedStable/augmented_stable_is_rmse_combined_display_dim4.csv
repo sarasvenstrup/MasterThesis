@@ -1,0 +1,7 @@
+,AUD,CAD,DKK,EUR,JPY,NOK,SEK,GBP,USD,All
+Normal Non-negative — N,159,142,81,74,90,142,83,124,147,1042
+Normal Non-negative — Avg RMSE (bps),4.26,5.01,4.87,5.04,4.57,4.87,5.60,4.04,5.72,4.86
+Inverted Non-negative — N,11,22,18,18,---,27,20,3,15,134
+Inverted Non-negative — Avg RMSE (bps),5.37,5.09,5.60,6.17,---,5.70,6.11,9.01,4.78,5.65
+Normal Negative — N,---,---,69,78,80,---,67,---,---,294
+Normal Negative — Avg RMSE (bps),---,---,6.67,9.66,8.49,---,6.22,---,---,7.86

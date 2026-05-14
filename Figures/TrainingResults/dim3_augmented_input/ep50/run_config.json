@@ -1,0 +1,15 @@
+{
+  "seed": 0,
+  "latent_dim": 3,
+  "input_dim": 11,
+  "variant": "augmented_input",
+  "epochs": 50,
+  "batch_size": 32,
+  "max_lr": 0.001,
+  "pct_start": 0.3,
+  "div_factor": 1.0,
+  "final_div_factor": 3000.0,
+  "torch_version": "2.11.0",
+  "python_version": "3.12.6",
+  "numpy_version": "2.2.2"
+}
