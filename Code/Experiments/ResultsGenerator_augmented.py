@@ -128,7 +128,7 @@ C_PALETTE = custom_palette
 print("\nGenerating fitted vs actual figure...")
 
 REPRESENTATIVE_DATES = {
-    "Normal market (2016-08-31)": "2016-08-31",
+    "Calm market (2016-08-31)": "2016-08-31",
     "Crisis (2020-03-31)":        "2020-03-31",
     "Low-rate (2019-06-30)":      "2019-06-30",
 }
@@ -180,7 +180,7 @@ save_fig(fig, f"augmented_fitted_vs_actual_dim{LATENT_DIM}")
 print("\nGenerating normal vs crisis fitted vs actual figure...")
 
 _rep_dates   = {
-    "Normal (2014-08-29)": "2014-08-29",
+    "Calm (2014-08-29)": "2014-08-29",
     "Crisis (2020-03-31)": "2020-03-31",
 }
 _show_ccys   = ["EUR", "USD", "JPY", "CAD"]
@@ -329,7 +329,7 @@ for _dim in _dims_aug:
     _aug_S_hat[_dim] = torch.cat(_s_list).numpy()
 
 _rep_dates_ad = {
-    "Normal (2014-08-29)": "2014-08-29",
+    "Calm (2014-08-29)": "2014-08-29",
     "Crisis (2020-03-31)": "2020-03-31",
 }
 _show_ccys_ad = ["EUR", "USD", "JPY", "CAD"]

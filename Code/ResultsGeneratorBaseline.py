@@ -321,7 +321,7 @@ if not _has_main_model:
     print(f"  ⚠️  Q1b skipped — no checkpoint for dim={LATENT_DIM}")
 else:
     REPRESENTATIVE_DATES = {
-        "Normal market (2016-08-31)":  "2016-08-31",
+        "Calm market (2016-08-31)":  "2016-08-31",
         "Crisis (2020-03-31)":         "2020-03-31",
         "Low-rate (2019-06-30)":       "2019-06-30",
     }
@@ -471,7 +471,7 @@ save_fig(fig, "Q1d_residual_histograms_all_dims")
 print("\n── Q1d: Fitted vs actual — all dims overlaid (EUR, USD, JPY) ──")
 
 _rep_dates = {
-    "Normal (2014-08-29)": "2014-08-29",
+    "Calm (2014-08-29)": "2014-08-29",
     "Crisis (2020-03-31)": "2020-03-31",
 }
 _show_ccys_alldim = ["EUR", "USD", "JPY", "CAD"]

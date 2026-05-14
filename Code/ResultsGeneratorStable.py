@@ -670,7 +670,7 @@ else:
 print("\n── Q1d stable: Fitted vs actual — all dims overlaid ──")
 
 _rep_dates_st = {
-    "Normal (2014-08-29)": "2014-08-29",
+    "Calm (2014-08-29)": "2014-08-29",
     "Crisis (2020-03-31)": "2020-03-31",
 }
 _show_ccys_st  = ["EUR", "USD", "JPY", "CAD"]

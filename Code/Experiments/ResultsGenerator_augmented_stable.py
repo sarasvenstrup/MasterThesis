@@ -37,7 +37,23 @@ USE        = "bbg"
 
 CKPT_DIR  = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
                          f"dim{LATENT_DIM}_augmented_stable", f"ep{EPOCHS}")
-CKPT_PATH = os.path.join(CKPT_DIR, f"checkpoint_dim{LATENT_DIM}_ep{EPOCHS}.pt")
+
+CHECKPOINTS_DIR = os.path.join(os.path.dirname(REPO_ROOT), "checkpoints")
+
+def _resolve_ckpt(variant_key, dim, epochs):
+    """Return checkpoint path, checking Figures/TrainingResults first, then checkpoints/."""
+    figures_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                                f"dim{dim}_{variant_key}", f"ep{epochs}",
+                                f"checkpoint_dim{dim}_ep{epochs}.pt")
+    if os.path.exists(figures_path):
+        return figures_path
+    fallback = os.path.join(CHECKPOINTS_DIR,
+                            f"fullmodel_{variant_key}_bbg_dim{dim}_ep{epochs}.pt")
+    if os.path.exists(fallback):
+        return fallback
+    return figures_path  # return primary path so error message is informative
+
+CKPT_PATH = _resolve_ckpt("augmented_stable", LATENT_DIM, EPOCHS)
 
 FIGURES_OUT = os.path.join(REPO_ROOT, "Figures", "thesis_results", "AutoencoderPerformanceAugmentedStable")
 os.makedirs(FIGURES_OUT, exist_ok=True)
@@ -128,7 +144,7 @@ C_PALETTE = custom_palette
 print("\nGenerating fitted vs actual figure...")
 
 REPRESENTATIVE_DATES = {
-    "Normal market (2016-08-31)": "2016-08-31",
+    "Calm market (2016-08-31)": "2016-08-31",
     "Crisis (2020-03-31)":        "2020-03-31",
     "Low-rate (2019-06-30)":      "2019-06-30",
 }
@@ -180,7 +196,7 @@ save_fig(fig, f"augmented_stable_fitted_vs_actual_dim{LATENT_DIM}")
 print("\nGenerating normal vs crisis fitted vs actual figure...")
 
 _rep_dates   = {
-    "Normal (2014-08-29)": "2014-08-29",
+    "Calm (2014-08-29)": "2014-08-29",
     "Crisis (2020-03-31)": "2020-03-31",
 }
 _show_ccys   = ["EUR", "USD", "JPY", "CAD"]
@@ -311,9 +327,7 @@ X_np_all  = X_tensor.numpy()
 
 _as_S_hat = {}
 for _dim in _dims_as:
-    _ckpt_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
-                              f"dim{_dim}_augmented_stable", f"ep{EPOCHS}",
-                              f"checkpoint_dim{_dim}_ep{EPOCHS}.pt")
+    _ckpt_path = _resolve_ckpt("augmented_stable", _dim, EPOCHS)
     if not os.path.exists(_ckpt_path):
         print(f"  ⚠️  Checkpoint not found for dim={_dim} — skipping.")
         continue
@@ -332,7 +346,7 @@ for _dim in _dims_as:
     _as_S_hat[_dim] = torch.cat(_s_list).numpy()
 
 _rep_dates_as = {
-    "Normal (2014-08-29)": "2014-08-29",
+    "Calm (2014-08-29)": "2014-08-29",
     "Crisis (2020-03-31)": "2020-03-31",
 }
 _show_ccys_as = ["EUR", "USD", "JPY", "CAD"]
@@ -403,8 +417,8 @@ import matplotlib.lines as _mlines
 
 _INPUT_DIM_BASE = X_tensor.shape[1]               # 8  (no augmentation)
 _INPUT_DIM_AUG  = augment(X_tensor[:1]).shape[1]  # 11 (with augmentation)
-_COMP_COLORS    = ["#2c4f8c", "#c0392b", "#ff2222", custom_palette[6]]
-_REP_DATES_COMP = {"Normal (2014-08-29)": "2014-08-29",
+_COMP_COLORS    = ["#2c4f8c", "#c0392b", "cornflowerblue", "palevioletred"]
+_REP_DATES_COMP = {"Calm (2014-08-29)": "2014-08-29",
                    "Crisis (2020-03-31)":  "2020-03-31"}
 _SHOW_CCYS_COMP = ["EUR", "USD", "JPY", "CAD"]
 _SCALE_COMP     = 100.0 if SCALE_IS_PERCENT else 1.0
@@ -417,7 +431,7 @@ _COMP_VARIANTS_MIXED = [
     ("baseline",         "Baseline ($\\ell=3$)",    _BaselineFullModel, False, 3),
     ("stable",           "Stable ($\\ell=4$)",      FullModel,          False, 4),
     ("augmented_input",  "Augmented ($\\ell=3$)",   _BaselineFullModel, True,  3),
-    ("augmented_stable", "Aug.+Stable ($\\ell=3$)", FullModel,          True,  3),
+    ("augmented_stable", "Aug. + Stable ($\\ell=3$)", FullModel,          True,  3),
 ]
 
 _REGIME_GROUPS_OOS = [
@@ -455,9 +469,7 @@ _comp_S_hat   = {}
 _comp_r_tilde = {}
 for (_vkey_c, _lbl_c, _ModelClass_c, _use_aug_c, _dim_c), _col_c in zip(
         _COMP_VARIANTS_MIXED, _COMP_COLORS):
-    _ckpt_c = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
-                           f"dim{_dim_c}_{_vkey_c}", f"ep{EPOCHS}",
-                           f"checkpoint_dim{_dim_c}_ep{EPOCHS}.pt")
+    _ckpt_c = _resolve_ckpt(_vkey_c, _dim_c, EPOCHS)
     if not os.path.exists(_ckpt_c):
         print(f"  ⚠️  Checkpoint not found: {_ckpt_c} — skipping.")
         continue
