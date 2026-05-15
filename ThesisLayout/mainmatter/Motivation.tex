@@ -1,94 +1,78 @@
 \chapter{Title?}
 \label{ch:model-background}
 
-% Section 1 — Classical representations
-% Q1: Why is a low-dimensional representation desirable — is it purely
-%     computational, or is there a deeper economic reason?
+
+\textcolor{red}{Modelling the term structure of interest rates has been of broad interest in fixed income research.}  The yield curve is not observed directly but 
+must be inferred from market observables such as the swap rates introduced 
+in Chapter~\ref{chap:datadescription}, and since it is observed across 
+many maturities, a direct representation quickly becomes high-dimensional. 
+The central question is therefore whether it can be transformed into a 
+smaller-dimensional representation while retaining as much 
+information as possible \citep{Skovmand2025tsm}.
+
+
+Classical approaches address this through representations that are simple and tractable. The Nelson--Siegel family \citep{NelsonSiegel1987} is perhaps the most well-known example, imposing a fixed parametric form on the curve. An alternative is to make no parametric assumption and instead apply linear dimension-reduction techniques such as principal component analysis \citep{Skovmand2025tsm}. Both approaches share the common goal of representing the yield curve with as few factors as possible, though Nelson-Siegel fixes the functional form a priori while PCA determines the factors empirically from the data.
+
+
+However, both Nelson--Siegel and PCA are limited in their flexibility, 
+the former by its fixed parametric form and the latter by its linearity. \citet{Kondratyev2018} was among the first to demonstrate that neural 
+networks outperform classical dimensionality reduction techniques such as 
+PCA in describing yield curve dynamics. \citet{Sokol2022} extended this 
+by proposing a variational autoencoder as a data-driven replacement for 
+classical parametric factor models, requiring no a priori choice of 
+functional form for the curve. He further shows that training on data from multiple currencies simultaneously improves extrapolation beyond what a single currency has historically experienced. \footnote{In this context, extrapolation refers to the model being asked to produce output for curve shapes that have not been observed for a given currency during training. As \citet{Sokol2022} notes, any 
+mapping from the yield curve to model state variables must be capable of 
+describing such curve shapes in order to be useful for model construction.} By encoding all curves into a shared latent space, curve shapes unseen for one currency are supported by observations from others.
+
+Such data-driven approaches, however, do not explicitly enforce 
+no-arbitrage conditions on the generated curves. \citet{Andreasen2023} builds on this line of work with this in mind, departing from 
+\citet{Kondratyev2018} and \citet{Sokol2022} by not interpreting the 
+decoder output directly as swap rates. Instead, the output is treated as 
+zero-coupon rates, which are splined to a continuous curve and converted 
+to swap rates. This allows the zero-coupon bond prices to be used to infer the 
+stochastic dynamics of the encoded factors, yielding a model that is 
+close to dynamically arbitrage-free.
+
+\citet{MatinWanPoulsen2025} take this a step further by imposing the 
+no-arbitrage condition as a hard constraint at the decoding stage, rather 
+than the soft regularisation term used by \citet{Andreasen2023}, producing 
+yield curves that are exactly arbitrage-free by construction. The present thesis builds on this model, which we describe in detail in 
+the following chapter.
 
 
 
-
-% Q2: What is the key limitation of Nelson-Siegel specifically — is it
-%     that the factors are fixed, or something else?
-
-
-% Section 2 — Nonlinear neural representations
-% Q3: In your own words, what does Kondratyev add that PCA cannot do?
-
-% Q4: Why is it important that the same network works across currencies
-%     — what does that tell us about yield curves?
-
-
-% Section 3 — Towards arbitrage-free models
-% Q5: Why is it not enough that the model reconstructs swap rates
-%     accurately — what goes wrong if no-arbitrage is violated?
-
-% Q6: Why does Andreasen decode to ZCB prices rather than swap rates
-%     — what does that enable?
-
-% Q7: What is the concrete problem with a soft constraint — why is it
-%     insufficient for risk-neutral pricing?
-
-
-% Section 4 — Motivation
-% Q8: In one sentence, what does Matin, Wan and Poulsen add that none
-%     of the previous papers had?
 
 
 
 
 \newpage
 
-NOTES FROM LITERATURE:
-he aim of this section, is to set the scene of yield curve modeling.
 
+\citet{sokol} notes that, unlike classical parametric models, the 
+autoencoder requires no a priori choice of functional form for the curve. 
+The representation is learned from data, so periodic retraining updates 
+the mapping rather than respecifying the model.
 
-According to \citep{MatinWanPoulsen2025}: 
+\citet{sokol2022} notes that any mapping from the yield curve to model 
+state variables must be capable of extrapolation outside the historical 
+data envelope of a given currency. Training on data from multiple 
+currencies simultaneously addresses this by encoding all curves into a 
+shared latent space, so that curve shapes unseen for one currency are 
+supported by observations from others.
 
-\begin{itemize}
-    \item Yield curve modeling has traditionally been dominated by parametric representations from the Nelson-Siegel family or classical linear principal component analysis. The extension to nonlinear representations using autoencoders was pioneered by \cite{Kondratyev2018} in 2018. 
-    \item points out that non-linear or non-parametric dimensionality reduction is fitting for modeling curve dynamics in finance, which was conducted by \cite{Sokol2022} and \cite{Kondratyev2018}. These models however are not AF.
-    \item Impose the no-arbitrage condition at the decoding stage as a hard constraint, which enables them to specify and train a model in which the encoder-decoder itself produces a continuous representation that is exactly arbitrage-free by construction.
-    
-\end{itemize}
+\citet{Andreasen2023} builds on this line of work but departs from 
+\citet{kondratyev2018} and \citet{sokol2022} by not interpreting the 
+decoder output directly as swap rates. Instead, the output is treated as 
+zero-coupon rates, which are splined to a continuous curve and converted 
+to swap rates. This additional step is motivated by the desire to make 
+explicit use of the zero-coupon bond prices to infer the stochastic 
+dynamics of the encoded factors, yielding a model that is close to 
+dynamically arbitrage-free.
 
-
-ACcording to \cite{Andreasen2023}: 
-
-\begin{itemize}
-    \item \cite{Kondratyev2018} and more recently \cite{Sokol2022} show that the question can be answered by fitting so-called auto-encoder neural networks to empirically observed yield curves. Suprisingly, the answer to that is two to three factors are sufficient. Further, that same auto-encoder can be used across all-currencies. 
-    \item Contrary to the work by \cite{Kondratyev2018} and \cite{Sokol2022} , Jesper Andreasen does not interpret the output of the neural network directly as swap rates but rather as ZCB-prices. These are first splined and converted to zero-coupon bond prices and the secondly to swap rates through the formula from Bjork.
-    \item Why does Jesper execute this additional step? Well, because he will make explcit use of the ZCB prices to infer information about the stochastic nature of the yield curve dynamics.
-    \item It is assumed that yield curves are weighted equally, such that Jesper us treating the different currencies and numeraires equally, essentially assuming that they can be represented by the same Neural Network. This approach is in line with the analysis by Sokol (2018), who concludes that there doesn't seem to be much empirical support for using seperate networks or additional input to seperate the currencies.
-    \item states that \cite{Kondratyev2018} and \cite{Sokol2022} answer the question of how many factors are required to describe the dynamics of the yield curves. They do so by fitting so-called auto-encoder neural networks to empirically observed yield curves, and that 2 to 3 factors are sufficient. Jesper Andreasen confirms this empirically. He further shows that these autoencoder networks are \underline{close} to being dynamically AF. AND that can be decoded to identify the risk-neutral dynamics of the encoded factors and thereby the full yield curve.
-    \item contrary to \cite{Kondratyev2018} and \cite{Sokol2022}, Jesper Andreasen does not interpret the output of the neural network directly at as swap rates but rather as zero coupon rates, the splined and converted in into zeroc coupon bond prices and then to swap rates.
-    \item All yield curves are weighted equally. So we are treating the different currencies and numeraires equally, essentially assuming they can be represented by the same NN. This is in line with Sokole 2018? IS THIS A  MISTAKE?
-    \item As mentioned earlier, in this analysis, we are treating the yield curves of different currencies as if they represent the same numeraire but observed at
-    different levels of the encoded state variable $z$. In other words, as if the same SDE governs all yield curves --- only the current states differ. It seems
-    like a strict assumption, but the empirical results do not seem to contradict this assumption. \citet{Sokol2022} does a more in-depth analysis of this and reaches a similar conclusion.
-\end{itemize}
-
-
-ACcording to \cite{Sokol2022}:
-\begin{itemize}
-    \item He says that \cite{Kondratyev2018} demonstrated that feed forward neural networks outperform classical regression techniques such as PCA in describing the evolution of interest rate curve shapes in P-measure. This was one of the early successes of using machine learning for dimensionality reduction.
-\end{itemize}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-All three of this authors preceding Rolf, agree that the three factors result in a better fit than the two factor.
-
+\citet{MatinWanPoulsen2025} take this a step further by imposing the 
+no-arbitrage condition as a hard constraint at the decoding stage, rather 
+than as an approximation, producing yield curves that are exactly 
+arbitrage-free by construction.
 
 
 
