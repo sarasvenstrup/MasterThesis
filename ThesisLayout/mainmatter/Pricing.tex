@@ -202,12 +202,12 @@ These findings confirm that a pricing adjustment is needed: one that can account
 
 \begin{table}[H]
 \centering
-\input{../Figures/pricing/eval_base/tab_base_per_cell_all.tex}
+\input{../Figures/Pricing/eval_base/tab_base_per_cell_all.tex}
 \end{table}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/pricing/fig_pricing_comparison_timeseries.png}
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_comparison_timeseries.png}
     \caption{Vol error over time for the base model (grey) and Constant MPR (coloured), EUR swaptions 2010--2024. Each panel shows one (expiry $\times$ tenor) cell. The amber shading marks the test period. The Constant MPR error is centred near zero throughout most of the sample; residual errors are concentrated in the 2022 rate-hike episode and short-expiry cells.}
     \label{fig:pricing_comparison_timeseries}
 \end{figure}
@@ -306,14 +306,14 @@ The remaining errors have a clear structure. Short-expiry cells (1Y option) carr
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/pricing/fig_pricing_heatmap_comparison_all.png}
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_heatmap_comparison_all.png}
     \caption{Per-cell ATM vol MAE (basis points) for all dates. Left: base model (overall MAE = 415 bp). Right: Constant MPR (overall MAE = 41 bp). The colour scale is common to both panels. Short-expiry cells show the largest absolute errors; the relative improvement is over 90\% in all cells.}
     \label{fig:pricing_heatmap_comparison_all}
 \end{figure}
 
 \begin{table}[H]
 \centering
-\input{../Figures/pricing/eval_constant_mpr/tab_constant_mpr_per_cell_all.tex}
+\input{../Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_all.tex}
 \end{table}
 
 \subsection{Regime dependence over time}
@@ -323,12 +323,6 @@ Figure~\ref{fig:pricing_comparison_timeseries} overlays the Constant MPR vol err
 
 Two residual patterns are visible. First, the 1Yx* cells show elevated errors in the 2022 rate-hike period, where the forward rate rose faster than any historically observed precedent. Second, the 10Yx* cells show a mild positive forward bias in the test period, suggesting that the constant \(\lambda_0\) is calibrated predominantly to the lower-rate training environment.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/pricing/fig_pricing_scatter_cmpr.png}
-    \caption{Constant MPR model-implied vs market ATM straddle vol for all EUR cells, 2010--2024. Circles = training dates (green), triangles = test dates (blue). The dashed line is the 45-degree reference. The model tracks the market well across the full vol range from 30 bp (ZIRP, short expiry) to 200+ bp (post-2022 rate normalisation).}
-    \label{fig:pricing_scatter_cmpr}
-\end{figure}
 
 \subsection{Forward bias}
 \label{subsec:pricing_forward_bias}
@@ -337,7 +331,7 @@ Figure~\ref{fig:pricing_forward_bias_cmpr} shows the forward bias \(\hat b\) for
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/pricing/fig_pricing_forward_bias_cmpr.png}
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_forward_bias_cmpr.png}
     \caption{Constant MPR forward bias $\hat{b} = (V_{\mathrm{pay}} - V_{\mathrm{rec}})/\mathcal{A}_0$ over time (basis points). The bias is close to zero for 5Y and 10Y expiry cells throughout the sample. Short-expiry cells show some residual bias in the 2022--2024 test period.}
     \label{fig:pricing_forward_bias_cmpr}
 \end{figure}
@@ -406,14 +400,14 @@ These results suggest that, while the model was not designed to match the swapti
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/pricing/fig_pricing_smile.png}
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_smile.png}
     \caption{Model-implied Bachelier vol smile for the Constant MPR model. Each panel shows implied vol (bp) as a function of strike offset $\delta = K - F_0$ (bp) for one rate regime (row) and one swaption cell (column). The dashed horizontal line marks the ATM vol. The smile is non-flat, reflecting the nonlinearity of the decoder; skew is most pronounced in short-expiry cells during the 2022 rate-hike period.}
     \label{fig:pricing_smile}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/pricing/fig_pricing_smile_dist.png}
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_smile_dist.png}
     \caption{Empirical distribution of the forward swap rate $F_{T_e}$ at expiry (shaded histogram) versus the Bachelier normal distribution fitted to the ATM vol (dashed curve). The vertical dotted line marks $F_0$. Departures from the dashed curve generate the non-flat smile in Figure~\ref{fig:pricing_smile}.}
     \label{fig:pricing_smile_dist}
 \end{figure}
