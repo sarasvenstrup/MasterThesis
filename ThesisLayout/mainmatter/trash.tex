@@ -445,13 +445,28 @@ ACcording to \cite{Sokol2022}:
 
 
 
-
-
-
-
-
-
-
-
-
 All three of this authors preceding Rolf, agree that the three factors result in a better fit than the two factor.
+
+
+
+
+
+% GAMLE LITERATURE REVIEW:
+
+
+This chapter motivates the modelling framework developed later in the thesis by placing it within the literature on low-dimensional yield-curve representations and arbitrage-free term-structure modelling. 
+
+The term structure of interest rates is observed at a discrete set of maturities, yielding a high-dimensional object, especially so when observed over many years of data. A central finding in the term structure literature is that most of this cross-sectional variation can be captured by a small number of common factors, motivating low-dimensional representations for practical use.
+
+Classical approaches achieve this through parsimonious representations, such as the Nelson--Siegel family, which imposes a fixed parametric form, or linear dimension-reduction methods such as principal component analysis. 
+
+Neural encoder--decoder models provide a more flexible nonlinear alternative. In this setting, an encoder compresses the observed curve into a low-dimensional latent state, while a decoder reconstructs the curve from that state. The relevant factors are therefore learned from the data rather than imposed ex ante. Kondratyev (2018) and Sokol (2022) apply this idea to empirically observed yield curves and show that only a small number of latent factors are needed to obtain accurate reconstructions. In particular, two or three factors are typically sufficient, consistent with the level--slope--curvature interpretation from principal component analysis. Their results also suggest that yield curves across several currencies can be pooled and represented using a common neural-network structure, thereby increasing the amount of training data available for estimation.
+
+The main limitation of flexible autoencoder approaches is that accurate reconstruction does not, by itself, guarantee no-arbitrage. This may be acceptable in a purely statistical setting, where the objective is only to approximate observed curves, but it is insufficient once the model is interpreted in a risk-neutral pricing framework. A decoder that maps directly to swap rates may fit the data well, while still failing to correspond to an arbitrage-free discount curve or to economically consistent term-structure dynamics.
+
+Andreasen (2023) moves towards addressing this issue by interpreting the output of the autoencoder through zero-coupon bond prices rather than directly as swap rates. The generated zero-coupon curve is then converted back into swap rates. This additional step is important because zero-coupon bond prices are the fundamental objects in arbitrage-free term-structure theory. Andreasen further uses the bond-price representation to infer risk-neutral quantities such as the short rate, drift, and diffusion of the encoded factors, and evaluates the extent to which the resulting curves are dynamically arbitrage-free. However, the no-arbitrage condition is not imposed as a hard constraint in the decoder itself.
+
+The model studied in this thesis is motivated by this remaining distinction between statistical reconstruction and arbitrage-free pricing. As in the earlier encoder--decoder literature, the encoder maps observed par swap rates into a low-dimensional latent representation. The key difference is that the decoder is constrained so that reconstructed swap rates are generated from an arbitrage-free zero-coupon bond curve, rather than being produced directly. Thus, the framework combines the flexibility of neural latent-factor models with the discipline of arbitrage-free term-structure modelling. The detailed construction of the model is presented in the following model chapter.
+
+
+
