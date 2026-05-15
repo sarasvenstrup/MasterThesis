@@ -1,0 +1,132 @@
+\chapter{Model Comparison (title?)}
+\label{chap:model_comparison}
+
+
+
+
+
+\section{Motivation and Model Specification}
+
+During the evaluation of the baseline model, we observe empirically that the model finds the approximate level of negative-rate curves but fails to reconstruct their slope and curvature. We hypothesise that this is related to the structure of the linear encoder. Since the encoder computes  \textcolor{red}{reference}
+$$z = A_1\mathbf{S}, \qquad \mathbf{S}=(S^{(1)},...,S^{(M)})^\top$$ 
+with no bias and no activation function, the magnitude of $z$ scales proportionally with $|\mathbf{S}|$, so near-zero curves push $z$ toward the origin of $\mathbb{R}^\ell$. If the training data consisted predominantly of positive-rate environments, the origin may lie outside the support of the training distribution of $z$, \textcolor{red}{causing the decoder to approximately recover the level but fail to match slope and curvature. We do not formally prove this, as it would require knowledge of the decoder behaviour outside its training distribution.}
+
+Motivated by this hypothesis, we augment the input vector with 
+derived features. We add a short-end slope $f_1 = S_{10\text{Y}} - S_{1\text{Y}}$, a long-end slope $f_2 = S_{30\text{Y}} - S_{10\text{Y}}$, and a curvature measure $f_3 = 2S_{10\text{Y}} - S_{1\text{Y}} - S_{30\text{Y}}$. The augmented input vector is then
+
+$$\mathbf{S}^{\text{aug}} = \bigl(S^{(1)}, \ldots, S^{(M)}, f_1, f_2, f_3\bigr)^\top \in \mathbb{R}^{M+3}$$
+
+All three features are invariant to parallel level shifts in the rate level, meaning that replacing 
+$\mathbf{S}$ by $\mathbf{S} + c\mathbf{1}$ leaves $f_1, f_2, f_3$ unchanged. For curves with \textcolor{red}{non-trivial} slope or curvature \textcolor{red}{but a low} or negative level, the derived features therefore carry shape information that the raw rates do not.  However, this argument does not apply to approximately flat curves near zero, 
+where the features are themselves near zero. 
+
+
+A second motivation is the training objective. Without augmentation, the loss $\lVert \mathbf{S} - \tilde{\mathbf{S}} \rVert^2$ provides no explicit incentive to match slope 
+or curvature. Including the derived features in both the input and the 
+loss directly penalises shape mismatch. Whether these modifications are sufficient to resolve the reconstruction failure for negative-rate curves is an empirical question, assessed in this following section.
+
+
+The augmented model follows the same encoder-decoder architecture described in Chapter~\ref{chap:encoderdecodermodel}, with two modifications. The encoder receives the 11-dimensional augmented input rather than the raw 8-dimensional swap curve, and the loss is evaluated over the eight reconstructed rates plus the three derived features computed from them, giving eleven terms in total. The decoder output remains an 8-dimensional swap curve $\tilde{\mathbf{S}}$.
+
+Combining the augmentation with the stabilisation described in Section~\ref{sec:stable} yields a fourth model, which we refer to as \textit{augmented stable}. We therefore evaluate four models in total: baseline ($\ell=3$), stable ($\ell=4$), augmented ($\ell=3$), and augmented stable ($\ell=3$). The latent dimension for each new model is selected based on its own out-of-sample performance. 
+
+
+\section{In-sample Fit}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/all_models_fitted_vs_actual.png}
+    \caption{Fitted versus actual swap curves for a normal market date (2014-08-29) and a crisis date (2020-03-31), shown for four selected currencies. Each panel overlays the fitted curves from the baseline ($\ell=3$), stable ($\ell=4$), augmented ($\ell=3$), and augmented stable ($\ell=3$) models.}
+    \label{fig:all_models_fitted_vs_actual}
+\end{figure}
+
+
+\section{Out-of-sample Performance} 
+
+\begin{table}[H]
+\centering
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/all_models_is_oos_summary.csv}\datmodelsummary
+{\footnotesize
+\pgfplotstabletypeset[
+  columns={Model, ell, IS_Avg, IS_Median, IS_Max, OOS_Avg, OOS_Median, OOS_Max},
+  columns/Model/.style={column name={Model}, string type, column type=l},
+  columns/ell/.style={column name={$\ell$}, string type, column type=c},
+  columns/IS_Avg/.style={column name={Avg}, string type, column type=r},
+  columns/IS_Median/.style={column name={Median}, string type, column type=r},
+  columns/IS_Max/.style={column name={Max}, string type, column type=r},
+  columns/OOS_Avg/.style={column name={Avg}, string type, column type=r},
+  columns/OOS_Median/.style={column name={Median}, string type, column type=r},
+  columns/OOS_Max/.style={column name={Max}, string type, column type=r},
+  every head row/.style={
+    before row={%
+      \toprule
+      & & \multicolumn{3}{c}{IS RMSE (bps)} & \multicolumn{3}{c}{OOS RMSE (bps)} \\
+      \cmidrule(lr){3-5}\cmidrule(lr){6-8}
+    },
+    after row=\midrule
+  },
+  every last row/.style={after row=\bottomrule},
+]{\datmodelsummary}
+}
+\caption{In-sample and out-of-sample RMSE (bps) across the four model variants. OOS results are from the rolling window evaluation scheme with 5-year training windows and 6-month test windows. The stable variant uses $\ell=4$ latent factors; all other variants use $\ell=3$.}
+\label{tab:all_models_is_oos_summary}
+\end{table}
+
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/oos_regime_scatter_all_models.png}
+    \caption{Out-of-sample RMSE (bps) over the rolling evaluation period (2015--2023) for all four model variants, coloured by market regime. Each panel corresponds to one model; points are coloured by whether the curve is inverted and/or exhibits negative rates.}
+    \label{fig:oos_regime_scatter_all_models}
+\end{figure}
+
+
+% NOTES
+
+%One struggle, common to both the basline model evalutaed in Chapter \ref{chap:evaluation} and the the stable model presented in Chapter \ref{chap:simulation}, is the reconstruction of curves with the negative swap rates. The baseline also had struggles with the inverted curves where the stable seem to be better in this case, but the negative rates are still the main struggle. 
+
+
+%Maybe make a hypothesis that is something about the negative rates when being compressed through a linear encoder trained on non negative curves, and the used on negative rates. Like something is collapsing. SHow this in a example.
+
+%When assessing the curve fit during the baseline evaluation, we found that the reconstructed curves of curves with negative rates found the correct level of the curve but couldnt fit the slope or the curvature well. Further the baseline also struggled with the inverted curves. The encoder-decoder models learning objective is to minimize the input swap rate curve with the reconstructed swap rate curve. We therefore propose to make it also train over more information about the curve than the mere values, there to adding three elements more to the swap rate curve input such the new input curve is:
+
+%$$S^{\text{new}}=
+%\begin{pmatrix}
+%    S\\
+%    S_{10}-S_1\\
+%    S_{30}-S_{10}\\
+%    2\cdot S_{10}-S_1-S_{30}
+%\end{pmatrix}$$
+%such that $S^{\text{new}}\in\mathbb{R}^m$
+
+%Thus when training this model with this input, everything is exactly the same as explained in the Chapter \ref{chap:encoderdecodermodel}, where the three elements only are used in the part where we train the loss function, so everything is exactly the same so the encoder takes in the information and then we train the model, and as output get the recontructed $\tilde{S}$, and then from this reconstructed S calcualte the slope at the short and long end of the curve and the curvature element, and the loss function is also evaluted over these three new elements. In this way then forcing the model to also make sure to match the curve shape as well. The model that has this three new elements is denoted as augmented.
+
+%We then train augmented together with the stable + augmented model, such that we in total have 4 different models. Since stable performed best with 4 dimeniosn and baseline best with 3, we also choose the best performing of the two new models based on their OOS performance. When assessing the curve fit trained in sample, we some very interesting results.
+
+
+
+
+%From this we see that for the EUR and JPY  during the crisis dates swaprates whicg at this date have negative rates, the baseline has a very poor fit only just mathcing the level of the curve. However, in great contrast the augmented curve is clearly achieveing a better fit, now also matching the slope and curvature. The stable model despite this new  learning objective, but due to more restrictions than the baseline, also been able to handle the negative swap rate curves better. The augmented stable model seems to also find the same constructed curves as the stable bit just a bit more \textcolor{red}{volatilite} (not the right word) at then ends of the curve, suggesting...
+
+
+%When assessing how the models perform OOS, they despite the better in sample fit for the harder curves to fit, still struggle despite. This is seen clearly in Tabel \ref{tab:all_models_is_oos_summary}, where there are very large errors OOS due to really bad fittings of the curves. However, we see a clear improvement insample for all models that are not the baseline model, nearly halfing the error in some cases. 
+
+
+
+
+
+
+
+
+
+
+
+% Maybe not have enough room to showcase the short rate.
+
+%\begin{figure}[h]
+%    \centering
+%    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/all_models_short_rate.png}
+%    \caption{X}
+%    \label{fig:all_models_short_rate}
+%\end{figure}

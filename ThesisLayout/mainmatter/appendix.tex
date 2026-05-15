@@ -775,12 +775,7 @@ The Runge--Kutta 3/8 method provides a fourth-order explicit approximation to th
 \section{Well-posedness of the Stable Latent Dynamics}
 \label{app:stable_sde_wellposed}
 
-This appendix verifies that the stable latent dynamics introduced in
-Chapter~\ref{chap:simulation} define a well-posed stochastic process. In
-particular, we show that the drift and diffusion coefficients satisfy the
-global Lipschitz and linear growth conditions of
-Proposition~\ref{prop:sde_existence}. It follows that the stable latent SDE
-admits a unique non-explosive solution.
+This appendix verifies that the stable latent dynamics introduced in Chapter~\ref{chap:simulation} define a well-posed stochastic process. In particular, we show that the drift and diffusion coefficients satisfy the global Lipschitz and linear growth conditions of Proposition~\ref{prop:sde_existence}. It follows that the stable latent SDE admits a unique non-explosive solution.
 
 The stable latent dynamics are given by
 \begin{equation}
@@ -822,16 +817,14 @@ levels are defined by
     \operatorname{sigmoid}(a_i(z)),
     \label{eq:app_stable_vol}
 \end{equation}
-where \(0<\sigma_{\min}<\sigma_{\max}<\infty\). The raw correlation outputs
-are mapped to angles by
+where \(0<\sigma_{\min}<\sigma_{\max}<\infty\). The raw correlation outputs are mapped to angles by
 \[
     \theta_{ij}(z)
     =
     \pi\,\operatorname{sigmoid}(c_{ij}(z))
     \in(0,\pi).
 \]
-These angles define the hyperspherical Cholesky factor \(L_R(z)\), and hence
-the correlation matrix
+These angles define the hyperspherical Cholesky factor \(L_R(z)\), and hence the correlation matrix
 \[
     R(z)=L_R(z)L_R(z)^\top.
 \]
