@@ -56,8 +56,11 @@ CCY_FILTER  = "EUR"
 RATE_CLIP   = 0.50
 ANNUITY_MAX = 50.0
 
-# Strike offsets in basis points (symmetric around ATM=0)
-DELTAS_BP = list(range(-200, 201, 25))
+# Strike offsets in basis points: dense grid, clipped per cell relative to ATM vol
+# (actual range used per cell is +/- DELTA_SIGMAS * ATM_vol, capped at DELTA_MAX_BP)
+DELTA_SIGMAS = 2.5    # show ± 2.5 * ATM_vol either side
+DELTA_MAX_BP = 200    # hard cap
+DELTA_STEP   = 10     # grid step (bp)
 
 # Target dates per regime (nearest available date will be used)
 TARGET_DATES = {
@@ -66,8 +69,9 @@ TARGET_DATES = {
     "Rate hike (2022)": pd.Timestamp("2022-06-30"),
 }
 
-# Cells to show
-SMILE_CELLS = [(1, 5), (5, 5), (10, 10)]   # (expiry, tenor)
+# Cells to show — use 5Y/10Y expiry where the model is well-calibrated
+# (1Y expiry cells have near-degenerate smile due to compressed short-horizon diffusion)
+SMILE_CELLS = [(5, 1), (5, 5), (10, 10)]   # (expiry, tenor)
 
 PRETRAIN_CKPT = os.path.join(PROJECT_ROOT, "Figures", "TrainingResults",
                               "dim4_stable", "ep5000", "checkpoint_dim4_ep5000.pt")
@@ -178,8 +182,8 @@ def implied_vol_bachelier(V_norm, F0, K, T):
 # ── simulate and price smile ──────────────────────────────────────────────────
 def run_smile(date, expiry, tenor):
     """
-    Simulate N_PATHS paths to expiry and price payer at each delta in DELTAS_BP.
-    Returns dict with F0, A0, F_T array, and smile arrays (delta_bp, sigma_bp).
+    Simulate N_PATHS paths to expiry.  Price payer + receiver at ATM and payer
+    at a dynamic strike grid.  Returns smile dict or None if degenerate.
     """
     idx = date_to_idx.get(date)
     if idx is None:
@@ -232,35 +236,57 @@ def run_smile(date, expiry, tenor):
     F_T, A_T, D_k = F_T[sane], A_T[sane], D_k[sane]
 
     F_T_np = F_T.numpy()
-    # effective annuity for normalisation (E[D_T * A_T])
+    # effective annuity for normalisation  E[D_T * A_T]
     eff_A0 = float((D_k * A_T).mean())
     if eff_A0 <= 0:
         eff_A0 = A0
 
+    # ── straddle ATM vol (consistent with eval_constant_mpr) ──────────────────
+    V_pay_atm = float((D_k * A_T * torch.relu( F_T - F0)).mean())
+    V_rec_atm = float((D_k * A_T * torch.relu(-F_T + F0)).mean())
+    V_str_atm = 0.5 * (V_pay_atm + V_rec_atm)
+    atm_vol_bp = (V_str_atm / eff_A0) * sqrt_2pi / math.sqrt(expiry) * 1e4
+
+    if not math.isfinite(atm_vol_bp) or atm_vol_bp < 5.0:
+        # degenerate: diffusion essentially zero at this date/cell
+        return None
+
+    # ── dynamic delta range: ± DELTA_SIGMAS * ATM_vol, capped at DELTA_MAX_BP ─
+    max_delta = min(int(DELTA_SIGMAS * atm_vol_bp // DELTA_STEP * DELTA_STEP),
+                    DELTA_MAX_BP)
+    # also ensure strikes stay above a minimum (-1% floor)
+    min_strike_delta = max(-max_delta, int((-0.01 - F0) * 1e4))
+    deltas_bp = list(range(min_strike_delta, max_delta + 1, DELTA_STEP))
+
     deltas_out, sigmas_out = [], []
-    for delta_bp in DELTAS_BP:
+    for delta_bp in deltas_bp:
         K = F0 + delta_bp / 1e4
         V_pay = float((D_k * A_T * torch.relu(F_T - K)).mean())
         if not math.isfinite(V_pay):
-            deltas_out.append(delta_bp)
-            sigmas_out.append(float("nan"))
+            deltas_out.append(delta_bp); sigmas_out.append(float("nan"))
             continue
         V_norm = V_pay / eff_A0
         sigma  = implied_vol_bachelier(V_norm, F0, K, expiry)
         deltas_out.append(delta_bp)
-        sigmas_out.append(sigma * 1e4 if math.isfinite(sigma) else float("nan"))
+        sigmas_out.append(sigma * 1e4 if (math.isfinite(sigma) and sigma > 0) else float("nan"))
+
+    # require at least half the grid to be valid
+    valid_frac = sum(math.isfinite(s) for s in sigmas_out) / max(len(sigmas_out), 1)
+    if valid_frac < 0.5:
+        return None
 
     return {
-        "F0":     F0,
-        "A0":     A0,
-        "F_T":    F_T_np,
-        "deltas": deltas_out,
-        "sigmas": sigmas_out,
-        "expiry": expiry,
-        "tenor":  tenor,
+        "F0":        F0,
+        "A0":        A0,
+        "F_T":       F_T_np,
+        "deltas":    deltas_out,
+        "sigmas":    sigmas_out,
+        "atm_vol_bp": atm_vol_bp,   # straddle-based, consistent with eval
+        "expiry":    expiry,
+        "tenor":     tenor,
     }
 
-# ── Figure 1: smile grid (3 dates x 3 cells) ─────────────────────────────────
+# ── Pre-compute all smile results once (reused by both figures) ───────────────
 print("\nComputing smiles ...")
 
 date_labels = list(SELECTED_DATES.keys())
@@ -268,13 +294,28 @@ date_vals   = list(SELECTED_DATES.values())
 row_colors  = ["#2563eb", "#16a34a", "#dc2626"]
 cell_labels = [f"{e}Yx{t}Y" for e, t in SMILE_CELLS]
 
+results = {}   # (i_date, j_cell) -> res or None
+for i, (label, date) in enumerate(zip(date_labels, date_vals)):
+    for j, (expiry, tenor) in enumerate(SMILE_CELLS):
+        # deterministic per-cell seed — independent of loop order
+        cell_seed = SEED + i * 1000 + expiry * 100 + tenor
+        torch.manual_seed(cell_seed)
+        np.random.seed(cell_seed)
+        print(f"  {label}  {expiry}Yx{tenor}Y  ...", end=" ", flush=True)
+        res = run_smile(date, expiry, tenor)
+        results[(i, j)] = res
+        if res is not None:
+            print(f"ATM={res['atm_vol_bp']:.1f} bp")
+        else:
+            print("skipped")
+
+# ── Figure 1: smile grid (3 dates x 3 cells) ─────────────────────────────────
 fig, axes = plt.subplots(3, 3, figsize=(13, 9), sharey=False)
 
 for j, (expiry, tenor) in enumerate(SMILE_CELLS):
     for i, (label, date) in enumerate(zip(date_labels, date_vals)):
         ax = axes[i][j]
-        print(f"  {label}  {expiry}Yx{tenor}Y  ...", end=" ", flush=True)
-        res = run_smile(date, expiry, tenor)
+        res = results[(i, j)]
 
         if res is None:
             print("skipped")
@@ -283,24 +324,22 @@ for j, (expiry, tenor) in enumerate(SMILE_CELLS):
             ax.set_title(f"{label}\n{expiry}Yx{tenor}Y", fontsize=8)
             continue
 
-        deltas = np.array(res["deltas"])
-        sigmas = np.array(res["sigmas"])
-        atm_vol = sigmas[deltas == 0][0] if 0 in deltas else float("nan")
+        deltas    = np.array(res["deltas"])
+        sigmas    = np.array(res["sigmas"])
+        atm_vol   = res["atm_vol_bp"]          # straddle-based ATM vol
 
         ax.plot(deltas, sigmas, color=row_colors[i], lw=2.0, marker="o",
-                markersize=3.5, label="Model smile")
-        if math.isfinite(atm_vol):
-            ax.axhline(atm_vol, color="black", lw=0.8, ls="--", alpha=0.6,
-                       label=f"ATM = {atm_vol:.0f} bp")
+                markersize=3.0, label="Model smile")
+        ax.axhline(atm_vol, color="black", lw=0.8, ls="--", alpha=0.7,
+                   label=f"ATM = {atm_vol:.0f} bp")
         ax.axvline(0, color="grey", lw=0.6, ls=":")
 
         ax.set_title(f"{label}\n{expiry}Yx{tenor}Y  "
-                     f"(F₀ = {res['F0']*100:.2f}%)", fontsize=8, fontweight="bold")
+                     f"($F_0$ = {res['F0']*100:.2f}%)", fontsize=8, fontweight="bold")
         ax.set_xlabel("Strike offset (bp)", fontsize=7)
         ax.set_ylabel("Implied normal vol (bp)", fontsize=7)
         ax.tick_params(labelsize=6)
         ax.legend(fontsize=6, loc="upper right")
-        print(f"ATM={atm_vol:.1f} bp")
 
 fig.suptitle("Model-implied Bachelier Vol Smile — Constant MPR\n"
              "(rows = rate regime, columns = swaption cell)",
@@ -313,15 +352,14 @@ plt.close(fig)
 print(f"\nSaved: {out1}")
 
 # ── Figure 2: empirical distribution of F_T vs fitted normal ─────────────────
-print("\nComputing distributions ...")
+print("\nPlotting distributions ...")
 
 fig, axes = plt.subplots(3, 3, figsize=(13, 9))
 
 for j, (expiry, tenor) in enumerate(SMILE_CELLS):
     for i, (label, date) in enumerate(zip(date_labels, date_vals)):
         ax = axes[i][j]
-        print(f"  {label}  {expiry}Yx{tenor}Y  ...", end=" ", flush=True)
-        res = run_smile(date, expiry, tenor)
+        res = results[(i, j)]
 
         if res is None:
             ax.text(0.5, 0.5, "N/A", ha="center", va="center",
@@ -332,10 +370,8 @@ for j, (expiry, tenor) in enumerate(SMILE_CELLS):
         F_T_bp = res["F_T"] * 1e4
         F0_bp  = res["F0"]  * 1e4
 
-        # ATM vol from smile
-        deltas = np.array(res["deltas"])
-        sigmas = np.array(res["sigmas"])
-        atm_vol = sigmas[deltas == 0][0] if 0 in deltas else float("nan")
+        # ATM vol — straddle-based, consistent with eval
+        atm_vol = res["atm_vol_bp"]
 
         # Empirical histogram
         ax.hist(F_T_bp, bins=60, density=True, alpha=0.55,
@@ -347,17 +383,16 @@ for j, (expiry, tenor) in enumerate(SMILE_CELLS):
             sigma_bp_sqrt_T = atm_vol * math.sqrt(expiry)
             pdf_normal = norm.pdf(x_range, loc=F0_bp, scale=sigma_bp_sqrt_T)
             ax.plot(x_range, pdf_normal, color="black", lw=1.5, ls="--",
-                    label=f"Bachelier N(F₀, σ√T)\nσ = {atm_vol:.0f} bp")
+                    label=f"Bachelier $N(F_0, \\sigma\\sqrt{{T}})$\n$\\sigma$ = {atm_vol:.0f} bp")
 
         ax.axvline(F0_bp, color="black", lw=1.0, ls=":", alpha=0.7,
-                   label=f"F₀ = {res['F0']*100:.2f}%")
+                   label=f"$F_0$ = {res['F0']*100:.2f}%")
 
         ax.set_title(f"{label}\n{expiry}Yx{tenor}Y", fontsize=8, fontweight="bold")
         ax.set_xlabel(r"$F_{T_e}$ (bp)", fontsize=7)
         ax.set_ylabel("Density", fontsize=7)
         ax.tick_params(labelsize=6)
         ax.legend(fontsize=6, loc="upper right")
-        print("done")
 
 fig.suptitle("Empirical Distribution of $F_{T_e}$ vs Bachelier Normal — Constant MPR\n"
              "(rows = rate regime, columns = swaption cell; dashed = fitted normal at ATM vol)",
