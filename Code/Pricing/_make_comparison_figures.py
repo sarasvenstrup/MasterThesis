@@ -121,10 +121,11 @@ for split_key, split_label in [(None, "All Dates"), ("test", "Test Set"), ("trai
     norm = Normalize(vmin=0, vmax=vmax)
     cmap = cm.YlOrRd
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3.8))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.2),
+                                    gridspec_kw={"wspace": 0.35})
 
     for ax, g, title in [(ax1, gb, "Base Model"), (ax2, gc, "Constant MPR")]:
-        im = ax.imshow(g, cmap=cmap, norm=norm, aspect="auto")
+        ax.imshow(g, cmap=cmap, norm=norm, aspect="auto")
         ax.set_xticks(range(3)); ax.set_yticks(range(3))
         ax.set_xticklabels([f"{t}Y" for t in TENOR_VALS], fontsize=10)
         ax.set_yticklabels([f"{e}Y" for e in EXPIRY_VALS], fontsize=10)
@@ -138,11 +139,12 @@ for split_key, split_label in [(None, "All Dates"), ("test", "Test Set"), ("trai
         overall = np.nanmean(g)
         ax.set_title(f"{title}\n(overall MAE = {overall:.0f} bp)", fontsize=10)
 
-    plt.colorbar(cm.ScalarMappable(norm=norm, cmap=cmap), ax=[ax1, ax2],
-                 label="Vol MAE (bp)", shrink=0.8)
+    cbar = fig.colorbar(cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax2,
+                        fraction=0.046, pad=0.08, shrink=0.85)
+    cbar.set_label("Vol MAE (bp)", fontsize=9)
     fig.suptitle(f"Per-Cell ATM Vol MAE (bp) — {split_label}, EUR",
-                 fontsize=11, fontweight="bold")
-    plt.tight_layout(rect=[0, 0, 0.9, 0.95])
+                 fontsize=11, fontweight="bold", y=1.02)
+    plt.tight_layout()
 
     tag = split_key if split_key else "all"
     out2 = os.path.join(OUT_DIR, f"fig_pricing_heatmap_comparison_{tag}.pdf")
