@@ -1,42 +1,15 @@
-\chapter{Title?}
+\chapter{Yield Curve Representations: A Literature Review}
 \label{ch:model-background}
 
-
-\textcolor{red}{Modelling the term structure of interest rates has been of broad interest in fixed income research.}  The yield curve is not observed directly but 
-must be inferred from market observables such as the swap rates introduced 
-in Chapter~\ref{chap:datadescription}, and since it is observed across 
-many maturities, a direct representation quickly becomes high-dimensional. 
-The central question is therefore whether it can be transformed into a 
-smaller-dimensional representation while retaining as much 
-information as possible \citep{Skovmand2025tsm}.
-
+\textcolor{red}{Modelling the term structure of interest rates has been of broad interest in fixed income research.}  The yield curve is not observed directly but must be inferred from market observables such as the swap rates introduced in Chapter~\ref{chap:datadescription}, and since it is observed across many maturities, a direct representation quickly becomes high-dimensional. The central question is therefore whether it can be transformed into a smaller-dimensional representation while retaining as much information as possible \citep{Skovmand2025tsm}.
 
 Classical approaches address this through representations that are simple and tractable. The Nelson--Siegel family \citep{NelsonSiegel1987} is perhaps the most well-known example, imposing a fixed parametric form on the curve. An alternative is to make no parametric assumption and instead apply linear dimension-reduction techniques such as principal component analysis \citep{Skovmand2025tsm}. Both approaches share the common goal of representing the yield curve with as few factors as possible, though Nelson-Siegel fixes the functional form a priori while PCA determines the factors empirically from the data.
 
+However, Nelson--Siegel is constrained by its fixed functional form, while PCA is limited to linear combinations of the observed rates. Neural network-based approaches address both of these limitations by learning flexible, nonlinear representations directly from data. lets\citet{Kondratyev2018} was among the first to demonstrate that neural networks outperform classical dimensionality reduction techniques such as PCA in describing yield curve dynamics. \citet{Sokol2022} extended this by proposing a variational autoencoder as a data-driven replacement for classical parametric factor models, requiring no a priori choice of functional form for the curve. He further shows that training on data from multiple currencies simultaneously improves extrapolation beyond what a single currency has historically experienced.\footnote{In this context, extrapolation refers to the model being asked to produce output for curve shapes that have not been observed for a given currency during training. As \citet{Sokol2022} notes, any mapping from the yield curve to model state variables must be capable of describing such curve shapes in order to be useful for model construction.} By encoding all curves into a shared latent space, curve shapes unseen for one currency are supported by observations from others.
 
-However, both Nelson--Siegel and PCA are limited in their flexibility, 
-the former by its fixed parametric form and the latter by its linearity. \citet{Kondratyev2018} was among the first to demonstrate that neural 
-networks outperform classical dimensionality reduction techniques such as 
-PCA in describing yield curve dynamics. \citet{Sokol2022} extended this 
-by proposing a variational autoencoder as a data-driven replacement for 
-classical parametric factor models, requiring no a priori choice of 
-functional form for the curve. He further shows that training on data from multiple currencies simultaneously improves extrapolation beyond what a single currency has historically experienced. \footnote{In this context, extrapolation refers to the model being asked to produce output for curve shapes that have not been observed for a given currency during training. As \citet{Sokol2022} notes, any 
-mapping from the yield curve to model state variables must be capable of 
-describing such curve shapes in order to be useful for model construction.} By encoding all curves into a shared latent space, curve shapes unseen for one currency are supported by observations from others.
+Such data-driven approaches, however, do not explicitly enforce no-arbitrage conditions on the generated curves. \citet{Andreasen2023} builds on this line of work with this in mind, interpreting the decoder output as zero-coupon bond prices rather than swap rates directly, which allows the stochastic dynamics of the encoded factors to be inferred, yielding a model that is close to dynamically arbitrage-free.
 
-Such data-driven approaches, however, do not explicitly enforce 
-no-arbitrage conditions on the generated curves. \citet{Andreasen2023} builds on this line of work with this in mind, departing from 
-\citet{Kondratyev2018} and \citet{Sokol2022} by not interpreting the 
-decoder output directly as swap rates. Instead, the output is treated as 
-zero-coupon rates, which are splined to a continuous curve and converted 
-to swap rates. This allows the zero-coupon bond prices to be used to infer the 
-stochastic dynamics of the encoded factors, yielding a model that is 
-close to dynamically arbitrage-free.
-
-\citet{MatinWanPoulsen2025} take this a step further by imposing the 
-no-arbitrage condition as a hard constraint at the decoding stage, rather 
-than the soft regularisation term used by \citet{Andreasen2023}, producing 
-yield curves that are exactly arbitrage-free by construction. The present thesis builds on this model, which we describe in detail in 
+\citet{MatinWanPoulsen2025} take this a step further by imposing the no-arbitrage condition as a hard constraint at the decoding stage, rather than the soft regularisation term used by \citet{Andreasen2023}, producing yield curves that are exactly arbitrage-free by construction. The present thesis builds on this model, which we describe in detail in 
 the following chapter.
 
 
@@ -45,56 +18,3 @@ the following chapter.
 
 
 
-\newpage
-
-
-\citet{sokol} notes that, unlike classical parametric models, the 
-autoencoder requires no a priori choice of functional form for the curve. 
-The representation is learned from data, so periodic retraining updates 
-the mapping rather than respecifying the model.
-
-\citet{sokol2022} notes that any mapping from the yield curve to model 
-state variables must be capable of extrapolation outside the historical 
-data envelope of a given currency. Training on data from multiple 
-currencies simultaneously addresses this by encoding all curves into a 
-shared latent space, so that curve shapes unseen for one currency are 
-supported by observations from others.
-
-\citet{Andreasen2023} builds on this line of work but departs from 
-\citet{kondratyev2018} and \citet{sokol2022} by not interpreting the 
-decoder output directly as swap rates. Instead, the output is treated as 
-zero-coupon rates, which are splined to a continuous curve and converted 
-to swap rates. This additional step is motivated by the desire to make 
-explicit use of the zero-coupon bond prices to infer the stochastic 
-dynamics of the encoded factors, yielding a model that is close to 
-dynamically arbitrage-free.
-
-\citet{MatinWanPoulsen2025} take this a step further by imposing the 
-no-arbitrage condition as a hard constraint at the decoding stage, rather 
-than as an approximation, producing yield curves that are exactly 
-arbitrage-free by construction.
-
-
-
-
-
-
-
-
-
-
-\newpage
-
-This chapter motivates the modelling framework developed later in the thesis by placing it within the literature on low-dimensional yield-curve representations and arbitrage-free term-structure modelling. 
-
-The term structure of interest rates is observed at a discrete set of maturities, yielding a high-dimensional object, especially so when observed over many years of data. A central finding in the term structure literature is that most of this cross-sectional variation can be captured by a small number of common factors, motivating low-dimensional representations for practical use.
-
-Classical approaches achieve this through parsimonious representations, such as the Nelson--Siegel family, which imposes a fixed parametric form, or linear dimension-reduction methods such as principal component analysis. 
-
-Neural encoder--decoder models provide a more flexible nonlinear alternative. In this setting, an encoder compresses the observed curve into a low-dimensional latent state, while a decoder reconstructs the curve from that state. The relevant factors are therefore learned from the data rather than imposed ex ante. Kondratyev (2018) and Sokol (2022) apply this idea to empirically observed yield curves and show that only a small number of latent factors are needed to obtain accurate reconstructions. In particular, two or three factors are typically sufficient, consistent with the level--slope--curvature interpretation from principal component analysis. Their results also suggest that yield curves across several currencies can be pooled and represented using a common neural-network structure, thereby increasing the amount of training data available for estimation.
-
-The main limitation of flexible autoencoder approaches is that accurate reconstruction does not, by itself, guarantee no-arbitrage. This may be acceptable in a purely statistical setting, where the objective is only to approximate observed curves, but it is insufficient once the model is interpreted in a risk-neutral pricing framework. A decoder that maps directly to swap rates may fit the data well, while still failing to correspond to an arbitrage-free discount curve or to economically consistent term-structure dynamics.
-
-Andreasen (2023) moves towards addressing this issue by interpreting the output of the autoencoder through zero-coupon bond prices rather than directly as swap rates. The generated zero-coupon curve is then converted back into swap rates. This additional step is important because zero-coupon bond prices are the fundamental objects in arbitrage-free term-structure theory. Andreasen further uses the bond-price representation to infer risk-neutral quantities such as the short rate, drift, and diffusion of the encoded factors, and evaluates the extent to which the resulting curves are dynamically arbitrage-free. However, the no-arbitrage condition is not imposed as a hard constraint in the decoder itself.
-
-The model studied in this thesis is motivated by this remaining distinction between statistical reconstruction and arbitrage-free pricing. As in the earlier encoder--decoder literature, the encoder maps observed par swap rates into a low-dimensional latent representation. The key difference is that the decoder is constrained so that reconstructed swap rates are generated from an arbitrage-free zero-coupon bond curve, rather than being produced directly. Thus, the framework combines the flexibility of neural latent-factor models with the discipline of arbitrage-free term-structure modelling. The detailed construction of the model is presented in the following model chapter.
