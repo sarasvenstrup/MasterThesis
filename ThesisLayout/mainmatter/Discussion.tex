@@ -19,3 +19,86 @@ The evaluation yields three main findings. First, the autoencoder achieves reaso
 Second, the no-arbitrage diagnostic confirms that the generated zero-coupon bond prices satisfy the bond-pricing PDE up to numerical approximation error. The residuals are close to zero across maturities and currencies, indicating that the arbitrage-free construction is preserved in practice.
 
 Third, the rolling-window analysis reveals a substantial generalization gap. Although the higher-dimensional specifications fit the training windows well, their out-of-sample performance deteriorates markedly, especially for $\ell=3$ and $\ell=4$. The $\ell=2$ model is less accurate in-sample but more stable on unseen data. This suggests that additional latent flexibility improves reconstruction within the estimation sample, but weakens out-of-sample robustness in the rolling-window setting.
+
+% --- BRAIN STORM ----
+
+Bullet points:
+
+\begin{itemize}
+    \item discuss the hard constraint. so compared to andreasen, what are we to achieve with this hard constraint ? are we expecting a trade off with something? we see the same reconstruction, but even with no arbitrage internally, the model still struggles in regime shifts 
+    \item latent dimensions can improve insample fit, men harm generalistion. The baseline results reveal a trade-off between flexibility and robustness. Additional latent factors improve the in-sample representation of the swap curve, but they also make the model more sensitive to changes in the market environment.
+    \item the stable model changes the conclusion about the laten dimnesions. The stable specification shows that higher-dimensional latent representations can be useful when combined with suitable restrictions on the dynamics. The issue is therefore not model complexity alone, but whether that complexity is controlled.
+    \item the model is very regime dependent. The results suggest that the model learns dominant historical curve configurations well, but struggles when the interest-rate environment changes.
+    \item Negative-rate curves remain challenging across specifications, suggesting that the architecture does not fully capture the structural features of low-rate environments.
+    \item The single-curve assumption provides a tractable link between swap rates and discount factors, but it abstracts from multi-curve market practice
+\end{itemize}
+
+The single-curve assumption makes the relation between swap rates and
+discount factors tractable by using the same curve for discounting and
+forwarding. In practice, however, modern swap markets often distinguish
+between discount curves and forward curves. The model therefore abstracts from
+multi-curve effects such as tenor basis, collateralisation and liquidity
+premia.
+
+
+% ---- START ---- 
+
+* What is the purpose of reconstruction? 
+
+* Why reconstruction matters
+- It tests whether the swap curve can be compressed into a lower-dimensional latent state.
+
+
+At first, reconstruction may appear to be a purely statistical task: the model is trained to reproduce quantities that are already observed. The purpose, however, is not merely to copy the observed swap rates, but to test whether the swap-rate curve can be represented by a lower-dimensional latent state. The reconstruction error therefore serves as a diagnostic for how much information is retained in this representation. If the model can accurately reconstruct the observed curve from only a few latent factors, this suggests that the latent state captures the main cross-sectional information in the term structure.
+
+- this is then what we evalute with looking at the model for different latent dimensions. how many latent dimensions are neccesary and sufficeitn to represent? and the answer to this question depends on perspective / what angle you look at. 
+- at first sight, it seems like in sample the more idmensins the better. but this seems to not hold any longer, when looking at oos. the higher dimensions adds senstive to model, which harsly react to regime shift and crisis periods, and therefor the robustness of two dimensions win. 
+- but when this flexibility / complexity of the model is controlled and constrained in the stable model, we see the additional dimensions outperform in and out of sample. confirming that complexity  provides the flexibility the model needs to fit the market, but needs financial strucutre and constraints to stay stable ????
+
+* What latent dimension tells us
+- In-sample, more dimensions improve fit; out-of-sample, the baseline becomes less robust; with stability constraints, higher dimensions become useful again.
+
+The comparison across latent dimensions evaluates how many factors are needed for this representation. In-sample, reconstruction improves as the number of latent factors increases, suggesting that additional dimensions provide useful flexibility. However, the rolling out-of-sample results show that this flexibility can come at the cost of robustness. For the baseline model, the higher-dimensional specifications are more sensitive to regime shifts, while the two-factor model gives the most stable out-of-sample performance.
+
+The stable variant changes this conclusion. Once the latent dynamics are constrained through mean reversion, bounded volatility, valid correlations and bounded short-rate behaviour, the additional dimensions become useful rather than destabilising. The four-factor stable model performs best both in-sample and out-of-sample, suggesting that complexity is beneficial when it is combined with appropriate stability restrictions.
+
+* Why the decoder is more than a fitted vector
+-It learns a state-to-curve map, producing zero-coupon bond prices/yields/forwards on a richer maturity grid.
+
+The reconstruction task is also useful because the decoder learns a state-to-curve map rather than only a mapping to the observed maturities. Although the model takes swap rates at eight maturities as input, the decoder generates zero-coupon bond prices on a richer maturity grid. The latent state can therefore be used to generate a model-implied term structure, including bond prices, yields, forward rates and swap rates at maturities beyond the original input set.
+
+- this state-to-curve mapping is exactly the mapping benth is talking about, and shows /proofs can actually be learned. 
+
+A natural question is why we should expect such a state-to-curve map to be learnable by a neural network in the first place. The decoder is not only asked to fit individual maturities, but to learn a structured map from a latent state to an entire pricing function. For each latent state \(z\), it produces a bond-price curve
+\[
+    \tau \mapsto P_\theta(z,\tau).
+\]
+Thus, the object being learned is closer to a pricing operator than to a collection of unrelated scalar predictions.
+
+This perspective is conceptually related to \citet{Benth2024}, who study neural approximation of solution operators for backward parabolic Cauchy problems. This is relevant because Markovian arbitrage-free bond-pricing equations are themselves backward parabolic PDEs. Their results therefore provide a mathematical argument that, under suitable regularity and continuity assumptions, pricing-type solution maps are suitable objects for neural approximation.
+
+The connection is not exact. Benth's framework concerns operators between infinite-dimensional function spaces, where the input may be a coefficient or terminal condition and the output is a PDE solution function. In contrast, the encoder--decoder used here takes a finite-dimensional latent state \(z\in\mathbb{R}^{\ell}\) as input and is trained on swap rates observed at finitely many maturities. For fixed \(z\), however, the output remains function-valued, since the decoder generates a maturity curve. The model can therefore be viewed as learning a map
+\[
+    D_\theta:\mathbb{R}^{\ell}\to C([0,T]),
+    \qquad
+    z\mapsto P_\theta(z,\cdot),
+\]
+rather than a full function-to-function operator. In this sense, the theory of \citet{Benth2024} does not prove that the specific encoder--decoder architecture used in this thesis will succeed, but it supports the broader viewpoint that pricing functions arising from parabolic PDEs can be treated as learnable objects.
+
+* Why no-arbitrage matters
+- The model reconstructs curves through zero-coupon bonds and swap-pricing identities, so outputs are financially structured.
+
+
+- this AF model variant is exactly what Rolf Poulsen adds compared to Jesper Andreasen. And we of course need a internally arbitrage free model because so and so.
+- but does this arbitrage free constraint come as a trade off? well no, we can still reconstruct just as good. 
+
+In this thesis, the state-to-curve representation is financially structured. The decoder maps the latent state into zero-coupon bond prices before converting them into swap rates. A successful reconstruction therefore indicates not only that the curve can be compressed, but also that it can be regenerated within an arbitrage-free term-structure framework.
+
+This matters because an unconstrained neural network could fit the observed swap rates while producing curves that violate basic pricing relations. The no-arbitrage decoder restricts the output to curves that are consistent with zero-coupon bond prices and swap-pricing identities. The empirical results suggest that imposing this structure does not prevent accurate reconstruction, while the PDE residual diagnostic confirms that the no-arbitrage restriction is satisfied numerically.
+
+* What reconstruction does not guarantee
+- It does not guarantee stable simulation or good swaption pricing.
+
+Successful reconstruction is only one requirement for a useful term-structure model. Reconstruction accuracy measures whether the current curve can be represented by the latent state, but it does not guarantee that the latent dynamics are stable when simulated forward. Nor does it guarantee accurate derivative pricing, since swaption prices depend on the risk-neutral distribution of future swap rates rather than only the current curve.
+
+The main implication is that arbitrage-free reconstruction, stable simulation and derivative pricing are related but distinct objectives.

@@ -201,6 +201,8 @@ The in-sample reconstruction results show that the autoencoder captures swap rat
 
 This section will try to assess the implied terms tructure look reasonable. and also about the short rate.
 
+Beyond reconstruction accuracy, it is useful to examine whether the quantities implied by the no-arbitrage decoder are economically reasonable. Figure~\ref{fig:r_tilde_all_dims} shows the model-implied short rate $\tilde r(z_t)$ over time for the baseline specifications with $\ell\in\{2,3,4\}$ latent factors.
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/r_tilde_all_dims.png}
@@ -210,8 +212,17 @@ This section will try to assess the implied terms tructure look reasonable. and 
     \label{fig:r_tilde_all_dims}
 \end{figure}
 
+Across all three specifications, the implied short rates follow the main movements in the observed swap-rate data, declining toward the low-rate period around 2019--2020 and rising sharply from 2022 onwards. This suggests that the decoder learns an internal short-rate quantity that reflects the broad direction of interest-rate movements.
 
+However, the level and scale of the implied short rate vary substantially across latent dimensions. In particular, the $\ell=3$ model produces much higher short-rate levels, while the $\ell=4$ model compresses the short rate into a much narrower range. This indicates that the short rate is not uniquely identified by the reconstruction objective alone. Since the model is trained to fit swap rates rather than observed short rates or policy rates, different latent representations can reconstruct the swap curve similarly while implying different short-rate processes.
 
+The implied short rate should therefore be interpreted as an internal model quantity required by the no-arbitrage decoder, rather than as a directly calibrated estimate of the market short rate.
+
+% ---- SHORTER VERSION ----
+
+%The implied short rates broadly follow the main movements in the observed swap-rate data, declining toward the low-rate period around 2019--2020 and rising sharply from 2022 onwards. However, their level and scale differ substantially across latent dimensions. The $\ell=3$ model produces much higher short-rate levels, while the $\ell=4$ model compresses the short rate into a much narrower range.
+
+%This sensitivity suggests that the implied short rate is not uniquely identified by the reconstruction objective alone. Since the model is trained to fit swap rates rather than observed short rates or policy rates, the short rate should be interpreted as an internal model quantity required by the no-arbitrage decoder, rather than as a directly calibrated estimate of the market short rate.
 
 
 

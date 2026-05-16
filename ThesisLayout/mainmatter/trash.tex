@@ -397,3 +397,76 @@ where $\psi$ is applied element-wise, satisfies
 The approximating class in Theorem~\ref{thm:UAT} is a feedforward network with a single hidden layer of width $M_1$ and an identity activation in the output layer, and is therefore a special case of the broader architecture in \eqref{eq:network}. The theorem shows that even this restricted architecture can approximate any continuous scalar-valued function on a compact set to arbitrary accuracy.
 
 However, the theorem is an existence result only. It does not specify how large the width $M_1$ must be, whether deeper architectures can achieve the same approximation more efficiently, or how suitable parameters are to be found in practice. Thus, for a fixed architecture, approximation may still be poor if the network is too narrow, and suitable parameters may remain difficult to obtain through training. In practice, such questions of architecture design and optimisation are therefore addressed empirically, typically through model selection and validation on data not used for training.
+
+
+
+
+
+
+
+
+
+% NOTES FROM LITERATURE:
+he aim of this section, is to set the scene of yield curve modeling.
+
+
+According to \citep{MatinWanPoulsen2025}: 
+
+\begin{itemize}
+    \item Yield curve modeling has traditionally been dominated by parametric representations from the Nelson-Siegel family or classical linear principal component analysis. The extension to nonlinear representations using autoencoders was pioneered by \cite{Kondratyev2018} in 2018. 
+    \item points out that non-linear or non-parametric dimensionality reduction is fitting for modeling curve dynamics in finance, which was conducted by \cite{Sokol2022} and \cite{Kondratyev2018}. These models however are not AF.
+    \item Impose the no-arbitrage condition at the decoding stage as a hard constraint, which enables them to specify and train a model in which the encoder-decoder itself produces a continuous representation that is exactly arbitrage-free by construction.
+    
+\end{itemize}
+
+
+ACcording to \cite{Andreasen2023}: 
+
+\begin{itemize}
+    \item \cite{Kondratyev2018} and more recently \cite{Sokol2022} show that the question can be answered by fitting so-called auto-encoder neural networks to empirically observed yield curves. Suprisingly, the answer to that is two to three factors are sufficient. Further, that same auto-encoder can be used across all-currencies. 
+    \item Contrary to the work by \cite{Kondratyev2018} and \cite{Sokol2022} , Jesper Andreasen does not interpret the output of the neural network directly as swap rates but rather as ZCB-prices. These are first splined and converted to zero-coupon bond prices and the secondly to swap rates through the formula from Bjork.
+    \item Why does Jesper execute this additional step? Well, because he will make explcit use of the ZCB prices to infer information about the stochastic nature of the yield curve dynamics.
+    \item It is assumed that yield curves are weighted equally, such that Jesper us treating the different currencies and numeraires equally, essentially assuming that they can be represented by the same Neural Network. This approach is in line with the analysis by Sokol (2018), who concludes that there doesn't seem to be much empirical support for using seperate networks or additional input to seperate the currencies.
+    \item states that \cite{Kondratyev2018} and \cite{Sokol2022} answer the question of how many factors are required to describe the dynamics of the yield curves. They do so by fitting so-called auto-encoder neural networks to empirically observed yield curves, and that 2 to 3 factors are sufficient. Jesper Andreasen confirms this empirically. He further shows that these autoencoder networks are \underline{close} to being dynamically AF. AND that can be decoded to identify the risk-neutral dynamics of the encoded factors and thereby the full yield curve.
+    \item contrary to \cite{Kondratyev2018} and \cite{Sokol2022}, Jesper Andreasen does not interpret the output of the neural network directly at as swap rates but rather as zero coupon rates, the splined and converted in into zeroc coupon bond prices and then to swap rates.
+    \item All yield curves are weighted equally. So we are treating the different currencies and numeraires equally, essentially assuming they can be represented by the same NN. This is in line with Sokole 2018? IS THIS A  MISTAKE?
+    \item As mentioned earlier, in this analysis, we are treating the yield curves of different currencies as if they represent the same numeraire but observed at
+    different levels of the encoded state variable $z$. In other words, as if the same SDE governs all yield curves --- only the current states differ. It seems
+    like a strict assumption, but the empirical results do not seem to contradict this assumption. \citet{Sokol2022} does a more in-depth analysis of this and reaches a similar conclusion.
+\end{itemize}
+
+
+ACcording to \cite{Sokol2022}:
+\begin{itemize}
+    \item He says that \cite{Kondratyev2018} demonstrated that feed forward neural networks outperform classical regression techniques such as PCA in describing the evolution of interest rate curve shapes in P-measure. This was one of the early successes of using machine learning for dimensionality reduction.
+\end{itemize}
+
+
+
+
+
+All three of this authors preceding Rolf, agree that the three factors result in a better fit than the two factor.
+
+
+
+
+
+% GAMLE LITERATURE REVIEW:
+
+
+This chapter motivates the modelling framework developed later in the thesis by placing it within the literature on low-dimensional yield-curve representations and arbitrage-free term-structure modelling. 
+
+The term structure of interest rates is observed at a discrete set of maturities, yielding a high-dimensional object, especially so when observed over many years of data. A central finding in the term structure literature is that most of this cross-sectional variation can be captured by a small number of common factors, motivating low-dimensional representations for practical use.
+
+Classical approaches achieve this through parsimonious representations, such as the Nelson--Siegel family, which imposes a fixed parametric form, or linear dimension-reduction methods such as principal component analysis. 
+
+Neural encoder--decoder models provide a more flexible nonlinear alternative. In this setting, an encoder compresses the observed curve into a low-dimensional latent state, while a decoder reconstructs the curve from that state. The relevant factors are therefore learned from the data rather than imposed ex ante. Kondratyev (2018) and Sokol (2022) apply this idea to empirically observed yield curves and show that only a small number of latent factors are needed to obtain accurate reconstructions. In particular, two or three factors are typically sufficient, consistent with the level--slope--curvature interpretation from principal component analysis. Their results also suggest that yield curves across several currencies can be pooled and represented using a common neural-network structure, thereby increasing the amount of training data available for estimation.
+
+The main limitation of flexible autoencoder approaches is that accurate reconstruction does not, by itself, guarantee no-arbitrage. This may be acceptable in a purely statistical setting, where the objective is only to approximate observed curves, but it is insufficient once the model is interpreted in a risk-neutral pricing framework. A decoder that maps directly to swap rates may fit the data well, while still failing to correspond to an arbitrage-free discount curve or to economically consistent term-structure dynamics.
+
+Andreasen (2023) moves towards addressing this issue by interpreting the output of the autoencoder through zero-coupon bond prices rather than directly as swap rates. The generated zero-coupon curve is then converted back into swap rates. This additional step is important because zero-coupon bond prices are the fundamental objects in arbitrage-free term-structure theory. Andreasen further uses the bond-price representation to infer risk-neutral quantities such as the short rate, drift, and diffusion of the encoded factors, and evaluates the extent to which the resulting curves are dynamically arbitrage-free. However, the no-arbitrage condition is not imposed as a hard constraint in the decoder itself.
+
+The model studied in this thesis is motivated by this remaining distinction between statistical reconstruction and arbitrage-free pricing. As in the earlier encoder--decoder literature, the encoder maps observed par swap rates into a low-dimensional latent representation. The key difference is that the decoder is constrained so that reconstructed swap rates are generated from an arbitrage-free zero-coupon bond curve, rather than being produced directly. Thus, the framework combines the flexibility of neural latent-factor models with the discipline of arbitrage-free term-structure modelling. The detailed construction of the model is presented in the following model chapter.
+
+
+
