@@ -184,46 +184,24 @@ Table~\ref{tab:q6e_combined} quantifies this further. Normal, non-negative curve
 \end{table}
 
 
-
-
-
-
-
-
 The in-sample reconstruction results show that the autoencoder captures swap rate curves with o accuracy once at least two latent factors are used. Increasing the latent dimension improves reconstruction accuracy, though with diminishing gains. The remaining errors are concentrated at the short and long ends of the curve, during periods of abrupt market movements, and for structurally atypical curve shapes such as inverted and negative-rate curves. The latter is particularly evident for EUR and JPY during the COVID-19 shock. 
 
 
 
-
-
-
-
-
-This section will try to assess the implied terms tructure look reasonable. and also about the short rate.
-
-Beyond reconstruction accuracy, it is useful to examine whether the quantities implied by the no-arbitrage decoder are economically reasonable. Figure~\ref{fig:r_tilde_all_dims} shows the model-implied short rate $\tilde r(z_t)$ over time for the baseline specifications with $\ell\in\{2,3,4\}$ latent factors.
+Beyond reconstruction accuracy, we examine whether the quantities implied by the no-arbitrage decoder are economically reasonable. Figure~\ref{fig:r_tilde_all_dims} shows the model-implied short rate, $\tilde r(z_t)$, over time.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/r_tilde_all_dims.png}
-    \caption{Implied short rate $\tilde{r}(z_t)$ over time for the baseline 
+    \caption{Implied short rate $\tilde{r}(z_t)$ over time for the
     model with $\ell \in \{2,3,4\}$ latent factors, evaluated on the full 
-    in-sample dataset. Each line corresponds to one currency.}
+    in-sample dataset. Each line corresponds to one currency. Note that the vertical axis differs across panels.}
     \label{fig:r_tilde_all_dims}
 \end{figure}
 
-Across all three specifications, the implied short rates follow the main movements in the observed swap-rate data, declining toward the low-rate period around 2019--2020 and rising sharply from 2022 onwards. This suggests that the decoder learns an internal short-rate quantity that reflects the broad direction of interest-rate movements.
+Across all three models, the implied short rates move in the same overall direction as the observed swap rates over the sample period. They decline toward the low-rate period around 2019--2020 and rise sharply from 2022 onwards. The level and scale of the implied short rate, however, vary substantially across latent dimensions. In particular, the $\ell=3$ model produces much higher short-rate levels, while the $\ell=4$ model compresses the short rate into a much narrower range.
 
-However, the level and scale of the implied short rate vary substantially across latent dimensions. In particular, the $\ell=3$ model produces much higher short-rate levels, while the $\ell=4$ model compresses the short rate into a much narrower range. This indicates that the short rate is not uniquely identified by the reconstruction objective alone. Since the model is trained to fit swap rates rather than observed short rates or policy rates, different latent representations can reconstruct the swap curve similarly while implying different short-rate processes.
-
-The implied short rate should therefore be interpreted as an internal model quantity required by the no-arbitrage decoder, rather than as a directly calibrated estimate of the market short rate.
-
-% ---- SHORTER VERSION ----
-
-%The implied short rates broadly follow the main movements in the observed swap-rate data, declining toward the low-rate period around 2019--2020 and rising sharply from 2022 onwards. However, their level and scale differ substantially across latent dimensions. The $\ell=3$ model produces much higher short-rate levels, while the $\ell=4$ model compresses the short rate into a much narrower range.
-
-%This sensitivity suggests that the implied short rate is not uniquely identified by the reconstruction objective alone. Since the model is trained to fit swap rates rather than observed short rates or policy rates, the short rate should be interpreted as an internal model quantity required by the no-arbitrage decoder, rather than as a directly calibrated estimate of the market short rate.
-
+Although the short rate is explicitly modelled as a function of the latent state, it is learned through the swap-rate reconstruction loss rather than by direct calibration to an observed overnight or policy rate. This may partly explain why the implied short-rate levels differ across latent dimensions, even when the reconstructed swap curves are similar. The implied short rate should therefore be interpreted with some caution as a model-implied component of the arbitrage-free decoder, rather than as a separately calibrated estimate of the market short rate.
 
 
 \subsection{No-Arbitrage PDE Residual Diagnostic}
@@ -373,7 +351,5 @@ The regime-dependent pattern documented in Section~\ref{subsec:reconstruction_ac
 \caption{Out-of-sample RMSE (bps) by interest rate regime for the model with $\ell=3$ latent factors, pooled across all 18 rolling test windows. Observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero. $N$ denotes the number of curve observations in each regime.}
 \label{tab:q4c_oos_combined}
 \end{table}
-
-
 Overall, the out-of-sample results indicate that $\ell=2$ offers the most stable performance across rolling windows, while higher dimensional specifications are prone to instability in specific market environments. The errors are concentrated in periods of structural change, particularly the low-rate environment of 2016 and the rate-hiking cycle of 2022, and are most sever for inverted curves, which where rarely observed in the preceding training periods.
 
