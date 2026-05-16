@@ -1354,12 +1354,12 @@ else:
 
         # scatter over time: colour encodes regime (negative = red family)
         _df_oos_regime["as_of_date"] = pd.to_datetime(_df_oos["as_of_date"].values)
-        fig, ax = plt.subplots(figsize=(11, 4))
+        fig, ax = plt.subplots(figsize=(11, 3))
         _oos_scatter_groups = [
-            (~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Normal, Non-negative",     custom_palette[2]),
-            ( _df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Inverted, Non-negative",   "black"),
-            (~_df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Normal, Negative rates",   "indianred"),
-            ( _df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Inverted, Negative rates", custom_palette[8]),
+            (~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Normal",     custom_palette[2]),
+            ( _df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Inverted",   "black"),
+            (~_df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Negative",   "indianred"),
+            ( _df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Inverted + Negative", custom_palette[8]),
         ]
         for _mask, _lbl, _col in _oos_scatter_groups:
             _sub = _df_oos_regime[_mask]
@@ -1368,10 +1368,12 @@ else:
             ax.scatter(_sub["as_of_date"], _sub["rmse_bps"],
                        s=4, alpha=0.4, color=_col, marker="o", label=_lbl, zorder=3)
         ax.set_ylabel("RMSE (bps)", fontsize=12)
-        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
-                  ncol=1, fontsize=10, frameon=False, markerscale=3)
+        fig.legend(*ax.get_legend_handles_labels(), loc="lower center",
+                   bbox_to_anchor=(0.5, -0.05), ncol=4, fontsize=10,
+                   frameon=False, markerscale=3)
         fig.autofmt_xdate()
         fig.tight_layout()
+        fig.subplots_adjust(bottom=0.3)
         save_fig(fig, "Q4c_oos_scatter_regime")
 
         print(f"  Loaded {len(_df_oos)} OOS test observations.")
@@ -1880,10 +1882,10 @@ else:
     # ── 3. Scatter over time: colour encodes regime (negative = red family)
     fig, ax = plt.subplots(figsize=(11, 4))
     _scatter_groups = [
-        (~_df_regime["inverted"] & ~_df_regime["negative"], "Normal, Non-negative",     custom_palette[2]),
-        ( _df_regime["inverted"] & ~_df_regime["negative"], "Inverted, Non-negative",   "black"),
-        (~_df_regime["inverted"] &  _df_regime["negative"], "Normal, Negative rates",   "indianred"),
-        ( _df_regime["inverted"] &  _df_regime["negative"], "Inverted, Negative rates", custom_palette[8]),
+        (~_df_regime["inverted"] & ~_df_regime["negative"], "Normal",     custom_palette[2]),
+        ( _df_regime["inverted"] & ~_df_regime["negative"], "Inverted",   "black"),
+        (~_df_regime["inverted"] &  _df_regime["negative"], "Negative",   "indianred"),
+        ( _df_regime["inverted"] &  _df_regime["negative"], "Inverted + Negative", custom_palette[8]),
     ]
     for mask, lbl, col in _scatter_groups:
         sub = _df_regime[mask]
@@ -1895,9 +1897,9 @@ else:
     fig.autofmt_xdate()
     fig.tight_layout()
     fig.legend(*ax.get_legend_handles_labels(), loc="lower center",
-               bbox_to_anchor=(0.5, -0.05), ncol=2, fontsize=10,
+               bbox_to_anchor=(0.5, -0.05), ncol=4, fontsize=10,
                frameon=False, markerscale=3)
-    fig.subplots_adjust(bottom=0.22)
+    fig.subplots_adjust(bottom=0.18)
     save_fig(fig, "Q6e_scatter_regime")
 
     # ── 4. Heatmap: avg RMSE — currencies × regime ────────────────────────────
@@ -2036,10 +2038,10 @@ if _m is not None:
     ax.set_xlim(0, 30)
     ax.set_xlabel("Maturity", fontsize=10)
     ax.set_ylabel("PDE Residual", fontsize=10)
-    fig.legend(*ax.get_legend_handles_labels(), loc="lower center", bbox_to_anchor=(0.5, -0.02),
-               ncol=9, frameon=False, fontsize=8)
-    fig.subplots_adjust(bottom=0.14)
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
+              ncol=1, frameon=False, fontsize=8)
     fig.tight_layout()
+    fig.subplots_adjust(right=0.82)
     save_fig(fig, "Q7_sharpe_ratio_IS_dim3")
     print("done")
 
@@ -2323,10 +2325,10 @@ if _m is not None:
     ax.set_xlim(0, 30)
     ax.set_xlabel("Maturity", fontsize=10)
     ax.set_ylabel("PDE Residual", fontsize=10)
-    fig.legend(*ax.get_legend_handles_labels(), loc="lower center", bbox_to_anchor=(0.5, -0.02),
-               ncol=9, frameon=False, fontsize=8)
-    fig.subplots_adjust(bottom=0.14)
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
+              ncol=1, frameon=False, fontsize=8)
     fig.tight_layout()
+    fig.subplots_adjust(right=0.82)
     save_fig(fig, "Q7_sharpe_ratio_IS_dim3")
     print("done")
 
@@ -2595,7 +2597,7 @@ else:
 print("\n── Short rate across dims ──")
 
 _dims_r = [2, 3, 4]
-fig_r, axes_r = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
+fig_r, axes_r = plt.subplots(1, 3, figsize=(11, 4), sharey=False)
 
 for ax_i, _dim in enumerate(_dims_r):
     ax = axes_r[ax_i]
@@ -2622,18 +2624,242 @@ for ax_i, _dim in enumerate(_dims_r):
         ax.plot(ccy_df["as_of_date"], ccy_df["r_tilde"],
                 color=currency_color_map[ccy], linewidth=0.8, label=ccy)
 
-    ax.set_title(f"$\\ell={_dim}$", fontsize=11)
+    ax.set_title(f"$\\ell={_dim}$", fontsize=13)
     ax.grid(True, alpha=0.3)
+    ax.tick_params(axis="both", labelsize=11)
     if ax_i == 0:
-        ax.set_ylabel(r"$\tilde{r}$", fontsize=11)
+        ax.set_ylabel(r"$\tilde{r}$", fontsize=13)
 
 handles_r, labels_r = axes_r[0].get_legend_handles_labels()
 fig_r.legend(handles_r, labels_r, loc="lower center",
              bbox_to_anchor=(0.5, -0.02), ncol=len(CCY_ORDER),
-             frameon=False, fontsize=9)
+             frameon=False, fontsize=11)
 fig_r.tight_layout()
 fig_r.subplots_adjust(bottom=0.15)
 save_fig(fig_r, "r_tilde_all_dims")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rolling window regime table
+# Columns: Window | Train #Neg | Train #Inv | IS RMSE ℓ=2,3,4
+#                | Test  #Neg | Test  #Inv | OOS RMSE ℓ=2,3,4
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Rolling window regime table ──")
+
+_ROLL_DIMS    = [2, 3, 4]
+_actual_cols  = [f"actual_tenor_{i}" for i in range(8)]
+
+def _regime_counts(pred_df):
+    """Return per-window (test_start) counts of negative and inverted curves."""
+    if pred_df is None or pred_df.empty:
+        return {}
+    counts = {}
+    for ts, grp in pred_df.groupby("test_start"):
+        neg = int((grp[_actual_cols].min(axis=1) < 0).sum())
+        inv = int((grp["actual_tenor_0"] > grp["actual_tenor_7"]).sum())
+        counts[ts] = {"n_neg": neg, "n_inv": inv}
+    return counts
+
+_train_counts = None
+_test_counts  = None
+_roll_dfs     = {}
+
+for _d in _ROLL_DIMS:
+    _roll_path = os.path.join(
+        REPO_ROOT, "Figures", "OOSResults", "Roll",
+        f"OOS_roll_dim{_d}_baseline", ROLL_SUBDIR,
+        f"ep{ROLL_EPOCHS}",
+        f"oos_rolling_bbg_dim{_d}_train5Y_test6M_step6M.csv"
+    )
+    if os.path.exists(_roll_path):
+        _roll_dfs[_d] = pd.read_csv(_roll_path, parse_dates=["test_start", "test_end", "train_start"])
+    else:
+        print(f"  ⚠️  Rolling CSV not found for dim={_d}")
+
+    if _train_counts is None:
+        _train_path = os.path.join(
+            REPO_ROOT, "Figures", "OOSResults", "Roll",
+            f"OOS_roll_dim{_d}_baseline", ROLL_SUBDIR,
+            f"ep{ROLL_EPOCHS}", "predictions_train_all.csv"
+        )
+        _test_path = os.path.join(
+            REPO_ROOT, "Figures", "OOSResults", "Roll",
+            f"OOS_roll_dim{_d}_baseline", ROLL_SUBDIR,
+            f"ep{ROLL_EPOCHS}", "predictions_test_all.csv"
+        )
+        if os.path.exists(_train_path) and os.path.exists(_test_path):
+            _train_pred   = pd.read_csv(_train_path)
+            _test_pred    = pd.read_csv(_test_path)
+            _train_counts = _regime_counts(_train_pred)
+            _test_counts  = _regime_counts(_test_pred)
+
+if not _roll_dfs:
+    print("  ⚠️  No rolling CSVs found — skipping regime table.")
+else:
+    _ref_df = next(iter(_roll_dfs.values()))
+    rows = []
+    for _, rw in _ref_df.iterrows():
+        ts  = str(rw["test_start"])[:10]
+        te  = str(rw["test_end"])[:10]
+        window_label = f"{rw['train_start'].strftime('%Y-%m')} / {te}"
+
+        tc  = _train_counts.get(ts, {}) if _train_counts else {}
+        ec  = _test_counts.get(ts, {})  if _test_counts  else {}
+
+        # get n_train and n_test from rolling CSV
+        _ref_row = next(iter(_roll_dfs.values()))
+        _ref_row = _ref_row[_ref_row["test_start"].dt.strftime("%Y-%m-%d") == ts]
+        _n_train = float(_ref_row["n_train"].values[0]) if len(_ref_row) else np.nan
+        _n_test  = float(_ref_row["n_test"].values[0])  if len(_ref_row) else np.nan
+
+        _train_neg = tc.get("n_neg", np.nan)
+        _train_inv = tc.get("n_inv", np.nan)
+        _test_neg  = ec.get("n_neg", np.nan)
+        _test_inv  = ec.get("n_inv", np.nan)
+
+        row = {
+            "Window (train start / test end)": window_label,
+            "Train # Neg": _train_neg,
+            "Train # Inv": _train_inv,
+            "Train % Neg": round(100 * _train_neg / _n_train, 1) if np.isfinite(_n_train) and _n_train > 0 else np.nan,
+            "Train % Inv": round(100 * _train_inv / _n_train, 1) if np.isfinite(_n_train) and _n_train > 0 else np.nan,
+        }
+        for _d in _ROLL_DIMS:
+            if _d in _roll_dfs:
+                _drow = _roll_dfs[_d][_roll_dfs[_d]["test_start"].dt.strftime("%Y-%m-%d") == ts]
+                row[f"IS RMSE l={_d}"] = round(float(_drow["avg_in_rmse_bps"].values[0]), 2) if len(_drow) else np.nan
+            else:
+                row[f"IS RMSE l={_d}"] = np.nan
+
+        row["Test # Neg"]  = _test_neg
+        row["Test # Inv"]  = _test_inv
+        row["Test % Neg"]  = round(100 * _test_neg / _n_test, 1) if np.isfinite(_n_test) and _n_test > 0 else np.nan
+        row["Test % Inv"]  = round(100 * _test_inv / _n_test, 1) if np.isfinite(_n_test) and _n_test > 0 else np.nan
+
+        for _d in _ROLL_DIMS:
+            if _d in _roll_dfs:
+                _drow = _roll_dfs[_d][_roll_dfs[_d]["test_start"].dt.strftime("%Y-%m-%d") == ts]
+                row[f"OOS RMSE l={_d}"] = round(float(_drow["avg_rmse_bps"].values[0]), 2) if len(_drow) else np.nan
+            else:
+                row[f"OOS RMSE l={_d}"] = np.nan
+
+        rows.append(row)
+
+    regime_table = pd.DataFrame(rows)
+    _regime_table_path = os.path.join(FIGURES_OUT, "rolling_regime_table.csv")
+    regime_table.to_csv(_regime_table_path, index=False)
+    print(regime_table.to_string(index=False))
+    print(f"  Saved → {_regime_table_path}")
+
+    # ── Figure 1: Dual-axis — test regime counts (bars) + OOS RMSE (lines) ──
+    _windows = [r["Window (train start / test end)"].split(" / ")[1][:7]
+                for r in rows]
+    _x       = np.arange(len(_windows))
+    _neg     = np.array([r["Test % Neg"] for r in rows], dtype=float)
+    _inv     = np.array([r["Test % Inv"] for r in rows], dtype=float)
+
+    fig1, ax1a = plt.subplots(figsize=(12, 5))
+    ax1b = ax1a.twinx()
+    _train_neg = np.array([r["Train % Neg"] for r in rows], dtype=float)
+    _train_inv = np.array([r["Train % Inv"] for r in rows], dtype=float)
+
+    _w = 0.2
+    _neg_color = custom_palette[2]   # not used by DIM_COLORS
+    _inv_color = custom_palette[5]   # not used by DIM_COLORS
+    ax1a.bar(_x - 1.5*_w, _train_neg, width=_w, label="% Neg (Train)", color="slategrey", alpha=0.4)
+    ax1a.bar(_x - 0.5*_w, _neg,       width=_w, label="% Neg (Test)",  color="slategrey", alpha=0.9)
+    ax1a.bar(_x + 0.5*_w, _train_inv, width=_w, label="% Inv (Train)", color=_inv_color,  alpha=0.5)
+    ax1a.bar(_x + 1.5*_w, _inv,       width=_w, label="% Inv (Test)",  color=_inv_color,  alpha=1.0)
+    ax1a.set_ylabel("% of curves in set")
+    ax1a.set_xticks(_x)
+    ax1a.set_xticklabels(_windows, rotation=45, ha="right", fontsize=8)
+
+    _dim_line_colors = {d: DIM_COLORS[d] for d in _ROLL_DIMS}
+    _n_dims = len(_ROLL_DIMS)
+    for _di, _d in enumerate(_ROLL_DIMS):
+        _oos = np.array([r[f"OOS RMSE l={_d}"] for r in rows], dtype=float)
+        _oos_clipped = np.clip(_oos, 0, 50)   # clip spikes for readability
+        ax1b.plot(_x, _oos_clipped, marker="o", markersize=4, linewidth=2.2,
+                  label=f"OOS RMSE $\\ell={_d}$",
+                  color=_dim_line_colors[_d])
+        # annotate clipped values with the true OOS RMSE
+        for _xi, (_raw, _clip) in enumerate(zip(_oos, _oos_clipped)):
+            if _raw > 50:
+                # stack downward inside the plot so annotations stay within axes
+                _yoff = 2 - _di * 8
+                _left_window = "2022-06"
+                _on_left = _windows[_xi].startswith(_left_window)
+                ax1b.annotate(
+                    f"{_raw:.0f}",
+                    xy=(_x[_xi], 50),
+                    xytext=(-5 if _on_left else 5, _yoff),
+                    textcoords="offset points",
+                    ha="right" if _on_left else "left",
+                    va="top",
+                    fontsize=8,
+                    color=_dim_line_colors[_d],
+                )
+    ax1b.set_ylabel("OOS RMSE (bps, clipped at 50)")
+
+    # event markers — interpolate event dates onto the integer x-axis
+    _win_ts = np.array([pd.Timestamp(w + "-01").value for w in _windows], dtype=float)
+    for _ev_label, _ev_date_str in EVENTS.items():
+        _ev_ts = pd.Timestamp(_ev_date_str).value
+        if _win_ts[0] <= _ev_ts <= _win_ts[-1]:
+            _ev_x = float(np.interp(_ev_ts, _win_ts, _x))
+            ax1a.axvline(_ev_x, color="0.5", linewidth=1.0, linestyle="--", zorder=0)
+            ax1b.text(_ev_x, 50, _ev_label, fontsize=7, ha="center", va="bottom", color="0.4")
+
+    lines1, labs1 = ax1a.get_legend_handles_labels()
+    lines2, labs2 = ax1b.get_legend_handles_labels()
+    fig1.legend(lines1 + lines2, labs1 + labs2, loc="lower center",
+                bbox_to_anchor=(0.5, -0.05), ncol=4, fontsize=8, frameon=False)
+    fig1.tight_layout()
+    fig1.subplots_adjust(bottom=0.25)
+    save_fig(fig1, "Q8a_rolling_regime_dual_axis")
+
+    # ── Figure 2: Scatter — test # neg / # inv vs OOS RMSE ──
+    fig2, axes2 = plt.subplots(1, 2, figsize=(12, 5))
+    for ax2, _xcol, _xlabel in zip(
+        axes2,
+        ["Test # Neg", "Test # Inv"],
+        ["Test # Neg curves", "Test # Inv curves"]
+    ):
+        for _d in _ROLL_DIMS:
+            _xvals = np.array([r[_xcol] for r in rows], dtype=float)
+            _yvals = np.array([r[f"OOS RMSE l={_d}"] for r in rows], dtype=float)
+            _mask  = np.isfinite(_xvals) & np.isfinite(_yvals) & (_yvals < 50)
+            ax2.scatter(_xvals[_mask], _yvals[_mask], label=f"$\\ell={_d}$",
+                        color=_dim_line_colors[_d], alpha=0.8, s=40)
+        ax2.set_xlabel(_xlabel)
+        ax2.set_ylabel("OOS RMSE (bps, < 50)")
+        ax2.legend(fontsize=8, frameon=False)
+        ax2.grid(True, alpha=0.3)
+    axes2[0].set_title("Negative curves vs OOS RMSE")
+    axes2[1].set_title("Inverted curves vs OOS RMSE")
+    fig2.tight_layout()
+    save_fig(fig2, "Q8b_rolling_regime_scatter")
+
+    # ── Figure 3: Heatmap — windows × dims coloured by OOS RMSE ──
+    _oos_matrix = np.array([
+        [min(r[f"OOS RMSE l={_d}"], 50) for _d in _ROLL_DIMS]
+        for r in rows
+    ], dtype=float)
+
+    fig3, ax3 = plt.subplots(figsize=(6, 9))
+    im = ax3.imshow(_oos_matrix, aspect="auto", cmap="YlOrRd",
+                    vmin=0, vmax=50)
+    ax3.set_xticks(range(len(_ROLL_DIMS)))
+    ax3.set_xticklabels([f"$\\ell={d}$" for d in _ROLL_DIMS])
+    ax3.set_yticks(range(len(_windows)))
+    ax3.set_yticklabels(
+        [f"{w}  neg={r['Test # Neg']:.0f} inv={r['Test # Inv']:.0f}"
+         for w, r in zip(_windows, rows)],
+        fontsize=7
+    )
+    ax3.set_title("OOS RMSE (bps, clipped at 50)\nby window and latent dim")
+    plt.colorbar(im, ax=ax3, label="OOS RMSE (bps)")
+    fig3.tight_layout()
+    save_fig(fig3, "Q8c_rolling_regime_heatmap")
 
 print(f"\n{'='*65}")
 print(f"  Figures → {FIGURES_OUT}")

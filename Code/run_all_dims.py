@@ -1,8 +1,10 @@
 """
-Runner script: runs missing OOS rolls for baseline ℓ=2 and ℓ=4.
+Runner script: trains augmented and augmented-stable at ℓ=3, then runs OOS rolls.
 
-  Stage 1 — OOS roll (baseline): LATENT_DIM = 2
-  Stage 2 — OOS roll (baseline): LATENT_DIM = 4
+  Stage 1 — Training (augmented ℓ=3)
+  Stage 2 — Training (augmented stable ℓ=3)
+  Stage 3 — OOS roll (augmented ℓ=3)
+  Stage 4 — OOS roll (augmented stable ℓ=3)
 
 Run from the repo root:
     python Code/run_all_dims.py
@@ -18,24 +20,43 @@ try:
 except NameError:
     REPO_ROOT = os.getcwd()
 
-OOS_ROLL_PATH  = os.path.join(REPO_ROOT, "Code", "OutOfSampleRoll.py")
+TRAIN_AUG_PATH     = os.path.join(REPO_ROOT, "Code", "Experiments", "Training_augmented_input.py")
+OOS_AUG_PATH       = os.path.join(REPO_ROOT, "Code", "Experiments", "OOSRoll_augmented.py")
+TRAIN_AUG_ST_PATH  = os.path.join(REPO_ROOT, "Code", "Experiments", "Training_augmented_stable.py")
+OOS_AUG_ST_PATH    = os.path.join(REPO_ROOT, "Code", "Experiments", "OOSRoll_augmented_stable.py")
 
 STAGES = [
-    # ── OOS roll — baseline ℓ=2 ─────────────────────────────────────────────
+    # ── Training — augmented ℓ=3 ─────────────────────────────────────────────
     {
-        "name":          "OOS roll (baseline ℓ=2)",
-        "script":        OOS_ROLL_PATH,
-        "dims":          [2],
-        "model_variant": "baseline",
-        "patches":       {},          # EPOCHS already 3500 in OutOfSampleRoll.py
+        "name":          "Training (augmented ℓ=3)",
+        "script":        TRAIN_AUG_PATH,
+        "dims":          [3],
+        "model_variant": "augmented_input",
+        "patches":       {},
     },
-    # ── OOS roll — baseline ℓ=4 ─────────────────────────────────────────────
+    # ── Training — augmented stable ℓ=3 ──────────────────────────────────────
     {
-        "name":          "OOS roll (baseline ℓ=4)",
-        "script":        OOS_ROLL_PATH,
-        "dims":          [4],
-        "model_variant": "baseline",
-        "patches":       {},          # EPOCHS already 3500 in OutOfSampleRoll.py
+        "name":          "Training (augmented stable ℓ=3)",
+        "script":        TRAIN_AUG_ST_PATH,
+        "dims":          [3],
+        "model_variant": "augmented_stable",
+        "patches":       {},
+    },
+    # ── OOS roll — augmented ℓ=3 ─────────────────────────────────────────────
+    {
+        "name":          "OOS roll (augmented ℓ=3)",
+        "script":        OOS_AUG_PATH,
+        "dims":          [3],
+        "model_variant": "augmented_input",
+        "patches":       {},
+    },
+    # ── OOS roll — augmented stable ℓ=3 ──────────────────────────────────────
+    {
+        "name":          "OOS roll (augmented stable ℓ=3)",
+        "script":        OOS_AUG_ST_PATH,
+        "dims":          [3],
+        "model_variant": "augmented_stable",
+        "patches":       {},
     },
 ]
 

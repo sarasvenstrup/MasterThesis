@@ -1,0 +1,50 @@
+{
+  "window_seed": 2,
+  "latent_dim": 2,
+  "input_dim": 11,
+  "variant": "augmented_input",
+  "epochs": 3500,
+  "batch_size": 32,
+  "max_lr": 0.001,
+  "pct_start": 0.3,
+  "final_div_factor": 3000.0,
+  "train_years": 5,
+  "test_months": 6,
+  "step_months": 6,
+  "n_windows": 18,
+  "torch_version": "2.11.0",
+  "python_version": "3.12.6",
+  "numpy_version": "2.2.2",
+  "run_started": "2026-05-16T21:04:44",
+  "window_results": {
+    "2015-01-01": {
+      "avg_rmse_bps": 70.7926,
+      "avg_in_rmse_bps": 11.8979,
+      "per_ccy_bps": {
+        "AUD": 9.8553,
+        "CAD": 10.8583,
+        "DKK": 16.5944,
+        "EUR": 16.029,
+        "JPY": 10.9196,
+        "NOK": 11.8622,
+        "SEK": 521.468,
+        "GBP": 20.0102,
+        "USD": 19.5359
+      },
+      "in_per_ccy_bps": {
+        "AUD": 12.6961,
+        "CAD": 12.7111,
+        "DKK": 11.6063,
+        "EUR": 10.447,
+        "JPY": 9.4058,
+        "NOK": 8.8052,
+        "SEK": 12.418,
+        "GBP": 15.2272,
+        "USD": 13.7642
+      },
+      "train_minutes": 17.25,
+      "n_train": 522,
+      "n_test": 54
+    }
+  }
+}

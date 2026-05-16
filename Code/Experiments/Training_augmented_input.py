@@ -52,7 +52,7 @@ print("Using device:", device)
 torch.backends.mkldnn.enabled = True
 
 # ── settings ──────────────────────────────────────────────────────────────────
-LATENT_DIM   = 4
+LATENT_DIM   = 2
 EPOCHS       = 5000
 BATCH_SIZE   = 32
 EVAL_BATCH_SIZE = 256
@@ -62,7 +62,7 @@ TARGET_MSE   = 1e-8
 USE          = "bbg"
 
 INPUT_DIM_ORIG = 8   # original swap-rate dimension
-INPUT_DIM_AUG  = 11  # augmented encoder input dimension
+INPUT_DIM_AUG  = 11  # augmented encoder input dimension (8 rates + 3 derived features)
 
 FIGURES_DIR = os.path.join(
     REPO_ROOT, "Figures", "TrainingResults",
@@ -100,7 +100,7 @@ dataset = TensorDataset(X_aug, X_tensor)   # (enc_input, orig_target)
 loader  = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
 # ── model ─────────────────────────────────────────────────────────────────────
-SEED = 0
+SEED = 2
 torch.manual_seed(SEED)
 model = FullModel(input_dim=INPUT_DIM_AUG, latent_dim=LATENT_DIM).to(device)
 model.train()

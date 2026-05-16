@@ -52,10 +52,10 @@ print("Using device:", device)
 
 # ── settings ──────────────────────────────────────────────────────────────────
 USE        = "bbg"
-LATENT_DIM = 3
+LATENT_DIM = 4
 
 INPUT_DIM_ORIG = 8
-INPUT_DIM_AUG  = 11
+INPUT_DIM_AUG  = 11  # 8 rates + 3 derived features
 
 TRAIN_YEARS   = 5
 TEST_MONTHS   = 6

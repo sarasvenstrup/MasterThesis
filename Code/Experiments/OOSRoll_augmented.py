@@ -52,10 +52,10 @@ print("Using device:", device)
 
 # ── settings ──────────────────────────────────────────────────────────────────
 USE        = "bbg"
-LATENT_DIM = 4
+LATENT_DIM = 2
 
 INPUT_DIM_ORIG = 8
-INPUT_DIM_AUG  = 11
+INPUT_DIM_AUG  = 11  # 8 rates + 3 derived features
 
 TRAIN_YEARS   = 5
 TEST_MONTHS   = 6
@@ -151,7 +151,7 @@ def make_loader(X_sub: torch.Tensor, batch_size: int):
     ds    = TensorDataset(X_aug, X_sub)
     return DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
 
-WINDOW_SEED = 0
+WINDOW_SEED = 2
 
 def train_one_window(X_train: torch.Tensor):
     torch.manual_seed(WINDOW_SEED)

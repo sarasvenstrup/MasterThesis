@@ -405,7 +405,8 @@ _ccy_colors = {ccy: plt.cm.tab10.colors[i % 10]
 # Load data + model
 # ─────────────────────────────────────────────────────────────────────────────
 print("\nLoading data for stable parameter / Sharpe plots...")
-meta_train, X_train, *_ = my_data()
+meta_train, X_train, meta_full, X_full, *_ = my_data()
+meta_full_df = meta_full
 
 # also load dim=2 model for Sharpe plot below
 _stable_model = load_stable_model(STABLE_DIM)
@@ -763,5 +764,50 @@ fig_st.legend(_h_st, _l_st, loc="lower center",
 fig_st.tight_layout()
 fig_st.subplots_adjust(bottom=0.12)
 save_fig(fig_st, "Q1d_fitted_vs_actual_stable_all_dims")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Short rate \tilde{r} across latent dimensions 2, 3, 4 (stable model)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Short rate across dims (stable) ──")
+
+_dims_r = [2, 3, 4]
+fig_r, axes_r = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
+
+for ax_i, _dim in enumerate(_dims_r):
+    ax = axes_r[ax_i]
+    _m = load_stable_model(_dim)
+    if _m is None:
+        ax.set_visible(False)
+        continue
+
+    with torch.no_grad():
+        r_all = []
+        for i in range(0, X_full.shape[0], 256):
+            xb = X_full[i:i+256]
+            _, aux = _m(xb, return_aux=True)
+            r_all.append(aux["r_tilde"].cpu())
+    r_all = torch.cat(r_all).numpy()
+
+    df_r = meta_full_df.copy()
+    df_r["r_tilde"] = r_all
+    df_r = df_r[df_r["as_of_date"] >= "2010-01-01"].sort_values("as_of_date")
+
+    for ccy in CCY_ORDER:
+        ccy_df = df_r[df_r["ccy"] == ccy]
+        ax.plot(ccy_df["as_of_date"], ccy_df["r_tilde"],
+                color=_ccy_colors[ccy], linewidth=0.8, label=ccy)
+
+    ax.set_title(f"$\\ell={_dim}$", fontsize=11)
+    ax.grid(True, alpha=0.3)
+    if ax_i == 0:
+        ax.set_ylabel(r"$\tilde{r}$", fontsize=11)
+
+handles_r, labels_r = axes_r[0].get_legend_handles_labels()
+fig_r.legend(handles_r, labels_r, loc="lower center",
+             bbox_to_anchor=(0.5, -0.02), ncol=len(CCY_ORDER),
+             frameon=False, fontsize=9)
+fig_r.tight_layout()
+fig_r.subplots_adjust(bottom=0.15)
+save_fig(fig_r, "r_tilde_all_dims_stable")
 
 print("\nResultsGeneratorStable complete.")
