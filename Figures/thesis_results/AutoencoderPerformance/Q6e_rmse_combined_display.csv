@@ -1,7 +1,7 @@
-index,AUD,CAD,DKK,EUR,JPY,NOK,SEK,GBP,USD,All
-Normal Non-negative — N,159,142,81,74,90,142,83,124,147,1042
-Normal Non-negative — Avg RMSE (bps),9.07,6.70,7.17,7.20,10.12,6.46,6.27,6.80,8.44,7.62
-Inverted Non-negative — N,11,22,18,18,---,27,20,3,15,134
-Inverted Non-negative — Avg RMSE (bps),11.59,14.14,11.19,11.61,---,13.76,11.46,14.20,12.47,12.53
-Normal Negative — N,---,---,69,78,80,---,67,---,---,294
-Normal Negative — Avg RMSE (bps),---,---,10.44,17.82,12.08,---,9.39,---,---,12.60
+Curve Variant,Metric,AUD,CAD,DKK,EUR,JPY,NOK,SEK,GBP,USD,All
+Normal,N,159,142,81,74,90,142,83,124,147,1042
+Normal,Avg RMSE (bps),9.07,6.70,7.17,7.20,10.12,6.46,6.27,6.80,8.44,7.62
+Inverted,N,11,22,18,18,---,27,20,3,15,134
+Inverted,Avg RMSE (bps),11.59,14.14,11.19,11.61,---,13.76,11.46,14.20,12.47,12.53
+Normal Negative,N,---,---,69,78,80,---,67,---,---,294
+Normal Negative,Avg RMSE (bps),---,---,10.44,17.82,12.08,---,9.39,---,---,12.60

@@ -24,6 +24,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import matplotlib.dates as mdates
+import matplotlib.transforms
 import torch
 
 # ── path setup ─────────────────────────────────────────────────────────────────
@@ -892,7 +893,7 @@ ax.barh(_top_y, _to_x(_data_end) - _to_x(_data_start),
         color=_col_full, edgecolor="none", zorder=2)
 ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
         _top_y, "Full series  (2010–2023)",
-        va="center", ha="center", fontsize=11, color="dimgray")
+        va="center", ha="center", fontsize=13, color="dimgray")
 
 # ── rolling windows (staggered) — W1 to W5 ───────────────────────────────────
 _extra_gap = 0.8   # extra space between W2 and W3 for bracket labels
@@ -910,14 +911,14 @@ for i, test_start in enumerate(_show):
             color=_col_test, edgecolor="none", zorder=2,
             label="Test" if i == 0 else "")
     ax.text(_to_x(_data_start) - 0.15, y, f"$W_{{{i+1}}}$",
-            va="center", ha="right", fontsize=11)
+            va="center", ha="right", fontsize=13)
 
 # ── dots row ──────────────────────────────────────────────────────────────────
 _dots_y = 1 - _extra_gap
 ax.text(_to_x(_data_start) - 0.15, _dots_y, "$\\vdots$",
-        va="center", ha="right", fontsize=11)
+        va="center", ha="right", fontsize=13)
 ax.text(_to_x(_data_start) + 7.5, _dots_y, "$\\vdots$",
-        va="center", ha="center", fontsize=11)
+        va="center", ha="center", fontsize=13)
 
 # ── last window Wn ────────────────────────────────────────────────────────────
 _last_test_start = _w_starts[-1]
@@ -933,7 +934,7 @@ ax.barh(_last_y, _to_x(_last_test_end) - _to_x(_last_test_start),
         left=_to_x(_last_test_start), height=_row_h,
         color=_col_test, edgecolor="none", zorder=2)
 ax.text(_to_x(_data_start) - 0.15, _last_y, f"$W_{{{_n_total}}}$",
-        va="center", ha="right", fontsize=9)
+        va="center", ha="right", fontsize=13)
 
 # ── annotation brackets on W2 ────────────────────────────────────────────────
 _w2_i           = 1   # W2 is the second window (index 1)
@@ -952,33 +953,33 @@ ax.annotate("", xy=(_to_x(_w2_train_start), _bracket_y),
             xytext=(_to_x(_data_start), _bracket_y),
             arrowprops=_arrowprops)
 ax.text((_to_x(_data_start) + _to_x(_w2_train_start)) / 2, _text_y,
-        "6 months", ha="center", va="top", fontsize=9)
+        "6 months", ha="center", va="top", fontsize=11)
 
 # 5 years: train_start → test_start of W2
 ax.annotate("", xy=(_to_x(_w2_test_start), _bracket_y),
             xytext=(_to_x(_w2_train_start), _bracket_y),
             arrowprops=_arrowprops)
 ax.text((_to_x(_w2_train_start) + _to_x(_w2_test_start)) / 2, _text_y,
-        "5 years", ha="center", va="top", fontsize=9)
+        "5 years", ha="center", va="top", fontsize=11)
 
 # 6 months: test_start → test_end of W2
 ax.annotate("", xy=(_to_x(_w2_test_end), _bracket_y),
             xytext=(_to_x(_w2_test_start), _bracket_y),
             arrowprops=_arrowprops)
 ax.text((_to_x(_w2_test_start) + _to_x(_w2_test_end)) / 2, _text_y,
-        "6 months", ha="center", va="top", fontsize=9)
+        "6 months", ha="center", va="top", fontsize=11)
 
 # ── axes formatting ───────────────────────────────────────────────────────────
 ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
 ax.set_ylim(-1.2 - _extra_gap, _top_y + 0.8)
 ax.set_xticks(range(2010, 2025, 2))
-ax.set_xticklabels([str(y) for y in range(2010, 2025, 2)], fontsize=11)
+ax.set_xticklabels([str(y) for y in range(2010, 2025, 2)], fontsize=13)
 ax.set_yticks([])
 ax.text(_to_x(_data_start) - 1.3,
         (_n_show + 1) / 2, "Windows",
-        va="center", ha="center", fontsize=11, rotation=90, color="dimgray")
+        va="center", ha="center", fontsize=13, rotation=90, color="dimgray")
 ax.spines[["left", "top", "right"]].set_visible(False)
-ax.legend(fontsize=11, frameon=False,
+ax.legend(fontsize=13, frameon=False,
           loc="lower center", bbox_to_anchor=(0.5, -0.28), ncol=2)
 fig.tight_layout()
 fig.subplots_adjust(bottom=0.18)
@@ -1253,12 +1254,12 @@ for _dim in [2, 3, 4]:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Q4c — Tables: OOS rolling RMSE by curve regime (inverted / negative rates)
-# Reads combined predictions_test_all.csv for dim=3 baseline
+# Reads combined predictions_test_all.csv for dim=2 baseline
 # ─────────────────────────────────────────────────────────────────────────────
-print("\n── Q4c: OOS rolling RMSE by curve regime (baseline ℓ=3 rolling) ──")
+print("\n── Q4c: OOS rolling RMSE by curve regime (baseline ℓ=2 rolling) ──")
 
 _pred_all_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
-                               "OOS_roll_dim3_baseline",
+                               "OOS_roll_dim2_baseline",
                                ROLL_SUBDIR, f"ep{ROLL_EPOCHS}", "predictions_test_all.csv")
 
 if not os.path.exists(_pred_all_path):
@@ -1307,7 +1308,7 @@ else:
         print("\n  Inverted vs Normal (OOS):")
         print(tbl_inv_oos.to_string())
 
-        tbl_neg_oos = _regime_table_oos(_df_oos_regime, "negative", "Negative rates", "Non-negative rates")
+        tbl_neg_oos = _regime_table_oos(_df_oos_regime, "negative", "Negative", "Non-negative")
         save_table(tbl_neg_oos, "Q4c_oos_rmse_negative")
         print("\n  Negative vs Non-negative rates (OOS):")
         print(tbl_neg_oos.to_string())
@@ -1315,10 +1316,10 @@ else:
         # combined 4-regime table
         def _combined_regime_table_oos(df):
             groups = [
-                ("Normal Non-negative",   ~df["inverted"] & ~df["negative"]),
-                ("Inverted Non-negative",  df["inverted"] & ~df["negative"]),
+                ("Normal",   ~df["inverted"] & ~df["negative"]),
+                ("Inverted",  df["inverted"] & ~df["negative"]),
                 ("Normal Negative",       ~df["inverted"] &  df["negative"]),
-                ("Inverted Negative",      df["inverted"] &  df["negative"]),
+                ("Inverted + Negative",      df["inverted"] &  df["negative"]),
             ]
             rows = {}
             for lbl, mask in groups:
@@ -1341,7 +1342,7 @@ else:
 
         # display version: N + Avg only, no Std, no Inverted Negative
         _oos_display_rows = [r for r in tbl_combined_oos.index
-                             if "Std" not in r and "Inverted Negative" not in r]
+                             if "Std" not in r and "Inverted + Negative" not in r]
         _disp_oos = tbl_combined_oos.loc[_oos_display_rows].copy().astype(object)
         for _idx in _disp_oos.index:
             if _idx.endswith("— N"):
@@ -1350,7 +1351,15 @@ else:
             else:
                 _disp_oos.loc[_idx] = _disp_oos.loc[_idx].apply(
                     lambda v: f"{v:.2f}" if pd.notna(v) else "---")
-        save_table(_disp_oos, "Q4c_oos_rmse_combined_display")
+        # split "Regime — Metric" index into two separate columns
+        _disp_oos_export = _disp_oos.reset_index()
+        _split_oos = _disp_oos_export["index"].str.split(" — ", n=1, expand=True)
+        _disp_oos_export.insert(0, "Curve Variant", _split_oos[0])
+        _disp_oos_export.insert(1, "Metric", _split_oos[1])
+        _disp_oos_export = _disp_oos_export.drop(columns=["index"])
+        _disp_oos_export.to_csv(
+            os.path.join(TABLES_OUT, "Q4c_oos_rmse_combined_display.csv"), index=False)
+        print(f"  Saved: Q4c_oos_rmse_combined_display.csv")
 
         # scatter over time: colour encodes regime (negative = red family)
         _df_oos_regime["as_of_date"] = pd.to_datetime(_df_oos["as_of_date"].values)
@@ -1368,12 +1377,10 @@ else:
             ax.scatter(_sub["as_of_date"], _sub["rmse_bps"],
                        s=4, alpha=0.4, color=_col, marker="o", label=_lbl, zorder=3)
         ax.set_ylabel("RMSE (bps)", fontsize=12)
-        fig.legend(*ax.get_legend_handles_labels(), loc="lower center",
-                   bbox_to_anchor=(0.5, -0.05), ncol=4, fontsize=10,
-                   frameon=False, markerscale=3)
+        ax.legend(loc="upper right", ncol=1, fontsize=10,
+                  frameon=False, markerscale=3)
         fig.autofmt_xdate()
         fig.tight_layout()
-        fig.subplots_adjust(bottom=0.3)
         save_fig(fig, "Q4c_oos_scatter_regime")
 
         print(f"  Loaded {len(_df_oos)} OOS test observations.")
@@ -1792,7 +1799,7 @@ else:
     print(tbl_inv.to_string())
 
     # negative rates table
-    tbl_neg = _regime_table(_df_regime, "negative", "Negative rates", "Non-negative rates")
+    tbl_neg = _regime_table(_df_regime, "negative", "Negative", "Non-negative")
     save_table(tbl_neg, "Q6e_rmse_negative")
     print("\n  Negative vs Non-negative rates:")
     print(tbl_neg.to_string())
@@ -1800,10 +1807,10 @@ else:
     # combined 4-regime table
     def _combined_regime_table(df):
         groups = [
-            ("Normal Non-negative",   ~df["inverted"] & ~df["negative"]),
-            ("Inverted Non-negative",  df["inverted"] & ~df["negative"]),
+            ("Normal",   ~df["inverted"] & ~df["negative"]),
+            ("Inverted",  df["inverted"] & ~df["negative"]),
             ("Normal Negative",       ~df["inverted"] &  df["negative"]),
-            ("Inverted Negative",      df["inverted"] &  df["negative"]),
+            ("Inverted + Negative",      df["inverted"] &  df["negative"]),
         ]
         rows = {}
         for lbl, mask in groups:
@@ -1826,7 +1833,7 @@ else:
 
     # display version: N + Avg only, drop Std and the empty Inverted, Negative block
     _display_rows = [r for r in tbl_combined.index
-                     if "Std" not in r and "Inverted Negative" not in r]
+                     if "Std" not in r and "Inverted + Negative" not in r]
     _disp = tbl_combined.loc[_display_rows].copy().astype(object)
     for _idx in _disp.index:
         if _idx.endswith("— N"):
@@ -1835,14 +1842,22 @@ else:
         else:  # Avg RMSE
             _disp.loc[_idx] = _disp.loc[_idx].apply(
                 lambda v: f"{v:.2f}" if pd.notna(v) else "---")
-    save_table(_disp, "Q6e_rmse_combined_display")
+    # split "Regime — Metric" index into two separate columns
+    _disp_export = _disp.reset_index()
+    _split_disp = _disp_export["index"].str.split(" — ", n=1, expand=True)
+    _disp_export.insert(0, "Curve Variant", _split_disp[0])
+    _disp_export.insert(1, "Metric", _split_disp[1])
+    _disp_export = _disp_export.drop(columns=["index"])
+    _disp_export.to_csv(
+        os.path.join(TABLES_OUT, "Q6e_rmse_combined_display.csv"), index=False)
+    print(f"  Saved: Q6e_rmse_combined_display.csv")
 
     _df_regime["as_of_date"] = pd.to_datetime(_m["as_of_date"].values)
 
     # ── 1. Bar chart: avg RMSE ± std per currency ─────────────────────────────
     for flag_col, labels, fname in [
         ("inverted", ("Inverted", "Normal"),               "Q6e_bar_inverted"),
-        ("negative", ("Negative rates", "Non-negative"),   "Q6e_bar_negative"),
+        ("negative", ("Negative", "Non-negative"),   "Q6e_bar_negative"),
     ]:
         fig, ax = plt.subplots(figsize=(9, 4))
         _x = np.arange(len(CCY_ORDER))
@@ -1862,7 +1877,7 @@ else:
     # ── 2. Box plot: RMSE distribution per currency ───────────────────────────
     for flag_col, labels, fname in [
         ("inverted", ("Inverted", "Normal"),               "Q6e_box_inverted"),
-        ("negative", ("Negative rates", "Non-negative"),   "Q6e_box_negative"),
+        ("negative", ("Negative", "Non-negative"),   "Q6e_box_negative"),
     ]:
         fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
         for ax, (lbl, mask) in zip(axes, [(labels[0], _df_regime[flag_col]),
@@ -2597,7 +2612,7 @@ else:
 print("\n── Short rate across dims ──")
 
 _dims_r = [2, 3, 4]
-fig_r, axes_r = plt.subplots(1, 3, figsize=(11, 4), sharey=False)
+fig_r, axes_r = plt.subplots(1, 3, figsize=(13, 4), sharey=False)
 
 for ax_i, _dim in enumerate(_dims_r):
     ax = axes_r[ax_i]
@@ -2807,14 +2822,18 @@ else:
         if _win_ts[0] <= _ev_ts <= _win_ts[-1]:
             _ev_x = float(np.interp(_ev_ts, _win_ts, _x))
             ax1a.axvline(_ev_x, color="0.5", linewidth=1.0, linestyle="--", zorder=0)
-            ax1b.text(_ev_x, 50, _ev_label, fontsize=7, ha="center", va="bottom", color="0.4")
+            # place label above the axes using a blended transform
+            _ev_trans = matplotlib.transforms.blended_transform_factory(
+                ax1b.transData, ax1b.transAxes)
+            ax1b.text(_ev_x, 1.02, _ev_label, fontsize=7, ha="center", va="bottom",
+                      color="0.4", transform=_ev_trans, clip_on=False)
 
     lines1, labs1 = ax1a.get_legend_handles_labels()
     lines2, labs2 = ax1b.get_legend_handles_labels()
     fig1.legend(lines1 + lines2, labs1 + labs2, loc="lower center",
-                bbox_to_anchor=(0.5, -0.05), ncol=4, fontsize=8, frameon=False)
+                bbox_to_anchor=(0.5, -0.02), ncol=4, fontsize=8, frameon=False)
     fig1.tight_layout()
-    fig1.subplots_adjust(bottom=0.25)
+    fig1.subplots_adjust(bottom=0.18)
     save_fig(fig1, "Q8a_rolling_regime_dual_axis")
 
     # ── Figure 2: Scatter — test # neg / # inv vs OOS RMSE ──
