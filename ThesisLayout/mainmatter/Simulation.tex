@@ -433,10 +433,7 @@ The experiment shows that the stability restrictions turn out to be a practical 
 \label{sec:sim_reconstruction_accuracy}
 %========================================================
 
-Imposing stability restrictions improves simulation behaviour. The question is whether this comes at the cost of the model's primary objective of reconstructing observed swap curves.
-
-
-The assessment begins with the two models from the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports their in-sample RMSE on the EUR swap curve. Both models are trained on multi-currency data but evaluated on the EUR curve only.
+Imposing stability restrictions improves simulation behaviour. The question is whether this comes at the cost of the model's primary objective of reconstructing observed swap curves. The assessment begins with the two models from the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports their in-sample RMSE on the EUR swap curve. Both models are trained on multi-currency data but evaluated on the EUR curve only.
 
 \begin{table}[H]
 \centering
@@ -481,7 +478,7 @@ In Chapter~\ref{chap:evaluation}, the baseline model was shown to struggle in sp
     \label{fig:rolling_oos_rmse}
 \end{figure}
 
-For the baseline model, error spikes cluster around the ECB quantitative easing in 2015, the onset of COVID-19 in 2020, and the rate hiking cycle beginning in 2022, each marking a significant departure from the rate environment in the training window. The $\ell=4$ stable model performs more consistently across all three episodes, with errors remaining low where the baseline spikes. At lower latent dimensions, the stable model also struggles around these transitions, confirming that the stability restrictions require sufficient latent capacity to generalise under regime change.
+For the baseline model, error spikes cluster around the quantitative easing in 2015, the onset of COVID-19 in 2020, and the rate hiking cycle beginning in 2022, each marking a significant departure from the rate environment in the training window. The $\ell=4$ stable model performs more consistently across all three episodes, with errors remaining low where the baseline spikes. At lower latent dimensions, the stable model also struggles around these transitions, confirming that the stability restrictions require sufficient latent capacity to generalise under regime change.
 
 
 
