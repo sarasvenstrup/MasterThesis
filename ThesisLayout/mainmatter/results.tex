@@ -9,6 +9,7 @@ unseen swap rate curves.
 
 % ─────────────────────────────────────────────────────────────
 \section{In-Sample Evaluation}
+\label{sec:ISevaluation}
 % ─────────────────────────────────────────────────────────────
 
 Two criteria are used to assess in-sample performance, where the full sample period from 2010 to 2023 is used for training. First, the model must accurately reconstruct the swap rate curves used for training. Following \citet{MatinWanPoulsen2025}, reconstruction accuracy is measured by the root mean squared error (RMSE) in basis points. Second, the implied zero-coupon bond prices must satisfy the no-arbitrage restriction, which is evaluated numerically via the residual of the bond-pricing PDE in \eqref{eq:pde_residual}. 
@@ -191,24 +192,13 @@ We next verify that the models satisfies the no-arbitrage restriction by computi
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.7\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim2.png}
-    \caption{In-sample bond-pricing PDE residual across maturities for $\ell=3$, averaged by currency. Values close to zero indicate numerical satisfaction of the no-arbitrage bond-pricing PDE.
-    Currencies: AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
-    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
-    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
-    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
-    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
-    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
-    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
-    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
-    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
+    \caption{In-sample bond-pricing PDE residual across maturities for $\ell=2$, averaged by currency. Values close to zero indicate numerical satisfaction of the no-arbitrage bond-pricing PDE.}
     \label{fig:Q7_pde_residual}
 \end{figure}
 
 %The figure reports the diagnostic for $\ell=3$ as the representative specification. As the same ODE-based construction is used across latent dimensions, the same diagnostic can be applied to $\ell=2$ and $\ell=4$ to verify numerical satisfaction of the no-arbitrage PDE across specifications.
 
-The diagnostic is reported for the $\ell=2$
-
-Figure~\ref{fig:Q7_pde_residual} reports the in-sample PDE residual for the $\ell=3$ specification, averaged by currency over all in-sample dates. Two features of the figure indicate that the no-arbitrage restriction is satisfied numerically. First, the residuals are on the order of $10^{-9}$, so deviations from zero are negligible in magnitude. Second, the values fluctuate randomly around zero across all maturities and currencies, consistent with numerical noise rather than a systematic arbitrage violation. The no-arbitrage restriction is therefore satisfied numerically.
+The diagnostic is reported for the $\ell=2$ model in Figure~\ref{fig:Q7_pde_residual}, averaged by currency over all in-sample dates. Two features indicate that the no-arbitrage restriction is satisfied numerically. First, the residuals are on the order of $10^{-10}$, so deviations from zero are negligible in magnitude. Second, the values fluctuate randomly around zero across all maturities and currencies, consistent with numerical noise rather than a systematic arbitrage violation. The same result holds for the $\ell=2$ and $\ell=4$ models, and the no-arbitrage restriction is therefore satisfied numerically across all models.
 
 
 
@@ -221,9 +211,9 @@ Figure~\ref{fig:Q7_pde_residual} reports the in-sample PDE residual for the $\el
 \section{Out-of-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-Accurate in-sample reconstruction is necessary, but not sufficient. A flexible model may fit the training sample closely while failing to reconstruct unseen swap rate curves. To assess whether the arbitrage-free autoencoder generalises beyond the training sample, we evaluate its out-of-sample reconstruction performance using a rolling window scheme. Based on the convergence analysis in Figure~\ref{fig:training_loss}, each model is trained for 3\,500 epochs. The rolling-window in-sample RMSEs are therefore not directly identical to the full-sample in-sample results reported above, which are based on 5\,000 training epochs.
+Accurate in-sample reconstruction is necessary, but not sufficient. A flexible model may fit the training sample closely while failing to reconstruct unseen swap rate curves. To assess whether the arbitrage-free autoencoder generalises beyond a training sample, we evaluate its out-of-sample reconstruction performance using a rolling window scheme. Based on the convergence analysis in Figure~\ref{fig:training_loss}, each model is trained for 3\,500 epochs.\footnote{The rolling-window in-sample RMSEs are therefore not directly identical to the full-sample in-sample results based on 5\,000 training epochs reported in Section \ref{sec:ISevaluation}.}
 
-The rolling window scheme used here re-estimates the model on a fixed five-year training period and evaluates it on the subsequent six-month test period. This mimics a setting where only past information is available at each point in time. The window is then advanced by six months, yielding 18 non-overlapping test periods spanning January 2015 to December 2023, as illustrated in Figure~\ref{fig:rolling_window_diagram}.
+The rolling window scheme used here re-trains the model on a fixed five-year training period and evaluates it on a subsequent six-month test period. This mimics a setting where only past information is available at each point in time. The window is then advanced by six months, yielding 18 non-overlapping test periods spanning January 2015 to December 2023, as illustrated in Figure~\ref{fig:rolling_window_diagram}.
 
 \begin{figure}[h]
     \centering
@@ -232,53 +222,52 @@ The rolling window scheme used here re-estimates the model on a fixed five-year 
     \label{fig:rolling_window_diagram}
 \end{figure}
 
-For each rolling window, the in-sample RMSE is computed on the five-year training period and the out-of-sample RMSE on the subsequent six-month test period, providing a direct measure of how well the model generalises beyond the training sample. Figure~\ref{fig:Q2b} compares this generalization gap across model specifications $\ell\in\{2,3,4\}$.
-
+For each rolling window, the in-sample RMSE is computed on the five-year training period and the out-of-sample RMSE on the subsequent six-month test period, providing a direct measure of how well the model generalises beyond the training sample. Figure~\ref{fig:Q2b} compares this generalization gap across all models.
 \begin{figure}[h]
     \centering
     \includegraphics[width=.80\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q2b_rolling_oos_vs_dim.png}
-    \caption{Average in-sample (IS) and rolling out-of-sample (OOS) RMSE (bps) for the autoencoder across latent dimensions $\ell \in \{2, 3, 4\}$. For each $\ell$, the left bar shows the average IS RMSE and the right hatched bar shows the average OOS RMSE across all 18 rolling windows. Bars are coloured by dimension: $\ell=2$ ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}), $\ell=3$ ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}), $\ell=4$ ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}).}
+    \caption{Average in-sample (IS) and rolling out-of-sample (OOS) RMSE (bps) for the autoencoder across latent dimensions $\ell \in \{2, 3, 4\}$. For each $\ell$, the left bar shows the average IS RMSE and the right hatched bar shows the average OOS RMSE across all 18 rolling windows.}
     \label{fig:Q2b}
 \end{figure}
 
-The results reveal a substantial gap between in-sample and out-of-sample reconstruction performance. The autoencoder fits the rolling training windows well across all specifications, with average in-sample RMSEs between 9.31 and 11.61 bps. Out-of-sample performance worsens markedly, especially for the higher-dimensional specifications. The $\ell=2$ model increases from an average in-sample RMSE of 10.46 bps to 19.00 bps out-of-sample, while the $\ell=3$ and $\ell=4$ models increase to 66.53 and 100.53 bps, respectively. Thus, although additional latent factors reduce in-sample reconstruction error, they do not translate into better out-of-sample performance.
+A substantial gap exists between in-sample and out-of-sample reconstruction performance, indicative of overfitting. All models achieve average in-sample RMSEs between 9.3 and 11.6 bps, yet out-of-sample performance worsens markedly with the number of latent factors. The $\ell=2$ model increases from 10.5 bps to 19.0 bps out-of-sample, while the $\ell=3$ and $\ell=4$ models perform considerably worse out-of-sample, reaching 66.5 and 100.5 bps, respectively. Additional latent factors thus reduce in-sample error at the cost of out-of-sample generalisation.
 
-\begin{table}[H]
-\centering
-{\small
-\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q4a_AE_vs_Kalman_OOS.csv}\datqfoura
-\resizebox{\textwidth}{!}{%
-\pgfplotstabletypeset[
-  columns={Model, Set, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
-  columns/Model/.style={column name={Model}, string type, column type=l},
-  columns/Set/.style={column name={Set}, string type, column type=l},
-  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/Time (min)/.style={column name={\textbf{Time (min)}}, column type=r, fixed, precision=2, fixed zerofill},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every row no 2/.style={before row=\midrule},
-  every row no 4/.style={before row=\midrule},
-  every last row/.style={after row=\bottomrule},
-]{\datqfoura}}
-}
-\caption{Rolling out-of-sample RMSE (bps) per currency for the autoencoder grouped by
-number of latent factors $\ell \in \{2, 3, 4\}$. For each $\ell$, IS shows the average
-in-sample RMSE across rolling windows and OOS shows the average rolling out-of-sample
-RMSE. The final column reports average training time per rolling window in minutes, reported on the OOS row for each specification.}
-\label{tab:Q4a}
-\end{table}
+%\begin{table}[H]
+%\centering
+%{\small
+%\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q4a_AE_vs_Kalman_OOS.csv}\datqfoura
+%\resizebox{\textwidth}{!}{%
+%\pgfplotstabletypeset[
+%  columns={Model, Set, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
+%  columns/Model/.style={column name={Model}, string type, column type=l},
+%  columns/Set/.style={column name={Set}, string type, column type=l},
+%  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
+%  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
+%  columns/Time (min)/.style={column name={\textbf{Time (min)}}, column type=r, fixed, precision=2, fixed zerofill},
+%  every head row/.style={before row=\toprule, after row=\midrule},
+%  every row no 2/.style={before row=\midrule},
+%%  every row no 4/.style={before row=\midrule},
+%  every last row/.style={after row=\bottomrule},
+%]{\datqfoura}}
+%}
+%\caption{Rolling out-of-sample RMSE (bps) per currency for the autoencoder grouped by
+%number of latent factors $\ell \in \{2, 3, 4\}$. For each $\ell$, IS shows the average
+%in-sample RMSE across rolling windows and OOS shows the average rolling out-of-sample
+%RMSE. The final column reports average training time per rolling window in minutes, reported on %the OOS row for each specification.}
+%\label{tab:Q4a}
+%\end{table}
 
-Table~\ref{tab:Q4a} shows that the out-of-sample loss in accuracy is uneven across currencies. For $\ell=2$, the increase in RMSE is moderate for most currencies, whereas $\ell=3$ and $\ell=4$ exhibit severe currency-specific errors, particularly for JPY, EUR, CAD, and AUD. Average OOS RMSE is therefore driven largely by a few currencies rather than by uniform loss in accuracy across all markets.
 
-%\textcolor{red}{The results do not by themselves identify the precise mechanism behind these large out-of-sample errors. They may reflect conventional overfitting to the rolling training windows, instability in the learned latent representation, or sensitivity of the ODE-based decoder when applied to curves outside the training distribution. Distinguishing between these mechanisms requires additional diagnostics, such as examining the distribution of out-of-sample latent factors or the tenor-level location of the largest OOS errors.}
+
+
 
 To examine whether the out-of-sample errors are concentrated in particular periods, Figure~\ref{fig:Q3b} reports the rolling out-of-sample RMSE over time. The largest increases occur around the low-rate period in 2016 and the rate-hiking cycle beginning in 2022. These spikes are most pronounced for $\ell=3$ and $\ell=4$, while $\ell=2$ remains comparatively stable. The shaded regions further indicate that the instability is localised both across time and across currencies. The $\ell=2$ specification, though less accurate in-sample, exhibits more stable out-of-sample behaviour.
 
@@ -327,13 +316,19 @@ The regime-dependent pattern documented in Section~\ref{subsec:reconstruction_ac
   columns/USD/.style={string type, column type=r},
   columns/All/.style={column name={\textbf{All}}, string type, column type=r},
   every head row/.style={before row=\toprule, after row=\midrule},
-  every row no 1/.style={after row=\midrule},
-  every row no 3/.style={after row=\midrule},
+  every row no 2/.style={after row=\midrule},
+  every row no 5/.style={after row=\midrule},
+  every row no 8/.style={after row=\midrule},
   every last row/.style={after row=\bottomrule},
 ]{\datqfourc}}
 }
-\caption{Out-of-sample RMSE (bps) by interest rate regime for the model with $\ell=2$ latent factors, pooled across all 18 rolling test windows. Observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero. $N$ denotes the number of curve observations in each regime.}
+\caption{In-sample and out-of-sample RMSE (bps) by interest rate regime for the model with $\ell=2$ latent factors, pooled across all 18 rolling windows. Observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero. $N$ denotes the number of curve observations in each regime. The \textit{Average} rows report RMSE across all curves regardless of regime.}
 \label{tab:q4c_oos_combined}
 \end{table}
+
+
 Overall, the out-of-sample results indicate that $\ell=2$ offers the most stable performance across rolling windows, while higher dimensional specifications are prone to instability in specific market environments. The errors are concentrated in periods of structural change, particularly the low-rate environment of 2016 and the rate-hiking cycle of 2022, and are most sever for inverted curves, which where rarely observed in the preceding training periods.
 
+
+% extra from the old table:
+Table~\ref{tab:Q4a} shows that the out-of-sample loss in accuracy is uneven across currencies. For $\ell=2$, the increase in RMSE is moderate for most currencies, whereas $\ell=3$ and $\ell=4$ exhibit severe currency-specific errors, particularly for JPY, EUR, CAD, and AUD. Average OOS RMSE is therefore driven largely by a few currencies rather than by uniform loss in accuracy across all markets.
