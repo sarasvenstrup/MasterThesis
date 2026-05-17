@@ -30,25 +30,25 @@ with no bias and no activation function, the magnitude of $z$ scales proportiona
 
 
 \begin{example}
-To illustrate the compression effect, let $\mathbf{S}, \mathbf{S}^* \in \mathbb{R}^8$ 
-denote the EUR swap curves observed on 2014-08-29 and 2020-03-31 respectively, 
-expressed in decimal terms,
+The following example illustrates that the linear encoder loses shape information 
+specifically for negative-rate curves, compressing them into a sparse region of 
+the latent space where the decoder has little training exposure.
+
+Let $\mathbf{S}, \mathbf{S}^* \in \mathbb{R}^8$ denote the EUR swap curves 
+observed on 2014-08-29 and 2020-03-31 respectively, expressed in decimal terms,
 \begin{align*}
 \mathbf{S} &= \begin{pmatrix} 0.0025 & 0.0027 & 0.0032 & 0.0050 & 0.0109 & 
 0.0146 & 0.0164 & 0.0176 \end{pmatrix}^\top, \\
 \mathbf{S}^* &= \begin{pmatrix} -0.0032 & -0.0032 & -0.0031 & -0.0023 & -0.0002 
 & 0.0016 & 0.0023 & 0.0018 \end{pmatrix}^\top,
 \end{align*}
-where $\mathbf{S}$ is a normal upward-sloping positive-rate curve and $\mathbf{S}^*$ 
-is a negative-rate curve with a pronounced upward slope. The learned encoder matrix 
-for the $\ell=2$ baseline model is
+and let $A_1 \in \mathbb{R}^{2\times 8}$ denote the learned encoder matrix,
 $$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
 -1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$
-For each curve, construct a synthetic flat counterpart at the same mean rate level,
-$$\mathbf{S}_{\text{flat}} = \bar{S}\cdot\mathbf{1}, \quad 
-\mathbf{S}^*_{\text{flat}} = \bar{S}^*\cdot\mathbf{1},$$
-where $\bar{S} = 0.00911$ and $\bar{S}^* = -0.000788$, so each pair shares the 
-same mean level but differs only in slope and curvature. Applying $A_1$ gives
+For each curve, construct a synthetic flat counterpart at the same mean level,
+$\mathbf{S}_{\text{flat}} = \bar{S}\cdot\mathbf{1}$ and 
+$\mathbf{S}^*_{\text{flat}} = \bar{S}^*\cdot\mathbf{1}$, so each pair differs 
+only in slope and curvature. Applying $A_1$ gives
 \begin{align*}
 z = A_1\mathbf{S} &= \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \quad
 z_{\text{flat}} = A_1\mathbf{S}_{\text{flat}} = \begin{pmatrix} 0.0046 \\ 
@@ -62,26 +62,52 @@ z^*_{\text{flat}} = A_1\mathbf{S}^*_{\text{flat}} = \begin{pmatrix} -0.0004 \\
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_latent_space_regime.png}
     \caption{Latent space representation of all in-sample swap rate curves under 
-    the baseline encoder ($\ell = 2$), coloured by curve variant. Each point 
-    corresponds to one curve observation projected onto the two-dimensional latent 
-    space $\mathbf{z} \in \mathbb{R}^2$. Normal curves are shown in teal, inverted 
-    curves in black, and negative-rate curves in red. Four specific observations 
-    are overlaid: $\mathbf{z}$ and $\mathbf{z}_{\mathrm{flat}}$ denote the latent 
-    representations of the EUR 2014-08-29 curve and its flat counterpart, with 
-    Euclidean distance $d = 0.0208$; $\mathbf{z}^*$ and $\mathbf{z}^*_{\mathrm{flat}}$ 
-    denote the corresponding representations for the EUR 2020-03-31 negative-rate 
-    curve, with distance $d = 0.0078$.}
+    the baseline encoder ($\ell = 2$), coloured by curve variant. Four specific 
+    observations are overlaid: $\mathbf{z}$ and $\mathbf{z}_{\mathrm{flat}}$ 
+    denote the latent representations of the EUR 2014-08-29 curve and its flat 
+    counterpart, with Euclidean distance $d = 0.0208$; $\mathbf{z}^*$ and 
+    $\mathbf{z}^*_{\mathrm{flat}}$ denote the corresponding representations for 
+    the EUR 2020-03-31 negative-rate curve, with distance $d = 0.0078$.}
     \label{fig:latent_space_regime}
 \end{figure}
 
-Figure~\ref{fig:latent_space_regime} plots these four points against the full in-sample training distribution. The normal curve and its flat counterpart are well separated within a densely populated region of the latent space, where the decoder has ample training exposure to distinguish between different curve shapes. The negative-rate curve and its flat counterpart, by contrast, both fall in a sparse region near the origin with a separation of only $0.0078$, roughly one third of the normal case. In this region, the decoder has little basis for 
-recovering slope and curvature, which is consistent with the empirical finding that reconstructed negative-rate curves capture the level but fail to reproduce their shape.
+As shown in Figure~\ref{fig:latent_space_regime}, the normal curve and its flat counterpart are well separated within a densely populated region of the latent 
+space ($\|z - z_{\text{flat}}\| = 0.0208$), meaning the encoder preserves shape information for positive-rate curves. The negative-rate curve and its flat counterpart, by contrast, are compressed into a sparse region near the origin with a separation of only $0.0078$, roughly one third of the normal case. Since the two curves differ only in slope and curvature, this confirms that the encoder 
+loses precisely this information for negative-rate curves, leaving the decoder with representations that are nearly indistinguishable regardless of curve shape.
 
 \end{example}
 
 
 
+\begin{example}
+The previous example showed that shape information is compressed for curves that 
+already have negative rates. The following example shows that this compression is 
+a consequence of the rate level itself, not a property specific to historically 
+observed negative-rate curves.
 
+Take the same normal EUR curve $\mathbf{S}$ from 2014-08-29 and consider two 
+parallel shifts,
+$$\tilde{\mathbf{S}}^{\pm} = \mathbf{S} \pm 0.005\cdot\mathbf{1},$$
+leaving slope and curvature unchanged by construction. Since the encoder is linear, 
+the effect of any parallel shift $c\cdot\mathbf{1}$ on the latent representation 
+is given exactly by
+$$\Delta z = c \cdot A_1\mathbf{1} = c\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix},$$
+so the three latent representations are
+\begin{align*}
+z &= A_1\mathbf{S} = \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \\
+\tilde{z}^{-} &= z - 0.005\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix} = 
+\begin{pmatrix} -0.0114 \\ -0.0011 \end{pmatrix}, \\
+\tilde{z}^{+} &= z + 0.005\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix} = 
+\begin{pmatrix} -0.0063 \\ -0.0423 \end{pmatrix}.
+\end{align*}
+As shown in Figure~\ref{fig:latent_space_shift}, the upward shift moves $z$ 
+further into the dense normal training region, while the downward shift moves it 
+into the sparse region near the origin occupied by negative-rate curves, landing 
+close to $z^* = (-0.0057, 0.0089)^\top$, the actual negative-rate EUR curve from 
+2020-03-31. This confirms that the compression is driven by the rate level: any 
+curve shifted toward zero will have its latent representation pushed into a region 
+that is sparsely covered during training, regardless of its shape.    
+\end{example}
 
 
 
@@ -151,6 +177,8 @@ Combining the augmentation with the stabilisation described in Section~\ref{sec:
 
 \subsection{In-sample Fit}
 
+In this figure below, we see how the baseline model struggles as discussed earlier with negative rate curves. And the augemnted model proposed in the section for only two dimensions does not capture this well enough. however the stable and the augmented stable models are capturing these curves relatively better, in terms of slop and curvature. IT seems as though the stbale model is better.
+
 \begin{figure}[h]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/all_models_fitted_vs_actual.png}
@@ -160,6 +188,8 @@ Combining the augmentation with the stabilisation described in Section~\ref{sec:
 
 
 \subsection{Out-of-sample Performance} 
+
+in the oos performance we see
 
 \begin{table}[H]
 \centering
