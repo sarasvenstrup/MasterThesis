@@ -73,6 +73,10 @@ However, the model that actually learned the curvature without having these augm
 The restrictions imposed for the stable variant, resulted in us being able to simulate from the learned latent dynamcis as opposed to the baseline. The baseline succedeed in reconstruction, but the latent dynamics it self are not learned to be mearn reverting especially not when simulating across longer horizons. 
 
 
+
+Another point we need to make is that adding restrictions into the input vector and training over this really betters the in sample, but not the OOS, it leads to overfitting. And we need more latent factors in order to improve the fit. So this indicates, that trying to model with better fit is better through the models themselves then instead of reconstruction error. 
+
+
 % maybe paragraph 3 is all baseline and therefore this belongs here??:
 
 % The comparison across latent dimensions evaluates how many factors are needed to represent the swap-rate curve. In-sample, reconstruction improves as the number of latent factors increases, indicating that additional dimensions provide greater flexibility. The one-factor model is too restrictive, while the gains from moving beyond two factors are smaller and come with higher computational cost. However, the rolling out-of-sample results show that this flexibility can come at the cost of robustness. For the baseline model, the higher-dimensional specifications are more sensitive to regime shifts, while the two-factor model gives the most stable out-of-sample performance.
