@@ -1,0 +1,18 @@
+{
+  "version": "sv_pricing",
+  "latent_dim": 4,
+  "expiry_vals": [
+    1,
+    5,
+    10
+  ],
+  "tenor_vals": [
+    1,
+    5,
+    10
+  ],
+  "epochs": 1000,
+  "n_params": 68,
+  "warm_start": "C:\\Users\\Bruger\\PycharmProjects\\MasterThesis\\Figures\\TrainingResults\\dim4_expiry_tenor_vol_mpr\\ep1000\\checkpoint_expiry_tenor_vol_mpr_ep1000.pt",
+  "notes": "CIR + state-cond v0 + state-cond static vol + per-expiry drift"
+}
