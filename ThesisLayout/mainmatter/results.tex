@@ -1,9 +1,7 @@
 \chapter{Evaluation of the Arbitrage-Free Encoder--Decoder}
 \label{chap:evaluation}
 
-This chapter evaluates the empirical performance of the arbitrage-free encoder--decoder introduced in Chapter~\ref{chap:encoderdecodermodel}, trained on the swap rate data described in Chapter~\ref{chap:datadescription}. Four models are considered, one for each latent dimension $\ell \in \{1,2,3,4\}$, with all other architectural and training choices
-held fixed. Each model is referred to by its latent dimension, e.g.\ the \textit{$\ell=3$ model}.
-The evaluation in carried out in two steps. First, in-sample reconstruction accuracy
+This chapter evaluates the empirical performance of the arbitrage-free encoder--decoder introduced in Chapter~\ref{chap:encoderdecodermodel}, trained on the swap rate data described in Chapter~\ref{chap:datadescription}. Four models are considered, one for each latent dimension $\ell \in \{1,2,3,4\}$ and each is referred to by its latent dimension, e.g.\ the $\ell=3$ model. The evaluation is carried out in two steps. First, in-sample reconstruction accuracy
 is assessed across all four models. Second, out-of-sample performance is
 examined using a rolling window scheme, testing how well each model reconstructs
 unseen swap rate curves.
@@ -13,7 +11,7 @@ unseen swap rate curves.
 \section{In-Sample Evaluation}
 % ─────────────────────────────────────────────────────────────
 
-Two criteria are used to assess in-sample performance. First, the model must accurately reconstruct the swap rate curves used for training. Following \citet{MatinWanPoulsen2025}, reconstruction accuracy is measured by the root mean squared error (RMSE) in basis points. Second, the implied zero-coupon bond prices must satisfy the no-arbitrage restriction, which is evaluated numerically via the residual of the bond-pricing PDE in \eqref{eq:pde_residual}. 
+Two criteria are used to assess in-sample performance, where the full sample period from 2010 to 2023 is used for training. First, the model must accurately reconstruct the swap rate curves used for training. Following \citet{MatinWanPoulsen2025}, reconstruction accuracy is measured by the root mean squared error (RMSE) in basis points. Second, the implied zero-coupon bond prices must satisfy the no-arbitrage restriction, which is evaluated numerically via the residual of the bond-pricing PDE in \eqref{eq:pde_residual}. 
 
 \subsection{Reconstruction Accuracy}
 \label{subsec:reconstruction_accuracy} 
@@ -27,29 +25,27 @@ We begin by examining how reconstruction error evolves over 5\,000 training epoc
     $\ell \in \{1, 2, 3, 4\}$, averaged across all currencies. The right panel zooms in on the stable training region.}
     \label{fig:training_loss}
 \end{figure}
-
-
-Table \ref{tab:q1a_is_rmse} confirms this, with $\ell=1$ yielding an average RMSE of 36.91 bps compared with 12.11 bps for $\ell=2$, indicating that a single latent factor is insufficient to capture the full shape of the swap rate curve. Given the relatively poor reconstruction accuracy of $\ell=1$, the remainder of the evaluation focuses on $\ell\in\{2,3,4\}$.
+Table \ref{tab:q1a_is_rmse} confirms this, with $\ell=1$ yielding an average RMSE of 36.9 bps compared with 12.1 bps for $\ell=2$, indicating that a single latent factor is insufficient to capture the full shape of the swap rate curve. Given the relatively poor reconstruction accuracy of $\ell=1$, the remainder of the evaluation focuses on $\ell\in\{2,3,4\}$.
 
 \begin{table}[h]
 \centering
-{\small
+{\footnotesize
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q1a_IS_rmse_all_dims.csv}\datqonea
 \resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
   columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
   columns/index/.style={column name={Model}, string type, column type=c},
-  columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/EUR/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/JPY/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/NOK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/SEK/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/GBP/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/USD/.style={column type=r, fixed, precision=2, fixed zerofill},
-  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=2, fixed zerofill},
-  columns/Time (min)/.style={column name={\textbf{Time}}, column type=r, fixed, precision=1, fixed zerofill},
+  columns/AUD/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/CAD/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/DKK/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/EUR/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/JPY/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/NOK/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/SEK/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/GBP/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/USD/.style={column type=r, fixed, precision=1, fixed zerofill},
+  columns/Average/.style={column name={\textbf{Avg.}}, column type=r, fixed, precision=1, fixed zerofill},
+  columns/Time (min)/.style={column name={\textbf{Time}}, column type=r, fixed, precision=0, fixed zerofill},
   every head row/.style={before row=\toprule, after row=\midrule},
   every last row/.style={after row=\bottomrule},
 ]{\datqonea}}
@@ -57,14 +53,14 @@ Table \ref{tab:q1a_is_rmse} confirms this, with $\ell=1$ yielding an average RMS
 \caption{In-sample RMSE (bps) and training time (min) over 5\,000 epochs for $\ell \in \{1, 2, 3, 4\}$ per currency.}
 \label{tab:q1a_is_rmse}
 \end{table}
-Among the remaining specifications, reconstruction accuracy improves with the number of latent factors, though with diminishing gains. The average RMSE decreases from 12.11 bps for $\ell=2$ to 9.94 bps for $\ell=3$ and 8.23 bps for $\ell=4$. However, these gains come at a computational cost. Training time increases moderately from $\ell=2$ to $\ell=3$, from 58.6 to 63.5 minutes, but nearly doubles for $\ell=4$. This is largely driven by the no-arbitrage decoder, which becomes increasingly expensive in larger latent dimensions. Specifically, the bond-pricing PDE contains the Hessian-trace term
+Among the remaining models, reconstruction accuracy improves with the number of latent factors, though with diminishing gains. The average RMSE decreases from 12.1 bps for $\ell=2$ to 9.9 bps for $\ell=3$ and 8.2 bps for $\ell=4$. However, these gains come at a computational cost. Training time increases moderately from $\ell=2$ to $\ell=3$, from 58 to 63 minutes, but nearly doubles for $\ell=4$. This is largely driven by the no-arbitrage decoder, which becomes increasingly expensive in larger latent dimensions. Specifically, the bond-pricing PDE contains the Hessian-trace term
 \[
 \operatorname{Tr}\!\left[\sigma(z_t)\sigma(z_t)^\top H_z \mathcal{G}(z_t,\tau)\right],
 \]
 where \(H_z \mathcal{G}\) is an \(\ell\times \ell\) Hessian, so a direct derivative calculation involves \(\mathcal{O}(\ell^2)\) second-order terms. 
 
 
-The distribution of in-sample residuals, defined as the difference between the observed and reconstructed swap rates and pooled across all currencies, dates and tenors, provides further insight beyond the aggregate RMSE. As seen in Figure~\ref{fig:q1d_residual_histograms}, all three distributions are centred close to zero, indicating little systematic bias. 
+The distribution of in-sample residuals, defined as the difference between the observed and reconstructed swap rates and pooled across all currencies, dates and tenors, provides further insight beyond the aggregate RMSE. As seen in Figure~\ref{fig:q1d_residual_histograms}, all three distributions are centered close to zero, indicating little systematic bias. 
 
 \begin{figure}[h]
     \centering
@@ -73,55 +69,31 @@ The distribution of in-sample residuals, defined as the difference between the o
     \label{fig:q1d_residual_histograms}
 \end{figure}
 
-The spread of the residuals declines as $\ell$ increases, with the standard deviation decreasing from 12.39 bps for $\ell=2$ to 10.28 bps for $\ell=3$ and 8.40 bps for $\ell=4$. Nevertheless, this pooling may mask systematic errors within specific currencies, tenors, or time periods, which is addressed in what follows.
+Higher latent dimensions yield tighter residual distributions, with the standard deviation decreasing from 12.39 bps for $\ell=2$ to 10.28 bps for $\ell=3$ and 8.40 bps for $\ell=4$ consistent with the declining RMSE reported in Table \ref{tab:q1a_is_rmse}. Nevertheless, this pooling may mask systematic errors within specific currencies, tenors, or time periods, which is addressed in what follows.
 
 
-Focusing on $\ell=3$, reconstruction error is not evenly distributed over time. Around the time of the COVID-19 outbreak in March 2020, the error spikes notably for EUR and DKK, as shown in Figure~\ref{fig:Q6b}. This coincides with the sharp reversal in global swap rates observed around 2020 (Figure~\ref{fig:D2b_10y_timeseries}, Chapter~\ref{chap:datadescription}), suggesting that the model may struggle to reconstruct curves during periods of regime change, particularly given that it was trained on a predominantly globally declining rate environment.
-
+For $\ell=2$, reconstruction error is not evenly distributed over time. Around the time of the COVID-19 outbreak in March 2020, the error spikes notably for EUR and DKK, as shown in Figure~\ref{fig:Q6b}. This coincides with the sharp reversal in global swap rates observed around 2020 (Figure~\ref{fig:D2b_10y_timeseries}, Chapter~\ref{chap:datadescription}), suggesting that the model may struggle to reconstruct curves during periods of regime change, particularly given that it was trained on a predominantly globally declining rate environment.
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
     \caption{In-sample RMSE (bps) over time for $\ell=3$, per currency and cross-currency 
-    average ({\color[HTML]{000000}\rule[0.5ex]{1em}{1.5pt}} dashed):
-    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
-    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
-    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
-    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
-    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
-    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
-    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
-    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
-    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
+    average.}
     \label{fig:Q6b}
 \end{figure}
-
-
-Beyond the time dimension, reconstruction error also varies systematically across maturities. Figure~\ref{fig:Q6a} shows that the short and long ends of the swap rate curve are consistently more difficult to reconstruct across all specifications, while mid-range tenors exhibit lower errors. This may reflect the fact that the model has less structural information to draw on at the boundaries of the maturity spectrum, where the curve shape is more sensitive to short-term monetary policy expectations at the short end and to long-run term premium dynamics at the long end. The effect is most pronounced at the short end, with EUR and JPY exhibiting the largest errors at these extremes, consistent with their higher aggregate RMSE in Table~\ref{tab:q1a_is_rmse}.
-
-
-
-\begin{figure}[H]
+Beyond the time dimension, reconstruction error also varies systematically across maturities. Figure~\ref{fig:Q6a} shows that the short and long ends of the swap rate curve are consistently more difficult to reconstruct across all models, while mid-range maturities exhibit lower errors. This may reflect the fact that the encoder--decoder has less structural information to draw on at the boundaries of the maturity spectrum, where the curve shape is more sensitive to short-term monetary policy expectations at the short end and to long-run term premium dynamics at the long end. The effect is most pronounced at the short end, with EUR and JPY exhibiting the largest errors at these extremes, consistent with their higher RMSE in Table~\ref{tab:q1a_is_rmse}.
+% Kunne det ikke også have noget at gøre med at modellen fanger level bedre, og så derfor passe bedre med midtpunktet?
+\begin{figure}[h]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6a_rmse_by_tenor.png}
     \caption{In-sample RMSE (bps) by tenor for $\ell \in \{2, 3, 4\}$
-    (left) and per currency for $\ell=3$ (right), averaged across all
-    in-sample observations. Currencies in the right panel:
-    AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
-    CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
-    DKK ({\color[HTML]{6B6ECF}\rule[0.5ex]{1em}{1.5pt}}),
-    EUR ({\color[HTML]{9C9EDE}\rule[0.5ex]{1em}{1.5pt}}),
-    JPY ({\color[HTML]{843C39}\rule[0.5ex]{1em}{1.5pt}}),
-    NOK ({\color[HTML]{AD494A}\rule[0.5ex]{1em}{1.5pt}}),
-    SEK ({\color[HTML]{D6616B}\rule[0.5ex]{1em}{1.5pt}}),
-    GBP ({\color[HTML]{E7969C}\rule[0.5ex]{1em}{1.5pt}}),
-    USD ({\color[HTML]{8C6D31}\rule[0.5ex]{1em}{1.5pt}}).}
+    (left) and per currency for $\ell=2$ (right), averaged across all
+    in-sample observations.}
     \label{fig:Q6a}
 \end{figure}
 
+Moving beyond aggregate error measures, Figure~\ref{fig:Q1d} visualises the fit of the reconstructed swap rate curves across different market regimes. Two representative dates are shown. One during a \textit{calmer} market environment in August 2014 and the other during the COVID-19 outbreak in March 2020.
 
-Moving beyond aggregate error metrics, Figure~\ref{fig:Q1d} examines the visual fit of the reconstructed swap rate curves across different market conditions. Two representative dates are shown: a calmer market environment in August 2014 and the COVID-19 shock in March 2020.
-
-\begin{figure}[H]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q1d_fitted_vs_actual_all_dims.png}
     \caption{In-sample fitted versus actual swap curves for
@@ -138,58 +110,55 @@ Moving beyond aggregate error metrics, Figure~\ref{fig:Q1d} examines the visual 
     \label{fig:Q1d}
 \end{figure}
 
+During the calmer period, the observed curves are generally reconstructed well across all models, although JPY exhibits mismatch at both the short and long ends. Reconstruction becomes more challenging for curves from the COVID-19 outbreak period, particularly for EUR and JPY, where all three models struggle similarly. For these currencies, observed swap rates reach negative levels at the short end and slope upward to positive but still very low levels at the long end. The fitted curves across all models, however, remain flat and close to zero, capturing the level, but failing to reproduce the slope and curvature. Since this limitation persists regardless of the number of latent factors, it points to a more fundamental constraint of the model rather than a specification issue. This inability to capture slope and curvature is examined in Chapter \ref{chap:model_comparison}.
+
+Given that the model struggles with atypical curve shapes, such as negative swap rate curves, it is of interest to examine whether reconstruction accuracy varies more broadly with the shape and level of the curve, not only for negative-rate environments, but also for distinct shapes such as inverted curves. To investigate this, the per-curve RMSE is plotted over time in Figure~\ref{fig:q6e_scatter_regime}, coloured by curve type, where each curve is classified as either normal, inverted or negative. Normal curves are reconstructed most accurately, while inverted and negative-rate curves exhibit notably higher errors. This is particularly evident for EUR and JPY, which experienced prolonged negative-rate periods and consequently show the largest errors. The higher errors suggest that the model finds structurally atypical curve shapes harder to represent, a finding that is perhaps unsuprising given that the model was trained predominantly on globally declining rate environment. 
 
 
-In the calmer period, the observed curves are generally reconstructed well across all specifications, although JPY already displays some short-end mismatch. During the COVID-19 shock, the reconstruction task becomes more challenging, especially for EUR and JPY, where all three specifications struggle similarly. For these currencies, the observed swap rates reach low and negative levels, with the short end turning negative and the curve sloping upward with maturity. The fitted curves, however, remain closer to zero and fail to capture this shape across all three specifications. This suggests that the difficulty in reconstructing low- and negative-rate curves is not resolved by increasing the number of latent factors, pointing to a more fundamental limitation of the model. It is therefore of interest to examine whether reconstruction accuracy varies more broadly with the shape and level of the curve, not only for negative-rate curves, but also for structurally different shapes such as inverted curves.
-
-
-Figure~\ref{fig:q6e_scatter_regime} plots the per-observation RMSE over time, coloured by interest rate regime, where each observation is classified by whether the curve is normal or inverted and whether rates are positive or negative. Normal, non-negative curves are reconstructed most accurately, while both inverted and negative rate curves exhibit notably higher errors. This is particularly evident for EUR and JPY, which experienced prolonged negative-rate periods and show the largest aggregate errors. The higher errors suggest that the model finds structurally atypical curve shapes harder to represent, particularly given that is was trained predominantly on a globally declining rate environment.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6e_scatter_regime.png}
-    \caption{Per-observation in-sample RMSE (bps) over time for the baseline autoencoder ($\ell = 3$), coloured by interest rate regime. Each point represents one curve observation; observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero.}
+    \caption{Per-observation in-sample RMSE (bps) over time for the baseline autoencoder ($\ell = 2$), coloured by interest rate regime. Each point represents one curve observation; observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero.}
     \label{fig:q6e_scatter_regime}
 \end{figure}
 
-Table~\ref{tab:q6e_combined} quantifies this further. Normal, non-negative curves account for the majority of observations and are reconstructed with an average RMSE of 7.62 bps, compared to 12.53 bps for inverted curves and 12.60 bps for negative-rate curves, representing roughly a 65\% increase in reconstruction error across both regimes.
+%Table~\ref{tab:q6e_combined} quantifies this. Normal, non-negative curves account for the majority of observations and are reconstructed with an average RMSE of 7.62 bps, compared to 12.53 bps for inverted curves and 12.60 bps for negative-rate curves, representing roughly a 65\% increase in reconstruction error across both regimes.
 
-
-\begin{table}[H]
-\centering
-{\small
-\pgfplotstableread[col sep=comma, trim cells=true]{Figures/thesis_results/AutoencoderPerformance/Q6e_rmse_combined_display.csv}\datqsixe
-\resizebox{\textwidth}{!}{%
-\pgfplotstabletypeset[
-  columns={Curve Variant, Metric, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, All},
-  columns/Curve Variant/.style={column name={Curve Variant}, string type, column type=l},
-  columns/Metric/.style={column name={Metric}, string type, column type=l},
-  columns/AUD/.style={string type, column type=r},
-  columns/CAD/.style={string type, column type=r},
-  columns/DKK/.style={string type, column type=r},
-  columns/EUR/.style={string type, column type=r},
-  columns/JPY/.style={string type, column type=r},
-  columns/NOK/.style={string type, column type=r},
-  columns/SEK/.style={string type, column type=r},
-  columns/GBP/.style={string type, column type=r},
-  columns/USD/.style={string type, column type=r},
-  columns/All/.style={column name={\textbf{All}}, string type, column type=r},
-  every head row/.style={before row=\toprule, after row=\midrule},
-  every row no 1/.style={after row=\midrule},
-  every row no 3/.style={after row=\midrule},
-  every last row/.style={after row=\bottomrule},
-]{\datqsixe}}
-}
-\caption{In-sample RMSE (bps) by interest rate regime for the baseline autoencoder with $\ell=3$ latent factors. Observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero. $N$ denotes the number of curve observations in each regime. The \textit{Inverted, Negative} regime contains no observations in the estimation sample.}
-\label{tab:q6e_combined}
-\end{table}
-
-
-The in-sample reconstruction results show that the autoencoder captures swap rate curves with o accuracy once at least two latent factors are used. Increasing the latent dimension improves reconstruction accuracy, though with diminishing gains. The remaining errors are concentrated at the short and long ends of the curve, during periods of abrupt market movements, and for structurally atypical curve shapes such as inverted and negative-rate curves. The latter is particularly evident for EUR and JPY during the COVID-19 shock. 
+%\begin{table}[H]
+%\centering
+%{\small
+%\pgfplotstableread[col sep=comma, trim cells=true]{Figures/thesis_results/AutoencoderPerformance/Q6e_rmse_combined_display.csv}\datqsixe
+%\resizebox{\textwidth}{!}{%
+%\pgfplotstabletypeset[
+%  columns={Curve Variant, Metric, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, All},
+%  columns/Curve Variant/.style={column name={Curve Variant}, string type, column type=l},
+%  columns/Metric/.style={column name={Metric}, string type, column type=l},
+%  columns/AUD/.style={string type, column type=r},
+%  columns/CAD/.style={string type, column type=r},
+%  columns/DKK/.style={string type, column type=r},
+%  columns/EUR/.style={string type, column type=r},
+%  columns/JPY/.style={string type, column type=r},
+%  columns/NOK/.style={string type, column type=r},
+%  columns/SEK/.style={string type, column type=r},
+%  columns/GBP/.style={string type, column type=r},
+%  columns/USD/.style={string type, column type=r},
+%  columns/All/.style={column name={\textbf{All}}, string type, column type=r},
+%  every head row/.style={before row=\toprule, after row=\midrule},
+%  every row no 1/.style={after row=\midrule},
+%  every row no 3/.style={after row=\midrule},
+%  every last row/.style={after row=\bottomrule},
+%]{\datqsixe}}
+%}
+%\caption{In-sample RMSE (bps) by interest rate regime for the baseline autoencoder with $\ell=3$ latent factors. Observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero. $N$ denotes the number of curve observations in each regime. The \textit{Inverted, Negative} regime contains no observations in the estimation sample.}
+%\label{tab:q6e_combined}
+%\end{table}
 
 
 
-Beyond reconstruction accuracy, we examine whether the quantities implied by the no-arbitrage decoder are economically reasonable. Figure~\ref{fig:r_tilde_all_dims} shows the model-implied short rate, $\tilde r(z_t)$, over time.
+%The in-sample reconstruction results show that the autoencoder captures swap rate curves with o accuracy once at least two latent factors are used. Increasing the latent dimension improves reconstruction accuracy, though with diminishing gains. The remaining errors are concentrated at the short and long ends of the curve, during periods of abrupt market movements, and for structurally atypical curve shapes such as inverted and negative-rate curves. The latter is particularly evident for EUR and JPY during the COVID-19 shock. 
+
+In addition to reconstruction accuracy, we examine whether the model-implied short rate $\tilde r(z_t)$ is economically reasonable. 
 
 \begin{figure}[H]
     \centering
@@ -200,18 +169,28 @@ Beyond reconstruction accuracy, we examine whether the quantities implied by the
     \label{fig:r_tilde_all_dims}
 \end{figure}
 
-Across all three models, the implied short rates move in the same overall direction as the observed swap rates over the sample period. They decline toward the low-rate period around 2019--2020 and rise sharply from 2022 onwards. The level and scale of the implied short rate, however, vary substantially across latent dimensions. In particular, the $\ell=3$ model produces much higher short-rate levels, while the $\ell=4$ model compresses the short rate into a much narrower range.
+As shown in Figure \ref{fig:r_tilde_all_dims}, the implied short rates share a consistent trajectory across all models, declining toward the low-rate environment of 2019--2020 and rising sharply from 2022 onwards. The overall shape is thus robust across all models, yet the level and scale differ substantially. The $\ell=3$ model produces considerably higher short-rate levels, while the $\ell=4$ model compresses the short rate into a much narrower range.
 
-Although the short rate is explicitly modelled as a function of the latent state, it is learned through the swap-rate reconstruction loss rather than by direct calibration to an observed overnight or policy rate. This may partly explain why the implied short-rate levels differ across latent dimensions, even when the reconstructed swap curves are similar. The implied short rate should therefore be interpreted with some caution as a model-implied component of the arbitrage-free decoder, rather than as a separately calibrated estimate of the market short rate.
+Since the short rate is learned implicitly through the swap-rate reconstruction loss rather than calibrated to an observed overnight or policy rate, the model has no explicit incentive to produce economically meaningful short-rate levels. This is consistent with the finding in Figure~\ref{fig:Q6a} that the short end of the curve is systematically the hardest to reconstruct, suggesting that the model has limited structural information about short-maturity dynamics and thus little basis for anchoring the short rate to economically meaningful levels. The implied short rate should therefore be interpreted as a model-implied quantity, rather than as a direct estimate of the market short rate.
+
+
+
+
+
+%Across all three models, the implied short rates move in the same overall direction as the observed swap rates over the sample period. They decline toward the low-rate period around 2019--2020 and rise sharply from 2022 onwards. The level and scale of the implied short rate, however, vary substantially across latent dimensions. In particular, the $\ell=3$ model produces much higher short-rate levels, while the $\ell=4$ model compresses the short rate into a much narrower range.
+
+%Although the short rate is explicitly modelled as a function of the latent state, it is learned through the swap-rate reconstruction loss rather than by direct calibration to an observed overnight or policy rate. This may partly explain why the implied short-rate levels differ across latent dimensions, even when the reconstructed swap curves are similar. The implied short rate should therefore be interpreted with some caution as a model-implied component of the arbitrage-free decoder, rather than as a separately calibrated estimate of the market short rate.
+
+
 
 
 \subsection{No-Arbitrage PDE Residual Diagnostic}
 
-We next verify that the model satisfies the no-arbitrage restriction by computing the residual of the bond-pricing PDE in \eqref{eq:bond_pricing_pde}. Since the decoder constructs zero-coupon bond prices by solving the ODE system derived from this PDE, the residual should be close to zero up to numerical approximation error."
+We next verify that the models satisfies the no-arbitrage restriction by computing the residual of the bond-pricing PDE in \eqref{eq:bond_pricing_pde}. Since the decoder constructs zero-coupon bond prices by solving the ODE system derived from this PDE, the residual should be close to zero up to numerical approximation error.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.7\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim3.png}
+    \includegraphics[width=0.7\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q7_sharpe_ratio_IS_dim2.png}
     \caption{In-sample bond-pricing PDE residual across maturities for $\ell=3$, averaged by currency. Values close to zero indicate numerical satisfaction of the no-arbitrage bond-pricing PDE.
     Currencies: AUD ({\color[HTML]{393B79}\rule[0.5ex]{1em}{1.5pt}}),
     CAD ({\color[HTML]{5254A3}\rule[0.5ex]{1em}{1.5pt}}),
@@ -227,6 +206,7 @@ We next verify that the model satisfies the no-arbitrage restriction by computin
 
 %The figure reports the diagnostic for $\ell=3$ as the representative specification. As the same ODE-based construction is used across latent dimensions, the same diagnostic can be applied to $\ell=2$ and $\ell=4$ to verify numerical satisfaction of the no-arbitrage PDE across specifications.
 
+The diagnostic is reported for the $\ell=2$
 
 Figure~\ref{fig:Q7_pde_residual} reports the in-sample PDE residual for the $\ell=3$ specification, averaged by currency over all in-sample dates. Two features of the figure indicate that the no-arbitrage restriction is satisfied numerically. First, the residuals are on the order of $10^{-9}$, so deviations from zero are negligible in magnitude. Second, the values fluctuate randomly around zero across all maturities and currencies, consistent with numerical noise rather than a systematic arbitrage violation. The no-arbitrage restriction is therefore satisfied numerically.
 
@@ -269,8 +249,9 @@ The results reveal a substantial gap between in-sample and out-of-sample reconst
 \pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformance/Q4a_AE_vs_Kalman_OOS.csv}\datqfoura
 \resizebox{\textwidth}{!}{%
 \pgfplotstabletypeset[
-  columns={index, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
-  columns/index/.style={column name={Model}, string type, column type=l},
+  columns={Model, Set, AUD, CAD, DKK, EUR, JPY, NOK, SEK, GBP, USD, Average, Time (min)},
+  columns/Model/.style={column name={Model}, string type, column type=l},
+  columns/Set/.style={column name={Set}, string type, column type=l},
   columns/AUD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/CAD/.style={column type=r, fixed, precision=2, fixed zerofill},
   columns/DKK/.style={column type=r, fixed, precision=2, fixed zerofill},
@@ -303,13 +284,14 @@ To examine whether the out-of-sample errors are concentrated in particular perio
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q3b_rolling_rmse_over_time.png}
+    \includegraphics[width=1.02\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q8a_rolling_regime_dual_axis.png}
     \caption{Rolling out-of-sample RMSE (bps) over time for $\ell\in\{2,3,4\}$,
     showing the cross-currency average per rolling window. Shaded bars indicate
     windows where at least one currency exceeds 100 bps; bar colour matches the
     corresponding model. Dashed vertical lines mark key macro events.}
     \label{fig:Q3b}
 \end{figure}
+% changed this figure from Q3b to Q8a
 
 
 
