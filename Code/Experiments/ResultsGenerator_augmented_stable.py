@@ -797,23 +797,38 @@ _tbl_rows = []
 # clean model names for CSV (no LaTeX markup)
 _clean_names = ["Baseline", "Stable", "Augmented", "Aug.+Stable"]
 for (_vkey_t, _lbl_t, _, _, _dim_t), _clean_t in zip(_COMP_VARIANTS_MIXED, _clean_names):
-    # IS RMSE — from the in-sample predictions already computed above
-    if _lbl_t in _comp_S_hat:
-        _is_rmse = np.sqrt(np.mean((X_np_all - _comp_S_hat[_lbl_t]) ** 2, axis=1)) * 1e4
-        _is_avg    = f"{np.mean(_is_rmse):.2f}"
-        _is_median = f"{np.median(_is_rmse):.2f}"
-        _is_max    = f"{np.max(_is_rmse):.2f}"
+    # IS RMSE — from rolling window summary CSV (avg_in_rmse_bps per window),
+    # consistent with how Table 2.2 reports IS RMSE
+    _roll_summary_path = os.path.join(
+        REPO_ROOT, "Figures", "OOSResults", "Roll",
+        f"OOS_roll_dim{_dim_t}_{_vkey_t}",
+        _ROLL_SUBDIR, f"ep{_ROLL_EPOCHS}",
+        f"oos_rolling_bbg_dim{_dim_t}_{_ROLL_SUBDIR}.csv",
+    )
+    if os.path.exists(_roll_summary_path):
+        _df_is = pd.read_csv(_roll_summary_path)
+        _is_vals   = _df_is["avg_in_rmse_bps"].dropna().values
+        _is_avg    = f"{np.mean(_is_vals):.2f}"
+        _is_median = f"{np.median(_is_vals):.2f}"
+        _is_max    = f"{np.max(_is_vals):.2f}"
     else:
+        print(f"  ⚠️  Rolling summary CSV not found for IS: {_roll_summary_path}")
         _is_avg = _is_median = _is_max = "---"
 
-    # OOS RMSE — from rolling predictions CSV
+    # OOS RMSE — avg/median from individual curve predictions; max from
+    # per-window averages (rolling summary CSV) so it reflects the worst
+    # window average rather than the worst single curve
     _df_t = _load_oos_preds(_vkey_t, _dim_t)
     if _df_t is not None:
         _oos_avg    = f"{_df_t['rmse_bps'].mean():.2f}"
         _oos_median = f"{_df_t['rmse_bps'].median():.2f}"
-        _oos_max    = f"{_df_t['rmse_bps'].max():.2f}"
     else:
-        _oos_avg = _oos_median = _oos_max = "---"
+        _oos_avg = _oos_median = "---"
+
+    if os.path.exists(_roll_summary_path):
+        _oos_max = f"{_df_is['avg_rmse_bps'].dropna().max():.2f}"
+    else:
+        _oos_max = "---"
 
     _tbl_rows.append({
         "Model":      _clean_t,
