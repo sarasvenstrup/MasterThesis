@@ -301,8 +301,8 @@ save_table(disp, f"augmented_is_rmse_combined_display_dim{LATENT_DIM}")
 # ── figure: fitted vs actual — all dims (ℓ=2,3,4) overlaid ──────────────────
 print("\nGenerating fitted vs actual — all dims figure...")
 
-_dims_aug    = [2, 3]
-_dim_colors  = {2: custom_palette[4], 3: custom_palette[0]}
+_dims_aug    = [2, 3, 4]
+_dim_colors  = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
 _dim_labels  = {d: r"$\ell$=" + str(d) for d in _dims_aug}
 
 # load models and run inference for each dim
@@ -327,6 +327,27 @@ for _dim in _dims_aug:
             _xb = X_tensor[_i:_i + BATCH_SIZE].to(device)
             _s_list.append(_m(augment(_xb)).cpu())
     _aug_S_hat[_dim] = torch.cat(_s_list).numpy()
+
+# load baseline dim=2 as reference (no augmentation)
+_baseline_ckpt_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                                   "dim2_baseline", f"ep{EPOCHS}",
+                                   f"checkpoint_dim2_ep{EPOCHS}.pt")
+_baseline_S_hat = None
+if os.path.exists(_baseline_ckpt_path):
+    _b_ckpt = torch.load(_baseline_ckpt_path, map_location=device)
+    _b_cfg  = _b_ckpt["model_config"]
+    _b_m    = FullModel(input_dim=_b_cfg.get("input_dim", X_tensor.shape[1]), latent_dim=_b_cfg["latent_dim"]).to(device)
+    _b_m.load_state_dict(_b_ckpt["model_state_dict"])
+    _b_m.eval()
+    _b_list = []
+    with torch.no_grad():
+        for _i in range(0, X_tensor.shape[0], BATCH_SIZE):
+            _xb = X_tensor[_i:_i + BATCH_SIZE].to(device)
+            _b_list.append(_b_m(_xb).cpu())
+    _baseline_S_hat = torch.cat(_b_list).numpy()
+    print("  Loaded baseline dim=2 as reference")
+else:
+    print(f"  ⚠️  Baseline dim=2 checkpoint not found: {_baseline_ckpt_path}")
 
 _rep_dates_ad = {
     "Calm (2014-08-29)": "2014-08-29",
@@ -359,6 +380,11 @@ for _row_i, (_label, _date_str) in enumerate(_rep_dates_ad.items()):
         _actual = X_np_all[_global_idx] * _scale_ad
         ax.plot(tenors, _actual, "o-", color="black",
                 linewidth=2.0, markersize=5, label="Actual", zorder=5)
+
+        if _baseline_S_hat is not None:
+            _b_fitted = _baseline_S_hat[_global_idx] * _scale_ad
+            ax.plot(tenors, _b_fitted, color="black", linewidth=1.5,
+                    linestyle="--", label="Baseline ($\\ell=2$)")
 
         for _dim in _dims_aug:
             if _dim not in _aug_S_hat:
