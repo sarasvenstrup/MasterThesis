@@ -1,7 +1,7 @@
 \chapter{Simulation and Stability}
 \label{chap:simulation}
 
-This chapter studies the behaviour of the arbitrage-free encoder--decoder model when it is used beyond curve reconstruction. In particular, we ask whether the learned latent dynamics can be used to generate interest rate curve scenarios, comprising zero-coupon bond price curves and swap-rate curves, by simulating latent paths under the model's risk-neutral dynamics.
+This chapter studies the behaviour of the arbitrage-free encoder--decoder model when it is used beyond curve reconstruction. In particular, we ask whether the learned latent dynamics can be used to generate yiield curve scenarios, comprising zero-coupon bond price curves and swap-rate curves, by simulating latent paths under the model's risk-neutral dynamics.
 
 To investigate this, we consider two model variants. The first is the arbitrage-free encoder--decoder model from the previous chapter, referred to here as the \textit{baseline}. The second is a \textit{stable} variant proposed in this thesis, which extends the baseline with modifications to the latent dynamics designed to produce more controlled simulated paths. These modifications are described in Section~\ref{sec:stability_analysis}, after which the two variants are compared empirically to assess whether the stable specification achieves more controlled simulated scenarios without sacrificing reconstruction accuracy.
 
@@ -280,7 +280,8 @@ Together, these restrictions define the stable variant. Section~\ref{sec:sim_evi
 \label{sec:sim_evidence}
 %========================================================
 
-We compare the baseline and stable models by simulating latent paths over a $10$-year horizon. Both models use the latent dimension \(\ell=2\), are trained for 5{,}000 epochs on swap curves from all nine currencies jointly, and are initialised from the observed EUR swap curve on 29 January 2010. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial latent states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise. \textcolor{red}{(add a reference to appendix with a table of all hyperparameters chosen, like the sigma bounds r scale and etc.)}
+We compare the baseline and stable models by simulating latent paths over a $10$-year horizon. Both models use the latent dimension \(\ell=2\), are trained for 5{,}000 epochs on swap curves from all nine currencies jointly, and are initialised from the observed EUR swap curve on 29 January 2010. The simulation follows the Euler--Maruyama procedure described in Section \ref{sec:simulation-latent-dynamics}. Although both variants share the same encoder architecture, the encoder weights are trained separately, so the same initial curve may map to different initial latent states. We generate $M=500$ paths with monthly time steps $\Delta t=1/12$, drawing identical Brownian increments for both models using random seed 1234, so that differences between the simulated paths reflect differences in the model specifications rather than Monte Carlo noise. \textcolor{red}{(add a reference to appendix with a table of all hyperparameters chosen, like the sigma bounds r scale and etc.)} A full list of architecture, training and simulation hyperparameters is
+given in Table~\ref{tab:hyperparameters} of Appendix~\ref{app:hyperparameters}.
 
 \begin{figure}[H]
 \centering
@@ -431,9 +432,15 @@ The experiment shows that the stability restrictions turn out to be a practical 
 %========================================================
 \section{Reconstruction Accuracy under Stability Constraints}
 \label{sec:sim_reconstruction_accuracy}
-%========================================================
+%=======================================================
 
-Imposing stability restrictions improves simulation behaviour. The question is whether this comes at the cost of the model's primary objective of reconstructing observed swap curves. The assessment begins with the two models from the simulation experiment. Table~\ref{tab:sim_insample_rmse} reports their in-sample RMSE on the EUR swap curve. Both models are trained on multi-currency data but evaluated on the EUR curve only.
+
+% NEEDS IMPROVING - THIS DOESNT MAKE SENSE
+\textcolor{red}{Imposing stability restrictions improves simulation behaviour, but may come at the cost of the model's primary objective: reconstructing observed swap curves. The assessment begins with the two models from the simulation experiment in Section~\ref{sec:sim_evidence}, both evaluated on the EUR curve, before broadening to a multi-currency out-of sample framework.}
+
+
+
+Table~\ref{tab:sim_insample_rmse} reports the in-sample RMSE on the EUR curve for both models, each trained on multi-currency data.
 
 \begin{table}[H]
 \centering
@@ -443,16 +450,15 @@ Imposing stability restrictions improves simulation behaviour. The question is w
 \caption{In-sample reconstruction RMSE for the baseline and stable models used in the simulation experiment. Both models are trained on multi-currency data with latent dimension \(\ell=2\) for \(5000\) epochs but evaluated on the EUR curve only. RMSE is reported in basis points.}
 \label{tab:sim_insample_rmse}
 \end{table}
-The stable variant achieves \(8.49\) bps compared to \(17.61\) bps for the baseline, so the improved behavior does not come at the cost of in-sample fit. 
 
-In-sample accuracy alone does not confirm that the model generalises to unseen data. Table \ref{tab:oos_summary_sim} extends the comparison to a rolling out-of-sample evaluation across latent dimensions $\ell\in\{2,3,4\}$, following the protocol from Chapter \ref{chap:evaluation}, with each model trained for 3500 epochs.
+The stable model achieves $8.5$ bps against $17.6$ bps for the baseline, indicating that the stability restrictions do not compromise in-sample reconstruction accuracy on EUR. On the contrary, they improve it. Table~\ref{tab:oos_summary_sim} broadens the evaluation to a multi-currency rolling out-of-sample framework, reporting average and maximum RMSE across 18 test windows for both models at latent dimensions $\ell\in\{2,3,4\}$, following the protocol from Chapter~\ref{chap:evaluation}.
 
 \begin{table}[H]
 \centering
 {\small
 \begin{tabular}{@{}llrrr@{}}
 \toprule
-\(\ell\) & Variant & Mean IS & Mean OOS & Max OOS \\
+\textbf{\(\ell\)} & \textbf{Model} & \textbf{Avg. IS} & \textbf{Avg. OOS} & \textbf{Max OOS }\\
 \midrule
 \input{Figures/Simulation/oos_summary_table}
 %\bottomrule
@@ -464,11 +470,13 @@ reports the average rolling-window in-sample RMSE for reference. All models are
 trained for \(3500\) epochs. RMSE values are reported in basis points.}
 \label{tab:oos_summary_sim}
 \end{table}
-The results show that the effect of the stability restrictions depend strongly on the latent dimension. At $\ell=2$, the baseline generalises well out of sample while the stable model struggles both in and out of sample, suggesting the restrictions are too restrictive relative to the available latent degrees of freedom. As the dimension increases, the baseline's out-of-sample RMSE worsens despite consistently low in-sample errors, consistent with overfitting to the training window. The stable model, however, improves substantially and at $\ell=4$ achieves the best in-sample and out-of-sample performance across all configurations. The restrictions there require sufficient latent capacity to be effective.
+
+The effect of the stability restrictions depends strongly on the latent dimension. At $\ell=2$, the stable model struggles severely, with an average IS RMSE of $138.7$ bps against $10.5$ bps for the baseline, suggesting the restrictions are too constraining relative to the available latent degrees of freedom. From $\ell=3$ onward, the stable 
+model improves substantially. The baseline, as established in Chapter~\ref{chap:evaluation}, overfits increasingly with latent dimension, and this is reflected here in its out-of-sample RMSE deteriorating from $19.0$ bps at $\ell=2$ to $100.5$ bps at $\ell=4$. The stable model moves in the opposite direction, and at $\ell=4$ achieves the lowest average and maximum out-of-sample RMSE across all configurations, with $12.1$ bps against $100.5$ bps for the baseline.
 
 
 % make this part more introducing the rest of the evaluation!
-In Chapter~\ref{chap:evaluation}, the baseline model was shown to struggle in specific market regimes, including periods of negative rates and inverted yield curves. Figure~\ref{fig:rolling_oos_rmse} examines whether the stable model addresses these weaknesses, tracing the rolling RMSE over time for all three latent dimensions.
+In Chapter~\ref{chap:evaluation}, the baseline model was shown to struggle with specific curve variants, most notably negative rates and inverted curves. Figure~\ref{fig:rolling_oos_rmse} examines whether the stable model addresses these weaknesses, tracing the rolling RMSE over time for all three latent dimensions.
 
 
 \begin{figure}[H]
@@ -490,7 +498,7 @@ For the baseline model, error spikes cluster around the quantitative easing in 2
 \end{figure}
 
 
-The panels use separate vertical scales, the baseline reaching 7,000 bps against 200 bps for the stable model, which reflects the nature of the difference. Normal non-negative observations (blue) remain near zero for both models throughout most of the sample, but the baseline produces a single extreme failure close to 7,000 bps in 2022, confirming that even familiar regime observations become problematic as the rate environment shifts sharply. Negative-rate observations (pink) drive sustained elevated errors, with individual spikes reaching around 4,800 bps in 2016 and 3,500 bps around 2019. Inverted non-negative curves (black), which appear from 2022 onward, reach close to 3,000 bps for the baseline. The stable model reduces these errors substantially across all three regimes, though negative-rate observations still produce the highest errors within the stable panel, reaching around 150 to 210 bps in the 2015 to 2016 period, well above the typical level for normal non-negative observations.
+The panels use separate vertical scales, the baseline reaching 7,000 bps against 200 bps for the stable model, which reflects the nature of the difference. Normal non-negative curves (blue) remain near zero for both models throughout most of the sample, but the baseline produces a single extreme failure close to 7,000 bps in 2022, confirming that even familiar regime curves become problematic as the rate environment shifts sharply. Negative-rate curves (pink) drive sustained elevated errors, with individual spikes reaching around 4,800 bps in 2016 and 3,500 bps around 2019. Inverted non-negative curves (black), which appear from 2022 onward, reach close to 3,000 bps for the baseline. The stable model reduces these errors substantially across all three regimes, though negative-rate curves still produce the highest errors within the stable panel, reaching around 150 to 210 bps in the 2015 to 2016 period, well above the typical level for normal non-negative curves.
 
 The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter all point in the same direction. At $\ell=4$, the stability restrictions reduce both in-sample and out-of-sample errors relative to the baseline and contain the most severe regime-specific failures, though the negative-rate environment remains the most challenging for both models. 
 
