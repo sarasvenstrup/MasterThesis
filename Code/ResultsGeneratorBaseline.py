@@ -1369,23 +1369,87 @@ else:
         print("\n  Combined regime (inverted × negative) (OOS):")
         print(tbl_combined_oos.to_string())
 
-        # display version: N + Avg only, no Std, no Inverted Negative
-        _oos_display_rows = [r for r in tbl_combined_oos.index
-                             if "Std" not in r and "Inverted + Negative" not in r]
-        _disp_oos = tbl_combined_oos.loc[_oos_display_rows].copy().astype(object)
-        for _idx in _disp_oos.index:
-            if _idx.endswith("— N"):
-                _disp_oos.loc[_idx] = _disp_oos.loc[_idx].apply(
-                    lambda v: str(int(v)) if pd.notna(v) else "---")
+        # display version: N + IS RMSE + OOS RMSE per regime, then Average rows
+        # load training predictions to compute per-regime IS RMSE
+        _pred_train_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                                        "OOS_roll_dim2_baseline",
+                                        ROLL_SUBDIR, f"ep{ROLL_EPOCHS}", "predictions_train_all.csv")
+        _df_is = pd.read_csv(_pred_train_path) if os.path.exists(_pred_train_path) else None
+        if _df_is is not None:
+            _actual_cols_is = [c for c in _df_is.columns if c.startswith("actual_tenor_")]
+            _fitted_cols_is = [c for c in _df_is.columns if c.startswith("fitted_tenor_")]
+            _X_is = _df_is[_actual_cols_is].values
+            _S_is = _df_is[_fitted_cols_is].values
+            _rmse_is_vals = np.sqrt(np.mean((_X_is - _S_is) ** 2, axis=1)) * 10_000
+            _df_is_regime = pd.DataFrame({
+                "ccy":      _df_is["ccy"].values,
+                "rmse_bps": _rmse_is_vals,
+                "inverted": _X_is[:, 0] > _X_is[:, -1],
+                "negative": (_X_is < 0).any(axis=1),
+            })
+        else:
+            _df_is_regime = None
+
+        def _fmt_n(v): return str(int(v)) if pd.notna(v) else "---"
+        def _fmt_r(v): return f"{v:.2f}" if pd.notna(v) else "---"
+
+        _groups_disp = [
+            ("Normal",   ~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"],
+                         (~_df_is_regime["inverted"] & ~_df_is_regime["negative"]) if _df_is_regime is not None else None),
+            ("Inverted",  _df_oos_regime["inverted"] & ~_df_oos_regime["negative"],
+                         (_df_is_regime["inverted"]  & ~_df_is_regime["negative"]) if _df_is_regime is not None else None),
+            ("Negative", ~_df_oos_regime["inverted"] &  _df_oos_regime["negative"],
+                         (~_df_is_regime["inverted"] &  _df_is_regime["negative"]) if _df_is_regime is not None else None),
+        ]
+
+        _disp_rows = []
+        for _lbl, _mask_oos, _mask_is in _groups_disp:
+            # N row (count from OOS set)
+            _row_n = {"Curve Variant": _lbl, "Metric": "N"}
+            for _ccy in CCY_ORDER:
+                _sub = _df_oos_regime.loc[_mask_oos & (_df_oos_regime["ccy"] == _ccy), "rmse_bps"]
+                _row_n[_ccy] = _fmt_n(len(_sub)) if len(_sub) > 0 else "---"
+            _row_n["All"] = _fmt_n(len(_df_oos_regime.loc[_mask_oos]))
+            _disp_rows.append(_row_n)
+
+            # IS RMSE row
+            _row_is = {"Curve Variant": _lbl, "Metric": "IS RMSE"}
+            if _df_is_regime is not None and _mask_is is not None:
+                for _ccy in CCY_ORDER:
+                    _sub = _df_is_regime.loc[_mask_is & (_df_is_regime["ccy"] == _ccy), "rmse_bps"]
+                    _row_is[_ccy] = _fmt_r(_sub.mean()) if len(_sub) > 0 else "---"
+                _row_is["All"] = _fmt_r(_df_is_regime.loc[_mask_is, "rmse_bps"].mean())
             else:
-                _disp_oos.loc[_idx] = _disp_oos.loc[_idx].apply(
-                    lambda v: f"{v:.2f}" if pd.notna(v) else "---")
-        # split "Regime — Metric" index into two separate columns
-        _disp_oos_export = _disp_oos.reset_index()
-        _split_oos = _disp_oos_export["index"].str.split(" — ", n=1, expand=True)
-        _disp_oos_export.insert(0, "Curve Variant", _split_oos[0])
-        _disp_oos_export.insert(1, "Metric", _split_oos[1])
-        _disp_oos_export = _disp_oos_export.drop(columns=["index"])
+                for _ccy in CCY_ORDER + ["All"]:
+                    _row_is[_ccy] = "---"
+            _disp_rows.append(_row_is)
+
+            # OOS RMSE row
+            _row_oos = {"Curve Variant": _lbl, "Metric": "OOS RMSE"}
+            for _ccy in CCY_ORDER:
+                _sub = _df_oos_regime.loc[_mask_oos & (_df_oos_regime["ccy"] == _ccy), "rmse_bps"]
+                _row_oos[_ccy] = _fmt_r(_sub.mean()) if len(_sub) > 0 else "---"
+            _row_oos["All"] = _fmt_r(_df_oos_regime.loc[_mask_oos, "rmse_bps"].mean())
+            _disp_rows.append(_row_oos)
+
+        # Average rows at the bottom (all curves, not regime-specific)
+        _row_avg_is  = {"Curve Variant": "Average", "Metric": "IS RMSE"}
+        _row_avg_oos = {"Curve Variant": "Average", "Metric": "OOS RMSE"}
+        for _ccy in CCY_ORDER:
+            if _df_is_regime is not None:
+                _sub_is = _df_is_regime[_df_is_regime["ccy"] == _ccy]["rmse_bps"]
+                _row_avg_is[_ccy] = _fmt_r(_sub_is.mean()) if len(_sub_is) > 0 else "---"
+            else:
+                _row_avg_is[_ccy] = "---"
+            _sub_oos = _df_oos_regime[_df_oos_regime["ccy"] == _ccy]["rmse_bps"]
+            _row_avg_oos[_ccy] = _fmt_r(_sub_oos.mean()) if len(_sub_oos) > 0 else "---"
+        _row_avg_is["All"]  = _fmt_r(_df_is_regime["rmse_bps"].mean()) if _df_is_regime is not None else "---"
+        _row_avg_oos["All"] = _fmt_r(_df_oos_regime["rmse_bps"].mean())
+        _disp_rows.append(_row_avg_is)
+        _disp_rows.append(_row_avg_oos)
+
+        _disp_oos_export = pd.DataFrame(_disp_rows,
+                                        columns=["Curve Variant", "Metric"] + CCY_ORDER + ["All"])
         _disp_oos_export.to_csv(
             os.path.join(TABLES_OUT, "Q4c_oos_rmse_combined_display.csv"), index=False)
         print(f"  Saved: Q4c_oos_rmse_combined_display.csv")

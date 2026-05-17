@@ -16,5 +16,35 @@
   "python_version": "3.12.6",
   "numpy_version": "2.2.2",
   "run_started": "2026-05-17T11:07:59",
-  "window_results": {}
+  "window_results": {
+    "2015-01-01": {
+      "avg_rmse_bps": 258.462,
+      "avg_in_rmse_bps": 7.4386,
+      "per_ccy_bps": {
+        "AUD": 6.5923,
+        "CAD": 4.5062,
+        "DKK": 20.522,
+        "EUR": 10.555,
+        "JPY": 5.3483,
+        "NOK": 8.3427,
+        "SEK": 2248.3599,
+        "GBP": 9.3563,
+        "USD": 12.5756
+      },
+      "in_per_ccy_bps": {
+        "AUD": 6.8472,
+        "CAD": 8.0518,
+        "DKK": 6.8904,
+        "EUR": 6.3368,
+        "JPY": 6.2786,
+        "NOK": 6.3676,
+        "SEK": 9.877,
+        "GBP": 7.331,
+        "USD": 8.9669
+      },
+      "train_minutes": 37.21,
+      "n_train": 522,
+      "n_test": 54
+    }
+  }
 }
