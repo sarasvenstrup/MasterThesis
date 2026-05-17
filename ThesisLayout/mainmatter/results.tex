@@ -230,7 +230,7 @@ For each rolling window, the in-sample RMSE is computed on the five-year trainin
     \label{fig:Q2b}
 \end{figure}
 
-A substantial gap exists between in-sample and out-of-sample reconstruction performance, indicative of overfitting. All models achieve average in-sample RMSEs between 9.3 and 11.6 bps, yet out-of-sample performance worsens markedly with the number of latent factors. The $\ell=2$ model increases from 10.5 bps to 19.0 bps out-of-sample, while the $\ell=3$ and $\ell=4$ models perform considerably worse out-of-sample, reaching 66.5 and 100.5 bps, respectively. Additional latent factors thus reduce in-sample error at the cost of out-of-sample generalisation.
+A substantial gap exists between in-sample and out-of-sample reconstruction performance, indicative of overfitting. All models achieve average in-sample RMSEs between 9.3 and 11.6 bps, yet out-of-sample performance worsens markedly with the number of latent factors. The $\ell=2$ model increases from 10.5 bps to 19.0 bps out-of-sample, while the $\ell=3$ and $\ell=4$ models perform considerably worse out-of-sample, reaching 66.5 and 100.5 bps, respectively. Additional latent factors thus reduce in-sample error at the cost of out-of-sample generalisation. It is worth noting that the in-sample RMSES are, on average, of similar magnitude to those reported in Section \ref{sec:ISevaluation}, suggesting that the models achieve reasonable reconstruction accuracy even when trained on shorter five-year windows with less data.
 
 %\begin{table}[H]
 %\centering
@@ -267,25 +267,22 @@ A substantial gap exists between in-sample and out-of-sample reconstruction perf
 
 
 
-
-
-To examine whether the out-of-sample errors are concentrated in particular periods, Figure~\ref{fig:Q3b} reports the rolling out-of-sample RMSE over time. The largest increases occur around the low-rate period in 2016 and the rate-hiking cycle beginning in 2022. These spikes are most pronounced for $\ell=3$ and $\ell=4$, while $\ell=2$ remains comparatively stable. The shaded regions further indicate that the instability is localised both across time and across currencies. The $\ell=2$ specification, though less accurate in-sample, exhibits more stable out-of-sample behaviour.
+To examine whether the out-of-sample errors are concentrated in particular periods, Figure~\ref{fig:Q3b} plots the rolling out-of-sample RMSE over time alongside the share of negative and inverted curves in both the training and test sets. The largest spikes coincide with periods where the test set contains a higher share of negative or inverted curves relative to the training set, most notably around 2016 and the rate-hiking cycle beginning in 2022. This suggests that what drives out-of-sample errors is not the amount of training data, but rather whether the curve types encountered at test time are well represented in the training window. 
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.02\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q8a_rolling_regime_dual_axis.png}
-    \caption{Rolling out-of-sample RMSE (bps) over time for $\ell\in\{2,3,4\}$,
-    showing the cross-currency average per rolling window. Shaded bars indicate
-    windows where at least one currency exceeds 100 bps; bar colour matches the
-    corresponding model. Dashed vertical lines mark key macro events.}
+    \caption{Rolling out-of-sample RMSE (bps, right axis) for the baseline model
+    with $\ell \in \{2, 3, 4\}$ latent factors, clipped at 50 bps for readability;
+    true values are annotated where clipping occurs. Bars (left axis) show the
+    percentage of curves in the negative-rate and inverted curve variants for
+    the training and test set of each rolling window. Dashed vertical lines mark
+    key macroeconomic events.}
     \label{fig:Q3b}
 \end{figure}
 % changed this figure from Q3b to Q8a
 
-
-
-Add description
-
+The higher-dimensional models are particularly sensitive to such distributional shifts, as illustrated by the December 2019 window where inverted curves appear in the test set despite being largely absent from the training window, causing the $\ell=4$ model to spike to 182 bps while $\ell=2$ is considerably less affected. This pattern is even more pronounced during the worst windows around 2016 and 2022, where the $\ell=3$ and $\ell=4$ models reach 633 and 692 bps respectively. Overall, the out-of-sample results point to a consistent pattern of overfitting that worsens with the number of latent factors, driven not by the amount of training data but by the mismatch between the curve types seen during training and those encountered at test time.
 
 
 
@@ -298,7 +295,8 @@ Add description
     \label{fig:q4c_oos_scatter_regime}
 \end{figure}
 
-The regime-dependent pattern documented in Section~\ref{subsec:reconstruction_accuracy} raises the question of whether it persists out-of-sample. Focusing on $\ell=3$, Figure~\ref{fig:q4c_oos_scatter_regime} shows that it does, but is considerably more pronounced. Inverted curves are by far the most challenging, with an average OOS RMSE of 89.66 bps compared to 12.31 bps for normal, non-negative curves (Table~\ref{tab:q4c_oos_combined}). This represents a far more severe loss in accuracy than was observed in-sample, where inverted and non-negative curves were reconstructed at comparable accuracy. Negative-rate curves also lose accuracy out-of-sample, averaging 59.71 bps, though less severely than inverted curves. Notably, this is despite the rolling windows using only 3,500 training epochs compared to 5,000 for the in-sample results, suggesting that the difficulty with inverted curves is not primarily a function of training length but rather the structural shift in curve shape.
+
+The out-of-sample errors are not evenly distributed across curve types, highlighting an additional driver beyond the distributional mismatch discussed above. Negative-rate and inverted curves account for 20 and 9 percent of the full training sample respectively, which rules out data scarcity as the primary cause. As documented in Section~\ref{sec:ISevaluation}, the model already shows elevated in-sample RMSE for these curve types on the full training set, reflecting a limited ability to capture their level and slope characteristics. Table~\ref{tab:q4c_oos_combined} confirms this pattern carries through to the rolling evaluation, where IS RMSEs of 14.9 and 12.9 bps for inverted and negative curves compare to 8.4 bps for normal curves, with the gap widening further out-of-sample to 20.4 and 23.5 bps, as illustrated in Figure~\ref{fig:q4c_oos_scatter_regime}.
 
 
 
@@ -333,8 +331,6 @@ The regime-dependent pattern documented in Section~\ref{subsec:reconstruction_ac
 \end{table}
 
 
-Overall, the out-of-sample results indicate that $\ell=2$ offers the most stable performance across rolling windows, while higher dimensional specifications are prone to instability in specific market environments. The errors are concentrated in periods of structural change, particularly the low-rate environment of 2016 and the rate-hiking cycle of 2022, and are most sever for inverted curves, which where rarely observed in the preceding training periods.
 
+Overall, the out-of-sample results point to two complementary sources of error. Overfitting worsens with the number of latent factors, driven by distributional mismatch between training and test windows and most pronounced during periods of structural change such as the low-rate environment of 2016 and the rate-hiking cycle of 2022. In addition, the model shows an inherent difficulty with inverted and negative-rate curves that is already present in-sample and is amplified out-of-sample, reflecting a structural limitation in capturing their level and slope characteristics rather than a lack of training exposure. Across both dimensions, $\ell=2$ offers the most stable and generalisable performance.
 
-% extra from the old table:
-Table~\ref{tab:Q4a} shows that the out-of-sample loss in accuracy is uneven across currencies. For $\ell=2$, the increase in RMSE is moderate for most currencies, whereas $\ell=3$ and $\ell=4$ exhibit severe currency-specific errors, particularly for JPY, EUR, CAD, and AUD. Average OOS RMSE is therefore driven largely by a few currencies rather than by uniform loss in accuracy across all markets.

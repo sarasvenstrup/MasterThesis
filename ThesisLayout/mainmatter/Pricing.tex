@@ -139,7 +139,7 @@ We price all available EUR ATM swaption cells using the stable model directly, w
 
 \begin{table}[H]
 \centering
-\input{Figures/Pricing/eval_base/tab_base_per_cell_all.tex}
+\input{../Figures/Pricing/eval_base/tab_base_per_cell_all.tex}
 \end{table}
 
 The overall MAE is \textbf{414.7 bp}, far exceeding typical bid--offer spreads of 1--5 bp. Short-expiry cells are the worst: the 1Yx5Y cell exceeds 1000 bp. All cells show a large positive vol error — the stable model systematically overestimates implied volatility — and a strongly negative forward bias, confirming that the simulated forward distributions are not centred at \(F_0\).
@@ -147,17 +147,251 @@ The overall MAE is \textbf{414.7 bp}, far exceeding typical bid--offer spreads o
 This is the central diagnostic of this chapter: a latent-state model that reconstructs curves accurately is not, by itself, a swaption-pricing model. The two problems anticipated above are both present in extreme form. The remainder of the chapter introduces a small trainable pricing layer on top of the frozen stable model, calibrated against observed swaption vols, that closes most of this gap.
 
 %=========================================================
-% --- Subsequent sections (pricing layer + comparison) will be added once the
-%     final model choice has been made.  Candidates currently under evaluation:
-%
-%       Constant MPR
-%       Expiry MPR
-%       Expiry-Tenor Vol MPR
-%       State-Conditioned Vol MPR (saddle-point fix re-run)
-%       SV Pricing MPR (CIR stochastic vol with state-conditioned v_0)
-%       Surface Vol MPR (full LOO cross-section)
-%
-%     Once the chosen model and its results are confirmed, the next section
-%     will introduce the architecture, calibration objective, and present
-%     per-cell results and comparison against the stable-model baseline above.
+\section{Constant Market Price of Risk}
+\label{sec:constant_mpr}
 %=========================================================
+
+\subsection{Architecture}
+\label{subsec:cmpr_architecture}
+
+We introduce a minimal trainable pricing layer on top of the frozen stable model. It recalibrates the risk-neutral drift \(K(z)\) by adding a learnable constant correction in the diffusion direction:
+\[
+\boxed{
+K^*(z) = K(z) + L(z)\,\lambda_0,
+}
+\]
+where \(\lambda_0 \in \mathbb{R}^d\) is a learnable constant vector and \(K^*(z)\) is the option-calibrated drift. Since the model is already under \(\mathbb{Q}\), this is not a change of measure but a recalibration of the risk-neutral dynamics. The adjusted SDE is
+\[
+dz_t = K^*(z_t)\,dt + \mathrm{diag}(\sigma_{\mathrm{vec}})\,L(z_t)\,dW_t^{\mathbb{Q}},
+\]
+with per-factor diffusion scales \(\sigma_{\mathrm{vec}} \in \mathbb{R}^d_{>0}\) also learnable. All base model parameters are frozen. The model has \(2d = 8\) trainable parameters for \(d = 4\).
+
+The vector \(\lambda_0\) has a natural interpretation as a \emph{market price of risk}: it quantifies the additional drift — beyond what the reconstruction-calibrated \(K(z)\) provides — that the risk-neutral measure requires in order for the simulated distribution of \(F_{T_e}\) to match option prices. The correction \(L(z)\lambda_0\) rotates \(\lambda_0\) through the diffusion geometry so that the adjustment is aligned with the directions of uncertainty in the latent space.
+
+The key design choice is that \(\lambda_0\) is \emph{constant}: it does not depend on the current latent state \(z_t\). A state-dependent correction \(L(z)\Lambda z_t\) would grow as \(z_t\) deviates from its starting point under diffusion noise, creating a positive feedback loop through the decoder's Jacobian that produces explosive implied vols for short-expiry options. With a constant \(\lambda_0\) the correction is uniform across the latent space and no such amplification can occur.
+
+\subsection{Calibration}
+\label{subsec:cmpr_calibration}
+
+Calibration minimises a straddle vol loss plus a forward-centering penalty:
+\[
+\mathcal{L}
+= \underbrace{\frac{1}{|\mathcal{B}|}
+\sum_{i \in \mathcal{B}}
+\left(
+\frac{\hat\sigma_{N}^{(i)} - \sigma_{\mathrm{mkt}}^{(i)}}{100}
+\right)^2}_{\mathcal{L}_{\mathrm{vol}}}
++\;
+0.5\underbrace{\frac{1}{|\mathcal{B}|}
+\sum_{i\in\mathcal{B}}
+\left(\frac{\hat b^{(i)}}{100}\right)^2}_{\mathcal{L}_{\mathrm{bias}}}
++\;
+10^{-3}\,\|\lambda_0\|^2,
+\]
+where \(\mathcal{B}\) is a mini-batch of randomly sampled EUR swaption observations. Optimisation uses Adam with linear warmup and cosine annealing over \(1000\) epochs, with \(N_{\mathrm{MC}} = 512\) antithetic paths per observation.
+
+\subsection{Results}
+\label{subsec:cmpr_results}
+
+Table~\ref{tab:constant_mpr_per_cell_all} reports per-cell errors. The overall MAE falls from \(414.7\) bp (base model) to \(\mathbf{40.1}\) bp — a reduction of over \(90\%\) using only \(8\) trainable parameters.
+
+\begin{table}[H]
+\centering
+\input{../Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_all.tex}
+\end{table}
+
+Splitting the data 70/30 into a training period (2010--2021) and a test period (2022--2024) gives training MAE \(39.4\) bp and test MAE \(\mathbf{42.0}\) bp. The very small train--test gap is the central observation about this model: \emph{Constant MPR does not overfit}. Section~\ref{sec:pricing_negative} shows that more elaborate pricing layers improve the training MAE but degrade test performance, confirming that the 8-parameter correction already captures essentially what the yield-curve representation supports.
+
+Figure~\ref{fig:pricing_heatmap_comparison_all} compares the base-model and Constant MPR heatmaps side by side. The improvement is uniform across the surface, with the largest reductions on the cells where the base model is worst (short expiries on long tenors). Figure~\ref{fig:pricing_comparison_timeseries} overlays the vol error over time: the base-model errors swing by hundreds of bp, while the Constant MPR error stays close to zero throughout most of the sample, with residual spikes concentrated in the 2022 rate-hike episode and in the 1Y expiry row.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_heatmap_comparison_all.png}
+    \caption{Per-cell ATM vol MAE (bp) for all dates. Left: base model (overall MAE \(=\) 415 bp). Right: Constant MPR (overall MAE \(=\) 40 bp). Common colour scale. The correction reduces errors substantially in every cell.}
+    \label{fig:pricing_heatmap_comparison_all}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_comparison_timeseries.png}
+    \caption{Vol error (model minus market, bp) over time. Grey: base model. Coloured: Constant MPR (blue = 1Y expiry, green = 5Y, red = 10Y). Amber shading marks the test period. The Constant MPR brings errors close to zero throughout. Residual spikes appear in the 2022 rate-hike episode in the 1Y expiry row.}
+    \label{fig:pricing_comparison_timeseries}
+\end{figure}
+
+The remaining errors follow a clear cross-sectional pattern: the 1Y expiry cells carry visibly higher MAE than the 5Y and 10Y rows. A single \(\lambda_0\) must simultaneously calibrate short- and long-expiry distributions that live in different regions of the latent space and have different sensitivities to the drift correction. This suggests that the yield curve alone is approaching an information ceiling at this 40 bp level.
+
+%=========================================================
+\section{Why Not More Capacity?}
+\label{sec:pricing_negative}
+%=========================================================
+
+A natural next step is to give the pricing layer more flexibility: a separate \(\lambda_e\) per expiry, a per-cell vol surface, a state-conditioned vol regime, or a stochastic-volatility component. We implemented all four and observed a consistent pattern: \emph{training error improves, test error worsens}. Table~\ref{tab:pricing_negative_results} summarises the single-split results.
+
+\begin{table}[H]
+\centering
+\caption{More elaborate yield-curve-only pricing layers. All trained against the same EUR swaption targets with identical optimisation settings, using a \(70\%\) train / \(30\%\) test split (2022 cutoff).}
+\label{tab:pricing_negative_results}
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Model} & \textbf{Params} & \textbf{Overall MAE} & \textbf{Train MAE} & \textbf{Test MAE} & \textbf{Bias} \\
+\midrule
+Constant MPR (Sec.~\ref{sec:constant_mpr}) & 8  & 40.1 & 39.4 & \textbf{42.0} & +93.9 \\
+Expiry MPR \((\lambda_e)\)                 & 16 & 33.9 & 26.7 & 53.6 & +19.7 \\
+Expiry--Tenor Vol MPR                      & 40 & 34.0 & 27.2 & 52.7 & +17.0 \\
+State-conditioned Vol MPR                  & 60 & 33.7 & 26.7 & 53.0 & +12.9 \\
+Stochastic Vol (CIR + state-cond \(v_0\))  & 70 & 33.9 & 26.9 & 53.2 & +13.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Every model from Expiry MPR onwards beats Constant MPR by \(6\)--\(7\) bp on the training period and loses \(10\)--\(11\) bp on the test period. The four-row pattern is unambiguous: the additional parameters fit training-period idiosyncrasies that do not generalise.
+
+A few specific findings are worth recording. The stochastic-volatility extension implemented a proper CIR variance state with a state-conditioned initial level \(v_0(z_0) = \theta\exp(\alpha_v\tanh(w_v\cdot z_0))\) and a fully consistent decoder ODE. After training, both \(\alpha_v\) and \(w_v\) had collapsed to zero — the yield curve does not encode the regime information needed to set today's vol level, even via a single scalar projection. The static state-conditioning term \(\delta_k\tanh(W\cdot z_0)\) in the same model did learn nontrivial values (\(\lVert W\rVert \approx 1.2,\ \lVert \delta\rVert \approx 1.0\)), but this did not translate into test improvement, indicating that what is learned reflects training-period structure rather than a regime indicator.
+
+Forward bias does decrease as capacity grows — the additional parameters give the model more freedom to centre the distribution — but at the cost of vol-MAE generalisation, so they are not net improvements. Forward bias is not the binding constraint: it can be reduced post-hoc by adjusting the bias-penalty weight in the loss without architectural changes.
+
+The conclusion is that the yield-curve latent state, while sufficient to determine a constant drift correction of the correct overall scale, does not contain enough information to identify cell-specific or regime-specific volatility structure. To recover that information, additional inputs are required.
+
+%=========================================================
+\section{Surface Vol MPR: Using the Observed Volatility Cross-Section}
+\label{sec:surface_vol_mpr}
+%=========================================================
+
+\subsection{Motivation}
+\label{subsec:surface_vol_motivation}
+
+The negative result of Section~\ref{sec:pricing_negative} indicates that swaption-implied volatilities reflect option-market information that is not deducible from the yield curve alone~\citep{Filipovic2009}. In a low-frequency dataset such as ours, the cross-section of swaption volatilities on a given date carries information about the current regime that no architecture acting on yield curves alone can recover. The natural fix is to use that cross-section as an input.
+
+\subsection{Architecture}
+\label{subsec:surface_vol_architecture}
+
+For each \((\text{date},\,e,\,n)\) cell we precompute three leave-one-cell-out (LOO) features from the observed vol surface:
+\[
+v_t^{e} = \frac{1}{|\mathcal{T}\setminus\{n\}|}\!\!\sum_{n'\in\mathcal{T}\setminus\{n\}}\!\!\sigma_{\mathrm{mkt}}^{t,e,n'},
+\quad
+v_t^{n} = \frac{1}{|\mathcal{E}\setminus\{e\}|}\!\!\sum_{e'\in\mathcal{E}\setminus\{e\}}\!\!\sigma_{\mathrm{mkt}}^{t,e',n},
+\quad
+v_t^{g} = \frac{1}{8}\!\!\sum_{\substack{(e',n')\\\neq (e,n)}}\!\!\sigma_{\mathrm{mkt}}^{t,e',n'}.
+\]
+Each feature is computed from the other observed cells on date \(t\) only. The target cell is excluded from every average, so the model never sees the label it is being asked to predict.
+
+The drift correction is per-expiry, as in Expiry MPR:
+\[
+K^*_e(z) = K(z) + L(z)\,\lambda_e.
+\]
+The diffusion scale is a per-cell function of the latent state and the three LOO features:
+\[
+\boxed{
+\log\sigma_{e,n,k}\!\left(z_0,\,v_t^{e},\,v_t^{n},\,v_t^{g}\right)
+=
+a_k + b_{e,k} + c_{n,k}
++ \delta_k\tanh\!\bigl(W\cdot z_0\bigr)_k
++ d^{\mathrm{exp}}_{e,k}\,v_t^{e}
++ d^{\mathrm{ten}}_{n,k}\,v_t^{n}
++ d^{\mathrm{glb}}_{k}\,v_t^{g}.
+}
+\]
+The terms \(a + b_e + c_n\) form an additive log-vol surface inherited from Expiry--Tenor Vol MPR. The state-conditioning term \(\delta_k\tanh(W z_0)_k\) allows the static surface to shift with the current latent state. The three LOO terms inject the observed vol-surface information through learnable coefficients \(d^{\mathrm{exp}}, d^{\mathrm{ten}}, d^{\mathrm{glb}}\). The LOO features are rescaled by a factor of \(100\) before being fed to the model, so that they lie in roughly \([0.5,\,2.0]\) and the corresponding coefficients have natural magnitudes.
+
+The model has \(88\) trainable parameters. All static parameters are warm-started from the Expiry--Tenor Vol MPR checkpoint, so at initialisation the model behaves identically to ETV MPR. Only the new LOO coefficients and state-cond regime terms are zero-initialised, and can only improve from there.
+
+\subsection{Calibration}
+\label{subsec:surface_vol_calibration}
+
+The calibration objective is the same straddle vol loss with forward-bias penalty as in Section~\ref{subsec:cmpr_calibration}, plus an L2 regularisation term on each parameter group. Optimisation again uses Adam with linear warmup and cosine annealing over \(1000\) epochs.
+
+\subsection{Results}
+\label{subsec:surface_vol_results}
+
+The overall MAE falls from Constant MPR's \(40.1\) bp to \(\mathbf{28.0}\) bp. The test MAE falls from \(42.0\) bp to \(\mathbf{32.2}\) bp — a \(\mathbf{9.8}\) bp out-of-sample improvement over the best yield-curve-only model. Table~\ref{tab:surface_vol_mpr_per_cell_all} shows the per-cell breakdown.
+
+\begin{table}[H]
+\centering
+\input{../Figures/Pricing/eval_surface_vol_mpr/tab_surface_vol_mpr_per_cell_all.tex}
+\end{table}
+
+The cross-sectional pattern observed for Constant MPR — high MAE on the 1Y expiry row, moderate elsewhere — is largely flattened. The 1Y\(\times\)1Y cell drops from \(148\) bp (Constant MPR) to \(53\) bp. The 1Y\(\times\)5Y cell drops from \(68\) to \(35\) bp, and 1Y\(\times\)10Y from \(54\) to \(37\) bp. The model has acquired information that lets it differentiate vol levels across expiries and tenors that the yield curve alone could not.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.55\textwidth]{Figures/pricing/eval_surface_vol_mpr/fig_vol_heatmap.png}
+    \caption{Surface Vol MPR: per-cell ATM vol MAE (bp), all dates. The colour scale is shared with Figure~\ref{fig:pricing_heatmap_comparison_all} for direct comparison.}
+    \label{fig:surface_vol_heatmap}
+\end{figure}
+
+The learned LOO coefficients have modest norms: \(\lVert d^{\mathrm{exp}}\rVert \approx 0.21\), \(\lVert d^{\mathrm{ten}}\rVert \approx 0.18\), \(\lVert d^{\mathrm{glb}}\rVert \approx 0.16\). With LOO features rescaled to roughly unit magnitude, each contribution shifts \(\log\sigma\) by at most a few tenths — sensible perturbations rather than runaway corrections. The state-conditioning terms \(W,\delta\) also learned non-trivially (\(\lVert W\rVert\approx 1.2,\,\lVert\delta\rVert\approx 1.0\)) in this run, in contrast to the State-Conditioned Vol MPR where they did not translate to test improvement.
+
+The forward bias is also reduced: from \(+93.9\) bp (Constant MPR) to \(+6.0\) bp (Surface Vol MPR). The two-track improvement — vol-MAE down and bias down — is consistent with the model having genuinely more information to fit both halves of the calibration objective.
+
+\subsection{Interpretation}
+\label{subsec:surface_vol_interpretation}
+
+Constant MPR (yield curve only) achieves a test MAE of \(42.0\) bp. Surface Vol MPR (yield curve and observed vol-surface cross-section) achieves \(32.2\) bp. The \(10\) bp gap between Constant MPR and Surface Vol MPR can be interpreted as the value of contemporaneous option-market volatility information beyond the yield curve.
+
+The interpretation is consistent with the failure of the intermediate-complexity yield-curve-only models in Section~\ref{sec:pricing_negative}. Once the model is given access to information about today's volatility surface — even via three summary scalars per cell — it can resolve the cross-sectional structure that the yield curve alone underdetermines.
+
+%=========================================================
+\section{The Model-Implied Volatility Smile}
+\label{sec:pricing_smile}
+%=========================================================
+
+So far we have evaluated the model only at the ATM strike. A richer picture is given by the \emph{implied volatility smile}: how the Bachelier implied vol varies across strikes \(K = F_0 + \delta\) for \(\delta \neq 0\).
+
+\subsection{What a real smile looks like — and why}
+\label{subsec:smile_theory}
+
+In practice, EUR swaption implied vols exhibit a pronounced smile: vols are higher for deep in-the-money and out-of-the-money strikes than at the ATM, and there is a typically negative skew (higher vols on the downside). This shape is driven by:
+\begin{itemize}
+    \item \textbf{Stochastic volatility}: if the instantaneous rate volatility is itself random and correlated with rates, the distribution of \(F_{T_e}\) has heavier tails and skew relative to the normal (captured by models such as SABR \citep{Hagan2002}).
+    \item \textbf{Rate floors}: the zero-lower-bound and negative-rate environment create a floor on rates, generating a positive probability mass near zero that produces skew in the payer direction.
+    \item \textbf{Jumps and regime shifts}: abrupt repricing episodes fatten the tails of the distribution beyond what a diffusion model produces.
+\end{itemize}
+
+\subsection{Why our model produces a nearly flat smile}
+\label{subsec:smile_flat}
+
+The latent SDE is a continuous-time diffusion in a low-dimensional Gaussian state space. The distribution of \(z_{T_e}\) is approximately Gaussian by construction, since there are no jumps in the latent dynamics. The decoder maps \(z_{T_e}\) to \(F_{T_e}\) via a smooth, approximately locally linear function. By composition, \(F_{T_e}\) is approximately normally distributed — and the Bachelier model is based on exactly this assumption, so the implied vol smile it produces is nearly flat.
+
+The \(\lambda_0\) (or per-expiry \(\lambda_e\)) corrections shift the mean of the distribution. The \(\sigma_{\mathrm{eff}}\) corrections rescale its width. The LOO terms condition both on observed market vol levels. None of these alter the \emph{shape} of the distribution from Gaussian. We therefore expect, and observe, a smile that is largely flat with only modest curvature arising from the global nonlinearity of the decoder.
+
+We attempted a stochastic-volatility extension precisely to address this flatness. As reported in Section~\ref{sec:pricing_negative}, the CIR variance state with state-conditioned \(v_0(z_0)\) trained on ATM straddles alone did not improve ATM accuracy and did not produce a meaningfully curved smile, because the state-conditioning collapsed to zero during training. A smile-targeted calibration objective that uses off-ATM quotes as additional training targets would be required to realise the latent benefit of a stochastic-volatility component.
+
+\subsection{Empirical smile}
+\label{subsec:smile_results}
+
+Figure~\ref{fig:pricing_smile} shows the Constant MPR smile for three rate regimes and three cells. Figure~\ref{fig:pricing_smile_dist} shows the empirical distribution of \(F_{T_e}\) against the fitted Bachelier normal.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_smile.png}
+    \caption{Model-implied Bachelier vol smile (Constant MPR). Each panel shows implied vol (bp) vs.\ strike offset \(\delta = K - F_0\) (bp) for one rate regime (row) and one cell (column). The dashed line marks the ATM vol. The smile is nearly flat in all cases, reflecting the approximately Gaussian distribution of \(F_{T_e}\) generated by the latent diffusion model.}
+    \label{fig:pricing_smile}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_smile_dist.png}
+    \caption{Empirical distribution of \(F_{T_e}\) at expiry (histogram) versus the fitted Bachelier normal (dashed). The distributions are close to Gaussian, explaining the flat smile in Figure~\ref{fig:pricing_smile}.}
+    \label{fig:pricing_smile_dist}
+\end{figure}
+
+The smile is indeed nearly flat in most cases, consistent with the approximately Gaussian latent dynamics. Small deviations from flatness arise from the nonlinearity of the decoder: the mapping from latent space to swap rates is not perfectly linear, introducing mild skew. This is most visible in the short-expiry (5Yx1Y) cell during the 2022 rate-hike period, where the decoder operates far from its training distribution and its Jacobian is most nonlinear.
+
+This flatness is a limitation of the model relative to reality. The market smile embeds information about stochastic volatility, rate floors and jumps that our diffusion-based model cannot reproduce. Closing this gap would require either a stochastic-volatility component calibrated to off-ATM quotes, or a discrete-jump or regime-switching extension to the latent dynamics.
+
+%=========================================================
+\section{Summary}
+\label{sec:pricing_summary}
+%=========================================================
+
+The pricing experiments establish four facts about the latent-state model when applied to swaption pricing:
+
+\begin{enumerate}
+    \item The frozen stable model, used directly, gives implied-vol errors of order \(415\) bp — two orders of magnitude above bid--offer spreads. A latent model that reconstructs swap curves accurately is not by itself a pricing model.
+    \item A minimal trainable pricing layer with only \(8\) parameters, the Constant MPR (\(\lambda_0\) drift correction and a per-factor diffusion scale), reduces this to \(40\) bp overall and \(42\) bp out-of-sample. This is the cleanest demonstration that the latent space supports a Q-recalibration.
+    \item More elaborate yield-curve-only pricing layers — per-expiry drift, per-cell static vol surface, state-conditioned vol regime, stochastic volatility — all overfit, with training errors below \(28\) bp but test errors of \(53\) bp. The yield-curve representation contains enough information for a global drift correction but not for cell- or regime-specific volatility structure.
+    \item Augmenting the model with three leave-one-cell-out features from the observed vol surface reduces test MAE to \(32\) bp. The \(\sim 10\) bp gap between Constant MPR and Surface Vol MPR can be interpreted as the value of contemporaneous option-market volatility information beyond the yield curve.
+\end{enumerate}
+
+The model-implied volatility smile is flat by construction, reflecting the Gaussian nature of the latent diffusion. Realistic smile shapes would require either a stochastic-volatility component with off-ATM calibration targets, or jump/regime-switching dynamics in the latent SDE. These extensions are left for future work.
