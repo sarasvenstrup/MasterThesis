@@ -177,7 +177,10 @@ def price_cell(date, expiry, tenor):
     z_k, D_k = z_T[ok], D_T[ok]
 
     with torch.no_grad():
-        _, aux_T = model.decode_from_z(z_k, tau=None, return_aux=True)
+        # Use pricing dynamics (consistency fix) — same k and sigma as simulation
+        _, aux_T = model.decode_from_z(z_k, tau=None, return_aux=True,
+                                       k_override=lm,
+                                       sigma_scale=lm.sigma_vec)
     P_T = aux_T["P_full"]
     dok = torch.isfinite(P_T).all(1)
     if dok.sum() < 16:
