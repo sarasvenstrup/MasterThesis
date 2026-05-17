@@ -745,7 +745,7 @@ save_fig(fig_sr, "all_models_short_rate")
 # ── figure: OOS regime scatter — all models (mixed dims) ─────────────────────
 print("\nGenerating OOS regime scatter — all models (mixed dims) figure...")
 
-fig_oos, axes_oos = plt.subplots(2, 3, figsize=(20, 7), sharex=True, sharey=False)
+fig_oos, axes_oos = plt.subplots(2, 2, figsize=(14, 7), sharex=True, sharey=False)
 axes_oos_flat = axes_oos.flatten()
 
 for _ax_i, (_vkey, _lbl_oos, _, _, _dim_oos) in enumerate(_COMP_VARIANTS_MIXED):
@@ -768,8 +768,7 @@ for _ax_i, (_vkey, _lbl_oos, _, _, _dim_oos) in enumerate(_COMP_VARIANTS_MIXED):
 
     if _ax_i % 2 == 0:
         _ax_oos.set_ylabel("RMSE (bps)", fontsize=9)
-    _ax_oos.annotate(_lbl_oos, xy=(0.99, 0.97), xycoords="axes fraction",
-                     ha="right", va="top", fontsize=10, fontweight="bold")
+    _ax_oos.set_title(_lbl_oos, fontsize=10, fontweight="bold")
     _ax_oos.grid(True, alpha=0.3)
 
 for _ax_bot in axes_oos[1]:
