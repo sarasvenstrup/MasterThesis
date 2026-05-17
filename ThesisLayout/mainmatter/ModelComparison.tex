@@ -2,14 +2,21 @@
 \label{chap:model_comparison}
 
 
+NOTES:
+We need to start off by showing how the the augmented model improves in sample fit very much. But then see how it fails OOS, and then compare all models to then conclude that we can impose restrictions on the encoder-decoder in multiple ways - and we find that we can do this on the reconstruction loss way like the augmented model and then in the model structure itselfs, like we did for stable. and from this we see that it is benefifcal to do it not throught the training error as it does not translate through to good OOS performance. 
 
 
 
-\section{Motivation and Model Specification}
+
+
+
+\section{Introducing the Augmented Model}
 
 During the evaluation of the baseline model, we observe empirically that the model finds the approximate level of negative-rate curves but fails to reconstruct their slope and curvature. We hypothesise that this is related to the structure of the linear encoder. Since the encoder computes  \textcolor{red}{reference}
 $$z = A_1\mathbf{S}, \qquad \mathbf{S}=(S^{(1)},...,S^{(M)})^\top$$ 
 with no bias and no activation function, the magnitude of $z$ scales proportionally with $|\mathbf{S}|$, so near-zero curves push $z$ toward the origin of $\mathbb{R}^\ell$. If the training data consisted predominantly of positive-rate environments, the origin may lie outside the support of the training distribution of $z$, \textcolor{red}{causing the decoder to approximately recover the level but fail to match slope and curvature. We do not formally prove this, as it would require knowledge of the decoder behaviour outside its training distribution.}
+
+\subsection{Model Specification}
 
 Motivated by this hypothesis, we augment the input vector with 
 derived features. We add a short-end slope $f_1 = S_{10\text{Y}} - S_{1\text{Y}}$, a long-end slope $f_2 = S_{30\text{Y}} - S_{10\text{Y}}$, and a curvature measure $f_3 = 2S_{10\text{Y}} - S_{1\text{Y}} - S_{30\text{Y}}$. The augmented input vector is then
@@ -28,10 +35,55 @@ loss directly penalises shape mismatch. Whether these modifications are sufficie
 
 The augmented model follows the same encoder-decoder architecture described in Chapter~\ref{chap:encoderdecodermodel}, with two modifications. The encoder receives the 11-dimensional augmented input rather than the raw 8-dimensional swap curve, and the loss is evaluated over the eight reconstructed rates plus the three derived features computed from them, giving eleven terms in total. The decoder output remains an 8-dimensional swap curve $\tilde{\mathbf{S}}$.
 
-Combining the augmentation with the stabilisation described in Section~\ref{sec:stable} yields a fourth model, which we refer to as \textit{augmented stable}. We therefore evaluate four models in total: baseline ($\ell=3$), stable ($\ell=4$), augmented ($\ell=3$), and augmented stable ($\ell=3$). The latent dimension for each new model is selected based on its own out-of-sample performance. 
+\subsection{Assessing the fit of Augmented}
+
+Here we assess the in sample fit and oos of the augmented model with the baseline serving as a reference.
 
 
-\section{In-sample Fit}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_fitted_vs_actual_all_dims.png}
+    \caption{In-sample fitted versus actual swap curves for the augmented model with
+    $\ell \in \{2, 3, 4\}$ across two representative dates: a calmer market
+    environment (2014-08-29) and the COVID-19 shock (2020-03-31).
+    Rows correspond to market environments; columns to EUR, USD, JPY, and CAD.
+    The solid line with circles denotes the observed swap rate.}
+    \label{fig:augmented_fitted_vs_actual_all_dims}
+\end{figure}
+
+
+We hereby see a great improvement in sample where the baseline had a hard time. in some way indicating that the information that we forced on the model was indeed missing for curves.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_rolling_regime_dual_axis.png}
+    \caption{Rolling out-of-sample RMSE (bps, right axis) for the augmented model
+    with $\ell \in \{2, 3, 4\}$ latent factors, clipped at 50 bps for readability;
+    true values are annotated where clipping occurs. Bars (left axis) show the
+    percentage of curves in the negative-rate and inverted curve variants for
+    the training and test set of each rolling window. Dashed vertical lines mark
+    key macroeconomic events.}
+    \label{fig:augmented_rolling_regime_dual_axis}
+\end{figure}
+
+
+
+Hereby indicating that again even with the augmented input the latent dimension 2 is the best oos.
+
+
+
+
+\section{Actual model comparison}
+
+
+Combining the augmentation with the stabilisation described in Section~\ref{sec:stable} yields a fourth model, which we refer to as \textit{augmented stable}. We therefore evaluate four models in total: baseline ($\ell=3$), stable ($\ell=4$), augmented ($\ell=3$), and augmented stable ($\ell=3$). The latent dimension for each new model is selected based on its own best out-of-sample performance. 
+
+
+
+
+
+
+\subsection{In-sample Fit}
 
 \begin{figure}[h]
     \centering
@@ -41,7 +93,7 @@ Combining the augmentation with the stabilisation described in Section~\ref{sec:
 \end{figure}
 
 
-\section{Out-of-sample Performance} 
+\subsection{Out-of-sample Performance} 
 
 \begin{table}[H]
 \centering

@@ -432,26 +432,8 @@ The experiment shows that the stability restrictions turn out to be a practical 
 %========================================================
 \section{Reconstruction Accuracy under Stability Constraints}
 \label{sec:sim_reconstruction_accuracy}
-%=======================================================
-
-
-% NEEDS IMPROVING - THIS DOESNT MAKE SENSE
-\textcolor{red}{Imposing stability restrictions improves simulation behaviour, but may come at the cost of the model's primary objective: reconstructing observed swap curves. The assessment begins with the two models from the simulation experiment in Section~\ref{sec:sim_evidence}, both evaluated on the EUR curve, before broadening to a multi-currency out-of sample framework.}
-
-
-
-Table~\ref{tab:sim_insample_rmse} reports the in-sample RMSE on the EUR curve for both models, each trained on multi-currency data.
-
-\begin{table}[H]
-\centering
-{\small
-\input{Figures/Simulation/sim_insample_rmse_table}
-}
-\caption{In-sample reconstruction RMSE for the baseline and stable models used in the simulation experiment. Both models are trained on multi-currency data with latent dimension \(\ell=2\) for \(5000\) epochs but evaluated on the EUR curve only. RMSE is reported in basis points.}
-\label{tab:sim_insample_rmse}
-\end{table}
-
-The stable model achieves $8.5$ bps against $17.6$ bps for the baseline, indicating that the stability restrictions do not compromise in-sample reconstruction accuracy on EUR. On the contrary, they improve it. Table~\ref{tab:oos_summary_sim} broadens the evaluation to a multi-currency rolling out-of-sample framework, reporting average and maximum RMSE across 18 test windows for both models at latent dimensions $\ell\in\{2,3,4\}$, following the protocol from Chapter~\ref{chap:evaluation}.
+%========================================================
+Imposing stability restrictions improves simulation behaviour. This section examines whether doing so has any impact on reconstruction accuracy. The baseline and stable models are compared across latent dimensions $\ell\in\{2,3,4\}$ using a multi-currency rolling out-of-sample framework following the protocol from Chapter~\ref{chap:evaluation}, with each model trained for $3\,500$ epochs (Table~\ref{tab:oos_summary_sim}).
 
 \begin{table}[H]
 \centering
@@ -465,19 +447,17 @@ The stable model achieves $8.5$ bps against $17.6$ bps for the baseline, indicat
 \end{tabular}
 }
 \caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows
-for the baseline and stable variants at \(\ell\in\{2,3,4\}\). The in-sample column
+for the baseline and stable variants at latent dimensions \(\ell\in\{2,3,4\}\). The in-sample column
 reports the average rolling-window in-sample RMSE for reference. All models are
 trained for \(3500\) epochs. RMSE values are reported in basis points.}
 \label{tab:oos_summary_sim}
 \end{table}
 
-The effect of the stability restrictions depends strongly on the latent dimension. At $\ell=2$, the stable model struggles severely, with an average IS RMSE of $138.7$ bps against $10.5$ bps for the baseline, suggesting the restrictions are too constraining relative to the available latent degrees of freedom. From $\ell=3$ onward, the stable 
-model improves substantially. The baseline, as established in Chapter~\ref{chap:evaluation}, overfits increasingly with latent dimension, and this is reflected here in its out-of-sample RMSE deteriorating from $19.0$ bps at $\ell=2$ to $100.5$ bps at $\ell=4$. The stable model moves in the opposite direction, and at $\ell=4$ achieves the lowest average and maximum out-of-sample RMSE across all configurations, with $12.1$ bps against $100.5$ bps for the baseline.
+Whether the stability restrictions improve reconstruction accuracy depends strongly on the latent dimension. At $\ell=2$, the stable model struggles severely, with an average IS RMSE of $138.7$ bps against $10.5$ bps for the baseline, suggesting the restrictions are too constraining relative to the available latent degrees of freedom. From $\ell=3$ onward, the stable model improves substantially. 
 
+The baseline, as established in Chapter~\ref{chap:evaluation}, overfits increasingly with latent dimension, and this is reflected here in its out-of-sample RMSE increasing from $19.0$ bps at $\ell=2$ to $100.5$ bps at $\ell=4$. The stable model moves in the opposite direction, and at $\ell=4$ achieves the lowest average and maximum out-of-sample RMSE across all configurations. At $12.1$ bps out-of-sample, it improves upon the best baseline configuration, $\ell=2$ at $19.0$ bps. The stability restrictions therefore do not come at the cost of reconstruction accuracy. With sufficient latent dimensions, they improve it.
 
-% make this part more introducing the rest of the evaluation!
-In Chapter~\ref{chap:evaluation}, the baseline model was shown to struggle with specific curve variants, most notably negative rates and inverted curves. Figure~\ref{fig:rolling_oos_rmse} examines whether the stable model addresses these weaknesses, tracing the rolling RMSE over time for all three latent dimensions.
-
+The aggregate results in Table \ref{tab:oos_summary_sim}, however, do not reveal whether the stable model addresses the difficulties with specific curve variants identified for the baseline in Chapter~\ref{chap:evaluation}. Figure~\ref{fig:rolling_oos_rmse} plots the rolling out-of-sample RMSE over time for all three latent dimensions, allowing a direct comparison of how each model behaves across different rate environments.
 
 \begin{figure}[H]
     \centering
@@ -486,21 +466,53 @@ In Chapter~\ref{chap:evaluation}, the baseline model was shown to struggle with 
     \label{fig:rolling_oos_rmse}
 \end{figure}
 
-For the baseline model, error spikes cluster around the quantitative easing in 2015, the onset of COVID-19 in 2020, and the rate hiking cycle beginning in 2022, each marking a significant departure from the rate environment in the training window. The $\ell=4$ stable model performs more consistently across all three episodes, with errors remaining low where the baseline spikes. At lower latent dimensions, the stable model also struggles around these transitions, confirming that the stability restrictions require sufficient latent capacity to generalise under regime change.
+
+As established in Chapter~\ref{chap:evaluation}, the baseline struggles most severely when the share of atypical curve variants in the test set substantially exceeds that in the training window, most notably around the quantitative easing in 2015 and the inflation regime beginning in 2022. At $\ell=4$, the stable model maintains a consistently low error level throughout the sample, with only modest increases around these episodes, indicating that it is better equipped to handle such distributional shifts in curve variants.
+
+
+The improvement is not uniform across curve variants, with negative-rate curves 
+remaining the most challenging for the stable model. A more detailed breakdown by 
+curve variant is provided in Chapter~\ref{chap:model_comparison}. For now, the 
+rolling out-of-sample comparison confirms that at $\ell=4$, the stable model 
+handles shifts in the rate environment considerably better than the baseline.
 
 
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/Simulation/fig_regime_scatter.png}
-    \caption{Out-of-sample RMSE per observation coloured by interest rate regime for the baseline and stable variants at \(\ell=4\).}
-    \label{fig:regime_scatter}
-\end{figure}
 
 
-The panels use separate vertical scales, the baseline reaching 7,000 bps against 200 bps for the stable model, which reflects the nature of the difference. Normal non-negative curves (blue) remain near zero for both models throughout most of the sample, but the baseline produces a single extreme failure close to 7,000 bps in 2022, confirming that even familiar regime curves become problematic as the rate environment shifts sharply. Negative-rate curves (pink) drive sustained elevated errors, with individual spikes reaching around 4,800 bps in 2016 and 3,500 bps around 2019. Inverted non-negative curves (black), which appear from 2022 onward, reach close to 3,000 bps for the baseline. The stable model reduces these errors substantially across all three regimes, though negative-rate curves still produce the highest errors within the stable panel, reaching around 150 to 210 bps in the 2015 to 2016 period, well above the typical level for normal non-negative curves.
 
-The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter all point in the same direction. At $\ell=4$, the stability restrictions reduce both in-sample and out-of-sample errors relative to the baseline and contain the most severe regime-specific failures, though the negative-rate environment remains the most challenging for both models. 
+
+
+
+
+
+
+
+
+
+
+
+\newpage
+
+
+% Removed
+
+%Figure~\ref{fig:regime_scatter} decomposes the $\ell=4$ out-of-sample errors by curve variant to examine which curve types drive the remaining differences.
+
+%\begin{figure}[H]
+%    \centering
+%    \includegraphics[width=\textwidth]{Figures/Simulation/fig_regime_scatter.png}
+%    \caption{Out-of-sample RMSE per observation coloured by interest rate regime for the baseline and stable variants at \(\ell=4\).}
+%    \label{fig:regime_scatter}
+%\end{figure}
+
+% I dont like the using the colours and this is to much text
+%The panels use separate vertical scales, the baseline reaching $7{,}000$ bps against $200$ bps for the stable model. Normal non-negative curves (blue) remain near zero for both models throughout most of the sample, but the baseline produces a single extreme failure close to $7{,}000$ bps in 2022, confirming that even familiar curve shapes become problematic as the rate environment shifts sharply. Negative-rate curves (pink) drive sustained elevated errors in the baseline, with spikes reaching around $4{,}800$ bps in 2016 and $3{,}500$ bps around 2019. Inverted non-negative curves (black), appearing from 2022 onward, reach close to $3{,}000$ bps. The stable model 
+%reduces errors substantially across all three regimes, though negative-rate curves remain the most challenging, reaching around $150$ to $210$ bps in the 2015 to 2016 period.
+
+%The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter all point in the same direction. At $\ell=4$, the stability restrictions reduce both in-sample and out-of-sample errors relative to the baseline and contain the most severe regime-specific failures, though the negative-rate environment remains the most challenging for both models.
+
+
 
 
 
