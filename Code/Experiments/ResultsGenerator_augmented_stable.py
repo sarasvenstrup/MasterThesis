@@ -318,6 +318,14 @@ save_table(disp, f"augmented_stable_is_rmse_combined_display_dim{LATENT_DIM}")
 from Code.model.full_model import FullModel as _BaselineFullModel
 import matplotlib.dates as _mdates
 import matplotlib.lines as _mlines
+import matplotlib.transforms
+
+EVENTS = {
+    "GFC\n(15 Sep 2008)":      "2008-09-15",
+    "QE\n(22 Jan 2015)":       "2015-01-22",
+    "COVID\n(1 Mar 2020)":     "2020-03-01",
+    "Inflation\n(1 Mar 2022)": "2022-03-01",
+}
 
 _INPUT_DIM_BASE = X_tensor.shape[1]               # 8  (no augmentation)
 _INPUT_DIM_AUG  = augment(X_tensor[:1]).shape[1]  # 11 (with augmentation)
@@ -334,7 +342,7 @@ _ROLL_EPOCHS    = 3500
 _COMP_VARIANTS_MIXED = [
     ("baseline",         "Baseline ($\\ell=2$)",    _BaselineFullModel, False, 2),
     ("stable",           "Stable ($\\ell=4$)",      FullModel,          False, 4),
-    ("augmented_input",  "Augmented ($\\ell=3$)",   _BaselineFullModel, True,  3),
+    ("augmented_input",  "Augmented ($\\ell=2$)",   _BaselineFullModel, True,  2),
     ("augmented_stable", "Aug. + Stable ($\\ell=3$)", FullModel,          True,  3),
 ]
 
@@ -468,7 +476,7 @@ save_fig(fig_comp, "all_models_fitted_vs_actual")
 # ── figure: worst reconstruction — 2×2 grid, one panel per model ─────────────
 print("\nGenerating worst reconstruction figure (all models)...")
 
-fig_wr, axes_wr = plt.subplots(2, 2, figsize=(12, 8), sharey=False)
+fig_wr, axes_wr = plt.subplots(2, 3, figsize=(17, 8), sharey=False)
 axes_wr_flat = axes_wr.flatten()
 
 for _ax_i, ((_vkey_wr, _lbl_wr, _, _, _), _col_wr) in enumerate(
@@ -526,7 +534,7 @@ save_fig(fig_wr, "all_models_worst_reconstruction")
 # ── figure: worst OOS reconstruction — 2×2 grid, one panel per model ─────────
 print("\nGenerating worst OOS reconstruction figure (all models)...")
 
-fig_wr_oos, axes_wr_oos = plt.subplots(2, 2, figsize=(12, 8), sharey=False)
+fig_wr_oos, axes_wr_oos = plt.subplots(2, 3, figsize=(17, 8), sharey=False)
 axes_wr_oos_flat = axes_wr_oos.flatten()
 
 for _ax_i, ((_vkey_wr, _lbl_wr, _, _, _dim_wr), _col_wr) in enumerate(
@@ -586,7 +594,7 @@ save_fig(fig_wr_oos, "all_models_worst_oos_reconstruction")
 # ── figure: worst OOS actual curve only — 2×2 grid, one panel per model ──────
 print("\nGenerating worst OOS actual-only figure (all models)...")
 
-fig_wr_act, axes_wr_act = plt.subplots(2, 2, figsize=(12, 8), sharey=False)
+fig_wr_act, axes_wr_act = plt.subplots(2, 3, figsize=(17, 8), sharey=False)
 axes_wr_act_flat = axes_wr_act.flatten()
 
 for _ax_i, ((_vkey_wr, _lbl_wr, _, _, _dim_wr), _col_wr) in enumerate(
@@ -632,7 +640,7 @@ save_fig(fig_wr_act, "all_models_worst_oos_actual_only")
 # ── figure: actual curve one month before worst OOS — 2×2 grid ────────────────
 print("\nGenerating actual curve one month before worst OOS figure (all models)...")
 
-fig_wr_prev, axes_wr_prev = plt.subplots(2, 2, figsize=(12, 8), sharey=False)
+fig_wr_prev, axes_wr_prev = plt.subplots(2, 3, figsize=(17, 8), sharey=False)
 axes_wr_prev_flat = axes_wr_prev.flatten()
 
 for _ax_i, ((_vkey_wr, _lbl_wr, _, _, _dim_wr), _col_wr) in enumerate(
@@ -694,7 +702,7 @@ _CCY_COLORS = plt.cm.tab10.colors
 dates_all_sr = pd.to_datetime(meta["as_of_date"].values)
 ccys_all_sr  = meta["ccy"].values
 
-fig_sr, axes_sr = plt.subplots(2, 2, figsize=(14, 8), sharex=True, sharey=False)
+fig_sr, axes_sr = plt.subplots(2, 3, figsize=(19, 8), sharex=True, sharey=False)
 axes_sr_flat = axes_sr.flatten()
 
 for _ax_i, ((_vkey_sr, _lbl_sr, _, _, _), _col_sr) in enumerate(
@@ -737,7 +745,7 @@ save_fig(fig_sr, "all_models_short_rate")
 # ── figure: OOS regime scatter — all models (mixed dims) ─────────────────────
 print("\nGenerating OOS regime scatter — all models (mixed dims) figure...")
 
-fig_oos, axes_oos = plt.subplots(2, 2, figsize=(14, 7), sharex=True, sharey=False)
+fig_oos, axes_oos = plt.subplots(2, 3, figsize=(20, 7), sharex=True, sharey=False)
 axes_oos_flat = axes_oos.flatten()
 
 for _ax_i, (_vkey, _lbl_oos, _, _, _dim_oos) in enumerate(_COMP_VARIANTS_MIXED):
@@ -932,9 +940,10 @@ else:
     ax_am_a.bar(_am_x - 0.5*_am_w, _am_neg,    width=_am_w, label="% Neg (Test)",  color="slategrey", alpha=0.9)
     ax_am_a.bar(_am_x + 0.5*_am_w, _am_tr_inv, width=_am_w, label="% Inv (Train)", color=_am_inv_col, alpha=0.5)
     ax_am_a.bar(_am_x + 1.5*_am_w, _am_inv,    width=_am_w, label="% Inv (Test)",  color=_am_inv_col, alpha=1.0)
-    ax_am_a.set_ylabel("% of curves in set")
+    ax_am_a.set_ylabel("% of curves in set", fontsize=11)
     ax_am_a.set_xticks(_am_x)
-    ax_am_a.set_xticklabels(_am_windows, rotation=45, ha="right", fontsize=8)
+    ax_am_a.set_xticklabels(_am_windows, rotation=45, ha="right", fontsize=10)
+    ax_am_a.tick_params(axis="y", labelsize=10)
 
     for _vi_model, ((_vk_p, _dm_p, _lbl_p), _col_p) in enumerate(zip(
         [(_vk, _dm, _lbl) for (_vk, _lbl, _, _, _dm) in _COMP_VARIANTS_MIXED],
@@ -954,18 +963,31 @@ else:
                     xytext=(-5 if _on_left_p else 5, 2 - _vi_model * 8),
                     textcoords="offset points",
                     ha="right" if _on_left_p else "left",
-                    va="top", fontsize=8, color=_col_p,
+                    va="top", fontsize=10, color=_col_p,
                 )
 
-    ax_am_b.set_ylabel("OOS RMSE (bps, clipped at 50)")
+    ax_am_b.set_ylabel("OOS RMSE (bps, clipped at 50)", fontsize=11)
+    ax_am_b.tick_params(axis="y", labelsize=10)
+
+    # event markers — interpolate event dates onto the integer x-axis
+    _am_win_ts = np.array([pd.Timestamp(w + "-01").value for w in _am_windows], dtype=float)
+    for _ev_label, _ev_date_str in EVENTS.items():
+        _ev_ts = pd.Timestamp(_ev_date_str).value
+        if _am_win_ts[0] <= _ev_ts <= _am_win_ts[-1]:
+            _ev_x = float(np.interp(_ev_ts, _am_win_ts, _am_x))
+            ax_am_a.axvline(_ev_x, color="0.5", linewidth=1.0, linestyle="--", zorder=0)
+            _ev_trans = matplotlib.transforms.blended_transform_factory(
+                ax_am_b.transData, ax_am_b.transAxes)
+            ax_am_b.text(_ev_x, 1.02, _ev_label, fontsize=9, ha="center", va="bottom",
+                         color="0.4", transform=_ev_trans, clip_on=False)
 
     _lines_a, _labs_a = ax_am_a.get_legend_handles_labels()
     _lines_b, _labs_b = ax_am_b.get_legend_handles_labels()
     fig_am.legend(_lines_a + _lines_b, _labs_a + _labs_b,
-                  loc="lower center", bbox_to_anchor=(0.5, -0.05),
-                  ncol=4, fontsize=8, frameon=False)
+                  loc="lower center", bbox_to_anchor=(0.5, -0.08),
+                  ncol=4, fontsize=10, frameon=False)
     fig_am.tight_layout()
-    fig_am.subplots_adjust(bottom=0.25)
+    fig_am.subplots_adjust(bottom=0.22)
     save_fig(fig_am, "all_models_rolling_regime_dual_axis")
 
 print("\nResultsGenerator_augmented complete.")

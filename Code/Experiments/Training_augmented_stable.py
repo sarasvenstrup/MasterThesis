@@ -52,7 +52,7 @@ print("Using device:", device)
 torch.backends.mkldnn.enabled = True
 
 # ── settings ──────────────────────────────────────────────────────────────────
-LATENT_DIM   = 4
+LATENT_DIM   = 2
 EPOCHS       = 5000
 BATCH_SIZE   = 32
 EVAL_BATCH_SIZE = 256
@@ -100,7 +100,7 @@ dataset = TensorDataset(X_aug, X_tensor)   # (enc_input, orig_target)
 loader  = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
 # ── model ─────────────────────────────────────────────────────────────────────
-SEED = 0
+SEED = 2
 torch.manual_seed(SEED)
 model = FullModel(input_dim=INPUT_DIM_AUG, latent_dim=LATENT_DIM).to(device)
 model.train()

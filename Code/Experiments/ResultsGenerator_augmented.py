@@ -31,7 +31,7 @@ from Code.load_swapdata import my_data, custom_palette
 from Code.model.full_model import FullModel
 
 # ── settings ──────────────────────────────────────────────────────────────────
-LATENT_DIM = 4
+LATENT_DIM = 3
 EPOCHS     = 5000
 USE        = "bbg"
 
@@ -301,8 +301,8 @@ save_table(disp, f"augmented_is_rmse_combined_display_dim{LATENT_DIM}")
 # ── figure: fitted vs actual — all dims (ℓ=2,3,4) overlaid ──────────────────
 print("\nGenerating fitted vs actual — all dims figure...")
 
-_dims_aug    = [2, 3, 4]
-_dim_colors  = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
+_dims_aug    = [2, 3]
+_dim_colors  = {2: custom_palette[4], 3: custom_palette[0]}
 _dim_labels  = {d: r"$\ell$=" + str(d) for d in _dims_aug}
 
 # load models and run inference for each dim
@@ -392,5 +392,158 @@ fig_ad.legend(_h_ad, _l_ad, loc="lower center",
 fig_ad.tight_layout()
 fig_ad.subplots_adjust(bottom=0.12)
 save_fig(fig_ad, "augmented_fitted_vs_actual_all_dims")
+
+# ── Q8a-style: rolling regime dual-axis — augmented_input dims 2, 3, 4 ────────
+import matplotlib.transforms
+
+EVENTS = {
+    "GFC\n(15 Sep 2008)":      "2008-09-15",
+    "QE\n(22 Jan 2015)":       "2015-01-22",
+    "COVID\n(1 Mar 2020)":     "2020-03-01",
+    "Inflation\n(1 Mar 2022)": "2022-03-01",
+}
+
+_ROLL_DIMS_AUG  = [2, 3, 4]
+_ROLL_SUBDIR_A  = "train5Y_test6M_step6M"
+_ROLL_EPOCHS_A  = 3500
+_DIM_COLORS_AUG = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
+
+def _aug_regime_counts(pred_df):
+    """Return {test_start_str: {n_neg, n_inv}} from a predictions CSV.
+    Derives regimes from actual tenor values: negative if any rate < 0,
+    inverted if shortest tenor > longest tenor."""
+    _tenors_aug = [1, 2, 3, 5, 10, 15, 20, 30]
+    _act_cols   = [f"actual_tenor_{t}" for t in _tenors_aug
+                   if f"actual_tenor_{t}" in pred_df.columns]
+    _short_col  = f"actual_tenor_{_tenors_aug[0]}"
+    _long_col   = f"actual_tenor_{_tenors_aug[-1]}"
+    counts = {}
+    for ts, grp in pred_df.groupby("test_start"):
+        ts_str = str(ts)[:10]
+        neg = int((grp[_act_cols].min(axis=1) < 0).sum()) if _act_cols else 0
+        inv = int((grp[_short_col] > grp[_long_col]).sum()) if (_short_col in grp.columns and _long_col in grp.columns) else 0
+        counts[ts_str] = {"n_neg": neg, "n_inv": inv}
+    return counts
+
+print("\nGenerating augmented rolling regime dual-axis figure...")
+
+_aug_roll_dfs   = {}
+_aug_train_cts  = None
+_aug_test_cts   = None
+
+for _d_r in _ROLL_DIMS_AUG:
+    _roll_csv_a = os.path.join(
+        REPO_ROOT, "Figures", "OOSResults", "Roll",
+        f"OOS_roll_dim{_d_r}_augmented_input",
+        _ROLL_SUBDIR_A, f"ep{_ROLL_EPOCHS_A}",
+        f"oos_rolling_bbg_dim{_d_r}_train5Y_test6M_step6M.csv",
+    )
+    if os.path.exists(_roll_csv_a):
+        _aug_roll_dfs[_d_r] = pd.read_csv(_roll_csv_a)
+        for _col_r in ["test_start", "test_end", "train_start"]:
+            _aug_roll_dfs[_d_r][_col_r] = pd.to_datetime(_aug_roll_dfs[_d_r][_col_r])
+        # regime counts from first available dim
+        if _aug_train_cts is None:
+            _tr_a = os.path.join(
+                REPO_ROOT, "Figures", "OOSResults", "Roll",
+                f"OOS_roll_dim{_d_r}_augmented_input",
+                _ROLL_SUBDIR_A, f"ep{_ROLL_EPOCHS_A}", "predictions_train_all.csv",
+            )
+            _te_a = os.path.join(
+                REPO_ROOT, "Figures", "OOSResults", "Roll",
+                f"OOS_roll_dim{_d_r}_augmented_input",
+                _ROLL_SUBDIR_A, f"ep{_ROLL_EPOCHS_A}", "predictions_test_all.csv",
+            )
+            if os.path.exists(_tr_a) and os.path.exists(_te_a):
+                _aug_train_cts = _aug_regime_counts(pd.read_csv(_tr_a))
+                _aug_test_cts  = _aug_regime_counts(pd.read_csv(_te_a))
+    else:
+        print(f"  ⚠️  Rolling CSV not found for dim={_d_r} — skipping.")
+
+if not _aug_roll_dfs:
+    print("  ⚠️  No rolling CSVs found — skipping augmented regime figure.")
+else:
+    _aug_ref_df = next(iter(_aug_roll_dfs.values()))
+    _aug_rows = []
+    for _, _rw in _aug_ref_df.iterrows():
+        _ts  = str(_rw["test_start"])[:10]
+        _n_train = float(_rw["n_train"]) if "n_train" in _rw and np.isfinite(_rw["n_train"]) else np.nan
+        _n_test  = float(_rw["n_test"])  if "n_test"  in _rw and np.isfinite(_rw["n_test"])  else np.nan
+        _tc = _aug_train_cts.get(_ts, {}) if _aug_train_cts else {}
+        _ec = _aug_test_cts.get(_ts,  {}) if _aug_test_cts  else {}
+        _row_a = {
+            "Window": f"{str(_rw['train_start'])[:7]} / {str(_rw['test_end'])[:7]}",
+            "Train % Neg": round(100 * _tc.get("n_neg", np.nan) / _n_train, 1) if np.isfinite(_n_train) and _n_train > 0 else np.nan,
+            "Train % Inv": round(100 * _tc.get("n_inv", np.nan) / _n_train, 1) if np.isfinite(_n_train) and _n_train > 0 else np.nan,
+            "Test % Neg":  round(100 * _ec.get("n_neg", np.nan) / _n_test,  1) if np.isfinite(_n_test)  and _n_test  > 0 else np.nan,
+            "Test % Inv":  round(100 * _ec.get("n_inv", np.nan) / _n_test,  1) if np.isfinite(_n_test)  and _n_test  > 0 else np.nan,
+        }
+        for _d_r, _rdf_r in _aug_roll_dfs.items():
+            _drow_r = _rdf_r[_rdf_r["test_start"].dt.strftime("%Y-%m-%d") == _ts]
+            _row_a[f"OOS_dim{_d_r}"] = round(float(_drow_r["avg_rmse_bps"].values[0]), 2) if len(_drow_r) else np.nan
+        _aug_rows.append(_row_a)
+
+    _aug_windows = [r["Window"].split(" / ")[1][:7] for r in _aug_rows]
+    _aug_x       = np.arange(len(_aug_windows))
+    _aug_neg     = np.array([r["Test % Neg"]  for r in _aug_rows], dtype=float)
+    _aug_inv     = np.array([r["Test % Inv"]  for r in _aug_rows], dtype=float)
+    _aug_tr_neg  = np.array([r["Train % Neg"] for r in _aug_rows], dtype=float)
+    _aug_tr_inv  = np.array([r["Train % Inv"] for r in _aug_rows], dtype=float)
+
+    _inv_col_a = custom_palette[5]
+
+    fig_ra, ax_ra_a = plt.subplots(figsize=(12, 5))
+    ax_ra_b = ax_ra_a.twinx()
+
+    _w_ra = 0.2
+    ax_ra_a.bar(_aug_x - 1.5*_w_ra, _aug_tr_neg, width=_w_ra, label="% Neg (Train)", color="slategrey", alpha=0.4)
+    ax_ra_a.bar(_aug_x - 0.5*_w_ra, _aug_neg,    width=_w_ra, label="% Neg (Test)",  color="slategrey", alpha=0.9)
+    ax_ra_a.bar(_aug_x + 0.5*_w_ra, _aug_tr_inv, width=_w_ra, label="% Inv (Train)", color=_inv_col_a,  alpha=0.5)
+    ax_ra_a.bar(_aug_x + 1.5*_w_ra, _aug_inv,    width=_w_ra, label="% Inv (Test)",  color=_inv_col_a,  alpha=1.0)
+    ax_ra_a.set_ylabel("% of curves in set", fontsize=11)
+    ax_ra_a.set_xticks(_aug_x)
+    ax_ra_a.set_xticklabels(_aug_windows, rotation=45, ha="right", fontsize=10)
+    ax_ra_a.tick_params(axis="y", labelsize=10)
+
+    for _di_ra, _d_ra in enumerate(sorted(_aug_roll_dfs.keys())):
+        _oos_ra       = np.array([r.get(f"OOS_dim{_d_ra}", np.nan) for r in _aug_rows], dtype=float)
+        _oos_clipped_ra = np.clip(_oos_ra, 0, 50)
+        ax_ra_b.plot(_aug_x, _oos_clipped_ra, marker="o", markersize=4, linewidth=2.2,
+                     label=f"OOS RMSE $\\ell={_d_ra}$", color=_DIM_COLORS_AUG[_d_ra])
+        for _xi_ra, (_raw_ra, _clip_ra) in enumerate(zip(_oos_ra, _oos_clipped_ra)):
+            if _raw_ra > 50:
+                _on_left_ra = _aug_windows[_xi_ra].startswith("2022-06")
+                ax_ra_b.annotate(
+                    f"{_raw_ra:.0f}",
+                    xy=(_aug_x[_xi_ra], 50),
+                    xytext=(-5 if _on_left_ra else 5, 2 - _di_ra * 8),
+                    textcoords="offset points",
+                    ha="right" if _on_left_ra else "left",
+                    va="top", fontsize=10, color=_DIM_COLORS_AUG[_d_ra],
+                )
+
+    ax_ra_b.set_ylabel("OOS RMSE (bps, clipped at 50)", fontsize=11)
+    ax_ra_b.tick_params(axis="y", labelsize=10)
+
+    # event markers
+    _aug_win_ts = np.array([pd.Timestamp(w + "-01").value for w in _aug_windows], dtype=float)
+    for _ev_lbl, _ev_date in EVENTS.items():
+        _ev_ts = pd.Timestamp(_ev_date).value
+        if _aug_win_ts[0] <= _ev_ts <= _aug_win_ts[-1]:
+            _ev_x_ra = float(np.interp(_ev_ts, _aug_win_ts, _aug_x))
+            ax_ra_a.axvline(_ev_x_ra, color="0.5", linewidth=1.0, linestyle="--", zorder=0)
+            _ev_tr = matplotlib.transforms.blended_transform_factory(
+                ax_ra_b.transData, ax_ra_b.transAxes)
+            ax_ra_b.text(_ev_x_ra, 1.02, _ev_lbl, fontsize=9, ha="center", va="bottom",
+                         color="0.4", transform=_ev_tr, clip_on=False)
+
+    _lines_ra_a, _labs_ra_a = ax_ra_a.get_legend_handles_labels()
+    _lines_ra_b, _labs_ra_b = ax_ra_b.get_legend_handles_labels()
+    fig_ra.legend(_lines_ra_a + _lines_ra_b, _labs_ra_a + _labs_ra_b,
+                  loc="lower center", bbox_to_anchor=(0.5, -0.08),
+                  ncol=4, fontsize=10, frameon=False)
+    fig_ra.tight_layout()
+    fig_ra.subplots_adjust(bottom=0.22)
+    save_fig(fig_ra, "augmented_rolling_regime_dual_axis")
 
 print("\nResultsGenerator_augmented complete.")
