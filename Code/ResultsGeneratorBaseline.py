@@ -1391,7 +1391,7 @@ else:
             _df_is_regime = None
 
         def _fmt_n(v): return str(int(v)) if pd.notna(v) else "---"
-        def _fmt_r(v): return f"{v:.2f}" if pd.notna(v) else "---"
+        def _fmt_r(v): return f"{v:.1f}" if pd.notna(v) else "---"
 
         _groups_disp = [
             ("Normal",   ~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"],
