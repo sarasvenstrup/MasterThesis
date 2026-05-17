@@ -271,7 +271,6 @@ Successful reconstruction is only one requirement for a useful term-structure mo
 
 The main implication is that arbitrage-free reconstruction, stable simulation and derivative pricing are related but distinct objectives.
 
-
 \subsection{Pricing and the Limits of Reconstruction}
 
 \begin{itemize}
@@ -279,25 +278,13 @@ The main implication is that arbitrage-free reconstruction, stable simulation an
     \item Reconstruction fits the current curve.
     \item Swaption pricing depends on the future risk-neutral distribution of swap rates.
     \item The plain reconstruction model prices swaptions poorly.
-    \item A small MPR/pricing layer improves pricing substantially.
-    \item This suggests that the latent state contains useful information for pricing.
-    \item The Monte Carlo noise check shows that remaining errors are structural, not simulation noise.
-    \item Expiry-dependent drift improves pricing further.
-    \item Static expiry--tenor volatility scaling does not materially improve out-of-sample results.
-    \item Errors are concentrated in the post-2022 high-volatility regime.
-    \item The model lacks a mechanism for time-varying volatility regimes.
-    \item Yield-curve information alone may not identify the swaption volatility regime.
-    \item Needed extensions may include:
-    \begin{itemize}
-        \item state-dependent volatility,
-        \item stochastic volatility,
-        \item jumps,
-        \item option-market inputs,
-        \item joint curve--swaption training.
-    \end{itemize}
+    \item A small constant market-price-of-risk layer with eight parameters reduces the implied-vol error from approximately 415 bp to around 40 bp.
+    \item The latent state therefore contains useful information for pricing once the risk-neutral dynamics are recalibrated.
+    \item The residual error concentrates at the 1Y expiry and is driven by a persistent forward bias that the single global drift correction cannot fully eliminate.
 \end{itemize}
 
-Arbitrage-free reconstruction is not sufficient for derivative pricing because pricing depends on the future risk-neutral distribution, especially volatility regimes.
+Arbitrage-free reconstruction is not sufficient for derivative pricing because pricing depends on the future risk-neutral distribution of swap rates.
+
 
 
 \subsection{Concluding Remarks}

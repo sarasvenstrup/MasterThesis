@@ -142,7 +142,7 @@ Two distinct problems arise, both visible in the table above:
     \item \textbf{Wrong forward centering.} The drift \(\mu(z)\) is calibrated to reconstruct the current curve, not to centre the simulated forward swap rate at \(F_0\). Paths drift away from the ATM forward, producing the strongly negative forward bias \(\widehat b\) reported in the table.
 \end{enumerate}
 
-The remainder of the chapter responds to these two problems in two steps. The first introduces a minimal trainable pricing layer that recalibrates the risk-neutral dynamics while keeping the stable model frozen. The second augments the pricing layer with information from the observed swaption volatility surface.
+The remainder of the chapter introduces a minimal trainable pricing layer that recalibrates the risk-neutral dynamics while keeping the stable model frozen, and shows that this single adjustment closes the bulk of the gap.
 
 %=========================================================
 \section{Constant Market Price of Risk}
@@ -198,7 +198,7 @@ Table~\ref{tab:constant_mpr_per_cell_all} reports per-cell errors. The overall M
 \input{../Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_all.tex}
 \end{table}
 
-Splitting the data 70/30 into a training period (2010--2021) and a test period (2022--2024) gives training MAE \(39.4\) bp and test MAE \(\mathbf{42.0}\) bp. The very small train--test gap is the central observation about this model: \emph{Constant MPR does not overfit}. Section~\ref{sec:pricing_negative} shows that more elaborate pricing layers improve the training MAE but degrade test performance, confirming that the 8-parameter correction already captures essentially what the yield-curve representation supports.
+Splitting the data 70/30 into a training period (2010--2021) and a test period (2022--2024) gives training MAE \(39.4\) bp and test MAE \(\mathbf{42.0}\) bp. The very small train--test gap is the central observation about this model: \emph{Constant MPR does not overfit}.
 
 Figure~\ref{fig:pricing_heatmap_comparison_all} compares the base-model and Constant MPR heatmaps side by side. The improvement is uniform across the surface, with the largest reductions on the cells where the base model is worst (short expiries on long tenors). Figure~\ref{fig:pricing_comparison_timeseries} overlays the vol error over time: the base-model errors swing by hundreds of bp, while the Constant MPR error stays close to zero throughout most of the sample, with residual spikes concentrated in the 2022 rate-hike episode and in the 1Y expiry row.
 
@@ -216,17 +216,35 @@ Figure~\ref{fig:pricing_heatmap_comparison_all} compares the base-model and Cons
     \label{fig:pricing_comparison_timeseries}
 \end{figure}
 
-The remaining errors follow a clear cross-sectional pattern: the 1Y expiry cells carry visibly higher MAE than the 5Y and 10Y rows. A single \(\lambda_0\) must simultaneously calibrate short- and long-expiry distributions that live in different regions of the latent space and have different sensitivities to the drift correction. This suggests that the yield curve alone is approaching an information ceiling at this 40 bp level.
+\subsection{The residual 1Y expiry error and forward bias}
+\label{subsec:cmpr_1y_residual}
+
+The cross-sectional pattern of the residual errors is informative. The 1Y expiry row carries substantially higher MAE than the 5Y and 10Y rows. Concretely, the 1Y\(\times\)1Y, 1Y\(\times\)5Y and 1Y\(\times\)10Y cells have MAEs of \(148\), \(68\) and \(54\) bp, while all six cells at 5Y and 10Y expiry lie between \(18\) and \(24\) bp.
+
+The driver is the forward bias \(\widehat b\). Across the full sample, the mean bias is \(+70\) bp at 1Y expiry, \(+68\) bp at 5Y expiry and \(+139\) bp at 10Y expiry. The largest mean bias is therefore at the longest expiry, yet that is the row with the smallest MAE. A positive bias means the simulated forward distribution is shifted upward relative to \(F_0\), so the payer leg is systematically more valuable than the receiver leg. The straddle vol formula in Section~\ref{subsec:bachelier_formula} averages payer and receiver prices, which removes the bias to first order but not to second order: a non-zero bias inflates the resulting straddle vol estimate. Because the natural Bachelier vol level scales with \(\sqrt{T_e}\), the same absolute bias translates into a much larger inflation of the model's implied vol at short expiries than at long expiries. The 1Y row sees a bias of order \(50\)--\(140\) bp against market vol levels of \(48\)--\(90\) bp, and the bias dominates the implied-vol MAE. At 10Y expiry, the bias is similar in absolute magnitude but the diffusion has had ten times longer to spread, so the same absolute bias matters proportionally less.
+
+This interpretation is confirmed empirically. The cross-sectional correlation between \(|\widehat b|\) and the absolute vol error is \(0.84\) at 1Y expiry, \(0.49\) at 5Y expiry and \(0.60\) at 10Y expiry. At 1Y the relationship is close to one-to-one, indicating that the residual vol error at this expiry is almost entirely explained by the forward bias rather than by a vol-level mismatch.
+
+Figure~\ref{fig:constant_mpr_forward_bias} shows the forward bias over time, decomposed by expiry. The bias is persistent across the entire sample and is not a regime-specific artefact of the 2022 tightening cycle. Its sign and approximate magnitude are stable from 2010 onwards, which is what one would expect from a structural rather than a regime-driven origin.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Pricing/eval_constant_mpr/fig_forward_bias_timeseries.png}
+    \caption{Forward bias \(\widehat b\) (bp) over time for the Constant MPR. Coloured by expiry (blue = 1Y, green = 5Y, red = 10Y). The bias is persistent across the entire sample and is not concentrated in any particular regime.}
+    \label{fig:constant_mpr_forward_bias}
+\end{figure}
+
+Structurally, the residual bias is the consequence of using a single global \(\lambda_0\) to fit a heterogeneous surface. The calibration loss in Section~\ref{subsec:cmpr_calibration} balances the squared straddle-vol error against the squared forward-bias penalty with weight \(0.5\). The optimiser tolerates some residual bias in order to fit the average vol level across the surface, and that residual bias is felt most strongly at the 1Y expiry by the \(\sqrt{T_e}\) mechanism above. This 1Y residual is the principal limitation of the Constant MPR architecture.
 
 %=========================================================
 \section{Summary}
 \label{sec:pricing_summary}
 %=========================================================
 
-The pricing experiments establish two facts about the latent-state model when applied to swaption pricing:
+The pricing experiments establish three facts about the latent-state model when applied to swaption pricing:
 
 \begin{enumerate}
-    \item The frozen stable model, used directly, gives implied-vol errors of order \(415\) bp — two orders of magnitude above bid--offer spreads. A latent model that reconstructs swap curves accurately is not by itself a pricing model.
-    \item A minimal trainable pricing layer with only \(8\) parameters, the Constant MPR (\(\lambda_0\) drift correction and a per-factor diffusion scale), reduces this to \(40\) bp overall and \(42\) bp out-of-sample. This is the cleanest demonstration that the latent space supports a Q-recalibration.
-    
+    \item The frozen stable model, used directly, gives implied-vol errors of order \(415\) bp --- two orders of magnitude above bid--offer spreads. A latent model that reconstructs swap curves accurately is not by itself a pricing model.
+    \item A minimal trainable pricing layer with only \(8\) parameters, the Constant MPR (\(\lambda_0\) drift correction and a per-factor diffusion scale), reduces this to \(40\) bp overall and \(42\) bp out-of-sample. The very small train--test gap shows that the model does not overfit, and the cleanest demonstration that the latent space supports a Q-recalibration.
+    \item The residual error concentrates in the 1Y expiry row, where a positive forward bias of order \(100\) bp inflates the implied-vol estimate disproportionately relative to longer expiries. This is the structural limit of a single global drift correction.
 \end{enumerate}

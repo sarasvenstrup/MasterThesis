@@ -470,6 +470,11 @@ The aggregate results in Table \ref{tab:oos_summary_sim}, however, do not reveal
 As established in Chapter~\ref{chap:evaluation}, the baseline struggles most severely when the share of atypical curve variants in the test set substantially exceeds that in the training window, most notably around the quantitative easing in 2015 and the inflation regime beginning in 2022. At $\ell=4$, the stable model maintains a consistently low error level throughout the sample, with only modest increases around these episodes, indicating that it is better equipped to handle such distributional shifts in curve variants.
 
 
+The improvement is not uniform across curve variants, with negative-rate curves 
+remaining the most challenging for the stable model. A more detailed breakdown by 
+curve variant is provided in Chapter~\ref{chap:model_comparison}. For now, the 
+rolling out-of-sample comparison confirms that at $\ell=4$, the stable model 
+handles shifts in the rate environment considerably better than the baseline.
 
 
 
@@ -490,22 +495,22 @@ As established in Chapter~\ref{chap:evaluation}, the baseline struggles most sev
 \newpage
 
 
-
+% Removed
 
 %Figure~\ref{fig:regime_scatter} decomposes the $\ell=4$ out-of-sample errors by curve variant to examine which curve types drive the remaining differences.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/Simulation/fig_regime_scatter.png}
-    \caption{Out-of-sample RMSE per observation coloured by interest rate regime for the baseline and stable variants at \(\ell=4\).}
-    \label{fig:regime_scatter}
-\end{figure}
+%\begin{figure}[H]
+%    \centering
+%    \includegraphics[width=\textwidth]{Figures/Simulation/fig_regime_scatter.png}
+%    \caption{Out-of-sample RMSE per observation coloured by interest rate regime for the baseline and stable variants at \(\ell=4\).}
+%    \label{fig:regime_scatter}
+%\end{figure}
 
 % I dont like the using the colours and this is to much text
-The panels use separate vertical scales, the baseline reaching $7{,}000$ bps against $200$ bps for the stable model. Normal non-negative curves (blue) remain near zero for both models throughout most of the sample, but the baseline produces a single extreme failure close to $7{,}000$ bps in 2022, confirming that even familiar curve shapes become problematic as the rate environment shifts sharply. Negative-rate curves (pink) drive sustained elevated errors in the baseline, with spikes reaching around $4{,}800$ bps in 2016 and $3{,}500$ bps around 2019. Inverted non-negative curves (black), appearing from 2022 onward, reach close to $3{,}000$ bps. The stable model 
-reduces errors substantially across all three regimes, though negative-rate curves remain the most challenging, reaching around $150$ to $210$ bps in the 2015 to 2016 period.
+%The panels use separate vertical scales, the baseline reaching $7{,}000$ bps against $200$ bps for the stable model. Normal non-negative curves (blue) remain near zero for both models throughout most of the sample, but the baseline produces a single extreme failure close to $7{,}000$ bps in 2022, confirming that even familiar curve shapes become problematic as the rate environment shifts sharply. Negative-rate curves (pink) drive sustained elevated errors in the baseline, with spikes reaching around $4{,}800$ bps in 2016 and $3{,}500$ bps around 2019. Inverted non-negative curves (black), appearing from 2022 onward, reach close to $3{,}000$ bps. The stable model 
+%reduces errors substantially across all three regimes, though negative-rate curves remain the most challenging, reaching around $150$ to $210$ bps in the 2015 to 2016 period.
 
-The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter all point in the same direction. At $\ell=4$, the stability restrictions reduce both in-sample and out-of-sample errors relative to the baseline and contain the most severe regime-specific failures, though the negative-rate environment remains the most challenging for both models.
+%The in-sample RMSE, the rolling out-of-sample comparison, and the regime scatter all point in the same direction. At $\ell=4$, the stability restrictions reduce both in-sample and out-of-sample errors relative to the baseline and contain the most severe regime-specific failures, though the negative-rate environment remains the most challenging for both models.
 
 
 
