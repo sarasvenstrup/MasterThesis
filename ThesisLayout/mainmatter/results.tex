@@ -77,7 +77,7 @@ For $\ell=2$, reconstruction error is not evenly distributed over time. Around t
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.00\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6b_rmse_over_time.png}
-    \caption{In-sample RMSE (bps) over time for $\ell=3$, per currency and cross-currency 
+    \caption{In-sample RMSE (bps) over time for $\ell=2$, per currency and cross-currency 
     average.}
     \label{fig:Q6b}
 \end{figure}
@@ -120,7 +120,7 @@ Given that the model struggles with atypical curve shapes, such as negative swap
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q6e_scatter_regime.png}
-    \caption{Per-observation in-sample RMSE (bps) over time for the baseline autoencoder ($\ell = 2$), coloured by interest rate regime. Each point represents one curve observation; observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero.}
+    \caption{Per-observation in-sample RMSE (bps) over time for the baseline autoencoder ($\ell = 2$), coloured by curve variant. Each point represents one curve observation; curves are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero.}
     \label{fig:q6e_scatter_regime}
 \end{figure}
 
@@ -198,7 +198,7 @@ We next verify that the models satisfies the no-arbitrage restriction by computi
 
 %The figure reports the diagnostic for $\ell=3$ as the representative specification. As the same ODE-based construction is used across latent dimensions, the same diagnostic can be applied to $\ell=2$ and $\ell=4$ to verify numerical satisfaction of the no-arbitrage PDE across specifications.
 
-The diagnostic is reported for the $\ell=2$ model in Figure~\ref{fig:Q7_pde_residual}, averaged by currency over all in-sample dates. Two features indicate that the no-arbitrage restriction is satisfied numerically. First, the residuals are on the order of $10^{-10}$, so deviations from zero are negligible in magnitude. Second, the values fluctuate randomly around zero across all maturities and currencies, consistent with numerical noise rather than a systematic arbitrage violation. The same result holds for the $\ell=2$ and $\ell=4$ models, and the no-arbitrage restriction is therefore satisfied numerically across all models.
+The diagnostic is reported for the $\ell=2$ model in Figure~\ref{fig:Q7_pde_residual}, averaged by currency over all in-sample dates. Two features indicate that the no-arbitrage restriction is satisfied numerically. First, the residuals are on the order of $10^{-10}$, so deviations from zero are negligible in magnitude. Second, the values fluctuate randomly around zero across all maturities and currencies, consistent with numerical noise rather than a systematic arbitrage violation. The same result holds for the $\ell=3$ and $\ell=4$ models, and the no-arbitrage restriction is therefore satisfied numerically across all models.
 
 
 
@@ -230,7 +230,7 @@ For each rolling window, the in-sample RMSE is computed on the five-year trainin
     \label{fig:Q2b}
 \end{figure}
 
-A substantial gap exists between in-sample and out-of-sample reconstruction performance, indicative of overfitting. All models achieve average in-sample RMSEs between 9.3 and 11.6 bps, yet out-of-sample performance worsens markedly with the number of latent factors. The $\ell=2$ model increases from 10.5 bps to 19.0 bps out-of-sample, while the $\ell=3$ and $\ell=4$ models perform considerably worse out-of-sample, reaching 66.5 and 100.5 bps, respectively. Additional latent factors thus reduce in-sample error at the cost of out-of-sample generalisation. It is worth noting that the in-sample RMSES are, on average, of similar magnitude to those reported in Section \ref{sec:ISevaluation}, suggesting that the models achieve reasonable reconstruction accuracy even when trained on shorter five-year windows with less data.
+A substantial gap exists between in-sample and out-of-sample reconstruction performance, indicative of overfitting. All models achieve average in-sample RMSEs between 9.3 and 11.6 bps, yet out-of-sample performance worsens markedly with the number of latent factors. The $\ell=2$ model increases from 10.5 bps to 19.0 bps out-of-sample, while the $\ell=3$ and $\ell=4$ models perform considerably worse out-of-sample, reaching 66.5 and 100.5 bps, respectively. Additional latent factors thus reduce in-sample error at the cost of out-of-sample generalisation. It is worth noting that the in-sample RMSEs are, on average, of similar magnitude to those reported in Section \ref{sec:ISevaluation}, suggesting that the models achieve reasonable reconstruction accuracy even when trained on shorter five-year windows with less data.
 
 %\begin{table}[H]
 %\centering
@@ -282,7 +282,7 @@ To examine whether the out-of-sample errors are concentrated in particular perio
 \end{figure}
 % changed this figure from Q3b to Q8a
 
-The higher-dimensional models are particularly sensitive to such distributional shifts, as illustrated by the December 2019 window where inverted curves appear in the test set despite being largely absent from the training window, causing the $\ell=4$ model to spike to 182 bps while $\ell=2$ is considerably less affected. This pattern is even more pronounced during the worst windows around 2016 and 2022, where the $\ell=3$ and $\ell=4$ models reach 633 and 692 bps respectively. Overall, the out-of-sample results point to a consistent pattern of overfitting that worsens with the number of latent factors, driven not by the amount of training data but by the mismatch between the curve types seen during training and those encountered at test time.
+The higher-dimensional models are particularly sensitive to such distributional shifts, as illustrated by the December 2019 window where inverted curves appear in the test set despite being largely absent from the training window, causing the $\ell=4$ model to spike to 182 bps while $\ell=2$ is considerably less affected. This pattern is even more pronounced during the worst windows around 2016 and 2022, where the $\ell=3$ and $\ell=4$ models reach 633 and 692 bps respectively. The out-of-sample results point to a consistent pattern of overfitting that worsens with the number of latent factors, driven not by the amount of training data but by the mismatch between the curve types seen during training and those encountered at test time.
 
 
 
@@ -291,7 +291,7 @@ The higher-dimensional models are particularly sensitive to such distributional 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Figures/thesis_results/AutoencoderPerformance/Q4c_oos_scatter_regime.png}
-    \caption{Per-observation out-of-sample RMSE (bps) over time for the autoencoder with $\ell=2$ latent factors, coloured by interest rate regime. Each point represents one curve observation from the rolling test windows. Observations are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero.}
+    \caption{Per-observation out-of-sample RMSE (bps) over time for the autoencoder with $\ell=2$ latent factors, coloured by curve variant. Each point represents one curve observation from the rolling test windows. Curves are classified as \textit{inverted} when the short end exceeds the long end, and as \textit{negative} when any tenor is below zero.}
     \label{fig:q4c_oos_scatter_regime}
 \end{figure}
 
@@ -332,5 +332,5 @@ The out-of-sample errors are not evenly distributed across curve types, highligh
 
 
 
-Overall, the out-of-sample results point to two complementary sources of error. Overfitting worsens with the number of latent factors, driven by distributional mismatch between training and test windows and most pronounced during periods of structural change such as the low-rate environment of 2016 and the rate-hiking cycle of 2022. In addition, the model shows an inherent difficulty with inverted and negative-rate curves that is already present in-sample and is amplified out-of-sample, reflecting a structural limitation in capturing their level and slope characteristics rather than a lack of training exposure. Across both dimensions, $\ell=2$ offers the most stable and generalisable performance.
+Overall, the out-of-sample results point to two complementary sources of error. Overfitting worsens with the number of latent factors, driven by distributional mismatch between training and test windows and most pronounced during periods of structural change such as the low-rate environment of 2016 and the rate-hiking cycle of 2022. In addition, the model shows an inherent difficulty with inverted and negative-rate curves that is already present in-sample and is amplified out-of-sample, reflecting a structural limitation in capturing their level and slope characteristics rather than a lack of training exposure. In both respects, $\ell=2$ offers the most stable and generalisable performance.
 
