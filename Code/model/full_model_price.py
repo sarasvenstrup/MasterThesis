@@ -1,10 +1,36 @@
 """
-FullModelPrice: thin subclass of FullModel that adds k_override support.
+FullModelPrice: thin subclass of FullModel that adds k_override and
+sigma_scale support to decode_from_z.
 
-full_model_stable.py is not touched at all. This subclass adds a single
-capability: passing a separate K_Q module into decode_from_z so that the
-Q-measure drift is used consistently in both the ODE and the simulation
-during pricing, while reconstruction continues to use the original K^P.
+full_model_stable.py is not touched at all.  This subclass adds two
+capabilities so that the same pricing dynamics can be used consistently in
+*both* simulation and the no-arbitrage ODE:
+
+  k_override  — replaces self.K in the ODE (drift correction)
+  sigma_scale — scales self.H's sigmas output in the ODE (vol correction)
+
+Background
+----------
+simulate_to_expiry_differentiable already accepts k_override and sigma_scale
+to modify the simulated paths.  Without this class the terminal call
+
+    model.decode_from_z(z_T, return_aux=True)
+
+would still use the original unscaled K and H, creating an inconsistency
+between simulation dynamics and decoded bond prices.
+
+sigma_scale implementation note
+--------------------------------
+L_from_sigmas_rhos builds L such that L[b,i,j] = sigmas[b,i] * f(rhos).
+The simulation shock is:
+
+    shock = sigma_scale * (L @ dW)  ≡  diag(sigma_scale) @ L @ dW
+
+diag(sigma_scale) @ L  is identical to  L_from_sigmas_rhos(sigmas * scale, rhos)
+
+so applying sigma_scale in the ODE is equivalent to pre-multiplying the
+sigmas vector returned by H(z) by sigma_scale.  A lightweight _ScaledHWrapper
+handles this without touching any ODE utilities.
 
 Usage
 -----
@@ -13,28 +39,70 @@ Usage
     model = FullModelPrice(latent_dim=4)
     model.load_state_dict(...)
 
-    # Reconstruction — uses K^P (original, unchanged)
+    # Reconstruction — uses original K and H (unchanged)
     S_hat = model(x)
 
-    # Pricing — uses K_Q in both the ODE and simulation
-    _, aux = model.decode_from_z(z_T, return_aux=True, k_override=K_Q)
+    # Pricing — drift + vol consistent in both simulation and ODE
+    _, aux = model.decode_from_z(
+        z_T,
+        return_aux=True,
+        k_override=wrapper,          # wrapper.forward(z) returns K*(z)
+        sigma_scale=wrapper.sigma_vec,  # shape (d,), learnable
+    )
 """
 
 import torch
+import torch.nn as nn
 from .full_model_stable import FullModel
+
+
+class _ScaledHWrapper(nn.Module):
+    """
+    Thin wrapper around an H module that scales each sigma_i by scale[i].
+
+    H(z) returns (sigmas, rhos) where sigmas has shape (B, d).
+    This wrapper returns (sigmas * scale.unsqueeze(0), rhos) so that the
+    resulting L matrix satisfies
+
+        L_scaled = diag(scale) @ L_original
+
+    which is exactly the scaling applied in simulate_to_expiry_differentiable
+    when sigma_scale is a (d,) tensor.
+    """
+
+    def __init__(self, h_module: nn.Module, scale: torch.Tensor):
+        super().__init__()
+        self._h     = h_module
+        # Register as buffer so device/dtype moves are handled automatically,
+        # but do NOT make it a Parameter (it must not be trained here).
+        self.register_buffer("_scale", scale)
+
+    def forward(self, z: torch.Tensor):
+        sigmas, rhos = self._h(z)
+        return sigmas * self._scale.unsqueeze(0), rhos
 
 
 class FullModelPrice(FullModel):
     """
-    Identical to FullModel except decode_from_z accepts an optional k_override.
+    Identical to FullModel except decode_from_z accepts:
 
-    k_override : nn.Module | None
-        If None  → behaves exactly like FullModel (uses self.K, K^P).
-        If given → temporarily replaces self.K with k_override (K^Q) for the
-                   duration of the ODE solve, then restores self.K.
+      k_override   : nn.Module | None
+          If None  → uses self.K (original, reconstruction drift).
+          If given → temporarily replaces self.K so the ODE sees K*(z).
 
-    This makes K^Q consistent in both the simulation and the ODE without
-    duplicating any code or modifying full_model_stable.py.
+      sigma_scale  : Tensor (d,) | float | None
+          If None  → uses self.H unchanged (original, reconstruction vol).
+          If given → wraps self.H with _ScaledHWrapper so that the ODE uses
+                     sigma_eff[i] = sigma_scale[i] * sigma_i(z).
+
+    Pass both together when calling decode_from_z at the terminal state
+    during pricing to make the ODE fully consistent with the simulation:
+
+        _, aux_T = model.decode_from_z(
+            z_T, return_aux=True,
+            k_override=wrapper,
+            sigma_scale=wrapper.sigma_vec,
+        )
     """
 
     def decode_from_z(
@@ -44,16 +112,33 @@ class FullModelPrice(FullModel):
             do_arb_checks: bool = False,
             return_aux: bool = False,
             k_override=None,
+            sigma_scale=None,
     ):
-        if k_override is None:
-            # No override — identical to FullModel
+        # Fast path: no overrides — identical to FullModel
+        if k_override is None and sigma_scale is None:
             return super().decode_from_z(z, tau, do_arb_checks, return_aux)
 
-        # Temporarily swap self.K for k_override so the parent's ODE sees K^Q
         original_K = self.K
-        self.K = k_override
+        original_H = self.H
+
         try:
+            if k_override is not None:
+                self.K = k_override
+
+            if sigma_scale is not None:
+                if not torch.is_tensor(sigma_scale):
+                    sigma_scale = torch.tensor(
+                        sigma_scale, device=z.device, dtype=z.dtype
+                    )
+                else:
+                    sigma_scale = sigma_scale.to(device=z.device, dtype=z.dtype)
+                self.H = _ScaledHWrapper(original_H, sigma_scale)
+
             result = super().decode_from_z(z, tau, do_arb_checks, return_aux)
+
         finally:
-            self.K = original_K   # always restore, even if an exception occurs
+            # Always restore even if an exception occurs
+            self.K = original_K
+            self.H = original_H
+
         return result

@@ -86,15 +86,70 @@ Another point we need to make is that adding restrictions into the input vector 
 
 % We namely see when we tested our stable variant of the model, which performed better than the baseline in our OOS test, indicating that model restrictions that constrain the model in a less free way, actually improves reconstruction, further also improving reconstuction of curves that the baseline model could not reconstruct well. (latent dimensions: Flexibility versus robustness / The purpose of Reconstruction)
 
-The stable variant changes the interpretation of model complexity. In the baseline model, increasing the latent dimension improves the in-sample fit, but weakens out-of-sample robustness. This suggests that additional latent factors give the model more flexibility, but also make the learned dynamics more sensitive to changes in the market environment. The stable model shows that this is not a problem of dimensionality alone. Once the latent dynamics are constrained through mean reversion, bounded volatility, valid correlations and bounded short-rate behaviour, the higher-dimensional specifications become more robust.
 
-This is reflected in the rolling out-of-sample results, where the stable model improves substantially relative to the baseline. In particular, the four-factor stable model performs best both in-sample and out-of-sample. The result suggests that additional latent dimensions are useful when the model is prevented from using them in an unconstrained way. Put differently, the stable specification indicates that flexibility should not simply be removed, but controlled through financial and numerical restrictions.
+The most striking result of the rolling-window comparison is that the stable variant changes the apparent relationship between latent dimension and out-of-sample performance. For the baseline model, increasing the latent dimension improves the in-sample fit but worsens the rolling out-of-sample results. The four-factor baseline performs better than the two-factor baseline
+in-sample, yet generalises worse out-of-sample. This is consistent with a model
+whose additional flexibility is not sufficiently constrained. A natural
+interpretation would be that the swap curve does not support additional
+unconstrained latent factors.
 
+The stable specification changes this interpretation. Once the drift is
+constrained to be mean-reverting, the diffusion is bounded with valid
+correlation matrices, and the short-rate specification is controlled, the
+four-factor stable model performs best both in-sample and out-of-sample. The
+improvement is therefore not obtained by sacrificing training accuracy. Read
+literally, this suggests that additional latent flexibility is useful when it is
+appropriately constrained, and that the baseline's flexibility--robustness
+trade-off reflects the freedom of the learned dynamics rather than the latent
+dimension alone.
+
+This conclusion requires several qualifications. First, the result does not
+establish that the out-of-sample improvement is due specifically to the
+financial content of the restrictions. A purely statistical regularisation of
+comparable strength might also improve generalisation, and this thesis does not
+include such a control experiment. The claim that financial structure improves
+generalisation should therefore be interpreted as suggestive rather than
+conclusive. The particular bounds and parametrisations used in the stable model
+are also modelling choices, and the analysis does not establish that they are
+optimal. Second, the latent dimension is not chosen by a formal selection
+criterion. We compare \(\ell\in\{1,2,3,4\}\) and find that the four-factor
+stable specification performs best, but the analysis does not test
+\(\ell>4\) or prove that the gains saturate at four factors. Third, higher
+latent dimensions come with an interpretability cost. With two factors, the
+latent state may be related informally to level and slope movements, while the
+meaning of individual coordinates is less transparent in four dimensions. The
+stable specification restores the empirical usefulness of additional latent
+dimensions, but not necessarily their interpretability.
+
+The conclusion is therefore more modest than saying that flexibility should
+simply be controlled rather than removed. The rolling-window results show that
+the baseline's out-of-sample deterioration at higher dimensions can be
+substantially mitigated by imposing financially motivated restrictions, and
+that the specific four-factor stable model tested here delivers the best
+performance among the variants considered. Whether the same conclusion would
+hold against alternative regularisation strategies or higher latent dimensions
+remains open.
+
+The stable variant also improves the qualitative behaviour of the reconstructions. The baseline model struggles with less common curve shapes, such as negative-rate and inverted curves, where it often captures the level of the curve more reliably than its slope and curvature. By restricting the latent dynamics, the stable model produces smoother and more controlled reconstructions in these regimes without requiring slope or curvature features as auxiliary inputs. This supports the broader interpretation that financial structure can improve not only simulation stability, but also reconstruction robustness.
+
+At the same time, the stable model does not remove all regime sensitivity. It still exhibits elevated errors during difficult periods, including the COVID shock and the 2022 tightening cycle. The restrictions therefore reduce the model's sensitivity to regime changes, but they do not eliminate it.
+
+The simulation experiment shows why these restrictions matter beyond reconstruction. The baseline dynamics, although trained for cross-sectional reconstruction, can produce explosive trajectories when simulated forward. Under the stable restrictions, the simulated paths remain bounded and the decoded curves stay on an interpretable scale. Reconstruction is therefore only a static test of the latent state, while simulation is a dynamic test of the learned dynamics.
+
+These two limitations --- a sensitivity to regime shifts and a structural inability to reproduce slope and curvature in atypical regimes --- both stem from allowing the latent dynamics to evolve too freely during training. The stable variant developed in this thesis responds to this by restricting the dynamics themselves rather than enriching the input or expanding the latent state. The remainder of this section examines whether the restrictions deliver what they were designed to deliver, and where they fall short.
 
 % paragraph 5
 
-The stable model also improves the qualitative behaviour of the reconstructions. The baseline model struggles with curves that are less common in the training data, such as negative-rate or inverted curves. By restricting the latent dynamics, the stable model produces smoother and more controlled reconstructions in such regimes. This supports the broader interpretation that machine learning models for term structures should not be allowed to learn freely from the data alone. Financial structure can improve not only simulation stability, but also reconstruction robustness.
+%The stable model also improves the qualitative behaviour of the reconstructions. The baseline model struggles with curves that are less common in the training data, such as negative-rate or inverted curves. By restricting the latent dynamics, the stable model produces smoother and more controlled reconstructions in such regimes. This supports the broader interpretation that machine learning models for term structures should not be allowed to learn freely from the data alone. Financial structure can improve not only simulation stability, but also reconstruction robustness.
 
+
+The most striking result of the rolling-window comparison is that the stable variant changes the apparent relationship between latent dimension and out-of-sample performance. For the baseline model, increasing the latent dimension improves the in-sample fit but worsens the rolling out-of-sample results. The four-factor baseline performs better than the two-factor baseline in-sample, yet generalises worse out-of-sample. This is consistent with a model whose additional flexibility is not sufficiently constrained. A natural interpretation would be that the swap curve does not support additional unconstrained latent factors.
+
+The stable specification changes this interpretation. Once the drift is constrained to be mean-reverting, the diffusion is bounded with valid correlation matrices, and the short-rate specification is controlled, the four-factor stable model performs best both in-sample and out-of-sample. The improvement is therefore not obtained by sacrificing training accuracy. Read literally, this suggests that additional latent flexibility is useful when it is appropriately constrained, and that the baseline's flexibility--robustness trade-off reflects the freedom of the learned dynamics rather than the latent dimension alone.
+
+This conclusion requires several qualifications. First, the result does not establish that the out-of-sample improvement is due specifically to the financial content of the restrictions. A purely statistical regularisation of comparable strength might also improve generalisation, and this thesis does not include such a control experiment. The claim that financial structure improves generalisation should therefore be interpreted as suggestive rather than conclusive. The particular bounds and parametrisations used in the stable model are also modelling choices, and the analysis does not establish that they are optimal. Second, the latent dimension is not chosen by a formal selection criterion. We compare \(\ell\in\{1,2,3,4\}\) and find that the four-factor stable specification performs best, but the analysis does not test \(\ell>4\) or prove that the gains saturate at four factors. Third, higher latent dimensions come with an interpretability cost. With two factors the latent state may be related informally to level and slope movements, while the meaning of individual coordinates is less transparent in four dimensions. The stable specification restores the empirical usefulness of additional latent dimensions, but not necessarily their interpretability.
+
+The conclusion is therefore more modest than saying that flexibility should simply be controlled rather than removed. The rolling-window results show that the baseline's out-of-sample deterioration at higher dimensions can be substantially mitigated by imposing financially motivated restrictions, and that the specific four-factor stable model tested here delivers the best performance among the variants considered. Whether the same conclusion would hold against alternative regularisation strategies or higher latent dimensions remains open.
 
 
 % paragraph 6

@@ -772,10 +772,111 @@ Because the scheme is explicit and differentiable, it integrates naturally with 
 
 The Runge--Kutta 3/8 method provides a fourth-order explicit approximation to the ODE solution while remaining compatible with gradient-based optimization.
 
-\section{Well-posedness of the Stable Latent Dynamics}
-\label{app:stable_sde_wellposed}
 
-This appendix verifies that the stable latent dynamics introduced in Chapter~\ref{chap:simulation} define a well-posed stochastic process. In particular, we show that the drift and diffusion coefficients satisfy the global Lipschitz and linear growth conditions of Proposition~\ref{prop:sde_existence}. It follows that the stable latent SDE admits a unique non-explosive solution.
+\section{Well-posedness of the Latent Dynamics}
+\label{app:sde_wellposed}
+
+This appendix examines whether the two latent SDEs studied in the
+thesis --- the baseline of \citet{MatinWanPoulsen2025} and the stable
+variant proposed here --- admit a unique non-explosive solution in the
+sense of Proposition~\ref{prop:sde_existence}. The proposition requires
+three conditions to hold: the drift is globally Lipschitz, the diffusion
+matrix is globally Lipschitz, and their joint norm satisfies a linear
+growth bound. We check the three conditions in turn for each variant.
+
+
+\subsection{Baseline Latent Dynamics}
+\label{app:baseline_sde_wellposed}
+
+The baseline latent dynamics are given by
+\begin{equation}
+    dz_t
+    =
+    \mu_{\mathrm{base}}(z_t)\,dt
+    +
+    L_{\mathrm{base}}(z_t)\,dW_t^{\mathbb Q},
+    \label{eq:app_baseline_sde}
+\end{equation}
+where \(z_t\in\mathbb{R}^{\ell}\), \(W^{\mathbb Q}\) is an
+\(\ell\)-dimensional Brownian motion, and the drift is the affine map
+\[
+    \mu_{\mathrm{base}}(z) = Mz + N,
+\]
+with \(M\in\mathbb R^{\ell\times\ell}\) and \(N\in\mathbb R^{\ell}\) free
+learned parameters. The diffusion matrix is built from raw neural-network
+outputs \(a_i(z)\) and \(c_{ij}(z)\), for \(1\leq j<i\leq\ell\), through
+the unbounded transformations
+\begin{equation}
+    \sigma_i(z) = \exp\bigl(a_i(z)\bigr),
+    \qquad
+    \rho_{ij}(z) = \tanh\bigl(c_{ij}(z)\bigr),
+    \label{eq:app_baseline_vol}
+\end{equation}
+which define the diagonal matrix
+\(D(z)=\operatorname{diag}(\sigma_1(z),\ldots,\sigma_\ell(z))\) and the
+entries of the correlation matrix \(R(z)\). A Cholesky factor \(L_R(z)\) of
+\(R(z)=L_R(z)L_R(z)^\top\) gives
+\[
+    L_{\mathrm{base}}(z) = D(z)\,L_R(z).
+\]
+Neither \(\sigma_i\) nor the correlation entries \(\rho_{ij}\) are
+constrained by any hyperparameter.
+
+\paragraph{Drift Lipschitz condition.}
+The drift is affine in \(z\) with finite learned parameters \(M\) and
+\(N\). For any \(z,y\in\mathbb R^{\ell}\),
+\[
+    \|\mu_{\mathrm{base}}(z)-\mu_{\mathrm{base}}(y)\|
+    =
+    \|M(z-y)\|
+    \leq
+    \|M\|\,\|z-y\|,
+\]
+so the first condition of Proposition~\ref{prop:sde_existence} holds with
+\(K=\|M\|\).
+
+\paragraph{Diffusion Lipschitz condition.}
+The raw network output \(a_i(z)\) is itself globally Lipschitz, since it is
+a finite composition of affine maps and the centred soft-step activation,
+which has bounded derivative. The volatility map in
+\eqref{eq:app_baseline_vol} is then the composition
+\(\sigma_i = \exp\circ a_i\). The exponential function has unbounded
+derivative on \(\mathbb R\), so this composition is not globally Lipschitz
+on \(\mathbb R^{\ell}\). Concretely, along any ray \(z=tv\) with
+\(\|v\|=1\) and \(t\to\infty\), \(\sigma_i(tv)\) generally grows
+exponentially in \(t\). The product \(L_{\mathrm{base}}(z)=D(z)L_R(z)\)
+therefore inherits this unboundedness, and the second condition of
+Proposition~\ref{prop:sde_existence} fails.
+
+\paragraph{Linear growth condition.}
+By the same argument, \(\|L_{\mathrm{base}}(z)\|\) is not bounded by
+\(C(1+\|z\|)\) for any finite constant \(C>0\), since \(\sigma_i(z)\) can
+grow exponentially in \(\|z\|\). The third condition of
+Proposition~\ref{prop:sde_existence} therefore also fails.
+
+\paragraph{Conclusion.}
+The drift satisfies the Lipschitz condition, but the diffusion fails both
+the Lipschitz and linear growth conditions. Proposition~\ref{prop:sde_existence}
+therefore cannot be invoked to guarantee a unique non-explosive solution of
+\eqref{eq:app_baseline_sde}. A local strong solution exists under the
+standard local Lipschitz continuity of the coefficients, but finite-time
+explosion cannot be ruled out a priori. This is consistent with the
+empirical observation in Chapter~\ref{chap:simulation} that simulated
+baseline paths can grow without bound over multi-year horizons, particularly
+for higher latent dimensions.
+
+In addition to the obstruction above, the parameterisation
+\(\rho_{ij}(z)=\tanh(c_{ij}(z))\) only constrains each individual entry to
+\((-1,1)\) and does not constrain \(R(z)\) to be positive semidefinite for
+\(\ell\geq 3\). Although this is not a hypothesis of
+Proposition~\ref{prop:sde_existence}, it is a separate structural concern,
+because at states where \(R(z)\) is not positive semidefinite the Cholesky
+factor \(L_R(z)\) is not real-valued and the diffusion matrix is not
+well-defined by the construction above.
+
+
+\subsection{Stable Latent Dynamics}
+\label{app:stable_sde_wellposed}
 
 The stable latent dynamics are given by
 \begin{equation}
@@ -786,8 +887,7 @@ The stable latent dynamics are given by
     L_{\mathrm{st}}(z_t)\,dW_t^{\mathbb Q},
     \label{eq:app_stable_sde}
 \end{equation}
-where \(z_t\in\mathbb{R}^{\ell}\), \(W^{\mathbb Q}\) is an
-\(\ell\)-dimensional Brownian motion, and
+where
 \[
     \mu_{\mathrm{st}}(z)
     =
@@ -797,38 +897,22 @@ where \(z_t\in\mathbb{R}^{\ell}\), \(W^{\mathbb Q}\) is an
     \qquad
     \varepsilon>0.
 \]
-The diffusion matrix is constructed from bounded volatility levels and a valid
-correlation matrix. Let
-\[
-    a_i(z),
-    \qquad
-    c_{ij}(z),
-    \quad 1\leq j<i\leq \ell,
-\]
-denote the raw outputs of the stable volatility network corresponding,
-respectively, to volatility levels and correlation angles. The volatility
-levels are defined by
+The diffusion matrix is constructed from bounded volatility levels and a
+positive-definite correlation matrix. The volatility levels are defined by
 \begin{equation}
     \log \sigma_i(z)
     =
     \log \sigma_{\min}
     +
     \bigl(\log\sigma_{\max}-\log\sigma_{\min}\bigr)
-    \operatorname{sigmoid}(a_i(z)),
+    \operatorname{sigmoid}\bigl(a_i(z)\bigr),
     \label{eq:app_stable_vol}
 \end{equation}
-where \(0<\sigma_{\min}<\sigma_{\max}<\infty\). The raw correlation outputs are mapped to angles by
-\[
-    \theta_{ij}(z)
-    =
-    \pi\,\operatorname{sigmoid}(c_{ij}(z))
-    \in(0,\pi).
-\]
-These angles define the hyperspherical Cholesky factor \(L_R(z)\), and hence the correlation matrix
-\[
-    R(z)=L_R(z)L_R(z)^\top.
-\]
-The diffusion loading matrix is then
+where \(0<\sigma_{\min}<\sigma_{\max}<\infty\). The raw correlation
+outputs are mapped to hyperspherical angles
+\(\theta_{ij}(z)=\pi\,\operatorname{sigmoid}(c_{ij}(z))\in(0,\pi)\), which
+define the hyperspherical Cholesky factor \(L_R(z)\) and the correlation
+matrix \(R(z)=L_R(z)L_R(z)^\top\). The diffusion matrix is
 \[
     L_{\mathrm{st}}(z)
     =
@@ -836,126 +920,59 @@ The diffusion loading matrix is then
     \qquad
     D(z)=\operatorname{diag}(\sigma_1(z),\ldots,\sigma_\ell(z)).
 \]
-Thus
-\[
-    L_{\mathrm{st}}(z)L_{\mathrm{st}}(z)^\top
-    =
-    D(z)R(z)D(z)
-\]
-is the covariance matrix used in the latent SDE.
 
-\begin{proposition}[Well-posedness of the stable latent SDE]
-\label{prop:stable_sde_wellposed}
-Suppose all neural network weights are finite and that
-\[
-    \varepsilon>0,
-    \qquad
-    0<\sigma_{\min}<\sigma_{\max}<\infty.
-\]
-Then the coefficients \(\mu_{\mathrm{st}}\) and \(L_{\mathrm{st}}\) are
-globally Lipschitz and satisfy a linear growth condition. Consequently, for
-every initial state \(z_0\in\mathbb{R}^{\ell}\), the SDE
-\eqref{eq:app_stable_sde} admits a unique strong solution on every finite time
-interval \([0,T]\). The solution is non-explosive and has continuous sample
-paths.
-\end{proposition}
-
-\begin{proof}
-We verify the drift and diffusion conditions separately.
-
-First, consider the drift
-\[
-    \mu_{\mathrm{st}}(z)=Mz+N.
-\]
-Since \(V\) and \(N\) are finite learned parameters and \(\varepsilon>0\), the
-matrix
-\[
-    M=-(V^\top V+\varepsilon I_\ell)
-\]
-is finite, and hence \(\|M\|<\infty\). For any
-\(z,y\in\mathbb{R}^{\ell}\),
+\paragraph{Drift Lipschitz condition.}
+The drift has the same affine form as in the baseline. Since \(V\) and
+\(N\) are finite learned parameters and \(\varepsilon>0\), the matrix
+\(M=-(V^\top V+\varepsilon I_\ell)\) is finite and
 \[
     \|\mu_{\mathrm{st}}(z)-\mu_{\mathrm{st}}(y)\|
-    =
-    \|M(z-y)\|
     \leq
     \|M\|\,\|z-y\|.
 \]
-Thus the drift is globally Lipschitz. Moreover,
-\[
-    \|\mu_{\mathrm{st}}(z)\|
-    \leq
-    \|M\|\,\|z\|+\|N\|
-    \leq
-    C(1+\|z\|)
-\]
-for some constant \(C>0\). Hence the drift satisfies a linear growth condition.
+The first condition of Proposition~\ref{prop:sde_existence} holds.
 
-We next consider the diffusion. The raw functions \(a_i(z)\) and \(c_{ij}(z)\)
-are outputs of neural networks consisting of affine maps and smooth activation
-functions with bounded derivatives. For any fixed finite set of network
-weights, these raw output maps are therefore globally Lipschitz.
-
-The volatility map in \eqref{eq:app_stable_vol} is a composition of globally
-Lipschitz functions. Since the sigmoid takes values in \((0,1)\),
+\paragraph{Diffusion Lipschitz condition.}
+The raw outputs \(a_i(z)\) and \(c_{ij}(z)\) are globally Lipschitz as
+compositions of affine maps and smooth activations with bounded
+derivatives. The sigmoid in \eqref{eq:app_stable_vol} takes values in
+\((0,1)\), so
 \[
     \log\sigma_i(z)
     \in
-    (\log\sigma_{\min},\log\sigma_{\max}),
+    (\log\sigma_{\min},\log\sigma_{\max})
 \]
-and therefore
-\[
-    \sigma_i(z)
-    \in
-    (\sigma_{\min},\sigma_{\max})
-    \qquad
-    \text{for all }z\in\mathbb{R}^{\ell}.
-\]
-Because the exponential function has bounded derivative on the compact
-interval
-\[
-    [\log\sigma_{\min},\log\sigma_{\max}],
-\]
-each map \(z\mapsto\sigma_i(z)\) is globally Lipschitz and bounded.
+for all \(z\in\mathbb R^{\ell}\). The exponential function has bounded
+derivative on the compact interval
+\([\log\sigma_{\min},\log\sigma_{\max}]\), so each map
+\(z\mapsto\sigma_i(z)\) is globally Lipschitz and uniformly bounded in
+\((\sigma_{\min},\sigma_{\max})\). The hyperspherical angles
+\(\theta_{ij}(z)\) lie in \((0,\pi)\) and are globally Lipschitz by the
+same composition argument. The entries of \(L_R(z)\) are finite products
+of sine and cosine functions evaluated at these angles, so they are
+bounded and globally Lipschitz. The product \(L_{\mathrm{st}}(z)=D(z)L_R(z)\)
+is therefore globally Lipschitz, and the second condition of
+Proposition~\ref{prop:sde_existence} holds.
 
-The hyperspherical angles satisfy
-\[
-    \theta_{ij}(z)
-    =
-    \pi\,\operatorname{sigmoid}(c_{ij}(z)).
-\]
-They are therefore globally Lipschitz as compositions of globally Lipschitz
-functions. The entries of \(L_R(z)\) are finite products of sine and cosine
-functions evaluated at these angles. Since sine and cosine have bounded
-derivatives, and products of bounded Lipschitz functions are Lipschitz, the map
-\(z\mapsto L_R(z)\) is globally Lipschitz. Furthermore, the entries of
-\(L_R(z)\) are bounded by construction.
-
-It follows that
-\[
-    L_{\mathrm{st}}(z)=D(z)L_R(z)
-\]
-is a product of bounded globally Lipschitz matrix-valued functions. Hence
-\(L_{\mathrm{st}}\) is globally Lipschitz. Moreover, since the volatility
-levels are bounded and \(L_R(z)\) has bounded entries, there exists a constant
+\paragraph{Linear growth condition.}
+Since the volatility levels are bounded above by \(\sigma_{\max}\) and the
+entries of \(L_R(z)\) are bounded by construction, there exists a constant
 \(C_L>0\) such that
 \[
-    \|L_{\mathrm{st}}(z)\|
-    \leq
-    C_L
-    \leq
-    C_L(1+\|z\|)
+    \|L_{\mathrm{st}}(z)\|\leq C_L\leq C_L(1+\|z\|)
     \qquad
     \text{for all }z\in\mathbb{R}^{\ell}.
 \]
-Thus the diffusion also satisfies a linear growth condition.
+Combined with the linear growth of the affine drift, this gives the third
+condition of Proposition~\ref{prop:sde_existence}.
 
-The drift and diffusion coefficients therefore satisfy the assumptions of
-Proposition~\ref{prop:sde_existence}. Consequently, the stable latent SDE
-\eqref{eq:app_stable_sde} admits a unique strong solution on every finite
-horizon. The linear growth condition rules out finite-time explosion, so the
-stable latent dynamics are well defined.
-\end{proof}
+\paragraph{Conclusion.}
+The drift and diffusion coefficients satisfy all three conditions of
+Proposition~\ref{prop:sde_existence}. The stable latent SDE
+\eqref{eq:app_stable_sde} therefore admits a unique strong solution on
+every finite horizon \([0,T]\), with continuous sample paths and the
+Markov property. The linear growth condition rules out finite-time
+explosion.
 
 The stable drift also has an explicit mean-reverting structure. For any
 non-zero \(x\in\mathbb{R}^{\ell}\),
@@ -964,55 +981,34 @@ non-zero \(x\in\mathbb{R}^{\ell}\),
     =
     \|Vx\|^2+\varepsilon\|x\|^2
     >
-    0.
+    0,
 \]
-Therefore \(V^\top V+\varepsilon I_\ell\) is symmetric positive definite, and
-all eigenvalues of
-\[
-    M=-(V^\top V+\varepsilon I_\ell)
-\]
-are strictly negative. The deterministic part of the stable dynamics is
-therefore globally mean-reverting around the fixed point
-\[
-    z^*=-M^{-1}N.
-\]
+so \(V^\top V+\varepsilon I_\ell\) is symmetric positive definite and all
+eigenvalues of \(M=-(V^\top V+\varepsilon I_\ell)\) are strictly negative.
+The deterministic part of the stable dynamics is therefore globally
+mean-reverting around the fixed point \(z^*=-M^{-1}N\).
 
-Finally, the short-rate function in the stable model is bounded by
-construction. It is specified as
+The short-rate function in the stable model is bounded by construction. It
+is specified as
 \[
     r(z)
     =
     r_{\mathrm{center}}
     +
-    r_{\mathrm{scale}}\tanh(f(z)),
-\]
-where
-\[
+    r_{\mathrm{scale}}\tanh\bigl(f(z)\bigr),
+    \qquad
     r_{\mathrm{scale}}
     =
-    \operatorname{softplus}(\eta)+s_{\min}
-    >
-    0.
+    \operatorname{softplus}(\eta)+s_{\min}>0,
 \]
-Since \(\tanh(f(z))\in(-1,1)\), we have
+so \(r(z)\in(r_{\mathrm{center}}-r_{\mathrm{scale}},\,r_{\mathrm{center}}+r_{\mathrm{scale}})\)
+for all \(z\). Consequently, for every finite horizon \(T\), the simulated
+discount factor
 \[
-    r(z)
-    \in
-    \bigl(
-    r_{\mathrm{center}}-r_{\mathrm{scale}},
-    \;
-    r_{\mathrm{center}}+r_{\mathrm{scale}}
-    \bigr).
+    D_T = \exp\!\left(-\int_0^T r(z_s)\,ds\right)
 \]
-Consequently, for every finite horizon \(T\), the simulated discount factor
-\[
-    D_T
-    =
-    \exp\left(-\int_0^T r(z_s)\,ds\right)
-\]
-is finite and strictly positive. Thus both the latent paths and the associated
-discount factors used in the simulation experiment are mathematically
-well-defined.
+is finite and strictly positive. The stable latent paths and the associated discount factors used in the simulation experiment are therefore mathematically well-defined.
+
 
 \section{Estimated Model Parameter Dynamics}
 \label{app:model_parameter_dynamics}
@@ -1135,3 +1131,72 @@ conceptually related to, but not directly covered by, the operator-learning
 theory of \citet{Benth2024}. The comparison is nevertheless useful because it
 places the decoder within a broader view of pricing as the learning of
 structured function-valued maps.
+
+
+\section{Model and Training Hyperparameters}
+\label{app:hyperparameters}
+
+For reproducibility, Table~\ref{tab:hyperparameters} reports the hyperparameters used throughout the thesis. Where a value differs between the baseline and stable variants, only the stable-variant-specific entries are repeated. Where a value differs between the full-sample training and the rolling out-of-sample analysis, both are listed. The simulation hyperparameters refer to the Euler--Maruyama experiment in Chapter~\ref{chap:simulation}.
+
+\begin{table}[H]
+\centering
+\caption{Model architecture, stability constraints, training, rolling out-of-sample and simulation hyperparameters used throughout the thesis.}
+\label{tab:hyperparameters}
+\footnotesize
+\begin{tabular}{@{}p{3.4cm}lp{6.5cm}@{}}
+\toprule
+\textbf{Symbol / name} & \textbf{Value} & \textbf{Description} \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{Architecture (both baseline and stable)}} \\
+\midrule
+\(M\) (\texttt{input\_dim})    & 8                              & Observed swap maturities (1, 2, 3, 5, 10, 15, 20, 30 years) \\
+\(\ell\) (\texttt{latent\_dim})& \(\{1,2,3,4\}\)                & Latent dimension tested \\
+\(\tau_{\max}\)                & 30                             & Maximum bond maturity in years \\
+\texttt{g\_hidden}             & 10                             & Hidden width of decoder \(G\) \\
+\texttt{h\_hidden}             & 4                              & Hidden width of diffusion network \(H\) \\
+\texttt{r\_hidden}             & 4                              & Hidden width of short-rate network \(R\) \\
+\texttt{g\_bias}               & true                           & Bias term in decoder \(G\) \\
+\texttt{hr\_bias}              & false                          & Bias terms in \(H\) and \(R\) \\
+\texttt{sigma\_init}           & 0.3                            & Initialisation of diagonal \(\sigma\) entries \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{Stable-variant constraints (drift, diffusion, short rate)}} \\
+\midrule
+\(k_\varepsilon\) (\texttt{k\_epsilon})    & \(10^{-3}\)        & Minimum eigenvalue floor on \(-K\) (enforces mean reversion) \\
+\(\sigma_{\min}\) (\texttt{h\_sigma\_min}) & \(10^{-4}\)        & Lower bound on per-factor volatilities \\
+\(\sigma_{\max}\) (\texttt{h\_sigma\_max}) & 2.0                & Upper bound on per-factor volatilities \\
+\(\rho_{\max}\) (\texttt{h\_rho\_max})     & 0.999              & Maximum correlation magnitude (hyperspherical clamp) \\
+\(r_{\text{centre}}\) (\texttt{r\_center\_init}) & 0.01         & Initialisation of the short-rate centre \\
+\(r_{\text{scale}}\) (\texttt{r\_scale\_init})   & 0.02         & Initialisation of the short-rate scale \\
+\(r_{\text{scale,min}}\) (\texttt{r\_min\_scale}) & \(10^{-4}\) & Lower bound on the short-rate scale \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{Training (full-sample reconstruction)}} \\
+\midrule
+Optimiser                      & Adam                           & PyTorch default \(\beta_1=0.9,\,\beta_2=0.999\) \\
+Loss                           & MSE                            & On the eight observed swap rates \\
+Epochs                         & 2000                           & Total Adam iterations \\
+Batch size                     & 32                             & Training mini-batch \\
+Eval batch size                & 256                            & Evaluation pass batch \\
+Scheduler                      & OneCycleLR                     & Linear warm-up then cosine annealing \\
+\(\eta_{\max}\) (\texttt{max\_lr}) & \(10^{-3}\)                & Peak learning rate \\
+\texttt{pct\_start}            & 0.3                            & Fraction of training spent in warm-up \\
+\texttt{final\_div\_factor}    & 3000                           & Final learning rate is \(\eta_{\max}/3000\) \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{Rolling out-of-sample analysis}} \\
+\midrule
+Training window                & 5 years                        & Length of each training window \\
+Test window                    & 6 months                       & Length of each test window \\
+Step                           & 6 months                       & Roll step between consecutive windows \\
+Epochs per window              & 3500                           & Adam iterations per window \\
+Other settings                 & ---                            & Optimiser and scheduler same as full-sample row \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{Simulation experiment (Chapter~\ref{chap:simulation})}} \\
+\midrule
+Latent dimension               & \(\ell=2\)                     & Both baseline and stable variants \\
+\(M\) (paths)                  & 500                            & Number of Monte Carlo paths \\
+\(\Delta t\)                   & \(1/12\)                       & Euler--Maruyama time step (monthly) \\
+Horizon                        & 10 years                       & Forward simulation horizon \\
+Initial curve                  & EUR, 29 Jan 2010               & Common starting curve for both models \\
+Random seed                    & 1234                           & Shared Brownian increments across models \\
+\bottomrule
+\end{tabular}
+\end{table}
