@@ -572,4 +572,101 @@ else:
     fig_ra.subplots_adjust(bottom=0.22)
     save_fig(fig_ra, "augmented_rolling_regime_dual_axis")
 
+# ── figure: augmented_latent_space_regime ─────────────────────────────────────
+print("\nGenerating augmented latent space regime figure...")
+if _baseline_S_hat is not None:
+    # Encode all in-sample curves with baseline dim=2 linear encoder
+    _enc_w  = _b_m.encoder.lin.weight.detach().numpy()   # (2, 8)
+    _Z_all  = X_tensor.numpy() @ _enc_w.T                # (N, 2)
+
+    # Regime masks (reuse already-computed boolean arrays)
+    _ls_normal   = ~inverted & ~negative
+    _ls_inverted =  inverted & ~negative
+    _ls_negative =  negative                              # superset: also catches neg+inv
+
+    _col_ls_normal   = custom_palette[2]
+    _col_ls_inverted = "black"
+    _col_ls_negative = "indianred"
+
+    fig_ls, ax_ls = plt.subplots(figsize=(10, 5))
+
+    # Background scatter coloured by regime — z_2 on x-axis, z_1 on y-axis
+    for _ls_mask, _ls_col, _ls_lbl, _ls_zorder in [
+        (_ls_normal,   _col_ls_normal,   "Normal",   1),
+        (_ls_inverted, _col_ls_inverted, "Inverted", 2),
+        (_ls_negative, _col_ls_negative, "Negative", 3),
+    ]:
+        ax_ls.scatter(
+            _Z_all[_ls_mask, 1], _Z_all[_ls_mask, 0],
+            color=_ls_col, alpha=0.25, s=8,
+            label=_ls_lbl, zorder=_ls_zorder, linewidths=0,
+        )
+
+    # Four specific overlay points — coords stored as (z_1, z_2), plot as (z_2, z_1)
+    # (coord, marker, color, filled, legend_label)
+    _ls_pts = [
+        ((-0.0088, -0.0217), "*", _col_ls_normal,   True,
+         r"$\mathbf{z}$ (Normal, EUR 2014-08-29)"),
+        (( 0.0046, -0.0375), "*", _col_ls_normal,   False,
+         r"$\mathbf{z}_{\mathrm{flat}}$ (flat counterpart)"),
+        ((-0.0057,  0.0089), "D", _col_ls_negative, True,
+         r"$\mathbf{z}^*$ (Negative, EUR 2020-03-31)"),
+        ((-0.0004,  0.0032), "D", _col_ls_negative, False,
+         r"$\mathbf{z}^*_{\mathrm{flat}}$ (flat counterpart)"),
+    ]
+    _ls_marker_sizes = {"*": 120, "D": 50}
+    for _ls_coord, _ls_mk, _ls_col, _ls_filled, _ls_lbl in _ls_pts:
+        _ls_fc = _ls_col if _ls_filled else "none"
+        ax_ls.scatter(
+            [_ls_coord[1]], [_ls_coord[0]],   # x=z_2, y=z_1
+            marker=_ls_mk,
+            facecolors=_ls_fc, edgecolors=_ls_col,
+            s=_ls_marker_sizes[_ls_mk], linewidths=1.8,
+            zorder=7, label=_ls_lbl,
+        )
+
+    # Line segments with Euclidean distance annotations — coords as (z_1, z_2)
+    _ls_z           = np.array([-0.0088, -0.0217])
+    _ls_z_flat      = np.array([ 0.0046, -0.0375])
+    _ls_z_star      = np.array([-0.0057,  0.0089])
+    _ls_z_flat_star = np.array([-0.0004,  0.0032])
+
+    ax_ls.plot(
+        [_ls_z[1], _ls_z_flat[1]], [_ls_z[0], _ls_z_flat[0]],   # x=z_2, y=z_1
+        color=_col_ls_normal, linewidth=1.5, linestyle="--", zorder=5,
+    )
+    _ls_mid1 = (_ls_z + _ls_z_flat) / 2
+    ax_ls.annotate(
+        r"$d = 0.0208$",
+        xy=(_ls_mid1[1], _ls_mid1[0]), xytext=(-6, 10), textcoords="offset points",
+        fontsize=9, color=_col_ls_normal, ha="right",
+    )
+
+    ax_ls.plot(
+        [_ls_z_star[1], _ls_z_flat_star[1]], [_ls_z_star[0], _ls_z_flat_star[0]],
+        color=_col_ls_negative, linewidth=1.5, linestyle="--", zorder=5,
+    )
+    _ls_mid2 = (_ls_z_star + _ls_z_flat_star) / 2
+    ax_ls.annotate(
+        r"$d = 0.0078$",
+        xy=(_ls_mid2[1], _ls_mid2[0]), xytext=(8, -16), textcoords="offset points",
+        fontsize=9, color=_col_ls_negative, ha="left",
+    )
+
+    ax_ls.set_xlabel(r"$z_2$", fontsize=12)
+    ax_ls.set_ylabel(r"$z_1$", fontsize=12)
+    ax_ls.tick_params(labelsize=10)
+    ax_ls.spines["top"].set_visible(False)
+    ax_ls.spines["right"].set_visible(False)
+    _leg = ax_ls.legend(fontsize=9, frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
+    # Make the first 3 handles (Normal, Inverted, Negative) fully opaque and larger
+    for _lh in _leg.legend_handles[:3]:
+        _lh.set_alpha(1.0)
+        _lh.set_sizes([40])
+    fig_ls.tight_layout()
+    fig_ls.subplots_adjust(right=0.72)
+    save_fig(fig_ls, "augmented_latent_space_regime")
+else:
+    print("  ⚠️  Skipping augmented_latent_space_regime (no baseline dim=2 checkpoint found)")
+
 print("\nResultsGenerator_augmented complete.")
