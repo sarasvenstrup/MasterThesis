@@ -669,4 +669,151 @@ if _baseline_S_hat is not None:
 else:
     print("  ⚠️  Skipping augmented_latent_space_regime (no baseline dim=2 checkpoint found)")
 
+# ── figure: augmented_latent_space_shift ──────────────────────────────────────
+print("\nGenerating augmented latent space shift figure...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping augmented_latent_space_shift (no baseline dim=2 checkpoint found)")
+else:
+    # Encoder weights and full latent cloud
+    _enc_w_sh = _b_m.encoder.lin.weight.detach().numpy()   # (2, 8)
+    _Z_sh     = X_tensor.numpy() @ _enc_w_sh.T             # (N, 2)
+
+    _sh_normal   = ~inverted & ~negative
+    _sh_inverted =  inverted & ~negative
+    _sh_negative =  negative
+
+    _col_sh_normal   = custom_palette[2]
+    _col_sh_inverted = "black"
+    _col_sh_negative = "indianred"
+
+    # ── Compute overlay points by encoding shifted swap rate curves ───────────
+    _sh_dates = pd.to_datetime(meta["as_of_date"].values)
+    _sh_ccys  = meta["ccy"].values
+    _sh_X_np  = X_tensor.numpy()
+
+    _sh_idx_z    = np.where((_sh_ccys == "EUR") &
+                            (_sh_dates == pd.Timestamp("2014-08-29")))[0]
+    _sh_idx_star = np.where((_sh_ccys == "EUR") &
+                            (_sh_dates == pd.Timestamp("2020-03-31")))[0]
+
+    if len(_sh_idx_z) == 0 or len(_sh_idx_star) == 0:
+        print("  ⚠️  Could not find required EUR dates — skipping shift figure")
+    else:
+        _sh_S_eur  = _sh_X_np[_sh_idx_z[0]]          # (8,) reference normal curve
+        _sh_S_down = _sh_S_eur - 0.005                # all tenors shifted -0.005
+        _sh_S_up   = _sh_S_eur + 0.005                # all tenors shifted +0.005
+        _sh_S_star = _sh_X_np[_sh_idx_star[0]]        # actual negative EUR curve
+
+        # Encode: z = enc_w @ S  →  (z_1, z_2)
+        _sh_z      = tuple(_enc_w_sh @ _sh_S_eur)
+        _sh_z_down = tuple(_enc_w_sh @ _sh_S_down)
+        _sh_z_up   = tuple(_enc_w_sh @ _sh_S_up)
+        _sh_z_star = tuple(_enc_w_sh @ _sh_S_star)
+
+        print(f"    z      = ({_sh_z[0]:.4f}, {_sh_z[1]:.4f})")
+        print(f"    z_down = ({_sh_z_down[0]:.4f}, {_sh_z_down[1]:.4f})")
+        print(f"    z_up   = ({_sh_z_up[0]:.4f}, {_sh_z_up[1]:.4f})")
+        print(f"    z_star = ({_sh_z_star[0]:.4f}, {_sh_z_star[1]:.4f})")
+
+        fig_sh, ax_sh = plt.subplots(figsize=(10, 5))
+
+        # Background scatter — z_2 on x-axis, z_1 on y-axis
+        for _sh_mask, _sh_col, _sh_lbl, _sh_zo in [
+            (_sh_normal,   _col_sh_normal,   "Normal",   1),
+            (_sh_inverted, _col_sh_inverted, "Inverted", 2),
+            (_sh_negative, _col_sh_negative, "Negative", 3),
+        ]:
+            ax_sh.scatter(
+                _Z_sh[_sh_mask, 1], _Z_sh[_sh_mask, 0],
+                color=_sh_col, alpha=0.25, s=8,
+                label=_sh_lbl, zorder=_sh_zo, linewidths=0,
+            )
+
+        # ── Overlay points ────────────────────────────────────────────────────
+        _sh_star_s = 200   # large enough for +/- text to sit inside
+
+        # z — reference normal curve (solid star, no symbol)
+        ax_sh.scatter(
+            [_sh_z[1]], [_sh_z[0]], marker="*",
+            facecolors=_col_sh_normal, edgecolors=_col_sh_normal,
+            s=_sh_star_s, linewidths=1.5, zorder=7,
+            label=r"$\mathbf{z}$ (Normal, EUR 2014-08-29)",
+        )
+
+        # z_down — star with white "−" inside
+        ax_sh.scatter(
+            [_sh_z_down[1]], [_sh_z_down[0]], marker="*",
+            facecolors=_col_sh_normal, edgecolors=_col_sh_normal,
+            s=_sh_star_s, linewidths=1.5, zorder=7,
+            label="_nolegend_",
+        )
+        ax_sh.text(
+            _sh_z_down[1], _sh_z_down[0], r"$-$",
+            ha="center", va="center", fontsize=7, fontweight="bold",
+            color="white", zorder=8,
+        )
+
+        # z_up — star with white "+" inside
+        ax_sh.scatter(
+            [_sh_z_up[1]], [_sh_z_up[0]], marker="*",
+            facecolors=_col_sh_normal, edgecolors=_col_sh_normal,
+            s=_sh_star_s, linewidths=1.5, zorder=7,
+            label="_nolegend_",
+        )
+        ax_sh.text(
+            _sh_z_up[1], _sh_z_up[0], r"$+$",
+            ha="center", va="center", fontsize=7, fontweight="bold",
+            color="white", zorder=8,
+        )
+
+        # z_star — actual negative EUR curve reference (solid diamond)
+        ax_sh.scatter(
+            [_sh_z_star[1]], [_sh_z_star[0]], marker="D",
+            facecolors=_col_sh_negative, edgecolors=_col_sh_negative,
+            s=50, linewidths=1.5, zorder=7,
+            label=r"$\mathbf{z}^*$ (Negative, EUR 2020-03-31)",
+        )
+
+        # ── Dashed arrows z → z_down and z → z_up ────────────────────────────
+        _sh_arrow_kw = dict(arrowstyle="-|>", color=_col_sh_normal,
+                            lw=1.4, linestyle="dashed", mutation_scale=10)
+
+        ax_sh.annotate(
+            "", xy=(_sh_z_down[1], _sh_z_down[0]),
+            xytext=(_sh_z[1], _sh_z[0]),
+            arrowprops=_sh_arrow_kw, zorder=5,
+        )
+        ax_sh.annotate(
+            r"$\mathbf{z}_{-}$",
+            xy=(_sh_z_down[1], _sh_z_down[0]),
+            xytext=(6, -12), textcoords="offset points",
+            fontsize=10, color=_col_sh_normal, ha="left",
+        )
+
+        ax_sh.annotate(
+            "", xy=(_sh_z_up[1], _sh_z_up[0]),
+            xytext=(_sh_z[1], _sh_z[0]),
+            arrowprops=_sh_arrow_kw, zorder=5,
+        )
+        ax_sh.annotate(
+            r"$\mathbf{z}_{+}$",
+            xy=(_sh_z_up[1], _sh_z_up[0]),
+            xytext=(-6, 10), textcoords="offset points",
+            fontsize=10, color=_col_sh_normal, ha="right",
+        )
+
+        ax_sh.set_xlabel(r"$z_2$", fontsize=12)
+        ax_sh.set_ylabel(r"$z_1$", fontsize=12)
+        ax_sh.tick_params(labelsize=10)
+        ax_sh.spines["top"].set_visible(False)
+        ax_sh.spines["right"].set_visible(False)
+        _leg_sh = ax_sh.legend(fontsize=9, frameon=False,
+                               loc="center left", bbox_to_anchor=(1.02, 0.5))
+        for _lh_sh in _leg_sh.legend_handles[:3]:
+            _lh_sh.set_alpha(1.0)
+            _lh_sh.set_sizes([40])
+        fig_sh.tight_layout()
+        fig_sh.subplots_adjust(right=0.72)
+        save_fig(fig_sh, "augmented_latent_space_shift")
+
 print("\nResultsGenerator_augmented complete.")
