@@ -8,13 +8,11 @@
 
 introduction missing.
 
-In the thesis, we have come across multiple models that we now would like to compare and discuss in the light of how using an encoder-decoder model to learn the underlying dynamics of the state variables driving swap rates in this case. We have so far seen the baseline evaluated in Chapter \ref{chap:evaluation} and the stable model introduced and examined in Chapter \ref{chap:simulation}. In this chapter we introduce a third model, and finish 
-
+In the thesis, we have come across multiple models that we now would like to compare and discuss in the light of how using an encoder-decoder model to learn the underlying dynamics of the state variables driving swap rates in this case. We have so far seen the baseline evaluated in Chapter \ref{chap:evaluation} and the stable model introduced and examined in Chapter \ref{chap:simulation}. In this chapter we introduce a third model that seeks to improve the baseline model by making it fit curve variants better. Lastly, we compare the models and conclude on findings regarding improving encoder-decoder models in sample as well as out of sample.
 
 
 
 \section{Introducing the Augmented Model}
-
 
 The evaluation in Chapter~\ref{chap:evaluation} identifies a structural limitation of the baseline model. For negative-rate curves, the reconstructed curve captures the approximate level but fails to reproduce the slope and curvature, a pattern that persists regardless of the number of latent factors. This section proposes a 
 modification to the encoder input and training objective aimed at addressing this limitation, and assesses whether it improves reconstruction of the problematic curve variants.
