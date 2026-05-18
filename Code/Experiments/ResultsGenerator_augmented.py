@@ -669,6 +669,132 @@ if _baseline_S_hat is not None:
 else:
     print("  ⚠️  Skipping augmented_latent_space_regime (no baseline dim=2 checkpoint found)")
 
+# ── figure: augmented_latent_space_regime_shift ──────────────────────────────
+print("\nGenerating augmented latent space regime shift figure...")
+if _baseline_S_hat is not None:
+    _enc_w_ns = _b_m.encoder.lin.weight.detach().numpy()   # (2, 8)
+    _Z_ns     = X_tensor.numpy() @ _enc_w_ns.T             # (N, 2)
+
+    _ns_normal   = ~inverted & ~negative
+    _ns_inverted =  inverted & ~negative
+    _ns_negative =  negative
+
+    _col_ns_normal   = custom_palette[2]
+    _col_ns_inverted = "black"
+    _col_ns_negative = "indianred"
+
+    _ns_dates = pd.to_datetime(meta["as_of_date"].values)
+    _ns_ccys  = meta["ccy"].values
+    _ns_X_np  = X_tensor.numpy()
+
+    _ns_idx = np.where((_ns_ccys == "EUR") & (_ns_dates == pd.Timestamp("2014-08-29")))[0]
+
+    if len(_ns_idx) == 0:
+        print("  ⚠️  EUR 2014-08-29 not found — skipping augmented_latent_space_regime_shift")
+    else:
+        _ns_S_eur  = _ns_X_np[_ns_idx[0]]                        # (8,) original curve
+        # Shift down so the minimum rate lands at ~ -0.002 (-20 bps) — mildly negative
+        _ns_shift  = -(float(_ns_S_eur.min()) + 0.002)
+        _ns_S_neg  = _ns_S_eur + _ns_shift
+        _ns_shift_bps = int(round(abs(_ns_shift) * 10000))        # magnitude in bps
+
+        # Flat counterparts: same mean level, zero slope/curvature (all tenors equal)
+        _ns_S_flat     = np.full_like(_ns_S_eur, float(_ns_S_eur.mean()))
+        _ns_S_neg_flat = np.full_like(_ns_S_neg, float(_ns_S_neg.mean()))
+
+        # Encode all four curves with the linear encoder → (z_1, z_2)
+        _ns_z          = _enc_w_ns @ _ns_S_eur
+        _ns_z_flat     = _enc_w_ns @ _ns_S_flat
+        _ns_z_neg      = _enc_w_ns @ _ns_S_neg
+        _ns_z_neg_flat = _enc_w_ns @ _ns_S_neg_flat
+
+        _ns_dist_norm = float(np.linalg.norm(_ns_z     - _ns_z_flat))
+        _ns_dist_neg  = float(np.linalg.norm(_ns_z_neg - _ns_z_neg_flat))
+
+        print(f"    z          = ({_ns_z[0]:.4f}, {_ns_z[1]:.4f})")
+        print(f"    z_flat     = ({_ns_z_flat[0]:.4f}, {_ns_z_flat[1]:.4f})")
+        print(f"    z_neg      = ({_ns_z_neg[0]:.4f}, {_ns_z_neg[1]:.4f})")
+        print(f"    z_neg_flat = ({_ns_z_neg_flat[0]:.4f}, {_ns_z_neg_flat[1]:.4f})")
+        print(f"    shift = {_ns_shift:.4f}  (−{_ns_shift_bps} bps)")
+        print(f"    dist (normal) = {_ns_dist_norm:.4f}  |  dist (negative) = {_ns_dist_neg:.4f}")
+
+        fig_ns, ax_ns = plt.subplots(figsize=(10, 5))
+
+        # Background scatter coloured by regime — z_2 on x-axis, z_1 on y-axis
+        for _ns_mask, _ns_col, _ns_lbl, _ns_zo in [
+            (_ns_normal,   _col_ns_normal,   "Normal",   1),
+            (_ns_inverted, _col_ns_inverted, "Inverted", 2),
+            (_ns_negative, _col_ns_negative, "Negative", 3),
+        ]:
+            ax_ns.scatter(
+                _Z_ns[_ns_mask, 1], _Z_ns[_ns_mask, 0],
+                color=_ns_col, alpha=0.25, s=8,
+                label=_ns_lbl, zorder=_ns_zo, linewidths=0,
+            )
+
+        # Four overlay points — (marker, facecolor, edgecolor, size, label)
+        _ns_pts = [
+            (_ns_z,          "*", _col_ns_normal,   True,
+             r"$\mathbf{z}$ (Normal, EUR 2014-08-29)"),
+            (_ns_z_flat,     "*", _col_ns_normal,   False,
+             r"$\mathbf{z}_{\mathrm{flat}}$ (flat counterpart)"),
+            (_ns_z_neg,      "D", _col_ns_negative, True,
+             rf"$\mathbf{{z}}_{{-}}$ (shifted $-{_ns_shift_bps}$ bps)"),
+            (_ns_z_neg_flat, "D", _col_ns_negative, False,
+             r"$\mathbf{z}_{-,\mathrm{flat}}$ (flat counterpart)"),
+        ]
+        _ns_marker_sizes = {"*": 120, "D": 50}
+        for _ns_coord, _ns_mk, _ns_col, _ns_filled, _ns_lbl in _ns_pts:
+            _ns_fc = _ns_col if _ns_filled else "none"
+            ax_ns.scatter(
+                [_ns_coord[1]], [_ns_coord[0]],    # x=z_2, y=z_1
+                marker=_ns_mk,
+                facecolors=_ns_fc, edgecolors=_ns_col,
+                s=_ns_marker_sizes[_ns_mk], linewidths=1.8,
+                zorder=7, label=_ns_lbl,
+            )
+
+        # Dashed lines: each curve to its flat counterpart
+        ax_ns.plot(
+            [_ns_z[1], _ns_z_flat[1]], [_ns_z[0], _ns_z_flat[0]],
+            color=_col_ns_normal, linewidth=1.5, linestyle="--", zorder=5,
+        )
+        _ns_mid_norm = (_ns_z + _ns_z_flat) / 2
+        ax_ns.annotate(
+            rf"$d = {_ns_dist_norm:.4f}$",
+            xy=(_ns_mid_norm[1], _ns_mid_norm[0]),
+            xytext=(-6, 10), textcoords="offset points",
+            fontsize=9, color=_col_ns_normal, ha="right",
+        )
+
+        ax_ns.plot(
+            [_ns_z_neg[1], _ns_z_neg_flat[1]], [_ns_z_neg[0], _ns_z_neg_flat[0]],
+            color=_col_ns_negative, linewidth=1.5, linestyle="--", zorder=5,
+        )
+        _ns_mid_neg = (_ns_z_neg + _ns_z_neg_flat) / 2
+        ax_ns.annotate(
+            rf"$d = {_ns_dist_neg:.4f}$",
+            xy=(_ns_mid_neg[1], _ns_mid_neg[0]),
+            xytext=(8, -16), textcoords="offset points",
+            fontsize=9, color=_col_ns_negative, ha="left",
+        )
+
+        ax_ns.set_xlabel(r"$z_2$", fontsize=12)
+        ax_ns.set_ylabel(r"$z_1$", fontsize=12)
+        ax_ns.tick_params(labelsize=10)
+        ax_ns.spines["top"].set_visible(False)
+        ax_ns.spines["right"].set_visible(False)
+        _leg_ns = ax_ns.legend(fontsize=9, frameon=False,
+                               loc="center left", bbox_to_anchor=(1.02, 0.5))
+        for _lh_ns in _leg_ns.legend_handles[:3]:
+            _lh_ns.set_alpha(1.0)
+            _lh_ns.set_sizes([40])
+        fig_ns.tight_layout()
+        fig_ns.subplots_adjust(right=0.72)
+        save_fig(fig_ns, "augmented_latent_space_regime_shift")
+else:
+    print("  ⚠️  Skipping augmented_latent_space_regime_shift (no baseline dim=2 checkpoint found)")
+
 # ── figure: augmented_latent_space_shift ──────────────────────────────────────
 print("\nGenerating augmented latent space shift figure...")
 if _baseline_S_hat is None:
