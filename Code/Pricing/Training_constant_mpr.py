@@ -239,7 +239,7 @@ def compute_pricing_loss(
     """
     if len(df_vol) == 0 or n_swaptions == 0:
         zero = torch.tensor(0.0, device=device, dtype=dtype)
-        return zero, zero, [], 0, 0, 0.0
+        return zero, zero, [], 0, 0, 0.0, float("nan")
 
     sample = df_vol.sample(n=min(n_swaptions, len(df_vol)))
 
@@ -249,6 +249,7 @@ def compute_pricing_loss(
     n_attempted  = 0
     diagnostics  = []
     path_fracs   = []
+    anchor_errors = []
     min_paths    = max(MIN_FINITE_PATHS_ABS, int(n_paths * MIN_FINITE_PATHS_FRAC))
 
     for _, row in sample.iterrows():
@@ -280,6 +281,13 @@ def compute_pricing_loss(
             )
             if aux0 is None or "P_full" not in aux0:
                 continue
+
+            S0_hat_star = aux0.get("S_hat", None)
+            if S0_hat_star is not None and torch.isfinite(S0_hat_star).all():
+                anchor_rmse_bp = float(
+                    torch.sqrt(((S0_hat_star - xb) ** 2).mean()).detach().cpu() * 1e4
+                )
+                anchor_errors.append(anchor_rmse_bp)
             
             P0_raw = aux0["P_full"]
             # Handle both (batch, tau) and (tau,) shapes
@@ -402,11 +410,12 @@ def compute_pricing_loss(
             continue
 
     mean_pfrac = float(np.mean(path_fracs)) if path_fracs else 0.0
+    mean_anchor_bp = float(np.mean(anchor_errors)) if anchor_errors else float("nan")
     zero = torch.tensor(0.0, device=device, dtype=dtype)
     if n_valid > 0:
         return (total_vol / n_valid, total_bias / n_valid,
-                diagnostics, n_attempted, n_valid, mean_pfrac)
-    return zero, zero, diagnostics, n_attempted, 0, mean_pfrac
+                diagnostics, n_attempted, n_valid, mean_pfrac, mean_anchor_bp)
+    return zero, zero, diagnostics, n_attempted, 0, mean_pfrac, mean_anchor_bp
 
 
 # ── load data ──────────────────────────────────────────────────────────────────
@@ -487,7 +496,7 @@ csv_path  = os.path.join(FIGURES_DIR, f"train_constant_mpr_log_dim{LATENT_DIM}_e
 csv_cols  = (
     ["epoch", "time_total_sec", "time_interval_sec",
      "loss_vol", "loss_bias", "loss_l2",
-     "swaption_priced_frac", "path_finite_frac",
+     "swaption_priced_frac", "path_finite_frac", "anchor_rmse_bp",
      "recon_rmse_bps", "nan_batches",
      "gnorm_lam0", "gnorm_scale", "lr",
      "lambda0_norm", "lambda0_l1",
@@ -523,6 +532,7 @@ with open(os.path.join(FIGURES_DIR, "run_config.json"), "w") as f:
 hist = {k: [] for k in [
     "vol", "bias", "l2",
     "swp_priced", "path_finite",
+    "anchor_rmse",
     "sigma_scale", "lambda0_norm",
 ]}
 
@@ -548,13 +558,14 @@ for epoch in range(EPOCHS):
     ep_attempted  = 0
     ep_priced     = 0
     ep_pfracs     = []
+    ep_anchor = []
 
     for step in range(N_STEPS_PER_EPOCH):
         print(f"\r  ep {epoch}  step {step+1}/{N_STEPS_PER_EPOCH} ...",
               end="", flush=True)
         optim.zero_grad(set_to_none=True)
 
-        loss_vol, loss_bias_raw, diag, n_att, n_pri, p_frac = compute_pricing_loss(
+        loss_vol, loss_bias_raw, diag, n_att, n_pri, p_frac, anchor_bp = compute_pricing_loss(
             model=model, lm=lm,
             X_batch=X_tensor_ccy, meta_batch=meta_ccy,
             df_vol=df_vol, date_to_idx=date_to_idx,
@@ -569,6 +580,9 @@ for epoch in range(EPOCHS):
             ep_pfracs.append(p_frac)
         if diag:
             batch_diag = diag
+
+        if not math.isnan(anchor_bp):
+            ep_anchor.append(anchor_bp)
 
         # Light L2 on lambda_0 to keep it bounded
         loss_l2    = LAMBDA_L2 * lm.lambda_0.pow(2).sum()
@@ -612,6 +626,7 @@ for epoch in range(EPOCHS):
     ep_l2   = running_l2   / max(n_batches, 1)
     swp_priced  = ep_priced  / max(ep_attempted, 1)
     path_finite = float(np.mean(ep_pfracs))   if ep_pfracs   else 0.0
+    anchor_rmse_bp = float(np.mean(ep_anchor)) if ep_anchor else float("nan")
 
     with torch.no_grad():
         sigma_vec_now  = lm.sigma_vec.detach().cpu()
@@ -621,7 +636,7 @@ for epoch in range(EPOCHS):
         lambda0_l1     = float(lambda0_now.abs().sum())
 
     for k, v in [("vol", ep_vol), ("bias", ep_bias), ("l2", ep_l2),
-                 ("swp_priced", swp_priced), ("path_finite", path_finite),
+                 ("swp_priced", swp_priced), ("path_finite", path_finite), ("anchor_rmse", anchor_rmse_bp),
                  ("sigma_scale", scale_now), ("lambda0_norm", lambda0_norm)]:
         hist[k].append(v)
 
@@ -650,7 +665,7 @@ for epoch in range(EPOCHS):
         "epoch": epoch, "time_total_sec": round(t_now - t0, 1),
         "time_interval_sec": round(dt_ep, 3),
         "loss_vol": ep_vol, "loss_bias": ep_bias, "loss_l2": ep_l2,
-        "swaption_priced_frac": swp_priced, "path_finite_frac": path_finite,
+        "swaption_priced_frac": swp_priced, "path_finite_frac": path_finite, "anchor_rmse_bp": anchor_rmse_bp,
         "recon_rmse_bps": float(avg_rmse_bps),
         "nan_batches": nan_batches,
         "gnorm_lam0": gn_lam0, "gnorm_scale": gn_scale, "lr": lr_now,
@@ -673,7 +688,7 @@ for epoch in range(EPOCHS):
     if (epoch // max(LOG_EVERY, 1)) % HEADER_EVERY == 0:
         print(
             f"\n{'ep':>5} {'vol':>10} {'bias':>9} {'l2':>8} {'swp%':>5} {'pth%':>5} "
-            f"{'recon':>7} {'|l0|':>7} {'sv_mean':>7} {'sv_min':>6} {'sv_max':>6} "
+            f"{'anchor':>8} {'recon':>7} {'|l0|':>7} {'sv_mean':>7} {'sv_min':>6} {'sv_max':>6} "
             f"{'bias_bp':>8} {'gn_l0':>7} {'gn_s':>7} {'nan':>4} {'lr':>8} {'t/ep':>6} {'ETA':>8}  diag"
         )
         print("-" * 180)
@@ -693,6 +708,7 @@ for epoch in range(EPOCHS):
         f"{epoch:>5d} "
         f"{ep_vol:>10.4e} {ep_bias:>9.3e} {ep_l2:>8.4e} "
         f"{swp_priced*100:>4.0f}% {path_finite*100:>4.0f}% "
+        f"{anchor_rmse_bp:>8.2f} "
         f"{avg_rmse_bps:>7.2f} "
         f"{lambda0_norm:>7.4f} "
         f"{scale_now:>7.4f} {sv_min:>6.4f} {sv_max:>6.4f} "
@@ -734,7 +750,7 @@ torch.save({
     "variant":          config.VARIANT,
 }, os.path.join(FIGURES_DIR, f"checkpoint_constant_mpr_ep{EPOCHS}.pt"))
 
-fig, axes = plt.subplots(4, 1, figsize=(9, 13), dpi=150)
+fig, axes = plt.subplots(5, 1, figsize=(9, 15), dpi=150)
 
 axes[0].semilogy(hist["vol"],  lw=1.0, color="darkorange", label="Vol loss")
 axes[0].semilogy(hist["bias"], lw=1.0, color="deeppink",   label="Bias loss")
@@ -747,13 +763,26 @@ axes[1].plot([100*p for p in hist["path_finite"]], lw=1.0, color="navy",     lab
 axes[1].set_ylim(-2, 102); axes[1].legend()
 axes[1].set_xlabel("Epoch"); axes[1].set_ylabel("%"); axes[1].grid(True, alpha=0.3)
 
-axes[2].plot(hist["sigma_scale"], lw=1.2, color="purple", label="mean(sigma_vec)")
-axes[2].set_xlabel("Epoch"); axes[2].set_title("Diffusion Scale (mean of sigma_vec)"); axes[2].legend()
+# Filter out NaN values for anchor RMSE plot
+anchor_valid = [(i, v) for i, v in enumerate(hist["anchor_rmse"]) if not math.isnan(v)]
+if anchor_valid:
+    epochs_valid, anchor_vals = zip(*anchor_valid)
+    axes[2].plot(epochs_valid, anchor_vals, lw=1.2, color="crimson", 
+                 label=r"Anchor RMSE: $\|\widehat{S}^*(E(S_0)) - S_0^{\mathrm{mkt}}\|$", marker='.')
+    axes[2].axhline(y=5, color='green', linestyle='--', alpha=0.5, label='5 bp (good)')
+    axes[2].axhline(y=20, color='orange', linestyle='--', alpha=0.5, label='20 bp (moderate)')
+    axes[2].axhline(y=50, color='red', linestyle='--', alpha=0.5, label='50 bp (re-anchor needed)')
+axes[2].set_xlabel("Epoch"); axes[2].set_ylabel("RMSE (bp)"); 
+axes[2].set_title("Anchor RMSE: P^* Curve Reconstruction Error"); axes[2].legend()
 axes[2].grid(True, alpha=0.3)
 
-axes[3].plot(hist["lambda0_norm"], lw=1.2, color="teal", label="||lambda_0||")
-axes[3].set_xlabel("Epoch"); axes[3].set_title("Constant Drift Bias Norm"); axes[3].legend()
+axes[3].plot(hist["sigma_scale"], lw=1.2, color="purple", label="mean(sigma_vec)")
+axes[3].set_xlabel("Epoch"); axes[3].set_title("Diffusion Scale (mean of sigma_vec)"); axes[3].legend()
 axes[3].grid(True, alpha=0.3)
+
+axes[4].plot(hist["lambda0_norm"], lw=1.2, color="teal", label="||lambda_0||")
+axes[4].set_xlabel("Epoch"); axes[4].set_title("Constant Drift Bias Norm"); axes[4].legend()
+axes[4].grid(True, alpha=0.3)
 
 fig.tight_layout()
 fig.savefig(os.path.join(FIGURES_DIR, f"constant_mpr_loss_dim{LATENT_DIM}_ep{EPOCHS}.png"), dpi=200)
