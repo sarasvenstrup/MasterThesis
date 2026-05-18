@@ -41,13 +41,14 @@ from Code.Simulation.simulate_model import simulate_to_expiry_differentiable
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 
 # ── settings ───────────────────────────────────────────────────────────────────
-LATENT_DIM  = 4
-N_PATHS     = 512
-TRAIN_FRAC  = 0.70
-SEED        = 42
-CCY_FILTER  = "EUR"
-RATE_CLIP   = 0.50
-ANNUITY_MAX = 50.0
+LATENT_DIM     = 4
+N_PATHS        = 512
+TRAIN_FRAC     = 0.70
+SEED           = 42
+CCY_FILTER     = "EUR"
+RATE_CLIP      = 0.50
+ANNUITY_MAX    = 50.0
+REANCHOR_STEPS = 200    # inverse-decoder steps to re-anchor z0 under the shifted decoder
 
 PRETRAIN_CKPT = os.path.join(PROJECT_ROOT, "Figures", "TrainingResults",
                               "dim4_stable", "ep5000", "checkpoint_dim4_ep5000.pt")
@@ -143,9 +144,41 @@ def price_cell(date, expiry, tenor):
     idx = date_to_idx[date]
     xb  = X_eur[idx:idx + 1].to(device)
 
+    # ─ Re-anchor z0 under the shifted (Constant MPR) dynamics ─────────────────
+    # Under the shifted decoder (which uses mu* = mu + L*lambda_0 and the
+    # rescaled diffusion in its no-arbitrage ODE), the original encoder output
+    # z0 = A_1 * xb no longer maps back to today's market curve. We solve a
+    # small inverse-decoding problem for a re-anchored z0 such that the
+    # shifted decoder reproduces the observed swap rates at t=0. This makes
+    # the entire pricing pipeline use a single arbitrage-free model with the
+    # same dynamics in simulation, terminal decode and initial decode.
     with torch.no_grad():
-        z0 = model.encoder(xb)
-        _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True)
+        z0_init = model.encoder(xb)
+    z0 = z0_init.detach().clone().requires_grad_(True)
+    opt = torch.optim.Adam([z0], lr=1e-2)
+    S_target = xb.squeeze(0).detach()
+    for _ in range(REANCHOR_STEPS):
+        opt.zero_grad()
+        _, aux = model.decode_from_z(z0, tau=None, return_aux=True,
+                                     k_override=lm,
+                                     sigma_scale=lm.sigma_vec)
+        S_hat_now = aux["S_hat"]
+        if S_hat_now is None:
+            break
+        loss = ((S_hat_now.squeeze(0) - S_target) ** 2).mean()
+        if not torch.isfinite(loss):
+            break
+        loss.backward()
+        opt.step()
+    z0 = z0.detach()
+
+    # Decode at the re-anchored z0 using the SHIFTED decoder to read off the
+    # initial bond curve. By construction this matches today's market curve
+    # (up to the inverse-decoding residual).
+    with torch.no_grad():
+        _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True,
+                                      k_override=lm,
+                                      sigma_scale=lm.sigma_vec)
         P0 = aux0["P_full"][0]
 
     max_idx = P0.shape[0] - 1
