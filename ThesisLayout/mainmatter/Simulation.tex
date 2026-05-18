@@ -453,6 +453,31 @@ trained for \(3500\) epochs. RMSE values are reported in basis points.}
 \label{tab:oos_summary_sim}
 \end{table}
 
+
+
+%\begin{table}[H]
+%\centering
+%\pgfplotstableread[col sep=comma]{Figures/Simulation/oos_summary_table.csv}\datoosSummary
+%{\small
+%\pgfplotstabletypeset[
+%  columns={ell, Model, IS_Avg, OOS_Avg, OOS_Max},
+%  columns/ell/.style={column name={$\ell$}, string type, column type=c},
+%  columns/Model/.style={column name={Model}, string type, column type=l},
+%  columns/IS_Avg/.style={column name={Avg.\ IS}, string type, column type=r},
+%  columns/OOS_Avg/.style={column name={Avg.\ OOS}, string type, column type=r},
+%  columns/OOS_Max/.style={column name={Max OOS}, string type, column type=r},
+%  every head row/.style={
+%    before row=\toprule,
+%    after row=\midrule
+%  },
+%  every last row/.style={after row=\bottomrule},
+%]{\datoosSummary}
+%}
+%\caption{Average and maximum rolling out-of-sample RMSE across the 18 test windows for the baseline and stable variants at latent dimensions $\ell \in \{2, 3, 4\}$. The in-sample column reports the average rolling-window in-sample RMSE for reference. All models are trained for $3{,}500$ epochs. RMSE values are in basis points.}
+%\label{tab:oos_summary_sim}
+%\end{table}
+
+
 Whether the stability restrictions improve reconstruction accuracy depends strongly on the latent dimension. At $\ell=2$, the stable model struggles severely, with an average IS RMSE of $138.7$ bps against $10.5$ bps for the baseline, suggesting the restrictions are too constraining relative to the available latent degrees of freedom. From $\ell=3$ onward, the stable model improves substantially. 
 
 The baseline, as established in Chapter~\ref{chap:evaluation}, overfits increasingly with latent dimension, and this is reflected here in its out-of-sample RMSE increasing from $19.0$ bps at $\ell=2$ to $100.5$ bps at $\ell=4$. The stable model moves in the opposite direction, and at $\ell=4$ achieves the lowest average and maximum out-of-sample RMSE across all configurations. At $12.1$ bps out-of-sample, it improves upon the best baseline configuration, $\ell=2$ at $19.0$ bps. The stability restrictions therefore do not come at the cost of reconstruction accuracy. With sufficient latent dimensions, they improve it.

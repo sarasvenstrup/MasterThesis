@@ -301,8 +301,8 @@ save_table(disp, f"augmented_is_rmse_combined_display_dim{LATENT_DIM}")
 # ── figure: fitted vs actual — all dims (ℓ=2,3,4) overlaid ──────────────────
 print("\nGenerating fitted vs actual — all dims figure...")
 
-_dims_aug    = [2, 3]
-_dim_colors  = {2: custom_palette[4], 3: custom_palette[0]}
+_dims_aug    = [2, 3, 4]
+_dim_colors  = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
 _dim_labels  = {d: r"$\ell$=" + str(d) for d in _dims_aug}
 
 # load models and run inference for each dim
@@ -327,6 +327,27 @@ for _dim in _dims_aug:
             _xb = X_tensor[_i:_i + BATCH_SIZE].to(device)
             _s_list.append(_m(augment(_xb)).cpu())
     _aug_S_hat[_dim] = torch.cat(_s_list).numpy()
+
+# load baseline dim=2 as reference (no augmentation)
+_baseline_ckpt_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                                   "dim2_baseline", f"ep{EPOCHS}",
+                                   f"checkpoint_dim2_ep{EPOCHS}.pt")
+_baseline_S_hat = None
+if os.path.exists(_baseline_ckpt_path):
+    _b_ckpt = torch.load(_baseline_ckpt_path, map_location=device)
+    _b_cfg  = _b_ckpt["model_config"]
+    _b_m    = FullModel(input_dim=_b_cfg.get("input_dim", X_tensor.shape[1]), latent_dim=_b_cfg["latent_dim"]).to(device)
+    _b_m.load_state_dict(_b_ckpt["model_state_dict"])
+    _b_m.eval()
+    _b_list = []
+    with torch.no_grad():
+        for _i in range(0, X_tensor.shape[0], BATCH_SIZE):
+            _xb = X_tensor[_i:_i + BATCH_SIZE].to(device)
+            _b_list.append(_b_m(_xb).cpu())
+    _baseline_S_hat = torch.cat(_b_list).numpy()
+    print("  Loaded baseline dim=2 as reference")
+else:
+    print(f"  ⚠️  Baseline dim=2 checkpoint not found: {_baseline_ckpt_path}")
 
 _rep_dates_ad = {
     "Calm (2014-08-29)": "2014-08-29",
@@ -359,6 +380,11 @@ for _row_i, (_label, _date_str) in enumerate(_rep_dates_ad.items()):
         _actual = X_np_all[_global_idx] * _scale_ad
         ax.plot(tenors, _actual, "o-", color="black",
                 linewidth=2.0, markersize=5, label="Actual", zorder=5)
+
+        if _baseline_S_hat is not None:
+            _b_fitted = _baseline_S_hat[_global_idx] * _scale_ad
+            ax.plot(tenors, _b_fitted, color="black", linewidth=1.5,
+                    linestyle="--", label="Baseline ($\\ell=2$)")
 
         for _dim in _dims_aug:
             if _dim not in _aug_S_hat:
@@ -545,5 +571,249 @@ else:
     fig_ra.tight_layout()
     fig_ra.subplots_adjust(bottom=0.22)
     save_fig(fig_ra, "augmented_rolling_regime_dual_axis")
+
+# ── figure: augmented_latent_space_regime ─────────────────────────────────────
+print("\nGenerating augmented latent space regime figure...")
+if _baseline_S_hat is not None:
+    # Encode all in-sample curves with baseline dim=2 linear encoder
+    _enc_w  = _b_m.encoder.lin.weight.detach().numpy()   # (2, 8)
+    _Z_all  = X_tensor.numpy() @ _enc_w.T                # (N, 2)
+
+    # Regime masks (reuse already-computed boolean arrays)
+    _ls_normal   = ~inverted & ~negative
+    _ls_inverted =  inverted & ~negative
+    _ls_negative =  negative                              # superset: also catches neg+inv
+
+    _col_ls_normal   = custom_palette[2]
+    _col_ls_inverted = "black"
+    _col_ls_negative = "indianred"
+
+    fig_ls, ax_ls = plt.subplots(figsize=(10, 5))
+
+    # Background scatter coloured by regime — z_2 on x-axis, z_1 on y-axis
+    for _ls_mask, _ls_col, _ls_lbl, _ls_zorder in [
+        (_ls_normal,   _col_ls_normal,   "Normal",   1),
+        (_ls_inverted, _col_ls_inverted, "Inverted", 2),
+        (_ls_negative, _col_ls_negative, "Negative", 3),
+    ]:
+        ax_ls.scatter(
+            _Z_all[_ls_mask, 1], _Z_all[_ls_mask, 0],
+            color=_ls_col, alpha=0.25, s=8,
+            label=_ls_lbl, zorder=_ls_zorder, linewidths=0,
+        )
+
+    # Four specific overlay points — coords stored as (z_1, z_2), plot as (z_2, z_1)
+    # (coord, marker, color, filled, legend_label)
+    _ls_pts = [
+        ((-0.0088, -0.0217), "*", _col_ls_normal,   True,
+         r"$\mathbf{z}$ (Normal, EUR 2014-08-29)"),
+        (( 0.0046, -0.0375), "*", _col_ls_normal,   False,
+         r"$\mathbf{z}_{\mathrm{flat}}$ (flat counterpart)"),
+        ((-0.0057,  0.0089), "D", _col_ls_negative, True,
+         r"$\mathbf{z}^*$ (Negative, EUR 2020-03-31)"),
+        ((-0.0004,  0.0032), "D", _col_ls_negative, False,
+         r"$\mathbf{z}^*_{\mathrm{flat}}$ (flat counterpart)"),
+    ]
+    _ls_marker_sizes = {"*": 120, "D": 50}
+    for _ls_coord, _ls_mk, _ls_col, _ls_filled, _ls_lbl in _ls_pts:
+        _ls_fc = _ls_col if _ls_filled else "none"
+        ax_ls.scatter(
+            [_ls_coord[1]], [_ls_coord[0]],   # x=z_2, y=z_1
+            marker=_ls_mk,
+            facecolors=_ls_fc, edgecolors=_ls_col,
+            s=_ls_marker_sizes[_ls_mk], linewidths=1.8,
+            zorder=7, label=_ls_lbl,
+        )
+
+    # Line segments with Euclidean distance annotations — coords as (z_1, z_2)
+    _ls_z           = np.array([-0.0088, -0.0217])
+    _ls_z_flat      = np.array([ 0.0046, -0.0375])
+    _ls_z_star      = np.array([-0.0057,  0.0089])
+    _ls_z_flat_star = np.array([-0.0004,  0.0032])
+
+    ax_ls.plot(
+        [_ls_z[1], _ls_z_flat[1]], [_ls_z[0], _ls_z_flat[0]],   # x=z_2, y=z_1
+        color=_col_ls_normal, linewidth=1.5, linestyle="--", zorder=5,
+    )
+    _ls_mid1 = (_ls_z + _ls_z_flat) / 2
+    ax_ls.annotate(
+        r"$d = 0.0208$",
+        xy=(_ls_mid1[1], _ls_mid1[0]), xytext=(-6, 10), textcoords="offset points",
+        fontsize=9, color=_col_ls_normal, ha="right",
+    )
+
+    ax_ls.plot(
+        [_ls_z_star[1], _ls_z_flat_star[1]], [_ls_z_star[0], _ls_z_flat_star[0]],
+        color=_col_ls_negative, linewidth=1.5, linestyle="--", zorder=5,
+    )
+    _ls_mid2 = (_ls_z_star + _ls_z_flat_star) / 2
+    ax_ls.annotate(
+        r"$d = 0.0078$",
+        xy=(_ls_mid2[1], _ls_mid2[0]), xytext=(8, -16), textcoords="offset points",
+        fontsize=9, color=_col_ls_negative, ha="left",
+    )
+
+    ax_ls.set_xlabel(r"$z_2$", fontsize=12)
+    ax_ls.set_ylabel(r"$z_1$", fontsize=12)
+    ax_ls.tick_params(labelsize=10)
+    ax_ls.spines["top"].set_visible(False)
+    ax_ls.spines["right"].set_visible(False)
+    _leg = ax_ls.legend(fontsize=9, frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.5))
+    # Make the first 3 handles (Normal, Inverted, Negative) fully opaque and larger
+    for _lh in _leg.legend_handles[:3]:
+        _lh.set_alpha(1.0)
+        _lh.set_sizes([40])
+    fig_ls.tight_layout()
+    fig_ls.subplots_adjust(right=0.72)
+    save_fig(fig_ls, "augmented_latent_space_regime")
+else:
+    print("  ⚠️  Skipping augmented_latent_space_regime (no baseline dim=2 checkpoint found)")
+
+# ── figure: augmented_latent_space_shift ──────────────────────────────────────
+print("\nGenerating augmented latent space shift figure...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping augmented_latent_space_shift (no baseline dim=2 checkpoint found)")
+else:
+    # Encoder weights and full latent cloud
+    _enc_w_sh = _b_m.encoder.lin.weight.detach().numpy()   # (2, 8)
+    _Z_sh     = X_tensor.numpy() @ _enc_w_sh.T             # (N, 2)
+
+    _sh_normal   = ~inverted & ~negative
+    _sh_inverted =  inverted & ~negative
+    _sh_negative =  negative
+
+    _col_sh_normal   = custom_palette[2]
+    _col_sh_inverted = "black"
+    _col_sh_negative = "indianred"
+
+    # ── Compute overlay points by encoding shifted swap rate curves ───────────
+    _sh_dates = pd.to_datetime(meta["as_of_date"].values)
+    _sh_ccys  = meta["ccy"].values
+    _sh_X_np  = X_tensor.numpy()
+
+    _sh_idx_z    = np.where((_sh_ccys == "EUR") &
+                            (_sh_dates == pd.Timestamp("2014-08-29")))[0]
+    _sh_idx_star = np.where((_sh_ccys == "EUR") &
+                            (_sh_dates == pd.Timestamp("2020-03-31")))[0]
+
+    if len(_sh_idx_z) == 0 or len(_sh_idx_star) == 0:
+        print("  ⚠️  Could not find required EUR dates — skipping shift figure")
+    else:
+        _sh_S_eur  = _sh_X_np[_sh_idx_z[0]]          # (8,) reference normal curve
+        _sh_S_down = _sh_S_eur - 0.005                # all tenors shifted -0.005
+        _sh_S_up   = _sh_S_eur + 0.005                # all tenors shifted +0.005
+        _sh_S_star = _sh_X_np[_sh_idx_star[0]]        # actual negative EUR curve
+
+        # Encode: z = enc_w @ S  →  (z_1, z_2)
+        _sh_z      = tuple(_enc_w_sh @ _sh_S_eur)
+        _sh_z_down = tuple(_enc_w_sh @ _sh_S_down)
+        _sh_z_up   = tuple(_enc_w_sh @ _sh_S_up)
+        _sh_z_star = tuple(_enc_w_sh @ _sh_S_star)
+
+        print(f"    z      = ({_sh_z[0]:.4f}, {_sh_z[1]:.4f})")
+        print(f"    z_down = ({_sh_z_down[0]:.4f}, {_sh_z_down[1]:.4f})")
+        print(f"    z_up   = ({_sh_z_up[0]:.4f}, {_sh_z_up[1]:.4f})")
+        print(f"    z_star = ({_sh_z_star[0]:.4f}, {_sh_z_star[1]:.4f})")
+
+        fig_sh, ax_sh = plt.subplots(figsize=(10, 5))
+
+        # Background scatter — z_2 on x-axis, z_1 on y-axis
+        for _sh_mask, _sh_col, _sh_lbl, _sh_zo in [
+            (_sh_normal,   _col_sh_normal,   "Normal",   1),
+            (_sh_inverted, _col_sh_inverted, "Inverted", 2),
+            (_sh_negative, _col_sh_negative, "Negative", 3),
+        ]:
+            ax_sh.scatter(
+                _Z_sh[_sh_mask, 1], _Z_sh[_sh_mask, 0],
+                color=_sh_col, alpha=0.25, s=8,
+                label=_sh_lbl, zorder=_sh_zo, linewidths=0,
+            )
+
+        # ── Overlay points ────────────────────────────────────────────────────
+        _sh_star_s = 200   # large enough for +/- text to sit inside
+
+        # z — reference normal curve (solid star, no symbol)
+        ax_sh.scatter(
+            [_sh_z[1]], [_sh_z[0]], marker="*",
+            facecolors=_col_sh_normal, edgecolors=_col_sh_normal,
+            s=_sh_star_s, linewidths=1.5, zorder=7,
+            label=r"$\mathbf{z}$ (Normal, EUR 2014-08-29)",
+        )
+
+        # z_down — star with white "−" inside
+        ax_sh.scatter(
+            [_sh_z_down[1]], [_sh_z_down[0]], marker="*",
+            facecolors=_col_sh_normal, edgecolors=_col_sh_normal,
+            s=_sh_star_s, linewidths=1.5, zorder=7,
+            label="_nolegend_",
+        )
+        ax_sh.text(
+            _sh_z_down[1], _sh_z_down[0], r"$-$",
+            ha="center", va="center", fontsize=7, fontweight="bold",
+            color="white", zorder=8,
+        )
+
+        # z_up — star with white "+" inside
+        ax_sh.scatter(
+            [_sh_z_up[1]], [_sh_z_up[0]], marker="*",
+            facecolors=_col_sh_normal, edgecolors=_col_sh_normal,
+            s=_sh_star_s, linewidths=1.5, zorder=7,
+            label="_nolegend_",
+        )
+        ax_sh.text(
+            _sh_z_up[1], _sh_z_up[0], r"$+$",
+            ha="center", va="center", fontsize=7, fontweight="bold",
+            color="white", zorder=8,
+        )
+
+        # z_star — actual negative EUR curve reference (solid diamond)
+        ax_sh.scatter(
+            [_sh_z_star[1]], [_sh_z_star[0]], marker="D",
+            facecolors=_col_sh_negative, edgecolors=_col_sh_negative,
+            s=50, linewidths=1.5, zorder=7,
+            label=r"$\mathbf{z}^*$ (Negative, EUR 2020-03-31)",
+        )
+
+        # ── Dashed arrows z → z_down and z → z_up ────────────────────────────
+        _sh_arrow_kw = dict(arrowstyle="-|>", color=_col_sh_normal,
+                            lw=1.4, linestyle="dashed", mutation_scale=10)
+
+        ax_sh.annotate(
+            "", xy=(_sh_z_down[1], _sh_z_down[0]),
+            xytext=(_sh_z[1], _sh_z[0]),
+            arrowprops=_sh_arrow_kw, zorder=5,
+        )
+        ax_sh.annotate(
+            r"$\mathbf{z}_{-}$",
+            xy=(_sh_z_down[1], _sh_z_down[0]),
+            xytext=(6, -12), textcoords="offset points",
+            fontsize=10, color=_col_sh_normal, ha="left",
+        )
+
+        ax_sh.annotate(
+            "", xy=(_sh_z_up[1], _sh_z_up[0]),
+            xytext=(_sh_z[1], _sh_z[0]),
+            arrowprops=_sh_arrow_kw, zorder=5,
+        )
+        ax_sh.annotate(
+            r"$\mathbf{z}_{+}$",
+            xy=(_sh_z_up[1], _sh_z_up[0]),
+            xytext=(-6, 10), textcoords="offset points",
+            fontsize=10, color=_col_sh_normal, ha="right",
+        )
+
+        ax_sh.set_xlabel(r"$z_2$", fontsize=12)
+        ax_sh.set_ylabel(r"$z_1$", fontsize=12)
+        ax_sh.tick_params(labelsize=10)
+        ax_sh.spines["top"].set_visible(False)
+        ax_sh.spines["right"].set_visible(False)
+        _leg_sh = ax_sh.legend(fontsize=9, frameon=False,
+                               loc="center left", bbox_to_anchor=(1.02, 0.5))
+        for _lh_sh in _leg_sh.legend_handles[:3]:
+            _lh_sh.set_alpha(1.0)
+            _lh_sh.set_sizes([40])
+        fig_sh.tight_layout()
+        fig_sh.subplots_adjust(right=0.72)
+        save_fig(fig_sh, "augmented_latent_space_shift")
 
 print("\nResultsGenerator_augmented complete.")

@@ -1373,6 +1373,33 @@ def main():
         with open(oos_tex_path, "w", encoding="utf-8") as fh:
             fh.write("\n".join(_tex_rows) + "\n")
         print(f"  Saved {oos_tex_path}")
+
+        # Also export as CSV for pgfplotstabletypeset
+        oos_csv_rows = [["ell", "Model", "IS_Avg", "OOS_Avg", "OOS_Max"]]
+        for dim in _dims:
+            for variant, label in _variants:
+                fname    = f"oos_rolling_bbg_dim{dim}_{_roll_subdir}.csv"
+                csv_path = os.path.join(
+                    THESIS_ROOT, "Figures", "OOSResults", "Roll",
+                    f"OOS_roll_dim{dim}_{variant}",
+                    _roll_subdir, f"ep{_roll_epochs}", fname,
+                )
+                if not os.path.exists(csv_path):
+                    oos_csv_rows.append([str(dim), label, "--", "--", "--"])
+                    continue
+                _df      = pd.read_csv(csv_path)
+                mean_is  = _df["avg_in_rmse_bps"].mean()
+                mean_oos = _df["avg_rmse_bps"].mean()
+                max_oos  = _df["avg_rmse_bps"].max()
+                oos_csv_rows.append([
+                    str(dim), label,
+                    f"{mean_is:.1f}", f"{mean_oos:.1f}", f"{max_oos:.1f}",
+                ])
+        oos_csv_path = os.path.join(OUT_DIR, "oos_summary_table.csv")
+        with open(oos_csv_path, "w", encoding="utf-8") as fh:
+            for row in oos_csv_rows:
+                fh.write(",".join(row) + "\n")
+        print(f"  Saved {oos_csv_path}")
     except Exception as e:
         print(f"  [OOS table] failed: {e}")
         import traceback; traceback.print_exc()
