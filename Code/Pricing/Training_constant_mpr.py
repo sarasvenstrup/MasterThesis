@@ -115,6 +115,15 @@ MIN_FINITE_PATHS_FRAC = 0.10
 MIN_FINITE_PATHS_ABS  = 16
 LOSS_SKIP_THRESH      = 1e4
 
+# Re-anchoring schedule
+# Most epochs use E(S_0) decoded under P^* (fast approximation).
+# The final REANCHOR_FINETUNE_EPOCHS epochs switch to z0* (cheap 50-step
+# reanchoring, cached per date within each epoch).  Final evaluation uses
+# 200-step reanchoring.
+REANCHOR_FINETUNE_START = 900   # epoch at which to switch on reanchoring
+REANCHOR_TRAIN_STEPS    = 50    # Adam steps during fine-tune training
+REANCHOR_EVAL_STEPS     = 200   # Adam steps for final evaluation
+
 USE        = "bbg"
 CCY_FILTER = "EUR"
 
@@ -218,6 +227,69 @@ def grad_norm(params):
     return total ** 0.5
 
 
+def reanchor_z0(
+    model, lm, xb,
+    n_steps: int = 200,
+    lr: float = 1e-2,
+    device=None,
+    dtype=torch.float32,
+):
+    """
+    Re-anchor the initial latent state under the pricing decoder P^*.
+
+    Solves  z0* = argmin_z  ||S_0 - S_hat_*(z)||^2  starting from E(S_0).
+    lm parameters are frozen for the duration so their gradients are not
+    polluted by the inner optimisation over z.
+
+    Returns
+    -------
+    z0_star : (1, d) tensor  — re-anchored latent, detached
+    rmse_bp : float          — pricing-decoder RMSE in basis points at z0*
+    """
+    # Freeze lm so the inner backward does not accumulate gradients on
+    # lambda_0 / log_sigma_vec before the actual pricing-loss backward.
+    old_requires_grad = [p.requires_grad for p in lm.parameters()]
+    for p in lm.parameters():
+        p.requires_grad_(False)
+
+    try:
+        with torch.no_grad():
+            z_init = model.encoder(xb)
+
+        z = z_init.clone().detach().requires_grad_(True)
+        S_obs = xb.to(device=device, dtype=dtype)
+
+        opt = torch.optim.Adam([z], lr=lr)
+
+        for _ in range(n_steps):
+            opt.zero_grad(set_to_none=True)
+            S_pr, _ = model.decode_from_z(
+                z, tau=None, return_aux=True,
+                k_override=lm, sigma_scale=lm.sigma_vec,
+            )
+            loss = (S_pr - S_obs).pow(2).mean()
+            if not torch.isfinite(loss):
+                break
+            loss.backward()
+            opt.step()
+
+        z0_star = z.detach()
+
+        with torch.no_grad():
+            S_pr_final, _ = model.decode_from_z(
+                z0_star, tau=None, return_aux=True,
+                k_override=lm, sigma_scale=lm.sigma_vec,
+            )
+            rmse_bp = float((S_pr_final - S_obs).pow(2).mean().sqrt().cpu() * 1e4)
+
+        return z0_star, rmse_bp
+
+    finally:
+        # Always restore lm grad flags, even if an exception occurs.
+        for p, req in zip(lm.parameters(), old_requires_grad):
+            p.requires_grad_(req)
+
+
 # ── pricing loss ───────────────────────────────────────────────────────────────
 
 def compute_pricing_loss(
@@ -227,6 +299,9 @@ def compute_pricing_loss(
     n_swaptions, n_paths, dt,
     device, dtype,
     return_diagnostics=False,
+    do_reanchor=False,
+    reanchor_steps=50,
+    z0_cache=None,
 ):
     """
     Straddle-implied vol loss + ATM parity bias penalty.
@@ -234,20 +309,37 @@ def compute_pricing_loss(
     sigma_str = (V_pay + V_rec)/2 * sqrt(2*pi) / (A_0 * sqrt(T))
     loss_vol  = ((sigma_str - sigma_mkt) / 100)^2
     loss_bias = ((V_pay - V_rec) / A_0 * 1e4 / 100)^2
+
+    do_reanchor : bool (default False)
+        If False: use z0 = E(S_0) decoded under P^* (fast approximation).
+        If True:  use z0* = argmin_z ||S_0 - S_hat_*(z)||^2 so the initial
+                  latent state is consistent with the adjusted pricing decoder P^*.
+                  Both choices decode all bond curves under P^* (k_override=lm,
+                  sigma_scale); the only difference is the initial latent point.
+
+    reanchor_steps : int
+        Adam steps for the per-swaption inverse solve.
+        50 during fine-tune training (cheap), 200 for final evaluation.
+
+    z0_cache : dict | None
+        Optional {date_idx: z0_star} cache shared across steps within an epoch.
+        Avoids recomputing z0* when the same date appears in multiple sampled
+        swaptions.  Pass a fresh {} at the start of each epoch.
     """
     if len(df_vol) == 0 or n_swaptions == 0:
         zero = torch.tensor(0.0, device=device, dtype=dtype)
-        return zero, zero, [], 0, 0, 0.0
+        return zero, zero, [], 0, 0, 0.0, float('nan')
 
     sample = df_vol.sample(n=min(n_swaptions, len(df_vol)))
 
     total_vol  = torch.zeros(1, device=device, dtype=dtype)
     total_bias = torch.zeros(1, device=device, dtype=dtype)
-    n_valid     = 0
-    n_attempted = 0
-    diagnostics = []
-    path_fracs  = []
-    min_paths   = max(MIN_FINITE_PATHS_ABS, int(n_paths * MIN_FINITE_PATHS_FRAC))
+    n_valid      = 0
+    n_attempted  = 0
+    diagnostics  = []
+    path_fracs   = []
+    reanchor_bps = []
+    min_paths    = max(MIN_FINITE_PATHS_ABS, int(n_paths * MIN_FINITE_PATHS_FRAC))
 
     for _, row in sample.iterrows():
         date      = pd.Timestamp(row["as_of_date"]).normalize()
@@ -263,10 +355,38 @@ def compute_pricing_loss(
         idx = date_to_idx[date]
         xb  = X_batch[idx:idx + 1].to(device)
 
+        # ── Initial latent state ───────────────────────────────────────────────
+        # Training approximation: use z0 = E(S_0) decoded under P^*.
+        # Fine-tune phase (epoch >= REANCHOR_FINETUNE_START): switch to z0*,
+        # using cheap 50-step reanchoring cached per date within the epoch.
+        # The cache means each unique date is re-anchored at most once per epoch
+        # across all sampled swaptions and gradient steps.
+        if do_reanchor:
+            if z0_cache is not None and idx in z0_cache:
+                z0 = z0_cache[idx]
+                reanchor_rmse = float('nan')   # already computed this epoch
+            else:
+                z0, reanchor_rmse = reanchor_z0(
+                    model, lm, xb,
+                    n_steps=reanchor_steps, lr=1e-2,
+                    device=device, dtype=dtype,
+                )
+                if z0_cache is not None:
+                    z0_cache[idx] = z0
+                reanchor_bps.append(reanchor_rmse)
+        else:
+            with torch.no_grad():
+                z0 = model.encoder(xb)
+
         with torch.no_grad():
-            z0 = model.encoder(xb)
-            _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True)
-            P0 = aux0["P_full"][0]
+            # P^*(0,·): bond prices from the Q^* ODE at today's state z0.
+            # k_override=lm and sigma_scale=lm.sigma_vec are identical to what
+            # is used in simulation and the terminal decode — consistent under Q^*.
+            _, aux0 = model.decode_from_z(
+                z0, tau=None, return_aux=True,
+                k_override=lm, sigma_scale=lm.sigma_vec,
+            )
+            P0 = aux0["P_full"][0]  # (tau_max+1,)
 
         max_idx = P0.shape[0] - 1
         if expiry + tenor > max_idx:
@@ -298,19 +418,24 @@ def compute_pricing_loss(
             if int(z_ok.sum()) < min_paths:
                 continue
 
-            with torch.no_grad():
-                _, aux_T = model.decode_from_z(z_T, tau=None, return_aux=True)
-                p_ok = torch.isfinite(aux_T["P_full"]).all(1)
-
+            # Single decode under Q^* — consistent with simulation dynamics.
+            # k_override=lm and sigma_scale=lm.sigma_vec match exactly what was
+            # used in simulate_to_expiry_differentiable, so the bond-price ODE
+            # and the SDE paths share the same K^* and σ^*.
+            # Gradients flow: loss → F_T/A_T → P^*(T,·) → z_T → lm parameters.
+            _, aux_T = model.decode_from_z(
+                z_T, tau=None, return_aux=True,
+                k_override=lm, sigma_scale=lm.sigma_vec,
+            )
+            p_ok = torch.isfinite(aux_T["P_full"]).all(1)
+            
             mask = z_ok & p_ok
             if int(mask.sum()) < min_paths:
                 continue
 
             path_fracs.append(float(mask.float().mean()))
 
-            z_keep = z_T[mask]
-            _, aux_keep = model.decode_from_z(z_keep, tau=None, return_aux=True)
-            F_T, A_T = swap_rate_torch(aux_keep["P_full"], tenor=tenor)
+            F_T, A_T = swap_rate_torch(aux_T["P_full"][mask], tenor=tenor)
             D_keep   = D_T[mask]
 
             fa_ok = (torch.isfinite(F_T) & torch.isfinite(A_T)
@@ -361,12 +486,13 @@ def compute_pricing_loss(
         except Exception:
             continue
 
-    mean_pfrac = float(np.mean(path_fracs)) if path_fracs else 0.0
+    mean_pfrac       = float(np.mean(path_fracs))   if path_fracs   else 0.0
+    mean_reanchor_bp = float(np.mean(reanchor_bps)) if reanchor_bps else float('nan')
     zero = torch.tensor(0.0, device=device, dtype=dtype)
     if n_valid > 0:
         return (total_vol / n_valid, total_bias / n_valid,
-                diagnostics, n_attempted, n_valid, mean_pfrac)
-    return zero, zero, diagnostics, n_attempted, 0, mean_pfrac
+                diagnostics, n_attempted, n_valid, mean_pfrac, mean_reanchor_bp)
+    return zero, zero, diagnostics, n_attempted, 0, mean_pfrac, mean_reanchor_bp
 
 
 # ── load data ──────────────────────────────────────────────────────────────────
@@ -448,7 +574,7 @@ csv_cols  = (
     ["epoch", "time_total_sec", "time_interval_sec",
      "loss_vol", "loss_bias", "loss_l2",
      "swaption_priced_frac", "path_finite_frac",
-     "recon_rmse_bps", "nan_batches",
+     "recon_rmse_bps", "reanchor_rmse_bp", "nan_batches",
      "gnorm_lam0", "gnorm_scale", "lr",
      "lambda0_norm", "lambda0_l1",
      "sigma_scale_mean", "sigma_s1", "sigma_s2", "sigma_s3", "sigma_s4",
@@ -508,12 +634,25 @@ for epoch in range(EPOCHS):
     ep_attempted  = 0
     ep_priced     = 0
     ep_pfracs     = []
+    ep_reanchor   = []
+
+    # Fine-tune phase: switch to z0* for the last REANCHOR_FINETUNE_START epochs.
+    finetune = (epoch >= REANCHOR_FINETUNE_START)
+    if finetune and epoch == REANCHOR_FINETUNE_START:
+        print(f"\n  [epoch {epoch}] Switching to re-anchored z0* "
+              f"({REANCHOR_TRAIN_STEPS}-step, cached per date per step)")
 
     for step in range(N_STEPS_PER_EPOCH):
-        print(f"\r  ep {epoch}  step {step+1}/{N_STEPS_PER_EPOCH} ...", end="", flush=True)
+        # Fresh cache per step: lm changes after each optimizer update, so a
+        # z0* from step k is stale in step k+1.  Within a single step, the
+        # same date can appear multiple times — the cache avoids recomputing.
+        step_z0_cache = {} if finetune else None
+
+        print(f"\r  ep {epoch}{'*' if finetune else ' '}  step {step+1}/{N_STEPS_PER_EPOCH} ...",
+              end="", flush=True)
         optim.zero_grad(set_to_none=True)
 
-        loss_vol, loss_bias_raw, diag, n_att, n_pri, p_frac = compute_pricing_loss(
+        loss_vol, loss_bias_raw, diag, n_att, n_pri, p_frac, reanchor_bp = compute_pricing_loss(
             model=model, lm=lm,
             X_batch=X_tensor_ccy, meta_batch=meta_ccy,
             df_vol=df_vol, date_to_idx=date_to_idx,
@@ -521,11 +660,16 @@ for epoch in range(EPOCHS):
             n_paths=N_PATHS_PRICING, dt=DT_PRICING,
             device=device, dtype=torch.float32,
             return_diagnostics=(step == 0),
+            do_reanchor=finetune,
+            reanchor_steps=REANCHOR_TRAIN_STEPS,
+            z0_cache=step_z0_cache,
         )
         ep_attempted += n_att
         ep_priced    += n_pri
         if p_frac > 0:
             ep_pfracs.append(p_frac)
+        if not math.isnan(reanchor_bp):
+            ep_reanchor.append(reanchor_bp)
         if diag:
             batch_diag = diag
 
@@ -565,7 +709,8 @@ for epoch in range(EPOCHS):
     ep_bias = running_bias / max(n_batches, 1)
     ep_l2   = running_l2   / max(n_batches, 1)
     swp_priced  = ep_priced  / max(ep_attempted, 1)
-    path_finite = float(np.mean(ep_pfracs)) if ep_pfracs else 0.0
+    path_finite = float(np.mean(ep_pfracs))   if ep_pfracs   else 0.0
+    reanchor_rmse_bp = float(np.mean(ep_reanchor)) if ep_reanchor else float('nan')
 
     with torch.no_grad():
         sigma_vec_now  = lm.sigma_vec.detach().cpu()
@@ -605,7 +750,8 @@ for epoch in range(EPOCHS):
         "time_interval_sec": round(dt_ep, 3),
         "loss_vol": ep_vol, "loss_bias": ep_bias, "loss_l2": ep_l2,
         "swaption_priced_frac": swp_priced, "path_finite_frac": path_finite,
-        "recon_rmse_bps": float(avg_rmse_bps), "nan_batches": nan_batches,
+        "recon_rmse_bps": float(avg_rmse_bps), "reanchor_rmse_bp": reanchor_rmse_bp,
+        "nan_batches": nan_batches,
         "gnorm_lam0": gn_lam0, "gnorm_scale": gn_scale, "lr": lr_now,
         "lambda0_norm": lambda0_norm, "lambda0_l1": lambda0_l1,
         "sigma_scale_mean": scale_now,
@@ -615,6 +761,7 @@ for epoch in range(EPOCHS):
         "lambda0_v3": float(lambda0_now[2]), "lambda0_v4": float(lambda0_now[3]),
         "fwd_bias_diag_bp": mean_bias_diag,
     }
+    
     for c in ccy_order:
         row[f"rmse_bps_{c}"] = (
             float(rmse_per_ccy.get(c, float('nan')))

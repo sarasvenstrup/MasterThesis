@@ -138,48 +138,79 @@ print(f"EUR: {len(meta_eur)} curve dates, {len(all_dates)} vol dates")
 print(f"Train: {n_train}  Test: {len(test_dates)}")
 
 # ── pricing ────────────────────────────────────────────────────────────────────
+
+# Cache z0* per date — it depends only on the date, not on the swaption cell,
+# so re-anchoring once per date instead of once per (date × cell) saves 9×.
+anchor_cache = {}   # date -> (z0_star, P0, anchor_rmse_bp)
+anchor_rows  = []   # [{date, anchor_rmse_bp}, ...] for diagnostics
+
+
+def get_reanchored_state(date, xb):
+    """
+    Return (z0_star, P0, anchor_rmse_bp) for this date, computing and caching
+    on first call.  lm is frozen during the inner z-optimisation so that
+    lambda_0 / log_sigma_vec do not accumulate spurious gradients.
+    """
+    date = pd.Timestamp(date).normalize()
+    if date in anchor_cache:
+        return anchor_cache[date]
+
+    with torch.no_grad():
+        z0_init = model.encoder(xb)
+
+    # Freeze lm for the duration of the local inverse solve.
+    old_requires_grad = [p.requires_grad for p in lm.parameters()]
+    for p in lm.parameters():
+        p.requires_grad_(False)
+
+    try:
+        z0 = z0_init.detach().clone().requires_grad_(True)
+        opt = torch.optim.Adam([z0], lr=1e-2)
+        S_target = xb.detach()
+
+        for _ in range(REANCHOR_STEPS):
+            opt.zero_grad(set_to_none=True)
+            _, aux = model.decode_from_z(
+                z0, tau=None, return_aux=True,
+                k_override=lm, sigma_scale=lm.sigma_vec,
+            )
+            S_hat = aux["S_hat"]
+            if S_hat is None:
+                break
+            loss = ((S_hat - S_target) ** 2).mean()
+            if not torch.isfinite(loss):
+                break
+            loss.backward()
+            opt.step()
+
+        z0_star = z0.detach()
+
+    finally:
+        for p, req in zip(lm.parameters(), old_requires_grad):
+            p.requires_grad_(req)
+
+    with torch.no_grad():
+        _, aux0 = model.decode_from_z(
+            z0_star, tau=None, return_aux=True,
+            k_override=lm, sigma_scale=lm.sigma_vec,
+        )
+        P0             = aux0["P_full"][0].detach()
+        S_fit          = aux0["S_hat"].detach()
+        anchor_rmse_bp = float(torch.sqrt(((S_fit - xb) ** 2).mean()) * 1e4)
+
+    anchor_cache[date] = (z0_star, P0, anchor_rmse_bp)
+    anchor_rows.append({"date": date, "anchor_rmse_bp": anchor_rmse_bp})
+    return anchor_cache[date]
+
+
 def price_cell(date, expiry, tenor):
     if date not in date_to_idx:
         return None
     idx = date_to_idx[date]
     xb  = X_eur[idx:idx + 1].to(device)
 
-    # ─ Re-anchor z0 under the shifted (Constant MPR) dynamics ─────────────────
-    # Under the shifted decoder (which uses mu* = mu + L*lambda_0 and the
-    # rescaled diffusion in its no-arbitrage ODE), the original encoder output
-    # z0 = A_1 * xb no longer maps back to today's market curve. We solve a
-    # small inverse-decoding problem for a re-anchored z0 such that the
-    # shifted decoder reproduces the observed swap rates at t=0. This makes
-    # the entire pricing pipeline use a single arbitrage-free model with the
-    # same dynamics in simulation, terminal decode and initial decode.
-    with torch.no_grad():
-        z0_init = model.encoder(xb)
-    z0 = z0_init.detach().clone().requires_grad_(True)
-    opt = torch.optim.Adam([z0], lr=1e-2)
-    S_target = xb.squeeze(0).detach()
-    for _ in range(REANCHOR_STEPS):
-        opt.zero_grad()
-        _, aux = model.decode_from_z(z0, tau=None, return_aux=True,
-                                     k_override=lm,
-                                     sigma_scale=lm.sigma_vec)
-        S_hat_now = aux["S_hat"]
-        if S_hat_now is None:
-            break
-        loss = ((S_hat_now.squeeze(0) - S_target) ** 2).mean()
-        if not torch.isfinite(loss):
-            break
-        loss.backward()
-        opt.step()
-    z0 = z0.detach()
-
-    # Decode at the re-anchored z0 using the SHIFTED decoder to read off the
-    # initial bond curve. By construction this matches today's market curve
-    # (up to the inverse-decoding residual).
-    with torch.no_grad():
-        _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True,
-                                      k_override=lm,
-                                      sigma_scale=lm.sigma_vec)
-        P0 = aux0["P_full"][0]
+    # Re-anchor z0 under P^* (cached per date, lm frozen inside).
+    z0, P0, anchor_rmse_bp = get_reanchored_state(date, xb)
 
     max_idx = P0.shape[0] - 1
     if expiry + tenor > max_idx:
@@ -241,6 +272,7 @@ def price_cell(date, expiry, tenor):
         "sigma_str_bp":    sigma_str_bp,
         "forward_bias_bp": forward_bias_bp,
         "path_frac":       path_frac,
+        "anchor_rmse_bp":  anchor_rmse_bp,
     }
 
 # ── price all dates ────────────────────────────────────────────────────────────
@@ -286,6 +318,13 @@ for counter, (_, row) in enumerate(combos.iterrows()):
 df = pd.DataFrame(rows)
 df.to_csv(os.path.join(OUT_DIR, "per_cell_final.csv"), index=False)
 print(f"\nPriced {len(df)} observations in {time.time()-t0:.0f}s")
+
+# Save re-anchoring diagnostics
+df_anchor = pd.DataFrame(anchor_rows).drop_duplicates("date")
+df_anchor.to_csv(os.path.join(OUT_DIR, "reanchor_rmse_by_date.csv"), index=False)
+print(f"\nRe-anchoring diagnostics:")
+print(f"  Mean re-anchor RMSE: {df_anchor['anchor_rmse_bp'].mean():.2f} bp")
+print(f"  Max re-anchor RMSE:  {df_anchor['anchor_rmse_bp'].max():.2f} bp")
 
 # ── summary ────────────────────────────────────────────────────────────────────
 CELLS = [(e, t) for e in EXPIRY_VALS for t in TENOR_VALS]
