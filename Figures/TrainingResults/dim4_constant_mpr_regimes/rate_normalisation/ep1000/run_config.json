@@ -1,0 +1,10 @@
+{
+  "regime": "rate_normalisation",
+  "label": "Rate-normalisation shock (2022--)",
+  "train_end": "2021-12-31",
+  "test_start": "2022-01-01",
+  "test_end": "2030-12-31",
+  "n_train_obs": 1014,
+  "n_test_obs": 232,
+  "epochs": 1000
+}

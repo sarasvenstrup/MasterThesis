@@ -1,17 +1,19 @@
 # Archived Pricing Models
 
 Pricing-layer variants that were trained and evaluated during the thesis
-work but are **not** the headline models reported in the final write-up.
+work but are **not** the headline model reported in the final write-up.
 They are kept here for reproducibility and to document the negative
 results referenced in the thesis.
 
-## Headline models (kept in `Code/Pricing/`)
+## Headline model (kept in `Code/Pricing/`)
 
 | Model | Files |
 |---|---|
 | Base (stable, no pricing layer) | `eval_base.py` |
-| **Constant MPR** | `Training_constant_mpr.py`, `eval_constant_mpr.py` |
-| **Surface Vol MPR** | `Training_surface_vol_mpr.py`, `eval_surface_vol_mpr.py` |
+| **Constant MPR** | `Training_constant_mpr.py`, `eval_constant_mpr.py`, `Training_constant_mpr_regimes.py` |
+
+The Constant MPR is the only pricing layer featured in the final thesis.
+The base evaluation (`eval_base.py`) is kept for the 415 bp diagnostic.
 
 ## Archived models (this folder)
 
@@ -23,6 +25,7 @@ results referenced in the thesis.
 | State-Conditioned Vol MPR | `Training_state_vol_mpr.py`, `eval_state_vol_mpr.py` | Overfits — saddle-point fix applied, still overfits |
 | Stochastic Vol Pricing (CIR) | `Training_sv_pricing.py`, `eval_sv_pricing.py` | v_0(z_0) collapsed; no improvement over State-Cond |
 | Daily Vol-Level MPR | `Training_daily_vol_mpr.py`, `eval_daily_vol_mpr.py` | Only marginal improvement on test over Constant MPR |
+| Surface Vol MPR (LOO features) | `Training_surface_vol_mpr.py`, `eval_surface_vol_mpr.py`, `Training_surface_vol_mpr_regimes.py` | Uses observed vol-surface features. Reached test MAE around 32 bp, but the use of contemporaneous option-market information was judged out of scope for the final thesis and the model is not reported there. |
 
 ## Diagnostics
 

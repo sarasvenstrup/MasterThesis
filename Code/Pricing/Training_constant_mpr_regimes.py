@@ -119,9 +119,9 @@ LAMBDA_VOL    = 1.0
 LAMBDA_BIAS   = 0.5
 LAMBDA_L2     = 1e-3
 
-LR            = 2e-4
+LR            = 5e-4   # match Training_constant_mpr.py (was 2e-4, too small for 8-param model)
 LR_SIG_MULT   = 10.0
-LR_WARMUP     = 30
+LR_WARMUP     = 50     # match Training_constant_mpr.py (was 30)
 
 MIN_FINITE_PATHS_ABS  = 16
 MIN_FINITE_PATHS_FRAC = 0.10

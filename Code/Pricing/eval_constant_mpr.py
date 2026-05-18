@@ -326,6 +326,17 @@ for split_label2, split_key2, label_suffix in [
                 )
         if i < len(EXPIRY_VALS) - 1:
             lines.append(r"  \midrule")
+    # Pooled total row (mean across all observations in this split)
+    df_pool = df if split_key2 is None else df[df["split"] == split_key2]
+    if len(df_pool) > 0:
+        lines.append(r"  \midrule")
+        lines.append(
+            f"  \\multicolumn{{2}}{{c}}{{\\textbf{{Total}}}} "
+            f"& {df_pool['mkt_bp'].mean():.0f} & {df_pool['sigma_str_bp'].mean():.0f} "
+            f"& {df_pool['vol_error_bp'].abs().mean():.1f} "
+            f"& {float(np.sqrt((df_pool['vol_error_bp']**2).mean())):.1f} "
+            f"& {df_pool['forward_bias_bp'].mean():+.1f} \\\\"
+        )
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
     fname = f"tab_constant_mpr_per_cell_{label_suffix}.tex"
     with open(os.path.join(OUT_DIR, fname), "w", encoding="utf-8") as f:

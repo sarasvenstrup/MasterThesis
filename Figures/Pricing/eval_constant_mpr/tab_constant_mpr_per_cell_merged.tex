@@ -1,0 +1,25 @@
+\begin{table}[H]
+\centering
+\caption{Per-cell ATM straddle vol errors: constant MPR pricing, EUR. The MAE is reported for the full sample as well as separately for the training period (2010--2021) and the test period (2022--2024). Mkt and Mod columns are averaged across all dates.}
+\label{tab:constant_mpr_per_cell_merged}
+\small
+\begin{tabular}{@{}ccrrrrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten} & \textbf{Mkt (bp)} & \textbf{Mod (bp)} & \textbf{MAE all (bp)} & \textbf{MAE train (bp)} & \textbf{MAE test (bp)} & \textbf{Fwd bias (bp)} \\
+\midrule
+  1Y & 1Y & 60 & 206 & 147.8 & 188.4 & 24.5 & +141.9 \\
+  1Y & 5Y & 73 & 128 & 67.5 & 78.8 & 22.3 & +60.8 \\
+  1Y & 10Y & 90 & 104 & 54.0 & 42.2 & 83.4 & +28.2 \\
+  \midrule
+  5Y & 1Y & 56 & 55 & 19.2 & 20.8 & 12.3 & +85.7 \\
+  5Y & 5Y & 58 & 48 & 20.7 & 10.2 & 49.8 & +64.8 \\
+  5Y & 10Y & 53 & 46 & 17.7 & 8.4 & 39.5 & +56.8 \\
+  \midrule
+  10Y & 1Y & 48 & 58 & 23.6 & 17.0 & 39.9 & +143.5 \\
+  10Y & 5Y & 45 & 56 & 22.9 & 15.7 & 39.7 & +136.3 \\
+  10Y & 10Y & 43 & 55 & 22.1 & 14.4 & 40.9 & +136.1 \\
+\midrule
+  \multicolumn{2}{c}{\textbf{Total}} & 58 & 79 & \textbf{40.1} & \textbf{39.4} & \textbf{42.0} & +93.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
