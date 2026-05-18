@@ -204,16 +204,18 @@ training before the cosine annealing schedule begins to decrease it.} over \(100
 \subsection{Results}
 \label{subsec:cmpr_results}
 
-Table~\ref{tab:constant_mpr_per_cell_merged} reports per-cell errors, with the mean absolute error broken out for the full sample, the training period (2010--2021) and the test period (2022--2024). The overall MAE falls from \(414.7\) bp (base model) to \(\mathbf{40.1}\) bp --- a reduction of over \(90\%\) using only \(8\) trainable parameters. The training- and test-period totals are \(39.4\) bp and \(42.0\) bp respectively.
+Table~\ref{tab:constant_mpr_per_cell_all} reports the per-cell pricing errors after calibrating the constant market-price-of-risk layer. The improvement is substantial. The overall MAE falls from \(414.7\) bp for the frozen stable model to \(\mathbf{40.1}\) bp. This corresponds to a reduction of more than \(90\%\), using only \(8\) trainable parameters.
 
 \begin{table}[H]
 \centering
 \input{../Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_merged.tex}
 \end{table}
 
-The very small train--test gap at the total level is the headline observation. Looking inside the table, however, the per-cell pattern is more nuanced. The 1Yx1Y and 1Yx5Y cells, which dominate the all-dates MAE, are large primarily in the \emph{training} period (\(188\) and \(79\) bp respectively) and substantially smaller in the test period (\(25\) and \(22\) bp). The training-period 1Y blow-up reflects the negative-rate era from 2014--2019, where the model struggles to reproduce inverted and floor-pressed short-end curves. Conversely, the 5Y and 10Y rows are systematically worse in the test period than in the training period, reflecting the 2022 tightening cycle which stresses long-tenor cells. The two effects largely offset in the totals, and the model can be said to mis-fit different cells in different regimes with a roughly constant overall error budget rather than to overfit in the standard sense.
+The very small train--test gap at the total level is the headline observation. The overall MAE is \(39.4\) bp in the training period and \(\mathbf{42.0}\) bp in the test period. Looking inside the table, however, the per-cell pattern is more nuanced. The 1Y\(\times\)1Y and 1Y\(\times\)5Y cells, which dominate the all-dates MAE, are large primarily in the training period, with MAEs of \(188\) bp and \(79\) bp, respectively. In the test period these errors fall to \(25\) bp and \(22\) bp. This suggests that the remaining short-expiry errors are mostly linked to the negative-rate period from 2014--2019, where the model struggles to reproduce inverted and floor-pressed short-end curves.
 
-Figure~\ref{fig:pricing_heatmap_comparison_all} compares the base-model and Constant MPR heatmaps side by side. The improvement is uniform across the surface, with the largest reductions on the cells where the base model is worst (short expiries on long tenors). Figure~\ref{fig:pricing_comparison_timeseries} overlays the vol error over time: the base-model errors swing by hundreds of bp, while the Constant MPR error stays close to zero throughout most of the sample, with residual spikes concentrated in the 2022 rate-hike episode and in the 1Y expiry row.
+By contrast, the 5Y and 10Y expiry rows are systematically worse in the test period than in the training period. This reflects the 2022 tightening cycle, which stresses the longer-expiry cells. The two effects largely offset in the aggregate. Thus, the Constant MPR layer does not appear to overfit in the standard sense. Rather, it misfits different parts of the swaption surface in different rate regimes while maintaining a roughly stable overall error level.
+
+Figure~\ref{fig:pricing_heatmap_comparison_all} compares the base-model and Constant MPR heatmaps side by side. The improvement is substantial across the surface, with the largest reductions occurring in the cells where the base model performs worst, especially short expiries on longer tenors. Figure~\ref{fig:pricing_comparison_timeseries} shows the corresponding vol errors over time. The base-model errors fluctuate by hundreds of basis points, whereas the Constant MPR errors remain close to zero through most of the sample. The remaining spikes are concentrated in the 2022 rate-hiking episode and in the 1Y expiry row.
 
 \begin{figure}[H]
     \centering
