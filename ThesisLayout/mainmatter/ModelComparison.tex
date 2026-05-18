@@ -2,10 +2,13 @@
 \label{chap:model_comparison}
 
 
-NOTES:
-We need to start off by showing how the the augmented model improves in sample fit very much. But then see how it fails OOS, and then compare all models to then conclude that we can impose restrictions on the encoder-decoder in multiple ways - and we find that we can do this on the reconstruction loss way like the augmented model and then in the model structure itselfs, like we did for stable. and from this we see that it is benefifcal to do it not throught the training error as it does not translate through to good OOS performance. 
+\textcolor{red}{NOTES FOR THIS SECTION: We need to start off by showing how the the augmented model improves in sample fit very much. But then see how it fails OOS, and then compare all models to then conclude that we can impose restrictions on the encoder-decoder in multiple ways - and we find that we can do this on the reconstruction loss way like the augmented model and then in the model structure itselfs, like we did for stable. and from this we see that it is benefifcal to do it not throught the training error as it does not translate through to good OOS performance. }
 
 
+
+introduction missing.
+
+In the thesis, we have come across multiple models that we now would like to compare and discuss in the light of how using an encoder-decoder model to learn the underlying dynamics of the state variables driving swap rates in this case. We have so far seen the baseline evaluated in Chapter \ref{chap:evaluation} and the stable model introduced and examined in Chapter \ref{chap:simulation}. In this chapter we introduce a third model, and finish 
 
 
 
@@ -189,7 +192,7 @@ In this figure below, we see how the baseline model struggles as discussed earli
 
 \subsection{Out-of-sample Performance} 
 
-in the oos performance we see
+in the oos performance we see that the stable model performs best of all four models assessed. both in terms of avereage in sample and average perfirmance. The stable model has the least generalisation gap, and most importanlty doesnt have the high explostions of max OOS SRMSE windows.
 
 \begin{table}[H]
 \centering
@@ -220,6 +223,7 @@ in the oos performance we see
 \label{tab:all_models_is_oos_summary}
 \end{table}
 
+However it is also important to see the error each curve as these can be easily masked in the averages. As we see here, the stable model still struggle when trained on some periods with out any  negative rates and then alot of them in the test period , with errors up to 200 for some of those curves, but this is on a much lower scale compared to the other four models. 
 
 
 \begin{figure}[H]
@@ -228,6 +232,10 @@ in the oos performance we see
     \caption{Out-of-sample RMSE (bps) over the rolling evaluation period (2015--2023) for all four model variants, coloured by market regime. Each panel corresponds to one model; points are coloured by whether the curve is inverted and/or exhibits negative rates.}
     \label{fig:oos_regime_scatter_all_models}
 \end{figure}
+
+The conclusion of this is going to be about the way of how to make the encoder-decoder model to reconstruct swap curves absorb information in the best way. Baseline is completley freely, the augmented is consttraining how this is learned freely based on the training error penalizing when curves are matching on curvature and slope infromation as well, where the stable has none of these restictions in the training objective, but the neural networks have been restricted in some way so the stable model learns more effectively in some areas as so it seems. Putting these to ways of doing so together does not seem to have any positive impact, and just worsens the overeal reconstruction results.
+
+
 
 
 % NOTES
