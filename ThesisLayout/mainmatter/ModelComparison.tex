@@ -1,117 +1,100 @@
-\chapter{Model Comparison (title?)}
+\chapter{Structural versus Objective-Based Model Extensions}
 \label{chap:model_comparison}
 
 
-\textcolor{red}{NOTES FOR THIS SECTION: We need to start off by showing how the the augmented model improves in sample fit very much. But then see how it fails OOS, and then compare all models to then conclude that we can impose restrictions on the encoder-decoder in multiple ways - and we find that we can do this on the reconstruction loss way like the augmented model and then in the model structure itselfs, like we did for stable. and from this we see that it is benefifcal to do it not throught the training error as it does not translate through to good OOS performance. }
-
-
-
-introduction missing.
-
-In the thesis, we have come across multiple models that we now would like to compare and discuss in the light of how using an encoder-decoder model to learn the underlying dynamics of the state variables driving swap rates in this case. We have so far seen the baseline evaluated in Chapter \ref{chap:evaluation} and the stable model introduced and examined in Chapter \ref{chap:simulation}. In this chapter we introduce a third model that seeks to improve the baseline model by making it fit curve variants better. Lastly, we compare the models and conclude on findings regarding improving encoder-decoder models in sample as well as out of sample.
-
-
+This chapter introduces two model extensions and evaluates all four model 
+specifications considered in this thesis. The baseline model, assessed in 
+Chapter~\ref{chap:evaluation}, is our implementation of the encoder-decoder framework of \citet{MatinWanPoulsen2025}. The stable model, introduced in Chapter~\ref{chap:simulation}, extends it by imposing restrictions on the neural networks to improve simulation behaviour and out-of-sample generalisation. Both models, however, exhibit difficulty with negative-rate curves. We hypothesise that this difficulty may be rooted in properties of the linear encoder, and therefore propose the \textit{augmented model} to address it by augmenting the input vector with slope and curvature features. Combining the augmentation with the stability restrictions yields a fourth specification, the \textit{augmented stable model}. All four models are then evaluated jointly on in-sample fit and out-of-sample generalisation to assess how each modification improves upon the baseline.
 
 \section{Introducing the Augmented Model}
-
-The evaluation in Chapter~\ref{chap:evaluation} identifies a structural limitation of the baseline model. For negative-rate curves, the reconstructed curve captures the approximate level but fails to reproduce the slope and curvature, a pattern that persists regardless of the number of latent factors. This section proposes a 
-modification to the encoder input and training objective aimed at addressing this limitation, and assesses whether it improves reconstruction of the problematic curve variants.
+%The evaluation in Chapter~\ref{chap:evaluation} identifies a structural limitation of the baseline model. For negative-rate curves, the reconstructed curve captures the approximate level but fails to reproduce the slope and curvature, a pattern that persists regardless of the number of latent factors (Figure~\ref{fig:Q1d}). This section proposes modifications to the encoder input and training objective aimed at addressing this limitation, and assesses whether they improve reconstruction of the problematic curve variants.
 
 
-%During the evaluation of the baseline model, we observe empirically that the model finds the approximate level of negative-rate curves but fails to reconstruct their slope and curvature. 
+This section proposes modifications to the encoder input and training objective to address the slope and curvature failure for negative-rate curves, and assesses whether they improve reconstruction of the problematic curve variants.
+
+HMMMM
+
+\subsection{Motivation}
+
+The failure to reproduce slope and curvature for negative-rate curves may be 
+linked to the linearity of the encoder, though what follows is a speculative 
+hypothesis rather than a formal result. Since the encoder computes 
+(Chapter~\ref{chap:encoderdecodermodel}, \eqref{eq:linear_encoder})
+$$z = A_1\mathbf{S}, \qquad \mathbf{S}=(S^{(1)},\ldots,S^{(M)})^\top,$$
+with no bias and no activation function, $z$ is a linear projection of the raw 
+swap rates with no intercept. When a negative-rate curve is passed through the 
+encoder, the positive and negative rate values partially cancel in the linear 
+projection, producing a $z$ that lands in a different region of the latent space 
+than a flat curve at the same mean level. The flat counterpart of a negative-rate 
+curve, having near-zero rates across all tenors, maps into the positive-rate region 
+of the latent space where the decoder has been predominantly trained, while the 
+sloped version maps into the sparse negative-rate cluster. The decoder therefore 
+faces an inconsistent mapping: depending on the shape of the negative-rate curve, 
+it may receive a latent representation from either region, and struggles to 
+reconstruct the correct slope and curvature in both cases. Example~\ref{ex:compression} 
+illustrates this directly.
+
+\begin{example}\label{ex:compression}
+Let $\mathbf{S} \in \mathbb{R}^8$ denote the EUR swap curve observed on 
+2014-08-29, and let $\tilde{\mathbf{S}}^- = \mathbf{S} - 0.0045\cdot\mathbf{1}$ 
+denote a stylised negative-rate counterpart obtained by shifting all tenors down 
+by 45 bps, so that the short end becomes negative while the slope and curvature 
+are preserved by construction. Expressed in decimal terms,
+\begin{align*}
+\mathbf{S} &= \begin{pmatrix} 0.0025 & 0.0027 & 0.0032 & 0.0050 & 0.0109 & 
+0.0146 & 0.0164 & 0.0176 \end{pmatrix}^\top, \\
+\tilde{\mathbf{S}}^- &= \begin{pmatrix} -0.0020 & -0.0018 & -0.0013 & 0.0005 & 
+0.0064 & 0.0101 & 0.0119 & 0.0131 \end{pmatrix}^\top.
+\end{align*}
+Let $A_1 \in \mathbb{R}^{2\times 8}$ denote the learned encoder matrix,
+$$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
+-1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$
+For each curve, construct a flat counterpart by setting all tenors to the 
+cross-tenor average, $\mathbf{S}_{\text{flat}} = \bar{S}\cdot\mathbf{1}$ and 
+$\tilde{\mathbf{S}}^-_{\text{flat}} = \bar{\tilde{S}}^-\cdot\mathbf{1}$, so each 
+curve pair shares the same mean rate level but differs only in slope and curvature. 
+Applying $A_1$ gives
+\begin{align*}
+z = A_1\mathbf{S} &= \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \quad
+z_{\text{flat}} = A_1\mathbf{S}_{\text{flat}} = \begin{pmatrix} 0.0046 \\ 
+-0.0375 \end{pmatrix}, \quad \|z - z_{\text{flat}}\| = 0.0208, \\
+\tilde{z}^- = A_1\tilde{\mathbf{S}}^- &= \begin{pmatrix} -0.0111 \\ -0.0032 
+\end{pmatrix}, \quad
+\tilde{z}^-_{\text{flat}} = A_1\tilde{\mathbf{S}}^-_{\text{flat}} = 
+\begin{pmatrix} 0.0023 \\ -0.0190 \end{pmatrix}, \quad 
+\|\tilde{z}^- - \tilde{z}^-_{\text{flat}}\| = 0.0208.
+\end{align*}
+The separation between the sloped and flat versions is identical for both curves, 
+confirming that the encoder preserves shape information equally well regardless 
+of the rate level. However, as shown in Figure~\ref{fig:latent_space_regime_shift}, 
+the flat counterpart of the negative-rate curve $\tilde{z}^-_{\text{flat}}$ maps 
+into the positive-rate region of the latent space, while the sloped version 
+$\tilde{z}^-$ maps into the sparse negative-rate cluster. The decoder therefore 
+receives latent representations from very different regions depending on the shape 
+of the curve, and has little basis for consistently recovering slope and curvature 
+for negative-rate curves in either case.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_latent_space_regime_shift.png}
+    \caption{Latent space representation of all in-sample swap rate curves under 
+    the baseline encoder ($\ell = 2$), coloured by curve variant. Four specific 
+    observations are overlaid: $\mathbf{z}$ and $\mathbf{z}_{\mathrm{flat}}$ 
+    denote the latent representations of the normal EUR curve on 2014-08-29 and 
+    its flat counterpart; $\tilde{\mathbf{z}}^-$ and $\tilde{\mathbf{z}}^-_{\mathrm{flat}}$ 
+    denote the corresponding representations for the same curve shifted down by 
+    45 bps. All distances are $d = 0.0208$.}
+    \label{fig:latent_space_regime_shift}
+\end{figure}
+\end{example}
+
+We do not formally verify this hypothesis, but use it as motivation for the 
+augmentation described in the following subsection.
 
 
 
 
 \subsection{Model Specification}
-
-We hypothesise that this is related to the structure of the linear encoder. Since the encoder computes  \textcolor{red}{reference}
-$$z = A_1\mathbf{S}, \qquad \mathbf{S}=(S^{(1)},...,S^{(M)})^\top$$ 
-with no bias and no activation function, the magnitude of $z$ scales proportionally with $|\mathbf{S}|$, so near-zero curves push $z$ toward the origin of $\mathbb{R}^\ell$. If the training data consisted predominantly of positive-rate environments, the origin may lie outside the support of the training distribution of $z$.
-
-
-\begin{example}
-The following example illustrates that the linear encoder loses shape information 
-specifically for negative-rate curves, compressing them into a sparse region of 
-the latent space where the decoder has little training exposure.
-
-Let $\mathbf{S}, \mathbf{S}^* \in \mathbb{R}^8$ denote the EUR swap curves 
-observed on 2014-08-29 and 2020-03-31 respectively, expressed in decimal terms,
-\begin{align*}
-\mathbf{S} &= \begin{pmatrix} 0.0025 & 0.0027 & 0.0032 & 0.0050 & 0.0109 & 
-0.0146 & 0.0164 & 0.0176 \end{pmatrix}^\top, \\
-\mathbf{S}^* &= \begin{pmatrix} -0.0032 & -0.0032 & -0.0031 & -0.0023 & -0.0002 
-& 0.0016 & 0.0023 & 0.0018 \end{pmatrix}^\top,
-\end{align*}
-and let $A_1 \in \mathbb{R}^{2\times 8}$ denote the learned encoder matrix,
-$$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
--1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$
-For each curve, construct a synthetic flat counterpart at the same mean level,
-$\mathbf{S}_{\text{flat}} = \bar{S}\cdot\mathbf{1}$ and 
-$\mathbf{S}^*_{\text{flat}} = \bar{S}^*\cdot\mathbf{1}$, so each pair differs 
-only in slope and curvature. Applying $A_1$ gives
-\begin{align*}
-z = A_1\mathbf{S} &= \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \quad
-z_{\text{flat}} = A_1\mathbf{S}_{\text{flat}} = \begin{pmatrix} 0.0046 \\ 
--0.0375 \end{pmatrix}, \quad \|z - z_{\text{flat}}\| = 0.0208, \\
-z^* = A_1\mathbf{S}^* &= \begin{pmatrix} -0.0057 \\ 0.0089 \end{pmatrix}, \quad
-z^*_{\text{flat}} = A_1\mathbf{S}^*_{\text{flat}} = \begin{pmatrix} -0.0004 \\ 
-0.0032 \end{pmatrix}, \quad \|z^* - z^*_{\text{flat}}\| = 0.0078.
-\end{align*}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_latent_space_regime.png}
-    \caption{Latent space representation of all in-sample swap rate curves under 
-    the baseline encoder ($\ell = 2$), coloured by curve variant. Four specific 
-    observations are overlaid: $\mathbf{z}$ and $\mathbf{z}_{\mathrm{flat}}$ 
-    denote the latent representations of the EUR 2014-08-29 curve and its flat 
-    counterpart, with Euclidean distance $d = 0.0208$; $\mathbf{z}^*$ and 
-    $\mathbf{z}^*_{\mathrm{flat}}$ denote the corresponding representations for 
-    the EUR 2020-03-31 negative-rate curve, with distance $d = 0.0078$.}
-    \label{fig:latent_space_regime}
-\end{figure}
-
-As shown in Figure~\ref{fig:latent_space_regime}, the normal curve and its flat counterpart are well separated within a densely populated region of the latent 
-space ($\|z - z_{\text{flat}}\| = 0.0208$), meaning the encoder preserves shape information for positive-rate curves. The negative-rate curve and its flat counterpart, by contrast, are compressed into a sparse region near the origin with a separation of only $0.0078$, roughly one third of the normal case. Since the two curves differ only in slope and curvature, this confirms that the encoder 
-loses precisely this information for negative-rate curves, leaving the decoder with representations that are nearly indistinguishable regardless of curve shape.
-
-\end{example}
-
-
-
-\begin{example}
-The previous example showed that shape information is compressed for curves that 
-already have negative rates. The following example shows that this compression is 
-a consequence of the rate level itself, not a property specific to historically 
-observed negative-rate curves.
-
-Take the same normal EUR curve $\mathbf{S}$ from 2014-08-29 and consider two 
-parallel shifts,
-$$\tilde{\mathbf{S}}^{\pm} = \mathbf{S} \pm 0.005\cdot\mathbf{1},$$
-leaving slope and curvature unchanged by construction. Since the encoder is linear, 
-the effect of any parallel shift $c\cdot\mathbf{1}$ on the latent representation 
-is given exactly by
-$$\Delta z = c \cdot A_1\mathbf{1} = c\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix},$$
-so the three latent representations are
-\begin{align*}
-z &= A_1\mathbf{S} = \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \\
-\tilde{z}^{-} &= z - 0.005\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix} = 
-\begin{pmatrix} -0.0114 \\ -0.0011 \end{pmatrix}, \\
-\tilde{z}^{+} &= z + 0.005\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix} = 
-\begin{pmatrix} -0.0063 \\ -0.0423 \end{pmatrix}.
-\end{align*}
-As shown in Figure~\ref{fig:latent_space_shift}, the upward shift moves $z$ 
-further into the dense normal training region, while the downward shift moves it 
-into the sparse region near the origin occupied by negative-rate curves, landing 
-close to $z^* = (-0.0057, 0.0089)^\top$, the actual negative-rate EUR curve from 
-2020-03-31. This confirms that the compression is driven by the rate level: any 
-curve shifted toward zero will have its latent representation pushed into a region 
-that is sparsely covered during training, regardless of its shape.    
-\end{example}
-
-
-
 Motivated by this hypothesis, we augment the input vector with 
 derived features. We add a short-end slope $f_1 = S_{10\text{Y}} - S_{1\text{Y}}$, a long-end slope $f_2 = S_{30\text{Y}} - S_{10\text{Y}}$, and a curvature measure $f_3 = 2S_{10\text{Y}} - S_{1\text{Y}} - S_{30\text{Y}}$. The augmented input vector is then
 $$\mathbf{S}^{\text{aug}} = \bigl(S^{(1)}, \ldots, S^{(M)}, f_1, f_2, f_3\bigr)^\top \in \mathbb{R}^{M+3}$$
@@ -132,6 +115,8 @@ The augmented model follows the same encoder-decoder architecture described in C
 
 Here we assess the in sample fit and oos of the augmented model with the baseline serving as a reference.
 
+%We first assess whether the augmented model addresses the reconstruction failure identified for negative-rate curves. Figure~\ref{...} compares fitted and actual swap curves on the same representative dates used in Chapter~??. The baseline fit is included as a reference.
+
 
 \begin{figure}[H]
     \centering
@@ -144,6 +129,7 @@ Here we assess the in sample fit and oos of the augmented model with the baselin
     \label{fig:augmented_fitted_vs_actual_all_dims}
 \end{figure}
 
+%The augmented model improves the in-sample fit precisely in the cases where the baseline model performed poorly. In particular, for the COVID-19 date, the fitted EUR and JPY curves reproduce more of the observed slope and curvature. This supports the interpretation that the baseline encoder did not provide the decoder with sufficient shape information in low-rate regions of the latent space.
 
 We hereby see a great improvement in sample where the baseline had a hard time. in some way indicating that the information that we forced on the model was indeed missing for curves.
 
@@ -159,7 +145,7 @@ We hereby see a great improvement in sample where the baseline had a hard time. 
     \label{fig:augmented_rolling_regime_dual_axis}
 \end{figure}
 
-
+%However, the improvement is mainly in-sample. The rolling-window evaluation in Figure~\ref{...} shows that the augmented model still suffers from large out-of-sample errors during periods where the test set contains curve shapes that are underrepresented in the training window.
 
 Hereby indicating that again even with the augmented input the latent dimension 2 is the best oos even though yielding an in sample fit that was looked more like the baseline.
 
@@ -233,7 +219,9 @@ However it is also important to see the error each curve as these can be easily 
 
 The conclusion of this is going to be about the way of how to make the encoder-decoder model to reconstruct swap curves absorb information in the best way. Baseline is completley freely, the augmented is consttraining how this is learned freely based on the training error penalizing when curves are matching on curvature and slope infromation as well, where the stable has none of these restictions in the training objective, but the neural networks have been restricted in some way so the stable model learns more effectively in some areas as so it seems. Putting these to ways of doing so together does not seem to have any positive impact, and just worsens the overeal reconstruction results.
 
+%The comparison highlights an important distinction. The augmented model restricts learning through the reconstruction objective by forcing the model to match slope and curvature features. This improves some difficult in-sample fits, but it does not produce a more robust out-of-sample model. The stable model instead restricts the architecture of the latent dynamics and decoder. This gives the lowest average out-of-sample RMSE and, more importantly, avoids the extreme rolling-window failures observed for the other variants.
 
+%Combining the two approaches does not improve performance. The augmented-stable model has a higher average and maximum out-of-sample error than the stable model alone. The evidence therefore suggests that, for this encoder--decoder setting, robustness is better achieved through structural restrictions on the model than through additional reconstruction penalties. The stable model is therefore the preferred specification for the pricing analysis in the next chapter.
 
 
 % NOTES
