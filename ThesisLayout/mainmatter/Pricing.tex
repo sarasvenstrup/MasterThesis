@@ -45,7 +45,7 @@ X^{(m),\mathrm{rec}}_{T_e}
 =
 \mathcal A^{(m)}(T_e)\bigl(K-S^{(m)}(T_e)\bigr)^+,
 \]
-where we set notional \(\mathcal N = 1\). Each payoff is discounted by the pathwise money-market factor
+where we set notional \(\mathcal N = 1\). Each payoff is discounted by the pathwise bank account
 \[
 D^{(m)}_{T_e}
 =
@@ -116,30 +116,36 @@ and the no-arbitrage condition is enforced by construction through the bond-pric
 \subsection{Empirical results}
 \label{subsec:stable_pricing_results}
 
-We price all available EUR ATM swaption cells using the stable model directly, without any adjustment to its dynamics. The model parameters --- the drift \(\mu\), diffusion \(\sigma\), short rate \(r\) and decoder \(G\) --- are held fixed at the values obtained from the reconstruction calibration in Chapter~\ref{chap:evaluation}. We refer to this configuration as the \emph{frozen stable model}: only the stochastic Brownian increments vary across Monte Carlo paths, while all neural-network parameters remain constant. The simulation uses \(N_{\mathrm{MC}} = 512\) antithetic\footnote{Antithetic variates is a standard Monte Carlo variance-reduction technique \citep{Glasserman2004}. For each randomly drawn path with Brownian increment vector \(\boldsymbol{\varepsilon}\), a mirrored path with \(-\boldsymbol{\varepsilon}\) is also simulated. The two paths are then averaged. This eliminates the variance contribution from the linear part of the payoff and approximately halves the Monte Carlo standard error at unchanged computational cost.} paths per cell and the time grid described in Section~\ref{sec:swaption_pricing_methodology}.
+We price all available EUR ATM swaptions using the stable model directly, without any adjustment to its dynamics. The model parameters --- the drift \(\mu\), diffusion \(\sigma\), short rate \(r\) and decoder \(G\) --- are held fixed at the values obtained from the reconstruction calibration in Chapter~\ref{chap:evaluation}. We refer to this configuration as the \emph{frozen stable model}: only the stochastic Brownian increments vary across Monte Carlo paths, while all neural-network parameters remain constant. The simulation uses \(N_{\mathrm{MC}} = 512\) antithetic\footnote{Antithetic variates is a standard Monte Carlo variance-reduction technique \citep{Glasserman2004}. For each randomly drawn path with Brownian increment vector \(\boldsymbol{\varepsilon}\), a mirrored path with \(-\boldsymbol{\varepsilon}\) is also simulated. The two paths are then averaged. This eliminates the variance contribution from the linear part of the payoff and approximately halves the Monte Carlo standard error at unchanged computational cost.} paths per cell and the time grid described in Section~\ref{sec:swaption_pricing_methodology}.
 
 \begin{table}[H]
 \centering
 \input{../Figures/Pricing/eval_base/tab_base_per_cell_all.tex}
 \end{table}
 
-The overall MAE is \textbf{414.7 bp}, far exceeding typical bid--offer spreads of 1--5 bp. Short-expiry cells are the worst: the 1Yx5Y cell exceeds 1000 bp. All cells show a large positive vol error --- the frozen stable model systematically overestimates implied volatility --- and a strongly negative forward bias, confirming that the simulated forward distributions are not centred at \(F_0\). A latent-state model that reconstructs curves accurately is therefore not, by itself, a swaption-pricing model.
+The overall MAE is \textbf{414.7 bp},\footnote{MAE denotes the mean absolute error between model-implied and market normal implied volatilities, reported in basis points.} far exceeding market bid--offer spreads, which are typically only a few basis points. Short-expiry cells perform worst, with the 1Yx5Y cell exceeding 1000 bp. All cells show a large positive vol error, indicating that the frozen stable model systematically overestimates implied volatility. The forward bias is mixed in sign, but negative on average and particularly pronounced for the 1Y expiry cells, showing that the simulated forward distributions are not consistently centred at \(F_0\). A latent-state model that reconstructs curves accurately is therefore not, by itself, a swaption-pricing model.
 
 \subsection{How could that be?}
 \label{subsec:stable_pricing_issue}
 
-The size of this error is striking. It is worth pausing to understand why an arbitrage-free model that fits swap curves to within tens of basis points produces option-pricing errors two orders of magnitude larger. The reason is a calibration mismatch. The parameters of the drift, diffusion and decoder networks --- \(\mu\), \(\sigma\) and \(G\) --- were chosen to minimise the curve reconstruction loss
+The size of this error is striking. It is worth pausing to understand why an arbitrage-free model that fits swap curves to within tens of basis points can produce option-pricing errors two orders of magnitude larger. The reason is a calibration mismatch. The model parameters were chosen to minimise the empirical curve-reconstruction risk
 \[
-\mathcal{L}_{\mathrm{recon}}
-= \mathbb{E}\!\left[\bigl\|\mathbf{S} - \hat{\mathbf{S}}(z)\bigr\|^2\right],
+\mathcal L(\Omega)
+=
+\frac{1}{N|\mathcal M|}
+\sum_{n=1}^N
+\sum_{\tau\in\mathcal M}
+\left(
+S_n(\tau)-\widetilde S_n(\tau;\Omega)
+\right)^2,
 \]
-which measures how accurately the decoder reproduces today's observed swap curve. This objective contains no information about the \emph{distribution of future} swap rates and no information about option markets. A drift and diffusion that fit curve cross-sections well are not guaranteed to reproduce the option-implied risk-neutral distribution of \(F_{T_e}\).
+as defined in Section~\ref{sec:model_estimation_training_choices}. This objective measures how accurately the model reconstructs observed swap curves. It contains no information about the risk-neutral distribution of future swap rates and no information from option markets. Hence, a drift and diffusion that produce accurate curve reconstructions are not guaranteed to reproduce the option-implied distribution of \(F_{T_e}\).
 
 Two distinct problems arise, both visible in the table above:
 
 \begin{enumerate}
     \item \textbf{Wrong volatility level.} The diffusion \(\sigma(z)\) and drift \(\mu(z)\) together determine the spread of the distribution of \(F_{T_e}\) under \(\mathbb{Q}\). Since neither was calibrated against option prices, the resulting implied vol can differ substantially from market-observed levels. The large positive vol errors in the table are a direct expression of this mismatch.
-    \item \textbf{Wrong forward centering.} The drift \(\mu(z)\) is calibrated to reconstruct the current curve, not to centre the simulated forward swap rate at \(F_0\). Paths drift away from the ATM forward, producing the strongly negative forward bias \(\widehat b\) reported in the table.
+    \item \textbf{Wrong forward centering.} The drift \(\mu(z)\) is calibrated to reconstruct the current curve, not to centre the simulated forward swap rate at \(F_0\). The forward bias \(\widehat b\) is therefore mixed in sign across cells, but large in magnitude, indicating that the simulated forward distributions are not consistently centred at \(F_0\).
 \end{enumerate}
 
 The remainder of the chapter introduces a minimal trainable pricing layer that recalibrates the risk-neutral dynamics while keeping the stable model frozen, and shows that this single adjustment closes the bulk of the gap.
@@ -152,21 +158,27 @@ The remainder of the chapter introduces a minimal trainable pricing layer that r
 \subsection{Architecture}
 \label{subsec:cmpr_architecture}
 
-We introduce a minimal trainable pricing layer on top of the frozen stable model. It recalibrates the risk-neutral drift \(\mu(z)\) by adding a learnable constant correction in the diffusion direction:
-\[
-\boxed{
-\mu^*(z) = \mu(z) + \sigma(z)\,\lambda_0,
-}
-\]
-where \(\lambda_0 \in \mathbb{R}^d\) is a learnable constant vector and \(\mu^*(z)\) is the option-calibrated drift. Since the model is already under \(\mathbb{Q}\), this is not a change of measure but a recalibration of the risk-neutral dynamics. The adjusted SDE is
-\[
-dz_t = \mu^*(z_t)\,dt + \mathrm{diag}(s)\,\sigma(z_t)\,dW_t^{\mathbb{Q}},
-\]
-with per-factor diffusion scales \(s \in \mathbb{R}^d_{>0}\) also learnable. All base model parameters are frozen. The model has \(2d = 8\) trainable parameters for \(d = 4\).
+We address the two failures above by adding a minimal trainable pricing layer on top of the frozen stable model. The aim is not to relearn the curve representation, but only to recalibrate the risk-neutral dynamics that determine the swaption-implied distribution.
 
-The vector \(\lambda_0\) has a natural interpretation as a \emph{market price of risk}: it quantifies the additional drift --- beyond what the reconstruction-calibrated \(\mu(z)\) provides --- that the risk-neutral measure requires in order for the simulated distribution of \(F_{T_e}\) to match option prices. The correction \(\sigma(z)\lambda_0\) rotates \(\lambda_0\) through the diffusion geometry so that the adjustment is aligned with the directions of uncertainty in the latent space.
+Specifically, we replace the reconstruction-calibrated drift by
+\[
+\mu^*(z) = \mu(z) + \sigma(z)\lambda_0,
+\]
+where \(\lambda_0 \in \mathbb{R}^d\) is a learnable constant vector and \(\mu^*(z)\) denotes the option-calibrated drift. The adjusted risk-neutral dynamics are
+\[
+dz_t
+=
+\mu^*(z_t)\,dt
++
+\operatorname{diag}(s)\sigma(z_t)\,dW_t^{\mathbb Q},
+\]
+where \(s\in\mathbb R^d_{>0}\) are learnable per-factor diffusion scales. All base model parameters are frozen, so the pricing layer has only \(2d=8\) trainable parameters for \(d=4\).
 
-The key design choice is that \(\lambda_0\) is \emph{constant}: it does not depend on the current latent state \(z_t\). A state-dependent correction \(\sigma(z)\Lambda z_t\) would grow as \(z_t\) deviates from its starting point under diffusion noise, creating a positive feedback loop through the decoder's Jacobian that produces explosive implied vols for short-expiry options. With a constant \(\lambda_0\) the correction is uniform across the latent space and no such amplification can occur.
+The two trainable components target the two errors identified above. The scale vector \(s\) primarily adjusts the width of the simulated distribution of \(F_{T_e}\), and therefore targets the volatility-level error. The drift correction \(\lambda_0\) primarily adjusts the centre of the simulated distribution, and therefore targets the forward-centering error.
+
+The correction \(\lambda_0\) is analogous to a constant market-price-of-risk adjustment, but here it should be understood as a direct recalibration of the risk-neutral drift rather than as a change of measure. Multiplication by \(\sigma(z)\) maps the constant vector into the model's diffusion directions, so the drift is adjusted along the latent directions that generate uncertainty.
+
+The key restriction is that \(\lambda_0\) is constant. A state-dependent correction could make the drift adjustment grow as simulated paths move away from the initial latent region, amplifying errors through the decoder and producing unstable short-expiry implied volatilities. A constant correction is therefore deliberately conservative: it can shift the centre of the simulated forward distribution, but it does not introduce additional state-dependent feedback.
 
 \subsection{Calibration}
 \label{subsec:cmpr_calibration}
@@ -186,19 +198,20 @@ Calibration minimises a straddle vol loss plus a forward-centering penalty:
 +\;
 10^{-3}\,\|\lambda_0\|^2,
 \]
-where \(\mathcal{B}\) is a mini-batch of randomly sampled EUR swaption observations. Optimisation uses Adam with linear warmup and cosine annealing over \(1000\) epochs, with \(N_{\mathrm{MC}} = 512\) antithetic paths per observation.
+where \(\mathcal{B}\) is a mini-batch of randomly sampled EUR swaption observations. Optimisation uses Adam with linear warmup and cosine annealing \footnote{Linear warmup gradually increases the learning rate at the start of
+training before the cosine annealing schedule begins to decrease it.} over \(1000\) epochs, with \(N_{\mathrm{MC}} = 512\) antithetic paths per observation.
 
 \subsection{Results}
 \label{subsec:cmpr_results}
 
-Table~\ref{tab:constant_mpr_per_cell_all} reports per-cell errors. The overall MAE falls from \(414.7\) bp (base model) to \(\mathbf{40.1}\) bp — a reduction of over \(90\%\) using only \(8\) trainable parameters.
+Table~\ref{tab:constant_mpr_per_cell_merged} reports per-cell errors, with the mean absolute error broken out for the full sample, the training period (2010--2021) and the test period (2022--2024). The overall MAE falls from \(414.7\) bp (base model) to \(\mathbf{40.1}\) bp --- a reduction of over \(90\%\) using only \(8\) trainable parameters. The training- and test-period totals are \(39.4\) bp and \(42.0\) bp respectively.
 
 \begin{table}[H]
 \centering
-\input{../Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_all.tex}
+\input{../Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_merged.tex}
 \end{table}
 
-Splitting the data 70/30 into a training period (2010--2021) and a test period (2022--2024) gives training MAE \(39.4\) bp and test MAE \(\mathbf{42.0}\) bp. The very small train--test gap is the central observation about this model: \emph{Constant MPR does not overfit}.
+The very small train--test gap at the total level is the headline observation. Looking inside the table, however, the per-cell pattern is more nuanced. The 1Yx1Y and 1Yx5Y cells, which dominate the all-dates MAE, are large primarily in the \emph{training} period (\(188\) and \(79\) bp respectively) and substantially smaller in the test period (\(25\) and \(22\) bp). The training-period 1Y blow-up reflects the negative-rate era from 2014--2019, where the model struggles to reproduce inverted and floor-pressed short-end curves. Conversely, the 5Y and 10Y rows are systematically worse in the test period than in the training period, reflecting the 2022 tightening cycle which stresses long-tenor cells. The two effects largely offset in the totals, and the model can be said to mis-fit different cells in different regimes with a roughly constant overall error budget rather than to overfit in the standard sense.
 
 Figure~\ref{fig:pricing_heatmap_comparison_all} compares the base-model and Constant MPR heatmaps side by side. The improvement is uniform across the surface, with the largest reductions on the cells where the base model is worst (short expiries on long tenors). Figure~\ref{fig:pricing_comparison_timeseries} overlays the vol error over time: the base-model errors swing by hundreds of bp, while the Constant MPR error stays close to zero throughout most of the sample, with residual spikes concentrated in the 2022 rate-hike episode and in the 1Y expiry row.
 
