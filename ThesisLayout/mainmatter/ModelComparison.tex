@@ -74,12 +74,7 @@ curves near zero, where the features are themselves near zero.
 The augmented model follows the same encoder-decoder architecture described in Chapter~\ref{chap:encoderdecodermodel}, with two modifications. The encoder receives the 11-dimensional augmented input rather than the raw 8-dimensional swap curve, and the loss is evaluated over the eight reconstructed rates plus the three derived features computed from them, giving eleven terms in total. The decoder output remains an 8-dimensional swap curve $\tilde{\mathbf{S}}$.
 
 
-\subsection{Assessing the fit of Augmented}
-
-
-\subsection{In-Sample Fit of the Augmented Model}
-
-\subsection{In-Sample Fit of the Augmented Model}
+\subsection{Assessing the Augmented Model empirically}
 
 The augmented model is assessed on the same three representative curves used 
 to illustrate the baseline failure patterns in 
@@ -141,7 +136,7 @@ Resulting in that the augmented input vector helped guide the model in sample on
 \end{figure}
 
 
-Hereby indicating that again even with the augmented input the latent dimension 2 is the best oos even though yielding an in sample fit that was looked more like the baseline.
+Hereby indicating that again even with the augmented input the latent dimension 2 is the best oos even though yielding an in sample fit that was looked more like the baseline. so having an augmented vector contrubuted IN sample with the need of more latent factors, but failed to genearlize well OOS, proving to not better the baseline.
 
 
 
@@ -152,7 +147,7 @@ Hereby indicating that again even with the augmented input the latent dimension 
 Combining the augmentation with the stabilisation described in Section~\ref{sec:stable} yields a fourth model, which we refer to as \textit{augmented stable}. We therefore evaluate four models in total: baseline ($\ell=3$), stable ($\ell=4$), augmented ($\ell=3$), and augmented stable ($\ell=3$). The latent dimension for each new model is selected based on its own best out-of-sample performance. 
 
 
-
+so even though that the augmetned model seemed to fail, it still tells us something about how to improve the construction of the swap rates. we cant just give more information to the encoder-decoder explicitly, but we can help it better modelling wise.
 
 
 
