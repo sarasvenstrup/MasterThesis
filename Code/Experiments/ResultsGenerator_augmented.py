@@ -693,35 +693,30 @@ if _baseline_S_hat is not None:
     if len(_ns_idx) == 0:
         print("  ⚠️  EUR 2014-08-29 not found — skipping augmented_latent_space_regime_shift")
     else:
-        _ns_S_eur  = _ns_X_np[_ns_idx[0]]                        # (8,) original curve
-        # Shift down so the minimum rate lands at ~ -0.002 (-20 bps) — mildly negative
-        _ns_shift  = -(float(_ns_S_eur.min()) + 0.002)
-        _ns_S_neg  = _ns_S_eur + _ns_shift
-        _ns_shift_bps = int(round(abs(_ns_shift) * 10000))        # magnitude in bps
+        # ── stylised example points (hardcoded to match LaTeX example) ──────
+        # Coordinates are (z_1, z_2); plot convention: x=z_2, y=z_1
+        _ns_z  = _enc_w_ns @ _ns_X_np[_ns_idx[0]]   # computed from actual encoder
+        _ns_z1 = np.array([-0.0164,  0.0400])         # −150 bps (Ex. 1)
+        _ns_z2 = np.array([-0.0119,  0.0030])         # −60 bps  (Ex. 2)
 
-        # Flat counterparts: same mean level, zero slope/curvature (all tenors equal)
-        _ns_S_flat     = np.full_like(_ns_S_eur, float(_ns_S_eur.mean()))
-        _ns_S_neg_flat = np.full_like(_ns_S_neg, float(_ns_S_neg.mean()))
+        print(f"    z   = ({_ns_z[0]:.4f}, {_ns_z[1]:.4f})")
+        print(f"    z1  = ({_ns_z1[0]:.4f}, {_ns_z1[1]:.4f})  [−150 bps Ex.1]")
+        print(f"    z2  = ({_ns_z2[0]:.4f}, {_ns_z2[1]:.4f})  [−60 bps  Ex.2]")
 
-        # Encode all four curves with the linear encoder → (z_1, z_2)
-        _ns_z          = _enc_w_ns @ _ns_S_eur
-        _ns_z_flat     = _enc_w_ns @ _ns_S_flat
-        _ns_z_neg      = _enc_w_ns @ _ns_S_neg
-        _ns_z_neg_flat = _enc_w_ns @ _ns_S_neg_flat
+        # ── actual-data failure masks ─────────────────────────────────────────
+        _ns_X = _ns_X_np   # (N, 8)
+        # ≥7 of 8 tenors negative
+        _ns_mask_deep = (_ns_X < 0).sum(axis=1) >= 7
+        # first 4 tenors negative AND last 4 tenors positive
+        _ns_mask_cross = (
+            (_ns_X[:, :4] < 0).all(axis=1) & (_ns_X[:, 4:] > 0).all(axis=1)
+        )
+        print(f"    deep-negative curves (≥7/8 neg): {_ns_mask_deep.sum()}")
+        print(f"    crossing curves (first4<0, last4>0): {_ns_mask_cross.sum()}")
 
-        _ns_dist_norm = float(np.linalg.norm(_ns_z     - _ns_z_flat))
-        _ns_dist_neg  = float(np.linalg.norm(_ns_z_neg - _ns_z_neg_flat))
+        fig_ns, ax_ns = plt.subplots(figsize=(11, 5))
 
-        print(f"    z          = ({_ns_z[0]:.4f}, {_ns_z[1]:.4f})")
-        print(f"    z_flat     = ({_ns_z_flat[0]:.4f}, {_ns_z_flat[1]:.4f})")
-        print(f"    z_neg      = ({_ns_z_neg[0]:.4f}, {_ns_z_neg[1]:.4f})")
-        print(f"    z_neg_flat = ({_ns_z_neg_flat[0]:.4f}, {_ns_z_neg_flat[1]:.4f})")
-        print(f"    shift = {_ns_shift:.4f}  (−{_ns_shift_bps} bps)")
-        print(f"    dist (normal) = {_ns_dist_norm:.4f}  |  dist (negative) = {_ns_dist_neg:.4f}")
-
-        fig_ns, ax_ns = plt.subplots(figsize=(10, 5))
-
-        # Background scatter coloured by regime — z_2 on x-axis, z_1 on y-axis
+        # ── background scatter coloured by regime (z_2 on x-axis, z_1 on y) ─
         for _ns_mask, _ns_col, _ns_lbl, _ns_zo in [
             (_ns_normal,   _col_ns_normal,   "Normal",   1),
             (_ns_inverted, _col_ns_inverted, "Inverted", 2),
@@ -733,51 +728,71 @@ if _baseline_S_hat is not None:
                 label=_ns_lbl, zorder=_ns_zo, linewidths=0,
             )
 
-        # Four overlay points — (marker, facecolor, edgecolor, size, label)
-        _ns_pts = [
-            (_ns_z,          "*", _col_ns_normal,   True,
-             r"$\mathbf{z}$ (Normal, EUR 2014-08-29)"),
-            (_ns_z_flat,     "*", _col_ns_normal,   False,
-             r"$\mathbf{z}_{\mathrm{flat}}$ (flat counterpart)"),
-            (_ns_z_neg,      "D", _col_ns_negative, True,
-             rf"$\mathbf{{z}}_{{-}}$ (shifted $-{_ns_shift_bps}$ bps)"),
-            (_ns_z_neg_flat, "D", _col_ns_negative, False,
-             r"$\mathbf{z}_{-,\mathrm{flat}}$ (flat counterpart)"),
-        ]
-        _ns_marker_sizes = {"*": 120, "D": 50}
-        for _ns_coord, _ns_mk, _ns_col, _ns_filled, _ns_lbl in _ns_pts:
-            _ns_fc = _ns_col if _ns_filled else "none"
-            ax_ns.scatter(
-                [_ns_coord[1]], [_ns_coord[0]],    # x=z_2, y=z_1
-                marker=_ns_mk,
-                facecolors=_ns_fc, edgecolors=_ns_col,
-                s=_ns_marker_sizes[_ns_mk], linewidths=1.8,
-                zorder=7, label=_ns_lbl,
-            )
-
-        # Dashed lines: each curve to its flat counterpart
-        ax_ns.plot(
-            [_ns_z[1], _ns_z_flat[1]], [_ns_z[0], _ns_z_flat[0]],
-            color=_col_ns_normal, linewidth=1.5, linestyle="--", zorder=5,
+        # ── actual-data failure overlays ──────────────────────────────────────
+        ax_ns.scatter(
+            _Z_ns[_ns_mask_deep, 1], _Z_ns[_ns_mask_deep, 0],
+            marker="x", color=_col_ns_negative, s=40, linewidths=1.5,
+            zorder=5, label=r"$\geq\!7/8$ negative tenors",
         )
-        _ns_mid_norm = (_ns_z + _ns_z_flat) / 2
-        ax_ns.annotate(
-            rf"$d = {_ns_dist_norm:.4f}$",
-            xy=(_ns_mid_norm[1], _ns_mid_norm[0]),
-            xytext=(-6, 10), textcoords="offset points",
-            fontsize=9, color=_col_ns_normal, ha="right",
+        ax_ns.scatter(
+            _Z_ns[_ns_mask_cross, 1], _Z_ns[_ns_mask_cross, 0],
+            marker="^", facecolors="none", edgecolors=_col_ns_negative,
+            s=40, linewidths=1.5,
+            zorder=5, label="Crossing (first 4 neg, last 4 pos)",
         )
 
-        ax_ns.plot(
-            [_ns_z_neg[1], _ns_z_neg_flat[1]], [_ns_z_neg[0], _ns_z_neg_flat[0]],
-            color=_col_ns_negative, linewidth=1.5, linestyle="--", zorder=5,
+        # ── stylised example points ───────────────────────────────────────────
+        # z — solid blue star (original curve)
+        ax_ns.scatter(
+            [_ns_z[1]], [_ns_z[0]],
+            marker="*", facecolors=_col_ns_normal, edgecolors=_col_ns_normal,
+            s=220, linewidths=1.5, zorder=8,
+            label=r"$\mathbf{z}$ (EUR 2014-08-29, original)",
         )
-        _ns_mid_neg = (_ns_z_neg + _ns_z_neg_flat) / 2
+        # z1 — solid red diamond (−150 bps, Ex. 1)
+        ax_ns.scatter(
+            [_ns_z1[1]], [_ns_z1[0]],
+            marker="D", facecolors=_col_ns_negative, edgecolors=_col_ns_negative,
+            s=70, linewidths=1.5, zorder=8,
+            label=r"$\mathbf{z}_1$ (Ex.\,1: $-150$ bps)",
+        )
+        # z2 — solid red circle (−60 bps, Ex. 2)
+        ax_ns.scatter(
+            [_ns_z2[1]], [_ns_z2[0]],
+            marker="o", facecolors=_col_ns_negative, edgecolors=_col_ns_negative,
+            s=60, linewidths=1.5, zorder=8,
+            label=r"$\mathbf{z}_2$ (Ex.\,2: $-60$ bps)",
+        )
+
+        # ── dashed arrows z → z1 and z → z2 ─────────────────────────────────
+        _arrow_kw = dict(
+            arrowstyle="->",
+            color=_col_ns_negative,
+            lw=1.4,
+            linestyle="dashed",
+            connectionstyle="arc3,rad=0.0",
+        )
         ax_ns.annotate(
-            rf"$d = {_ns_dist_neg:.4f}$",
-            xy=(_ns_mid_neg[1], _ns_mid_neg[0]),
-            xytext=(8, -16), textcoords="offset points",
-            fontsize=9, color=_col_ns_negative, ha="left",
+            "", xy=(_ns_z1[1], _ns_z1[0]), xytext=(_ns_z[1], _ns_z[0]),
+            arrowprops=_arrow_kw, zorder=7,
+        )
+        ax_ns.annotate(
+            "", xy=(_ns_z2[1], _ns_z2[0]), xytext=(_ns_z[1], _ns_z[0]),
+            arrowprops=_arrow_kw, zorder=7,
+        )
+
+        # Arrow labels at midpoints, offset to avoid the line
+        _ns_mid1 = (_ns_z + _ns_z1) / 2
+        ax_ns.text(
+            _ns_mid1[1] + 0.003, _ns_mid1[0] - 0.001,
+            r"$-150\,$bps (Ex.\,1)",
+            fontsize=8, color=_col_ns_negative, ha="left", va="top",
+        )
+        _ns_mid2 = (_ns_z + _ns_z2) / 2
+        ax_ns.text(
+            _ns_mid2[1] + 0.003, _ns_mid2[0] + 0.001,
+            r"$-60\,$bps (Ex.\,2)",
+            fontsize=8, color=_col_ns_negative, ha="left", va="bottom",
         )
 
         ax_ns.set_xlabel(r"$z_2$", fontsize=12)
@@ -785,16 +800,159 @@ if _baseline_S_hat is not None:
         ax_ns.tick_params(labelsize=10)
         ax_ns.spines["top"].set_visible(False)
         ax_ns.spines["right"].set_visible(False)
-        _leg_ns = ax_ns.legend(fontsize=9, frameon=False,
+
+        _leg_ns = ax_ns.legend(fontsize=8.5, frameon=False,
                                loc="center left", bbox_to_anchor=(1.02, 0.5))
+        # Make background scatter handles fully opaque and a bit larger
         for _lh_ns in _leg_ns.legend_handles[:3]:
             _lh_ns.set_alpha(1.0)
             _lh_ns.set_sizes([40])
+
         fig_ns.tight_layout()
-        fig_ns.subplots_adjust(right=0.72)
+        fig_ns.subplots_adjust(right=0.68)
         save_fig(fig_ns, "augmented_latent_space_regime_shift")
 else:
     print("  ⚠️  Skipping augmented_latent_space_regime_shift (no baseline dim=2 checkpoint found)")
+
+# ── figure: latent_space_comparison (baseline ℓ=2 vs augmented ℓ=3) ──────────
+print("\nGenerating latent space comparison figure (baseline vs augmented)...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping latent_space_comparison (no baseline dim=2 checkpoint found)")
+else:
+    # Baseline encoder (2, 8): z_2 on x-axis, z_1 on y-axis
+    _cmp_enc_b = _b_m.encoder.lin.weight.detach().numpy()    # (2, 8)
+    _cmp_Z_b   = X_tensor.numpy() @ _cmp_enc_b.T             # (N, 2)
+
+    # Augmented encoder (3, 11): also plot z_2 on x-axis, z_1 on y-axis
+    _cmp_enc_a = model.encoder.lin.weight.detach().numpy()   # (3, 11)
+    _cmp_X_aug = augment(X_tensor).numpy()                   # (N, 11)
+    _cmp_Z_a   = _cmp_X_aug @ _cmp_enc_a.T                  # (N, 3)
+
+    # Regime colours (shared)
+    _cmp_col_normal   = custom_palette[2]
+    _cmp_col_inverted = "black"
+    _cmp_col_negative = "indianred"
+    _cmp_normal   = ~inverted & ~negative
+    _cmp_inverted =  inverted & ~negative
+    _cmp_negative =  negative
+
+    # Failure masks (based on original 8-tenor curves, same for both panels)
+    _cmp_X_np        = X_tensor.numpy()
+    _cmp_mask_deep   = (_cmp_X_np < 0).sum(axis=1) >= 7
+    _cmp_mask_cross  = (
+        (_cmp_X_np[:, :4] < 0).all(axis=1) & (_cmp_X_np[:, 4:] > 0).all(axis=1)
+    )
+
+    # Stylised example points for the left panel
+    _cmp_idx = np.where(
+        (meta["ccy"].values == "EUR") &
+        (pd.to_datetime(meta["as_of_date"].values) == pd.Timestamp("2014-08-29"))
+    )[0]
+    _cmp_z  = _cmp_enc_b @ _cmp_X_np[_cmp_idx[0]]   # original, baseline encoder
+    _cmp_z1 = np.array([-0.0164,  0.0400])            # −150 bps (Ex. 1)
+    _cmp_z2 = np.array([-0.0119,  0.0030])            # −60 bps  (Ex. 2)
+
+    fig_cmp, (ax_bl, ax_au) = plt.subplots(1, 2, figsize=(16, 5))
+
+    for _ax, _Z, _title, _show_ex in [
+        (ax_bl, _cmp_Z_b, r"Baseline ($\ell=2$)",  True),
+        (ax_au, _cmp_Z_a, r"Augmented ($\ell=3$)", False),
+    ]:
+        # Background scatter
+        for _mask, _col, _lbl, _zo in [
+            (_cmp_normal,   _cmp_col_normal,   "Normal",   1),
+            (_cmp_inverted, _cmp_col_inverted, "Inverted", 2),
+            (_cmp_negative, _cmp_col_negative, "Negative", 3),
+        ]:
+            _ax.scatter(
+                _Z[_mask, 1], _Z[_mask, 0],
+                color=_col, alpha=0.25, s=8,
+                label=_lbl, zorder=_zo, linewidths=0,
+            )
+
+        # Failure overlays
+        _ax.scatter(
+            _Z[_cmp_mask_deep, 1], _Z[_cmp_mask_deep, 0],
+            marker="x", color=_cmp_col_negative, s=40, linewidths=1.5,
+            zorder=5, label=r"$\geq\!7/8$ negative tenors",
+        )
+        _ax.scatter(
+            _Z[_cmp_mask_cross, 1], _Z[_cmp_mask_cross, 0],
+            marker="^", facecolors="none", edgecolors=_cmp_col_negative,
+            s=40, linewidths=1.5,
+            zorder=5, label="Crossing (first 4 neg, last 4 pos)",
+        )
+
+        if _show_ex:
+            # z — solid blue star (original EUR 2014-08-29)
+            _ax.scatter(
+                [_cmp_z[1]], [_cmp_z[0]],
+                marker="*", facecolors=_cmp_col_normal, edgecolors=_cmp_col_normal,
+                s=220, linewidths=1.5, zorder=8,
+                label=r"$\mathbf{z}$ (EUR 2014-08-29)",
+            )
+            # z1 — solid red diamond (−150 bps, Ex. 1)
+            _ax.scatter(
+                [_cmp_z1[1]], [_cmp_z1[0]],
+                marker="D", facecolors=_cmp_col_negative, edgecolors=_cmp_col_negative,
+                s=70, linewidths=1.5, zorder=8,
+                label=r"$\mathbf{z}_1$ (Ex.\,1: $-150$ bps)",
+            )
+            # z2 — solid red circle (−60 bps, Ex. 2)
+            _ax.scatter(
+                [_cmp_z2[1]], [_cmp_z2[0]],
+                marker="o", facecolors=_cmp_col_negative, edgecolors=_cmp_col_negative,
+                s=60, linewidths=1.5, zorder=8,
+                label=r"$\mathbf{z}_2$ (Ex.\,2: $-60$ bps)",
+            )
+            # Dashed arrows z → z1 and z → z2
+            _cmp_arrow_kw = dict(
+                arrowstyle="->", color=_cmp_col_negative, lw=1.4,
+                linestyle="dashed", connectionstyle="arc3,rad=0.0",
+            )
+            _ax.annotate(
+                "", xy=(_cmp_z1[1], _cmp_z1[0]), xytext=(_cmp_z[1], _cmp_z[0]),
+                arrowprops=_cmp_arrow_kw, zorder=7,
+            )
+            _ax.annotate(
+                "", xy=(_cmp_z2[1], _cmp_z2[0]), xytext=(_cmp_z[1], _cmp_z[0]),
+                arrowprops=_cmp_arrow_kw, zorder=7,
+            )
+            _cmp_mid1 = (_cmp_z + _cmp_z1) / 2
+            _ax.text(
+                _cmp_mid1[1] + 0.003, _cmp_mid1[0] - 0.001,
+                r"$-150\,$bps (Ex.\,1)", fontsize=8,
+                color=_cmp_col_negative, ha="left", va="top",
+            )
+            _cmp_mid2 = (_cmp_z + _cmp_z2) / 2
+            _ax.text(
+                _cmp_mid2[1] + 0.003, _cmp_mid2[0] + 0.001,
+                r"$-60\,$bps (Ex.\,2)", fontsize=8,
+                color=_cmp_col_negative, ha="left", va="bottom",
+            )
+
+        _ax.set_xlabel(r"$z_2$", fontsize=12)
+        _ax.set_ylabel(r"$z_1$", fontsize=12)
+        _ax.set_title(_title, fontsize=12)
+        _ax.tick_params(labelsize=10)
+        _ax.spines["top"].set_visible(False)
+        _ax.spines["right"].set_visible(False)
+
+    # Shared legend: collect all handles from left panel (has the most entries)
+    _cmp_handles, _cmp_labels = ax_bl.get_legend_handles_labels()
+    _cmp_leg = fig_cmp.legend(
+        _cmp_handles, _cmp_labels,
+        fontsize=8.5, frameon=False,
+        loc="center left", bbox_to_anchor=(1.0, 0.5),
+    )
+    # Make background scatter handles fully opaque
+    for _lh in _cmp_leg.legend_handles[:3]:
+        _lh.set_alpha(1.0)
+        _lh.set_sizes([40])
+
+    fig_cmp.tight_layout()
+    fig_cmp.subplots_adjust(right=0.80)
+    save_fig(fig_cmp, "latent_space_comparison")
 
 # ── figure: augmented_latent_space_shift ──────────────────────────────────────
 print("\nGenerating augmented latent space shift figure...")
@@ -1023,6 +1181,190 @@ else:
         "deeply negative (mean swap rate $\\leq 0$)",
         "baseline_fit_deep_negative_curves",
     )
+
+# ── figure: almost-all-negative curves — all three models (3×6) ─────────────
+print("\nGenerating almost-all-negative curves figure...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping — no baseline dim=2 checkpoint found")
+else:
+    # Load stable dim=4 if not already loaded
+    _aan_stable_path = os.path.join(
+        REPO_ROOT, "Figures", "TrainingResults",
+        "dim4_stable", f"ep{EPOCHS}",
+        f"checkpoint_dim4_ep{EPOCHS}.pt",
+    )
+    _aan_stable_S_hat = None
+    if os.path.exists(_aan_stable_path):
+        _aan_ckpt  = torch.load(_aan_stable_path, map_location=device,
+                                weights_only=False)
+        _aan_state = (_aan_ckpt["model_state_dict"]
+                      if "model_state_dict" in _aan_ckpt else _aan_ckpt)
+        _aan_cfg   = (_aan_ckpt.get("model_config", {})
+                      if isinstance(_aan_ckpt, dict) else {})
+        _aan_ldim  = _aan_cfg.get("latent_dim", 4)
+        _aan_m     = FullModelStable(latent_dim=_aan_ldim).to(device)
+        _aan_m.load_state_dict(_aan_state, strict=False)
+        _aan_m.eval()
+        _aan_list  = []
+        with torch.no_grad():
+            for _i in range(0, X_tensor.shape[0], BATCH_SIZE):
+                _xb = X_tensor[_i:_i + BATCH_SIZE].to(device)
+                _aan_list.append(_aan_m(_xb).cpu())
+        _aan_stable_S_hat = torch.cat(_aan_list).numpy()
+        print("  Loaded stable dim=4 model for almost-all-negative figure")
+    else:
+        print(f"  ⚠️  Stable dim=4 checkpoint not found: {_aan_stable_path}")
+
+    # Group 1: at least 7 of 8 tenors are negative
+    _aan_neg_count  = (X_np_all < 0).sum(axis=1)
+    _aan_mask_deep  = _aan_neg_count >= 7
+    _aan_idx_deep   = np.where(_aan_mask_deep)[0]
+    print(f"  Found {len(_aan_idx_deep)} curves with ≥7/8 negative tenors")
+
+    # Group 2: crossing curves — first 4 tenors all negative, last tenor positive,
+    #           not already in group 1
+    _aan_mask_sym = (
+        (X_np_all[:, :5] < 0).all(axis=1) & (X_np_all[:, -1] > 0) & ~_aan_mask_deep
+    )
+    _aan_idx_sym = np.where(_aan_mask_sym)[0]
+    print(f"  Found {len(_aan_idx_sym)} crossing curves (short-neg, long-pos)")
+
+    N_AAN  = 18
+    n_deep = len(_aan_idx_deep)
+    n_fill = N_AAN - n_deep
+    _aan_rng = np.random.default_rng(seed=42)
+    if len(_aan_idx_sym) >= n_fill:
+        _aan_idx_sym_sel = _aan_rng.choice(_aan_idx_sym, size=n_fill, replace=False)
+    else:
+        _aan_idx_sym_sel = _aan_idx_sym
+        print(f"  ⚠️  Only {len(_aan_idx_sym)} crossing curves — using all")
+
+    _aan_sel = np.concatenate([_aan_idx_deep, _aan_idx_sym_sel])
+    _aan_sel = _aan_sel[np.argsort(_aan_sel)]
+    print(f"  Total selected: {len(_aan_sel)} ({n_deep} deeply negative + "
+          f"{len(_aan_idx_sym_sel)} crossing)")
+
+    fig_aan, axes_aan = plt.subplots(3, 6, figsize=(18, 9), sharey=False)
+
+    for _pi, _gi in enumerate(_aan_sel):
+        _ax    = axes_aan[_pi // 6, _pi % 6]
+        _act   = X_np_all[_gi] * 10_000.0
+        _fit_b = _baseline_S_hat[_gi] * 10_000.0
+        _fit_a = S_np_all[_gi] * 10_000.0
+        _ccy   = meta["ccy"].values[_gi]
+        _date  = pd.to_datetime(meta["as_of_date"].values[_gi]).strftime("%Y-%m-%d")
+        _rmse_b = float(np.sqrt(np.mean((_act - _fit_b) ** 2)))
+        _rmse_a = float(np.sqrt(np.mean((_act - _fit_a) ** 2)))
+
+        _ax.plot(tenors, _act,   "o-", color="black",         linewidth=1.5,
+                 markersize=3, label="Actual")
+        _ax.plot(tenors, _fit_b,       color="#2c4f8c",       linewidth=1.5,
+                 label=r"Baseline ($\ell=2$)")
+        _ax.plot(tenors, _fit_a,       color="palevioletred", linewidth=1.5,
+                 label=r"Augmented ($\ell=3$)")
+
+        if _aan_stable_S_hat is not None:
+            _fit_s  = _aan_stable_S_hat[_gi] * 10_000.0
+            _rmse_s = float(np.sqrt(np.mean((_act - _fit_s) ** 2)))
+            _ax.plot(tenors, _fit_s,   color="#c0392b",       linewidth=1.5,
+                     label=r"Stable ($\ell=4$)")
+            _rmse_txt = f"B:{_rmse_b:.1f} / Aug:{_rmse_a:.1f} / S:{_rmse_s:.1f} bps"
+        else:
+            _rmse_txt = f"B:{_rmse_b:.1f} / Aug:{_rmse_a:.1f} bps"
+
+        _ax.axhline(0, color="0.7", linewidth=0.8, linestyle=":")
+        _ax.set_title(f"{_ccy}  {_date}", fontsize=8)
+        _ax.text(0.97, 0.97, _rmse_txt,
+                 transform=_ax.transAxes, fontsize=6.5,
+                 ha="right", va="top", color="0.4")
+        _ax.tick_params(labelsize=7)
+        _ax.spines["top"].set_visible(False)
+        _ax.spines["right"].set_visible(False)
+        if _pi % 6 == 0:
+            _ax.set_ylabel("Swap rate (bps)", fontsize=7)
+        if _pi // 6 == 2:
+            _ax.set_xlabel("Tenor (years)", fontsize=7)
+
+    _handles_aan, _labels_aan = axes_aan[0, 0].get_legend_handles_labels()
+    fig_aan.legend(_handles_aan, _labels_aan, loc="lower center",
+                   bbox_to_anchor=(0.5, -0.02), ncol=4, fontsize=9, frameon=False)
+    fig_aan.suptitle(
+        r"Deeply negative and crossing curves: "
+        r"baseline ($\ell=2$), augmented input ($\ell=3$), stable ($\ell=4$)"
+        "\n"
+        r"($\geq 7/8$ negative tenors, or first 5 tenors negative with positive long end)",
+        fontsize=10, y=1.02,
+    )
+    fig_aan.tight_layout()
+    save_fig(fig_aan, "baseline_fit_all_negative_curves")
+
+# ── figure: two failure modes — baseline only (1×2) ──────────────────────────
+print("\nGenerating two failure modes figure (baseline only)...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping — no baseline dim=2 checkpoint found")
+else:
+    _b_rmse_all = np.sqrt(np.mean((X_np_all - _baseline_S_hat) ** 2, axis=1)) * 10_000
+
+    # Failure group 1: ≥7/8 tenors negative (deeply negative)
+    _fm_mask_deep  = (X_np_all < 0).sum(axis=1) >= 7
+    # Failure group 2: first 5 tenors negative, last tenor positive (crossing)
+    _fm_mask_cross = (
+        (X_np_all[:, :5] < 0).all(axis=1) & (X_np_all[:, -1] > 0) & ~_fm_mask_deep
+    )
+
+    _fm_idx_deep  = np.where(_fm_mask_deep)[0]
+    _fm_idx_cross = np.where(_fm_mask_cross)[0]
+
+    # Group 1: worst-fit deeply negative curve
+    _fm_gi_deep  = _fm_idx_deep[np.argmax(_b_rmse_all[_fm_idx_deep])]
+
+    # Group 2: fixed — JPY 2016-09-30
+    _fm_jpy_idx  = np.where(
+        (meta["ccy"].values == "JPY") &
+        (pd.to_datetime(meta["as_of_date"].values) == pd.Timestamp("2016-09-30"))
+    )[0]
+    if len(_fm_jpy_idx) == 0:
+        print("  ⚠️  JPY 2016-09-30 not found — falling back to worst crossing curve")
+        _fm_gi_cross = _fm_idx_cross[np.argmax(_b_rmse_all[_fm_idx_cross])]
+    else:
+        _fm_gi_cross = _fm_jpy_idx[0]
+
+    fig_fm, (ax_fm1, ax_fm2) = plt.subplots(1, 2, figsize=(10, 4), sharey=False)
+
+    for _ax, _gi, _failure_lbl, _show_ylabel, _rmse_va, _rmse_y in [
+        (ax_fm1, _fm_gi_deep,  "Deeply negative ($\\geq$7/8 tenors $<0$)",       True,  "top",    0.97),
+        (ax_fm2, _fm_gi_cross, "Crossing (first 5 tenors $<0$, long end $>0$)", False, "bottom", 0.03),
+    ]:
+        _act   = X_np_all[_gi] * 100.0           # decimal → percentage
+        _fit_b = _baseline_S_hat[_gi] * 100.0
+        _rmse_bps = float(np.sqrt(np.mean(
+            (X_np_all[_gi] - _baseline_S_hat[_gi]) ** 2
+        ))) * 10_000                              # RMSE annotation stays in bps
+        _ccy   = meta["ccy"].values[_gi]
+        _date  = pd.to_datetime(meta["as_of_date"].values[_gi]).strftime("%Y-%m-%d")
+
+        _ax.plot(tenors, _act,   "o-", color="black",   linewidth=1.5,
+                 markersize=4, label="Actual")
+        _ax.plot(tenors, _fit_b,       color="#2c4f8c", linewidth=1.5,
+                 label=r"Baseline ($\ell=2$)")
+        _ax.axhline(0, color="0.7", linewidth=0.8, linestyle=":")
+
+        _ax.set_title(f"{_ccy}  {_date}", fontsize=9)
+        _ax.text(0.97, _rmse_y, f"RMSE: {_rmse_bps:.1f} bps",
+                 transform=_ax.transAxes, fontsize=8.5,
+                 ha="right", va=_rmse_va, color="0.4")
+        _ax.set_xlabel("Maturity", fontsize=9)
+        if _show_ylabel:
+            _ax.set_ylabel("Swap rate (%)", fontsize=9)
+        _ax.tick_params(labelsize=8)
+        _ax.spines["top"].set_visible(False)
+        _ax.spines["right"].set_visible(False)
+
+    _handles_fm, _labels_fm = ax_fm1.get_legend_handles_labels()
+    fig_fm.legend(_handles_fm, _labels_fm, loc="lower center",
+                  bbox_to_anchor=(0.5, -0.05), ncol=2, fontsize=9, frameon=False)
+    fig_fm.tight_layout()
+    save_fig(fig_fm, "baseline_fit_failure_modes")
 
 # ── figure: worst curves — baseline dim=2 + stable dim=4 (3×6) ──────────────
 print("\nGenerating worst curves figure (baseline dim=2 + stable dim=4)...")
