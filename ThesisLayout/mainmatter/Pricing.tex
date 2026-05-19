@@ -1,265 +1,283 @@
 %=========================================================
-\chapter{Simulation-Based Swaption Pricing and Calibration}
+\chapter{Simulation-Based Swaption Pricing}
 \label{chap:pricing_methodology}
 %=========================================================
 
-The previous chapter established that the encoder--decoder model produces stable latent dynamics suitable for scenario generation. We now ask a harder question: can the same model be used to price swaptions? This requires the \emph{risk-neutral} distribution of future swap rates, which is a fundamentally different object from the historical cross-section the model was trained on.
+The stable model, introduced in Chapter~\ref{chap:simulation}, produces more controlled latent dynamics that are suitable for simulation. This chapter applies those dynamics to Monte Carlo pricing of swaptions, for which the relevant pricing theory is presented first.
 
 %=========================================================
 \section{Monte Carlo Swaption Pricing}
 \label{sec:swaption_pricing_methodology}
 %=========================================================
 
-We consider European swaptions \citep{Filipovic2009} written on the single-curve swap rates introduced in Section~\ref{subsec:interest_rate_swaps}. The option expires at \(T_e\) and gives the holder the right to enter a swap running from \(T_e\) to \(T_e+n\), with annual fixed-leg payment dates \(T_e+1, T_e+2, \ldots, T_e+n\).
+We consider European swaptions \citep{Filipovic2009} written on a standard interest rate swap introduced in Section~\ref{subsec:interest_rate_swaps}. The option expires at \(T_{\mu}\) and gives the holder the right to enter a swap running from \(T_{\mu}\) to \(T_{\nu}\), with annual fixed-leg payment dates \(T_{\mu+1}, T_{\mu+2}, \ldots, T_{\nu}\).
 
 For an at-the-money (ATM) swaption the strike equals the time-zero forward swap rate. Given the discount curve \(P(0,T)\), the forward annuity and forward swap rate are
 \[
 \mathcal A_0
 =
-\sum_{j=1}^{n}P(0,T_e+j),
+\sum_{k=\mu + 1}^{\nu}P(0,T_{k}),
 \qquad
-F_0
+R_{\mathrm{swap}}(0)
 =
-\frac{P(0,T_e)-P(0,T_e+n)}{\mathcal A_0},
+\frac{P(0,T_{\mu})-P(0,T_{\nu})}{\mathcal A_0},
 \]
-so the ATM strike is \(K = F_0\).
+so the ATM strike is \(K = R_{\mathrm{swap}}(0)\).
 
-On each Monte Carlo path \(m=1,\ldots,N_{\mathrm{MC}}\), the latent state is simulated to the option expiry \(T_e\) using a fine time grid with step \(dt \ll 1\). The decoder then produces the time-\(T_e\) zero-coupon bond curve \(\tau\mapsto P^{(m)}(T_e,\tau)\), from which the pathwise annuity and swap rate are
+On each Monte Carlo path \(m=1,\ldots,N_{\mathrm{MC}}\), the latent state is simulated to the option expiry \(T_{\mu}\) with monthly steps.\footnote{Concretely, twelve steps for the 1Y expiry, sixty for 5Y, and one hundred and twenty for 10Y. During calibration training the step is loosened to \(dt=1/6\) for tractability.} The decoder then produces the time-\(T_{\mu}\) zero-coupon bond curve \(\tau\mapsto P^{(m)}(T_{\mu},\tau)\), from which the pathwise annuity and swap rate are
 \[
-\mathcal A^{(m)}(T_e)
+\mathcal A^{(m)}(T_{\mu})
 =
-\sum_{j=1}^{n}P^{(m)}(T_e,j),
+\sum_{k=\mu + 1}^{\nu}P^{(m)}(T_{\mu},T_k-T_\mu),
 \qquad
-S^{(m)}(T_e)
+S^{(m)}(T_{\mu})
 =
-\frac{1-P^{(m)}(T_e,n)}
-{\mathcal A^{(m)}(T_e)}.
+\frac{1-P^{(m)}(T_{\mu}, T_{\nu}-T_\mu)}
+{\mathcal A^{(m)}(T_{\mu})}.
 \]
 The payer and receiver swaption payoffs are
 \[
-X^{(m),\mathrm{pay}}_{T_e}
+X^{(m),\mathrm{pay}}_{T_{\mu}}
 =
-\mathcal A^{(m)}(T_e)\bigl(S^{(m)}(T_e)-K\bigr)^+,
+\mathcal A^{(m)}(T_{\mu})\bigl(S^{(m)}(T_{\mu})-K\bigr)^+,
 \qquad
-X^{(m),\mathrm{rec}}_{T_e}
+X^{(m),\mathrm{rec}}_{T_{\mu}}
 =
-\mathcal A^{(m)}(T_e)\bigl(K-S^{(m)}(T_e)\bigr)^+,
+\mathcal A^{(m)}(T_{\mu})\bigl(K-S^{(m)}(T_{\mu})\bigr)^+.
 \]
-where we set notional \(\mathcal N = 1\). Each payoff is discounted by the pathwise bank account
+Each payoff is discounted by the pathwise bank account
 \[
-D^{(m)}_{T_e}
+D^{(m)}_{T_{\mu}}
 =
-\exp\!\left(-\int_0^{T_e}r_s^{(m)}\,ds\right),
+\exp\!\left(-\int_0^{T_{\mu}}r_s^{(m)}\,ds\right),
 \]
 approximated on the simulation grid by the trapezoidal rule (Chapter~\ref{chap:simulation}). The Monte Carlo price estimator \citep{Glasserman2004} is
 \[
-\widehat V_0
+\widehat V^{\mathrm{MC}}_0
 =
 \frac{1}{N_{\mathrm{MC}}}
 \sum_{m=1}^{N_{\mathrm{MC}}}
-D^{(m)}_{T_e}X^{(m)}_{T_e}.
+D^{(m)}_{T_{\mu}}X^{(m)}_{T_{\mu}}.
 \]
 
-\subsection{Bachelier implied normal volatility}
-\label{subsec:bachelier_formula}
-
-Market swaption quotes are reported as normal \citep{Bachelier1900} implied volatilities \(\sigma_N\). Under the Bachelier model the forward swap rate satisfies \(dF(t)=\sigma_N\,dW^{\mathcal A}(t)\) under the annuity measure \citep[Ch.~26]{Bjork2020}, giving the ATM price
+The typical market convention is to quote swaptions in terms of normal implied volatility.\footnote{See \citet{Skovmand2025tsm7}, p.~60, lecture notes, week 7.} Under the Bachelier model, the time-zero price of a payer swaption with expiry \(T_{\mu}\), strike \(K\), forward swap rate \(R_{\mathrm{swap}}(0)\), and swap annuity \(\mathcal A_0\) is
 \[
-V^{\mathrm{ATM}}
+V_0
 =
 \mathcal A_0
-\frac{\sigma_N\sqrt{T_e}}{\sqrt{2\pi}}.
+\left[
+\bigl(R_{\mathrm{swap}}(0)-K\bigr)\Phi(d)
++
+\sigma_N\sqrt{T_{\mu}}\,\phi(d)
+\right],
+\qquad
+d=
+\frac{R_{\mathrm{swap}}(0)-K}{\sigma_N\sqrt{T_{\mu}}},
 \]
-The normal convention is standard in low- and negative-rate environments because it permits negative rates \citep{Antonov2015}. To convert a Monte Carlo price into an implied vol we invert this relation.
-
-To decouple the vol level from any directional bias, we price both a payer and a receiver at the ATM strike and average:
+where \(\Phi(\cdot)\) and \(\phi(\cdot)\) denote the standard normal distribution and density functions, respectively. In the at-the-money case, \(K=R_{\mathrm{swap}}(0)\), so \(d=0\), and the price reduces to
+\begin{equation}
+V_0^{\mathrm{ATM}}
+=
+\mathcal A_0
+\frac{\sigma_N\sqrt{T_{\mu}}}{\sqrt{2\pi}}.
+\label{eq:atm_bachelier_price}
+\end{equation}
+A Monte Carlo estimate of the at-the-money swaption price can therefore be converted into a normal implied volatility by inverting this expression,
 \[
-\widehat V_{\mathrm{str}}
+\sigma_{N}^{\mathrm{imp}}
+=
+\frac{\widehat V^{\mathrm{MC}}_0\sqrt{2\pi}}
+{\mathcal A_0\sqrt{T_{\mu}}}.
+\]
+To reduce the effect of directional centering errors, we price both a payer and a receiver swaption at the ATM strike and average the two time-zero prices:
+\begin{equation}
+\widehat V^{\mathrm{str}}_0
 =
 \tfrac{1}{2}\!\left(
-\widehat V^{\mathrm{pay}}_{\mathrm{MC}}
+\widehat V^{\mathrm{pay}}_{0,\mathrm{MC}}
 +
-\widehat V^{\mathrm{rec}}_{\mathrm{MC}}
+\widehat V^{\mathrm{rec}}_{0,\mathrm{MC}}
 \right),
 \qquad
-\widehat{\sigma}_{N}
+\widehat\sigma_{N}^{\mathrm{imp}}
 =
-\frac{\widehat V_{\mathrm{str}}\sqrt{2\pi}}
-{\mathcal A_0\sqrt{T_e}}.
-\]
-This \emph{straddle vol} eliminates the effect of the distribution being off-centre: if the model shifts the forward rate up or down, both payer and receiver prices move in opposite directions and the average is unchanged at first order. All vols are reported in basis points.
+\frac{\widehat V^{\mathrm{str}}_0\sqrt{2\pi}}
+{\mathcal A_0\sqrt{T_{\mu}}}.
+\label{eq:straddle_normal_vol}
+\end{equation}
+This gives a \emph{straddle normal implied volatility}. Since payer and receiver prices move in opposite directions when the simulated forward swap rate deviates from the ATM strike, averaging removes the first-order directional effect of such centering errors.
 
 We also track the \emph{forward centering bias}
 \[
 \widehat b
 =
 \frac{
-\widehat V^{\mathrm{pay}}_{\mathrm{MC}}
+\widehat V^{\mathrm{pay}}_{0,\mathrm{MC}}
 -
-\widehat V^{\mathrm{rec}}_{\mathrm{MC}}
+\widehat V^{\mathrm{rec}}_{0,\mathrm{MC}}
 }
 {\mathcal A_0},
 \]
 which should be close to zero at the ATM strike for a correctly centred model.
 
 %=========================================================
-\section{Pricing with the Stable Model}
-\label{sec:pricing_stable_model}
-%=========================================================
-
-The stable model from Chapter~\ref{chap:model} is written entirely under the risk-neutral measure \(\mathbb{Q}\),
-\[
-dz_t = \mu(z_t)\,dt + \sigma(z_t)\,dW_t^{\mathbb{Q}},
-\]
-and the no-arbitrage condition is enforced by construction through the bond-pricing ODE. In principle this is all that is needed to price options: simulate latent paths under the stable dynamics, decode to bond curves at expiry, and compute the Monte Carlo estimator of Section~\ref{sec:swaption_pricing_methodology}. There is no measure change to perform. The natural first experiment is therefore to ask whether the stable model, used directly, prices swaptions accurately.
-
-\subsection{Empirical results}
-\label{subsec:stable_pricing_results}
-
-We price all available EUR ATM swaptions using the stable model directly, without any adjustment to its dynamics. The model parameters --- the drift \(\mu\), diffusion \(\sigma\), short rate \(r\) and decoder \(G\) --- are held fixed at the values obtained from the reconstruction calibration in Chapter~\ref{chap:evaluation}. We refer to this configuration as the \emph{frozen stable model}: only the stochastic Brownian increments vary across Monte Carlo paths, while all neural-network parameters remain constant. The simulation uses \(N_{\mathrm{MC}} = 512\) antithetic\footnote{Antithetic variates is a standard Monte Carlo variance-reduction technique \citep{Glasserman2004}. For each randomly drawn path with Brownian increment vector \(\boldsymbol{\varepsilon}\), a mirrored path with \(-\boldsymbol{\varepsilon}\) is also simulated. The two paths are then averaged. This eliminates the variance contribution from the linear part of the payoff and approximately halves the Monte Carlo standard error at unchanged computational cost.} paths per cell and the time grid described in Section~\ref{sec:swaption_pricing_methodology}.
-
-\begin{table}[H]
-\centering
-\input{../Figures/Pricing/eval_base/tab_base_per_cell_all.tex}
-\end{table}
-
-The overall MAE is \textbf{414.7 bp},\footnote{MAE denotes the mean absolute error between model-implied and market normal implied volatilities, reported in basis points.} far exceeding market bid--offer spreads, which are typically only a few basis points. Short-expiry cells perform worst, with the 1Yx5Y cell exceeding 1000 bp. All cells show a large positive vol error, indicating that the frozen stable model systematically overestimates implied volatility. The forward bias is mixed in sign, but negative on average and particularly pronounced for the 1Y expiry cells, showing that the simulated forward distributions are not consistently centred at \(F_0\). A latent-state model that reconstructs curves accurately is therefore not, by itself, a swaption-pricing model.
-
-\subsection{How could that be?}
-\label{subsec:stable_pricing_issue}
-
-The size of this error is striking. It is worth pausing to understand why an arbitrage-free model that fits swap curves to within tens of basis points can produce option-pricing errors two orders of magnitude larger. The reason is a calibration mismatch. The model parameters were chosen to minimise the empirical curve-reconstruction risk
-\[
-\mathcal L(\Omega)
-=
-\frac{1}{N|\mathcal M|}
-\sum_{n=1}^N
-\sum_{\tau\in\mathcal M}
-\left(
-S_n(\tau)-\widetilde S_n(\tau;\Omega)
-\right)^2,
-\]
-as defined in Section~\ref{sec:model_estimation_training_choices}. This objective measures how accurately the model reconstructs observed swap curves. It contains no information about the risk-neutral distribution of future swap rates and no information from option markets. Hence, a drift and diffusion that produce accurate curve reconstructions are not guaranteed to reproduce the option-implied distribution of \(F_{T_e}\).
-
-Two distinct problems arise, both visible in the table above:
-
-\begin{enumerate}
-    \item \textbf{Wrong volatility level.} The diffusion \(\sigma(z)\) and drift \(\mu(z)\) together determine the spread of the distribution of \(F_{T_e}\) under \(\mathbb{Q}\). Since neither was calibrated against option prices, the resulting implied vol can differ substantially from market-observed levels. The large positive vol errors in the table are a direct expression of this mismatch.
-    \item \textbf{Wrong forward centering.} The drift \(\mu(z)\) is calibrated to reconstruct the current curve, not to centre the simulated forward swap rate at \(F_0\). The forward bias \(\widehat b\) is therefore mixed in sign across cells, but large in magnitude, indicating that the simulated forward distributions are not consistently centred at \(F_0\).
-\end{enumerate}
-
-The remainder of the chapter introduces a minimal trainable pricing layer that recalibrates the risk-neutral dynamics while keeping the stable model frozen, and shows that this single adjustment closes the bulk of the gap.
-
-%=========================================================
-\section{Constant Market Price of Risk}
+\section{A Pricing Layer on Top of the Stable Model}
 \label{sec:constant_mpr}
 %=========================================================
 
-\subsection{Architecture}
-\label{subsec:cmpr_architecture}
-
-We address the two failures above by adding a minimal trainable pricing layer on top of the frozen stable model. The aim is not to relearn the curve representation, but only to recalibrate the risk-neutral dynamics that determine the swaption-implied distribution.
-
-Specifically, we replace the reconstruction-calibrated drift by
-\[
-\mu^*(z) = \mu(z) + \sigma(z)\lambda_0,
-\]
-where \(\lambda_0 \in \mathbb{R}^d\) is a learnable constant vector and \(\mu^*(z)\) denotes the option-calibrated drift. The adjusted risk-neutral dynamics are
+To test whether the latent dynamics trained on swap-rate data can also support derivative pricing, we add a small \emph{pricing layer} on top of the stable model. The learned weights and networks are kept fixed. Let \(\mu(z)\) and \(\sigma(z)\) denote the drift and diffusion of the frozen stable model. The pricing layer introduces two trainable parameter vectors: a constant drift shift \(\eta \in \mathbb{R}^d\) and a positive per-factor diffusion scale \(s \in \mathbb{R}^d_{>0}\). The adjusted dynamics are
 \[
 dz_t
 =
-\mu^*(z_t)\,dt
+\bigl(\mu(z_t) + \sigma(z_t)\eta\bigr)\,dt
 +
-\operatorname{diag}(s)\sigma(z_t)\,dW_t^{\mathbb Q},
+\operatorname{diag}(s)\sigma(z_t)\,dW_t.
 \]
-where \(s\in\mathbb R^d_{>0}\) are learnable per-factor diffusion scales. All base model parameters are frozen, so the pricing layer has only \(2d=8\) trainable parameters for \(d=4\).
+The parameter \(\eta\) shifts the centre of the simulated forward distribution, while \(s\) adjusts its width. With \(2d\) parameters in total, namely \((\eta,\log s)\), the layer is calibrated to EUR ATM swaption straddle volatilities on the 2010--2021 training window and evaluated out of sample on 2022--2024.
 
-The two trainable components target the two errors identified above. The scale vector \(s\) primarily adjusts the width of the simulated distribution of \(F_{T_e}\), and therefore targets the volatility-level error. The drift correction \(\lambda_0\) primarily adjusts the centre of the simulated distribution, and therefore targets the forward-centering error.
-
-The correction \(\lambda_0\) is analogous to a constant market-price-of-risk adjustment, but here it should be understood as a direct recalibration of the risk-neutral drift rather than as a change of measure. Multiplication by \(\sigma(z)\) maps the constant vector into the model's diffusion directions, so the drift is adjusted along the latent directions that generate uncertainty.
-
-The key restriction is that \(\lambda_0\) is constant. A state-dependent correction could make the drift adjustment grow as simulated paths move away from the initial latent region, amplifying errors through the decoder and producing unstable short-expiry implied volatilities. A constant correction is therefore deliberately conservative: it can shift the centre of the simulated forward distribution, but it does not introduce additional state-dependent feedback.
+This is an \emph{exploratory experiment, not a fully consistent joint model}. The bond-pricing ODE is re-solved under the adjusted drift and diffusion, so the simulation and the terminal bond decode at expiry \(T_\mu\) are internally consistent. However, the initial bond curve at \(t=0\) is read from the \emph{stable} decoder so that today's swap curve matches the market by construction. There is therefore a seam between the initial curve and the subsequent pricing dynamics. We return to this in Section~\ref{sec:pricing_limitation} as the main limitation of the experiment.
 
 \subsection{Calibration}
 \label{subsec:cmpr_calibration}
 
-Calibration minimises a straddle vol loss plus a forward-centering penalty:
+The pricing layer is calibrated by minimising a loss with three terms: a volatility error, a forward-centering penalty, and a small regularisation term on the drift shift:
 \[
 \mathcal{L}
-= \underbrace{\frac{1}{|\mathcal{B}|}
+=
+\underbrace{
+\frac{1}{|\mathcal{B}|}
 \sum_{i \in \mathcal{B}}
 \left(
-\frac{\hat\sigma_{N}^{(i)} - \sigma_{\mathrm{mkt}}^{(i)}}{100}
-\right)^2}_{\mathcal{L}_{\mathrm{vol}}}
-+\;
-0.5\underbrace{\frac{1}{|\mathcal{B}|}
+\frac{\widehat{\sigma}_{N}^{(i)} - \sigma_{\mathrm{mkt}}^{(i)}}{100}
+\right)^2
+}_{\mathcal{L}_{\mathrm{vol}}}
++
+0.5
+\underbrace{
+\frac{1}{|\mathcal{B}|}
 \sum_{i\in\mathcal{B}}
-\left(\frac{\hat b^{(i)}}{100}\right)^2}_{\mathcal{L}_{\mathrm{bias}}}
-+\;
-10^{-3}\,\|\lambda_0\|^2,
+\left(
+\frac{\widehat b^{(i)}}{100}
+\right)^2
+}_{\mathcal{L}_{\mathrm{bias}}}
++
+10^{-3}\|\eta\|^2,
 \]
-where \(\mathcal{B}\) is a mini-batch of randomly sampled EUR swaption observations. Optimisation uses Adam with linear warmup and cosine annealing \footnote{Linear warmup gradually increases the learning rate at the start of
-training before the cosine annealing schedule begins to decrease it.} over \(1000\) epochs, with \(N_{\mathrm{MC}} = 512\) antithetic paths per observation.
+where \(\mathcal{B}\) is a mini-batch of randomly sampled EUR swaption observations. Here \(\widehat{\sigma}_{N}^{(i)}\) and \(\sigma_{\mathrm{mkt}}^{(i)}\) are measured in basis points, and \(\widehat b^{(i)}\) is also expressed in basis points. The first term fits the level of the implied normal volatility. The second term penalises violations of the ATM centering condition
+\[
+\mathbb{E}^{\mathcal A}
+\!\left[
+S(T_\mu)
+\right]
+=
+R_{\mathrm{swap}}(0),
+\]
+so that the simulated forward swap rate remains centred around the initial ATM strike. The final term keeps the drift shift \(\eta\) from becoming too large.
+
+Optimisation is done with Adam. The learning rate is first increased linearly during a short warm-up period and is then decreased using cosine annealing. We train for \(1000\) epochs using \(N_{\mathrm{MC}}=512\) antithetic paths per observation.\footnote{Antithetic variates are a standard Monte Carlo variance-reduction technique \citep{Glasserman2004}. For each Brownian increment vector \(\boldsymbol{\varepsilon}\), we also simulate a mirrored path with increment \(-\boldsymbol{\varepsilon}\). The two payoffs are then averaged, which reduces Monte Carlo noise at little extra cost.}
 
 \subsection{Results}
 \label{subsec:cmpr_results}
 
-Table~\ref{tab:constant_mpr_per_cell_all} reports the per-cell pricing errors after calibrating the constant market-price-of-risk layer. The improvement is substantial. The overall MAE falls from \(414.7\) bp for the frozen stable model to \(\mathbf{40.1}\) bp. This corresponds to a reduction of more than \(90\%\), using only \(8\) trainable parameters.
+Table~\ref{tab:constant_mpr_per_cell_merged} reports the ATM straddle volatility errors for each expiry--tenor cell. The training and test windows are shown separately, together with the time-averaged forward bias diagnostic.
 
 \begin{table}[H]
 \centering
 \input{../Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_merged.tex}
 \end{table}
 
-The very small train--test gap at the total level is the headline observation. The overall MAE is \(39.4\) bp in the training period and \(\mathbf{42.0}\) bp in the test period. Looking inside the table, however, the per-cell pattern is more nuanced. The 1Y\(\times\)1Y and 1Y\(\times\)5Y cells, which dominate the all-dates MAE, are large primarily in the training period, with MAEs of \(188\) bp and \(79\) bp, respectively. In the test period these errors fall to \(25\) bp and \(22\) bp. This suggests that the remaining short-expiry errors are mostly linked to the negative-rate period from 2014--2019, where the model struggles to reproduce inverted and floor-pressed short-end curves.
+The overall MAE across the surface is \(\mathbf{40.1}\) bp. The error is \(39.4\) bp on the training window and \(\mathbf{42.0}\) bp out of sample. The small train--test gap suggests that the eight-parameter pricing layer does not materially overfit the training data. The errors, however, are not evenly spread across the surface. The largest residuals come from the 1Y\(\times\)1Y and 1Y\(\times\)5Y cells, with all-dates MAEs of \(148\) bp and \(68\) bp, respectively. This stable total error masks some movement across the surface: the 1Y\(\times\)1Y and 1Y\(\times\)5Y errors fall sharply in the test window, while several 5Y and 10Y expiry cells deteriorate.
 
-By contrast, the 5Y and 10Y expiry rows are systematically worse in the test period than in the training period. This reflects the 2022 tightening cycle, which stresses the longer-expiry cells. The two effects largely offset in the aggregate. Thus, the Constant MPR layer does not appear to overfit in the standard sense. Rather, it misfits different parts of the swaption surface in different rate regimes while maintaining a roughly stable overall error level.
+The forward-bias diagnostic remains useful because it separates volatility fit from centering errors. A small bias means that the model keeps the simulated forward swap rate close to the initial ATM strike, while the volatility error measures the width of the distribution.
 
-Figure~\ref{fig:pricing_heatmap_comparison_all} compares the base-model and Constant MPR heatmaps side by side. The improvement is substantial across the surface, with the largest reductions occurring in the cells where the base model performs worst, especially short expiries on longer tenors. Figure~\ref{fig:pricing_comparison_timeseries} shows the corresponding vol errors over time. The base-model errors fluctuate by hundreds of basis points, whereas the Constant MPR errors remain close to zero through most of the sample. The remaining spikes are concentrated in the 2022 rate-hiking episode and in the 1Y expiry row.
+Figure~\ref{fig:constant_mpr_heatmap} shows the all-dates per-cell volatility MAE. The largest errors are concentrated in the short-expiry, short-tenor corner. The 5Y and 10Y expiry rows are much tighter and more uniform. Figure~\ref{fig:constant_mpr_timeseries} shows the volatility error over time, with the test period highlighted. Most cells remain reasonably stable for much of the sample, but several show sharp test-period moves around 2022. The largest all-date residuals remain concentrated in the 1Y expiry row.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_heatmap_comparison_all.png}
-    \caption{Per-cell ATM vol MAE (bp) for all dates. Left: base model (overall MAE \(=\) 415 bp). Right: Constant MPR (overall MAE \(=\) 40 bp). Common colour scale. The correction reduces errors substantially in every cell.}
-    \label{fig:pricing_heatmap_comparison_all}
+    \includegraphics[width=0.75\textwidth]{Figures/Pricing/eval_constant_mpr/fig_vol_heatmap.png}
+    \caption{Per-cell ATM straddle volatility MAE (bp) for the calibrated pricing layer, all dates. Overall MAE \(=\) 40.1 bp. The largest residual errors are concentrated in the short-expiry cells, while the 5Y and 10Y expiry rows are tighter.}
+    \label{fig:constant_mpr_heatmap}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_comparison_timeseries.png}
-    \caption{Vol error (model minus market, bp) over time. Grey: base model. Coloured: Constant MPR (blue = 1Y expiry, green = 5Y, red = 10Y). Amber shading marks the test period. The Constant MPR brings errors close to zero throughout. Residual spikes appear in the 2022 rate-hike episode in the 1Y expiry row.}
-    \label{fig:pricing_comparison_timeseries}
+    \includegraphics[width=\textwidth]{Figures/Pricing/eval_constant_mpr/fig_vol_error_timeseries.png}
+    \caption{Volatility error, model minus market, in basis points for the calibrated pricing layer. The series are grouped by expiry: blue \(=\) 1Y, green \(=\) 5Y, and red \(=\) 10Y. Amber shading marks the test period 2022--2024. Several cells move sharply around 2022, while the largest all-date residuals remain concentrated in the 1Y expiry row.}
+    \label{fig:constant_mpr_timeseries}
 \end{figure}
 
 \subsection{The residual 1Y expiry error and forward bias}
 \label{subsec:cmpr_1y_residual}
 
-The cross-sectional pattern of the residual errors is informative. The 1Y expiry row carries substantially higher MAE than the 5Y and 10Y rows. Concretely, the 1Y\(\times\)1Y, 1Y\(\times\)5Y and 1Y\(\times\)10Y cells have MAEs of \(148\), \(68\) and \(54\) bp, while all six cells at 5Y and 10Y expiry lie between \(18\) and \(24\) bp.
+The cross-sectional error pattern is informative. The 1Y expiry row has much larger errors than the 5Y and 10Y rows. The 1Y\(\times\)1Y, 1Y\(\times\)5Y and 1Y\(\times\)10Y cells have MAEs of \(148\), \(68\) and \(54\) bp, respectively. By contrast, all six cells at 5Y and 10Y expiry lie between \(18\) and \(24\) bp.
 
-The driver is the forward bias \(\widehat b\). Across the full sample, the mean bias is \(+70\) bp at 1Y expiry, \(+68\) bp at 5Y expiry and \(+139\) bp at 10Y expiry. The largest mean bias is therefore at the longest expiry, yet that is the row with the smallest MAE. A positive bias means the simulated forward distribution is shifted upward relative to \(F_0\), so the payer leg is systematically more valuable than the receiver leg. The straddle vol formula in Section~\ref{subsec:bachelier_formula} averages payer and receiver prices, which removes the bias to first order but not to second order: a non-zero bias inflates the resulting straddle vol estimate. Because the natural Bachelier vol level scales with \(\sqrt{T_e}\), the same absolute bias translates into a much larger inflation of the model's implied vol at short expiries than at long expiries. The 1Y row sees a bias of order \(50\)--\(140\) bp against market vol levels of \(48\)--\(90\) bp, and the bias dominates the implied-vol MAE. At 10Y expiry, the bias is similar in absolute magnitude but the diffusion has had ten times longer to spread, so the same absolute bias matters proportionally less.
+The main explanation is the forward bias \(\widehat b\). Across the full sample, the mean bias is \(+70\) bp at 1Y expiry, \(+68\) bp at 5Y expiry and \(+139\) bp at 10Y expiry. The largest mean bias is therefore at the longest expiry, even though this is the row with the smallest volatility error. This is because the same absolute bias matters more at short expiries. At short horizons, the diffusion has less time to spread the forward distribution, so a fixed shift in its centre is large relative to its total standard deviation.
 
-This interpretation is confirmed empirically. The cross-sectional correlation between \(|\widehat b|\) and the absolute vol error is \(0.84\) at 1Y expiry, \(0.49\) at 5Y expiry and \(0.60\) at 10Y expiry. At 1Y the relationship is close to one-to-one, indicating that the residual vol error at this expiry is almost entirely explained by the forward bias rather than by a vol-level mismatch.
+A positive bias means that the simulated forward swap rate is shifted upward relative to the initial ATM strike. The payer swaption is then too valuable relative to the receiver swaption. The straddle-vol construction in equation~\eqref{eq:straddle_normal_vol} averages payer and receiver prices. This removes the first-order effect of the shift, but it does not remove the remaining nonlinear effect. When the bias is large relative to the total Bachelier standard deviation \(\sigma_N\sqrt{T_\mu}\), the straddle price is still inflated. This is most visible in the 1Y row, where biases of order \(50\)--\(140\) bp are large relative to market normal volatilities of \(48\)--\(90\) bp. At 10Y expiry, the absolute bias is similar or larger, but the diffusion has ten years to spread the distribution, so the same shift matters proportionally less.
 
-Figure~\ref{fig:constant_mpr_forward_bias} shows the forward bias over time, decomposed by expiry. The bias is persistent across the entire sample and is not a regime-specific artefact of the 2022 tightening cycle. Its sign and approximate magnitude are stable from 2010 onwards, which is what one would expect from a structural rather than a regime-driven origin.
+This interpretation is also supported by the data. The cross-sectional correlation between \(|\widehat b|\) and the absolute volatility error is \(0.84\) at 1Y expiry, compared with \(0.49\) at 5Y expiry and \(0.60\) at 10Y expiry. The relationship is therefore strongest at 1Y expiry, indicating that the residual volatility error in this row is mainly driven by forward-centering error rather than by a pure volatility-level mismatch.
+
+Figure~\ref{fig:constant_mpr_forward_bias} shows the forward bias over time, decomposed by expiry. The bias is present through much of the sample and is not only a feature of the 2022 tightening period. This suggests that it has a structural component, although its magnitude still varies over time.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Pricing/eval_constant_mpr/fig_forward_bias_timeseries.png}
-    \caption{Forward bias \(\widehat b\) (bp) over time for the Constant MPR. Coloured by expiry (blue = 1Y, green = 5Y, red = 10Y). The bias is persistent across the entire sample and is not concentrated in any particular regime.}
+    \caption{Forward bias \(\widehat b\) in basis points for the calibrated pricing layer, grouped by expiry: blue \(=\) 1Y, green \(=\) 5Y, and red \(=\) 10Y. The bias is present through much of the sample and is not concentrated in one specific regime, although its magnitude varies over time.}
     \label{fig:constant_mpr_forward_bias}
 \end{figure}
 
-Structurally, the residual bias is the consequence of using a single global \(\lambda_0\) to fit a heterogeneous surface. The calibration loss in Section~\ref{subsec:cmpr_calibration} balances the squared straddle-vol error against the squared forward-bias penalty with weight \(0.5\). The optimiser tolerates some residual bias in order to fit the average vol level across the surface, and that residual bias is felt most strongly at the 1Y expiry by the \(\sqrt{T_e}\) mechanism above. This 1Y residual is the principal limitation of the Constant MPR architecture.
+Structurally, the residual bias comes from using a single global drift shift \(\eta\) to fit a heterogeneous swaption surface. The calibration loss in Section~\ref{subsec:cmpr_calibration} balances the straddle-volatility error against the forward-centering penalty. The optimiser therefore accepts some remaining bias in order to fit the average volatility level across the surface. This remaining bias is felt most strongly at the 1Y expiry because the total diffusion over one year is small. The 1Y residual is therefore a limitation of using a single-vector drift correction. Richer parameterisations, such as expiry-dependent or state-dependent drift adjustments, could reduce this error, but would also weaken the stability and parsimony of the present experiment.
+
+%=========================================================
+\section{Internal Consistency of the Pricing Dynamics}
+\label{sec:pricing_limitation}
+%=========================================================
+
+The pricing experiment makes one deliberate compromise, already noted in Section~\ref{sec:constant_mpr}. The pricing setup uses the stable model at the initial date, but the adjusted model during the pricing simulation. At \(t=0\), the initial swap curve is read from the \emph{stable} decoder, so that the model matches the observed market curve by construction. At expiry \(T_\mu\), however, bond prices are decoded using the adjusted dynamics
+\[
+\bigl(\mu+\sigma\eta,\operatorname{diag}(s)\sigma\bigr).
+\]
+These two decoders correspond to two different sets of bond-pricing ODE coefficients. Each is internally consistent on its own, but the pricing setup switches from one to the other at \(t=0\). Hence, there is no single adjusted model that both matches the initial curve and generates the terminal bond prices used in the swaption payoff.
+
+In a fully consistent version, the adjusted decoder would also be used at \(t=0\). This would require an additional anchoring step: for each initial market curve, one would solve
+\[
+z_0^\star
+=
+\arg\min_z
+\left\|
+S^*(z)-S_0^{\mathrm{mkt}}
+\right\|^2,
+\]
+where \(S^*(z)\) denotes the swap curve produced by the adjusted decoder. The pricing simulation would then start from \(z_0^\star\), so that the adjusted model reproduces today's swap curve before simulating forward. In that case, the model ATM forward \(F_0^*\) would match the market ATM forward by construction, and the forward-centering diagnostic should be close to zero up to numerical and Monte Carlo error.
+
+The persistent positive forward bias found in Section~\ref{subsec:cmpr_1y_residual} is consistent with this missing anchoring step. Since the initial curve is taken from the stable decoder but the terminal curve is produced by the adjusted decoder, the model can start from a curve that is not exactly the initial curve of the adjusted pricing dynamics. This mismatch can shift the simulated forward distribution and therefore show up as a non-zero value of
+\[
+\widehat b
+=
+\frac{
+\widehat V^{\mathrm{pay}}_{0,\mathrm{MC}}
+-
+\widehat V^{\mathrm{rec}}_{0,\mathrm{MC}}
+}
+{\mathcal A_0}.
+\]
+The observed bias of roughly \(60\)--\(140\) bp is therefore consistent with the remaining internal inconsistency of the pricing layer. It may also reflect the restricted form of the single-vector drift correction.
+
+We do not implement the fully anchored version in this thesis for two reasons. First, it would make calibration much more expensive. Each pricing step would require an inner optimisation for \(z_0^\star\) for every date in the mini-batch. Second, the current experiment is intended as a small pricing layer on top of a frozen yield-curve model, not as a full joint calibration of curves and swaptions. The present setup is therefore useful as an exploratory test: it shows that a very small number of pricing parameters can fit most of the swaption surface, while also revealing the main limitation of the approach.
+
+A fully consistent extension is a natural direction for future work. It would use the adjusted decoder both at \(t=0\) and at expiry, together with an inverse-decoder anchor for the initial state. Adding a soft reconstruction loss during training could also help ensure that the adjusted decoder remains close enough to the stable decoder for the inner anchoring problem to be solved quickly.
 
 %=========================================================
 \section{Summary}
 \label{sec:pricing_summary}
 %=========================================================
 
-The pricing experiments establish three facts about the latent-state model when applied to swaption pricing:
+The pricing-layer experiment gives three main conclusions.
 
 \begin{enumerate}
-    \item The frozen stable model, used directly, gives implied-vol errors of order \(415\) bp --- two orders of magnitude above bid--offer spreads. A latent model that reconstructs swap curves accurately is not by itself a pricing model.
-    \item A minimal trainable pricing layer with only \(8\) parameters, the Constant MPR (\(\lambda_0\) drift correction and a per-factor diffusion scale), reduces this to \(40\) bp overall and \(42\) bp out-of-sample. The very small train--test gap shows that the model does not overfit, and the cleanest demonstration that the latent space supports a Q-recalibration.
-    \item The residual error concentrates in the 1Y expiry row, where a positive forward bias of order \(100\) bp inflates the implied-vol estimate disproportionately relative to longer expiries. This is the structural limit of a single global drift correction.
+    \item A small pricing layer with only \(8\) trainable parameters can fit the EUR ATM swaption surface reasonably well. The layer consists of a constant drift shift \(\eta\) and a per-factor diffusion scale \(s\), while the stable model itself is kept fixed. It reaches an overall MAE of \(40.1\) bp and an out-of-sample MAE of \(42.0\) bp. The small train--test gap suggests that the result is not mainly driven by overfitting.
+
+    \item The main residual error is in the 1Y expiry row. This is driven by a persistent positive forward bias. At short expiries, the total diffusion scale \(\sigma_N\sqrt{T_\mu}\) is small, so a fixed shift in the forward distribution has a large effect on the implied volatility. This explains why the same type of bias is much more damaging at 1Y than at 5Y or 10Y. The strong correlation between \(|\widehat b|\) and absolute volatility error at 1Y supports this interpretation.
+
+    \item The main limitation is internal consistency. The pricing setup uses the stable decoder for the initial curve and the adjusted decoder for the terminal payoff. A fully consistent version would instead use the adjusted decoder throughout and solve an inverse-decoder anchoring problem for the initial state \(z_0\). This extension is left for future work.
 \end{enumerate}
