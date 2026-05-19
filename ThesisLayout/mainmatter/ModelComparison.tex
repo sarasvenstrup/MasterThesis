@@ -21,100 +21,40 @@ HMMMM
 \subsection{Motivation}
 
 
-
 The evaluation in Chapter~\ref{chap:evaluation} establishes that the baseline 
 model struggles with negative-rate curves. Examining the worst-fit curves more 
-closely reveals two distinct failure patterns. For curves where most tenors are 
-negative, the baseline reconstructs a flat curve near zero, capturing the 
-approximate level but losing all shape information. For curves that cross from 
-negative short-end rates to positive long-end rates, the baseline reconstructs 
-a curve sloping in the wrong direction entirely. Both patterns are visible in 
-Figure~\ref{fig:worst_fit_curves}, which shows the baseline fitted curves for 
-the most severely affected observations.
+closely reveals two distinct failure patterns, shown in 
+Figure~\ref{fig:baseline_fit_failure_modes}. For curves where most tenors are 
+negative, the baseline reconstructs a flat curve near zero. For curves that 
+cross from negative short-end rates to positive long-end rates, the baseline 
+reconstructs a curve sloping in the wrong direction entirely.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_worst_fit_curves.png}
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/baseline_fit_failure_modes.png}
     \caption{Worst-fit curves for the baseline ($\ell=2$), augmented ($\ell=3$), 
     and stable ($\ell=4$) models, restricted to curves with at least 7 out of 8 
     negative tenors or with the first 5 tenors negative and a positive long end, 
-    ranked by baseline RMSE. The baseline consistently reconstructs a flat curve 
-    for deeply negative curves and a downward-sloping curve for upward-sloping 
-    negative-rate curves.}
-    \label{fig:worst_fit_curves}
+    ranked by baseline RMSE.}
+    \label{fig:baseline_fit_failure_modes}
 \end{figure}
 
-We hypothesise that both failure patterns are linked to the linearity of the 
-encoder, though what follows is speculative rather than a formal result. The 
-following two examples illustrate the proposed mechanism numerically using the 
-learned encoder matrix of the $\ell=2$ baseline model.
+Both failure patterns share a common root. The encoder input $\mathbf{S}$ 
+contains only raw swap rates, which conflate the level and shape of the curve. 
+For a positive-rate curve, the level and shape vary together in a way the 
+encoder has been trained on. For a negative-rate curve, the raw rates partially 
+cancel in the linear projection, and the resulting latent representation no 
+longer carries reliable shape information. The slope and curvature of the curve 
+are not explicitly represented anywhere in the input.
 
-\begin{example}[Mostly negative curve]\label{ex:compression1}
-Let $\mathbf{S} \in \mathbb{R}^8$ denote the normal EUR swap curve observed on 
-2014-08-29, and let $\mathbf{S}^- = \mathbf{S} - 0.015\cdot\mathbf{1}$ denote 
-a stylised counterpart shifted down by 150 bps, so that six out of eight tenors 
-become negative. Expressed in decimal terms,
-\begin{align*}
-\mathbf{S} &= \begin{pmatrix} 0.0025 & 0.0027 & 0.0032 & 0.0050 & 0.0109 & 
-0.0146 & 0.0164 & 0.0176 \end{pmatrix}^\top, \\
-\mathbf{S}^- &= \begin{pmatrix} -0.0125 & -0.0123 & -0.0118 & -0.0100 & -0.0041 
-& -0.0004 & 0.0014 & 0.0026 \end{pmatrix}^\top.
-\end{align*}
-The learned encoder matrix for the $\ell=2$ baseline model is
-$$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
--1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$
-The second row $a_2^\top$ of $A_1$ loads negatively across almost all tenors. 
-For $\mathbf{S}^-$, six tenors are negative, so the products of the negative 
-weights with the negative rates flip sign and become positive contributions,
-\begin{align*}
-a_2^\top \mathbf{S}^- &= 
-\underbrace{(-1.12)(-0.0125) + (-0.63)(-0.0123) + (-0.66)(-0.0118) + 
-(-0.83)(-0.0100)}_{\text{1Y--5Y: }+0.0388} \\
-&\quad + \underbrace{(-0.50)(-0.0041) + (-0.29)(-0.0004)}_{\text{10Y--15Y: }+0.0021} 
-+ \underbrace{(-0.22)(0.0014)}_{20\text{Y: }-0.0003}
-+ \underbrace{(0.13)(0.0026)}_{30\text{Y: }+0.0003} \\
-&= +0.0403 - 0.0003 = +0.0400,
-\end{align*}
-compared to $a_2^\top \mathbf{S} = -0.0217$ for the normal curve. The full 
-latent representations are
-$$z = A_1\mathbf{S} = \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \qquad
-z^- = A_1\mathbf{S}^- = \begin{pmatrix} -0.0164 \\ +0.0400 \end{pmatrix}.$$
-The second factor flips from large and negative to large and positive. The 
-decoder has been trained predominantly on curves with $z_2 < 0$, and has 
-virtually no training exposure in the region $z_2 = +0.04$. With no reliable 
-basis for reconstruction, it defaults to a flat curve near the mean rate level.
-\end{example}
-
-\begin{example}[Upward-sloping negative-rate curve]\label{ex:compression2}
-Let $\mathbf{S}^- = \mathbf{S} - 0.006\cdot\mathbf{1}$ denote a stylised 
-counterpart shifted down by 60 bps, so that the short-to-mid tenors become 
-negative while the long end remains positive, producing an upward-sloping curve,
-$$\mathbf{S}^- = \begin{pmatrix} -0.0035 & -0.0033 & -0.0028 & -0.0010 & 0.0049 
-& 0.0086 & 0.0104 & 0.0116 \end{pmatrix}^\top.$$
-For this curve, the negative short-to-mid rates produce positive contributions 
-to the second latent factor while the positive long-end rates produce negative 
-contributions,
-\begin{align*}
-a_2^\top \mathbf{S}^- &= 
-\underbrace{(-1.12)(-0.0035) + (-0.63)(-0.0033) + (-0.66)(-0.0028) + 
-(-0.83)(-0.0010)}_{\text{1Y--5Y: }+0.0102} \\
-&\quad + \underbrace{(-0.50)(0.0049) + (-0.29)(0.0086) + 
-(-0.22)(0.0104)}_{\text{10Y--20Y: }-0.0072}
-+ \underbrace{(0.13)(0.0116)}_{30\text{Y: }+0.0015} \\
-&= +0.0102 - 0.0072 + 0.0015 = +0.0030,
-\end{align*}
-giving
-$$z^- = A_1\mathbf{S}^- = \begin{pmatrix} -0.0119 \\ +0.0030 \end{pmatrix}.$$
-The positive and negative contributions nearly cancel, collapsing the second 
-factor from $-0.0217$ to $+0.0030$. The decoder, having learned that a large 
-negative second factor encodes an upward slope for positive-rate curves, now 
-receives $z^-_2 \approx 0$ and has no reliable basis for associating it with 
-an upward-sloping curve. It therefore reconstructs the slope in the wrong 
-direction, consistent with the empirical pattern observed in 
-Figure~\ref{fig:worst_fit_curves}.
-\end{example}
-
-
+The augmentation addresses this directly. By adding level-invariant slope and 
+curvature features to the input, the model receives explicit shape information 
+that is unaffected by whether the rate level is positive or negative. A 
+short-end slope of $f_1 = S_{10\text{Y}} - S_{1\text{Y}} = 0.5\%$ carries the 
+same information regardless of whether rates are at $2\%$ or $-1\%$. The 
+training objective is extended to penalise mismatch in these features directly, 
+giving the model an explicit incentive to match slope and curvature rather than 
+level alone.
 
 
 
