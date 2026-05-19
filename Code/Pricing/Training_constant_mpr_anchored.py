@@ -23,7 +23,7 @@ Key properties vs Lambda v2:
 Interpretation: lambda_0 is a constant risk-premium vector in latent space.
 L(z) @ lambda_0 maps it to the physical drift correction.
 
-Output: Figures/TrainingResults/dim4_constant_mpr/ep{EPOCHS}/
+Output: Figures/TrainingResults/dim4_constant_mpr_anchored/ep{EPOCHS}/
 """
 
 import os, sys
@@ -107,6 +107,7 @@ PRETRAIN_CKPT = os.path.join(
 LAMBDA_VOL  = 1.0    # straddle-implied ATM vol MSE
 LAMBDA_BIAS = 0.5    # ATM payer-receiver parity penalty
 LAMBDA_L2   = 1e-3   # L2 on lambda_0  (light regularisation, keeps it bounded)
+LAMBDA_ANCHOR = 1  # pricing-adjusted curve anchor loss
 
 LR = 5e-4
 LR_WARMUP_EPOCHS = 50
@@ -115,12 +116,13 @@ MIN_FINITE_PATHS_FRAC = 0.10
 MIN_FINITE_PATHS_ABS  = 16
 LOSS_SKIP_THRESH      = 1e4
 
+
 USE        = "bbg"
 CCY_FILTER = "EUR"
 
 FIGURES_DIR = os.path.join(
     PROJECT_ROOT, "Figures", "TrainingResults",
-    f"dim{LATENT_DIM}_constant_mpr", f"ep{EPOCHS}"
+    f"dim{LATENT_DIM}_constant_mpr_anchored", f"ep{EPOCHS}"
 )
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
@@ -218,6 +220,7 @@ def grad_norm(params):
     return total ** 0.5
 
 
+
 # ── pricing loss ───────────────────────────────────────────────────────────────
 
 def compute_pricing_loss(
@@ -237,17 +240,19 @@ def compute_pricing_loss(
     """
     if len(df_vol) == 0 or n_swaptions == 0:
         zero = torch.tensor(0.0, device=device, dtype=dtype)
-        return zero, zero, [], 0, 0, 0.0
+        return zero, zero, zero, [], 0, 0, 0.0, float("nan")
 
     sample = df_vol.sample(n=min(n_swaptions, len(df_vol)))
 
     total_vol  = torch.zeros(1, device=device, dtype=dtype)
     total_bias = torch.zeros(1, device=device, dtype=dtype)
-    n_valid     = 0
-    n_attempted = 0
-    diagnostics = []
-    path_fracs  = []
-    min_paths   = max(MIN_FINITE_PATHS_ABS, int(n_paths * MIN_FINITE_PATHS_FRAC))
+    total_anchor = torch.zeros(1, device=device, dtype=dtype)
+    n_valid      = 0
+    n_attempted  = 0
+    diagnostics  = []
+    path_fracs   = []
+    anchor_errors = []
+    min_paths    = max(MIN_FINITE_PATHS_ABS, int(n_paths * MIN_FINITE_PATHS_FRAC))
 
     for _, row in sample.iterrows():
         date      = pd.Timestamp(row["as_of_date"]).normalize()
@@ -263,10 +268,53 @@ def compute_pricing_loss(
         idx = date_to_idx[date]
         xb  = X_batch[idx:idx + 1].to(device)
 
+        # Initial latent state: z0 = E(S_0)
+        # Decoded under pricing dynamics (K_price, sigma_scale) for consistency
         with torch.no_grad():
             z0 = model.encoder(xb)
-            _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True)
-            P0 = aux0["P_full"][0]
+
+        with torch.no_grad():
+            # P^*(0,·): bond prices from the Q^* ODE at today's state z0.
+            # k_override=lm and sigma_scale=lm.sigma_vec are identical to what
+            # is used in simulation and the terminal decode — consistent under Q^*.
+            _, aux0 = model.decode_from_z(
+                z0, tau=None, return_aux=True,
+                k_override=lm, sigma_scale=lm.sigma_vec,
+            )
+            if aux0 is None or "P_full" not in aux0:
+                continue
+
+            S0_hat_star = aux0.get("S_hat", None)
+            if S0_hat_star is not None and torch.isfinite(S0_hat_star).all():
+                anchor_rmse_bp = float(
+                    torch.sqrt(((S0_hat_star - xb) ** 2).mean()).detach().cpu() * 1e4
+                )
+                anchor_errors.append(anchor_rmse_bp)
+            
+            P0_raw = aux0["P_full"]
+            # Handle both (batch, tau) and (tau,) shapes
+            if P0_raw.dim() == 2:
+                P0 = P0_raw[0]  # (tau_max+1,)
+            else:
+                P0 = P0_raw  # already (tau_max+1,)
+            
+            if not torch.isfinite(P0).all():
+                continue
+
+        # Differentiable anchor loss:
+        # require the pricing-adjusted decoder S^*(z0) to match today's market curve S0.
+        _, aux0_anchor = model.decode_from_z(
+            z0, tau=None, return_aux=True,
+            k_override=lm, sigma_scale=lm.sigma_vec,
+        )
+
+        S0_hat_star_grad = aux0_anchor.get("S_hat", None)
+        if S0_hat_star_grad is None or not torch.isfinite(S0_hat_star_grad).all():
+            continue
+
+        loss_anchor_ij = (((S0_hat_star_grad - xb) * 1e4) / 100.0).pow(2).mean()
+        if not torch.isfinite(loss_anchor_ij):
+            continue
 
         max_idx = P0.shape[0] - 1
         if expiry + tenor > max_idx:
@@ -294,24 +342,41 @@ def compute_pricing_loss(
                 freeze_H=True,
             )
 
-            z_ok = torch.isfinite(z_T).all(1) & torch.isfinite(D_T)
-            if int(z_ok.sum()) < min_paths:
-                continue
-
+            # Two-stage decode to prevent invalid paths from poisoning gradients:
+            # Stage 1: Probe under no_grad to find valid terminal states
             with torch.no_grad():
-                _, aux_T = model.decode_from_z(z_T, tau=None, return_aux=True)
-                p_ok = torch.isfinite(aux_T["P_full"]).all(1)
+                z_ok = torch.isfinite(z_T).all(1) & torch.isfinite(D_T)
+                if int(z_ok.sum()) < min_paths:
+                    continue
 
-            mask = z_ok & p_ok
-            if int(mask.sum()) < min_paths:
-                continue
+                z_probe = z_T[z_ok].detach()
+                _, aux_probe = model.decode_from_z(
+                    z_probe, tau=None, return_aux=True,
+                    k_override=lm, sigma_scale=lm.sigma_vec,
+                )
 
-            path_fracs.append(float(mask.float().mean()))
+                p_ok_local = torch.isfinite(aux_probe["P_full"]).all(1)
+                if int(p_ok_local.sum()) < min_paths:
+                    continue
 
-            z_keep = z_T[mask]
-            _, aux_keep = model.decode_from_z(z_keep, tau=None, return_aux=True)
+                # Map local indices back to global
+                global_idx = torch.nonzero(z_ok, as_tuple=False).squeeze(1)
+                keep_idx = global_idx[p_ok_local]
+
+            # Stage 2: Re-decode only valid paths WITH gradients
+            # This ensures clean gradient flow from loss → F_T/A_T → P^*(T,·) → z_T → lm
+            z_keep = z_T[keep_idx]
+            D_keep = D_T[keep_idx]
+
+            _, aux_keep = model.decode_from_z(
+                z_keep, tau=None, return_aux=True,
+                k_override=lm, sigma_scale=lm.sigma_vec,
+            )
+
+            path_fracs.append(float(len(keep_idx) / len(z_T)))
+
             F_T, A_T = swap_rate_torch(aux_keep["P_full"], tenor=tenor)
-            D_keep   = D_T[mask]
+            D_keep   = D_keep
 
             fa_ok = (torch.isfinite(F_T) & torch.isfinite(A_T)
                      & (F_T > -0.5) & (F_T < 0.5)
@@ -340,9 +405,10 @@ def compute_pricing_loss(
             if not torch.isfinite(loss_bias_ij):
                 continue
 
-            total_vol  = total_vol  + loss_vol_ij
+            total_vol = total_vol + loss_vol_ij
             total_bias = total_bias + loss_bias_ij
-            n_valid   += 1
+            total_anchor = total_anchor + loss_anchor_ij
+            n_valid += 1
 
             if return_diagnostics:
                 diagnostics.append({
@@ -362,11 +428,12 @@ def compute_pricing_loss(
             continue
 
     mean_pfrac = float(np.mean(path_fracs)) if path_fracs else 0.0
+    mean_anchor_bp = float(np.mean(anchor_errors)) if anchor_errors else float("nan")
     zero = torch.tensor(0.0, device=device, dtype=dtype)
     if n_valid > 0:
-        return (total_vol / n_valid, total_bias / n_valid,
-                diagnostics, n_attempted, n_valid, mean_pfrac)
-    return zero, zero, diagnostics, n_attempted, 0, mean_pfrac
+        return (total_vol / n_valid, total_bias / n_valid, total_anchor / n_valid,
+                diagnostics, n_attempted, n_valid, mean_pfrac, mean_anchor_bp)
+    return zero, zero, zero, diagnostics, n_attempted, 0, mean_pfrac, mean_anchor_bp
 
 
 # ── load data ──────────────────────────────────────────────────────────────────
@@ -446,8 +513,8 @@ ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 csv_path  = os.path.join(FIGURES_DIR, f"train_constant_mpr_log_dim{LATENT_DIM}_ep{EPOCHS}.csv")
 csv_cols  = (
     ["epoch", "time_total_sec", "time_interval_sec",
-     "loss_vol", "loss_bias", "loss_l2",
-     "swaption_priced_frac", "path_finite_frac",
+     "loss_vol", "loss_bias", "loss_anchor", "loss_l2",
+     "swaption_priced_frac", "path_finite_frac", "anchor_rmse_bp",
      "recon_rmse_bps", "nan_batches",
      "gnorm_lam0", "gnorm_scale", "lr",
      "lambda0_norm", "lambda0_l1",
@@ -460,7 +527,7 @@ pd.DataFrame(columns=csv_cols).to_csv(csv_path, index=False)
 print("Logging to:", csv_path)
 
 run_config = {
-    "version":               "constant_mpr",
+    "version":               "constant_mpr_anchored",
     "description":           "K_price(z) = K_base(z) + L_base(z) @ lambda_0, stable constant correction",
     "seed":                  SEED,
     "latent_dim":            LATENT_DIM,
@@ -470,6 +537,7 @@ run_config = {
     "lambda_vol":            LAMBDA_VOL,
     "lambda_bias":           LAMBDA_BIAS,
     "lambda_l2":             LAMBDA_L2,
+    "lambda_anchor": LAMBDA_ANCHOR,
     "n_swaptions_per_batch": N_SWAPTIONS_PER_BATCH,
     "n_paths_pricing":       N_PATHS_PRICING,
     "dt_pricing":            DT_PRICING,
@@ -481,8 +549,9 @@ with open(os.path.join(FIGURES_DIR, "run_config.json"), "w") as f:
 # ── training loop ──────────────────────────────────────────────────────────────
 
 hist = {k: [] for k in [
-    "vol", "bias", "l2",
+    "vol", "bias", "anchor_loss", "l2",
     "swp_priced", "path_finite",
+    "anchor_rmse",
     "sigma_scale", "lambda0_norm",
 ]}
 
@@ -502,18 +571,21 @@ for epoch in range(EPOCHS):
     running_vol  = 0.0
     running_bias = 0.0
     running_l2   = 0.0
+    running_anchor = 0.0
     n_batches     = 0
     nan_batches   = 0
     batch_diag    = []
     ep_attempted  = 0
     ep_priced     = 0
     ep_pfracs     = []
+    ep_anchor = []
 
     for step in range(N_STEPS_PER_EPOCH):
-        print(f"\r  ep {epoch}  step {step+1}/{N_STEPS_PER_EPOCH} ...", end="", flush=True)
+        print(f"\r  ep {epoch}  step {step+1}/{N_STEPS_PER_EPOCH} ...",
+              end="", flush=True)
         optim.zero_grad(set_to_none=True)
 
-        loss_vol, loss_bias_raw, diag, n_att, n_pri, p_frac = compute_pricing_loss(
+        loss_vol, loss_bias_raw, loss_anchor_raw, diag, n_att, n_pri, p_frac, anchor_bp = compute_pricing_loss(
             model=model, lm=lm,
             X_batch=X_tensor_ccy, meta_batch=meta_ccy,
             df_vol=df_vol, date_to_idx=date_to_idx,
@@ -529,10 +601,15 @@ for epoch in range(EPOCHS):
         if diag:
             batch_diag = diag
 
+        if not math.isnan(anchor_bp):
+            ep_anchor.append(anchor_bp)
+
         # Light L2 on lambda_0 to keep it bounded
-        loss_l2    = LAMBDA_L2 * lm.lambda_0.pow(2).sum()
-        loss_bias  = LAMBDA_BIAS * loss_bias_raw
-        loss_total = LAMBDA_VOL * loss_vol + loss_bias + loss_l2
+        loss_l2 = LAMBDA_L2 * lm.lambda_0.pow(2).sum()
+        loss_bias = LAMBDA_BIAS * loss_bias_raw
+        loss_anchor = LAMBDA_ANCHOR * loss_anchor_raw
+
+        loss_total = LAMBDA_VOL * loss_vol + loss_bias + loss_anchor + loss_l2
 
         if not torch.isfinite(loss_total):
             nan_batches += 1
@@ -556,16 +633,24 @@ for epoch in range(EPOCHS):
         running_vol  += float(loss_vol.detach().cpu())
         running_bias += float(loss_bias_raw.detach().cpu())
         running_l2   += float(loss_l2.detach().cpu())
+        running_anchor += float(loss_anchor_raw.detach().cpu())
         n_batches    += 1
 
     print("\r" + " " * 40 + "\r", end="", flush=True)
-    scheduler.step()
+    
+    # Only step scheduler if we had valid optimizer updates
+    if n_batches > 0:
+        scheduler.step()
+    elif epoch == 0:
+        print(f"  WARNING: No valid batches in epoch {epoch}! nan_batches={nan_batches}")
 
     ep_vol  = running_vol  / max(n_batches, 1)
     ep_bias = running_bias / max(n_batches, 1)
     ep_l2   = running_l2   / max(n_batches, 1)
+    ep_anchor_loss = running_anchor / max(n_batches, 1)
     swp_priced  = ep_priced  / max(ep_attempted, 1)
-    path_finite = float(np.mean(ep_pfracs)) if ep_pfracs else 0.0
+    path_finite = float(np.mean(ep_pfracs))   if ep_pfracs   else 0.0
+    anchor_rmse_bp = float(np.mean(ep_anchor)) if ep_anchor else float("nan")
 
     with torch.no_grad():
         sigma_vec_now  = lm.sigma_vec.detach().cpu()
@@ -574,9 +659,17 @@ for epoch in range(EPOCHS):
         lambda0_norm   = float(lambda0_now.norm())
         lambda0_l1     = float(lambda0_now.abs().sum())
 
-    for k, v in [("vol", ep_vol), ("bias", ep_bias), ("l2", ep_l2),
-                 ("swp_priced", swp_priced), ("path_finite", path_finite),
-                 ("sigma_scale", scale_now), ("lambda0_norm", lambda0_norm)]:
+    for k, v in [
+        ("vol", ep_vol),
+        ("bias", ep_bias),
+        ("anchor_loss", ep_anchor_loss),
+        ("l2", ep_l2),
+        ("swp_priced", swp_priced),
+        ("path_finite", path_finite),
+        ("anchor_rmse", anchor_rmse_bp),
+        ("sigma_scale", scale_now),
+        ("lambda0_norm", lambda0_norm),
+    ]:
         hist[k].append(v)
 
     do_eval = ((epoch + 1) % EVAL_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
@@ -603,9 +696,10 @@ for epoch in range(EPOCHS):
     row = {
         "epoch": epoch, "time_total_sec": round(t_now - t0, 1),
         "time_interval_sec": round(dt_ep, 3),
-        "loss_vol": ep_vol, "loss_bias": ep_bias, "loss_l2": ep_l2,
-        "swaption_priced_frac": swp_priced, "path_finite_frac": path_finite,
-        "recon_rmse_bps": float(avg_rmse_bps), "nan_batches": nan_batches,
+        "loss_vol": ep_vol, "loss_bias": ep_bias, "loss_l2": ep_l2, "loss_anchor": ep_anchor_loss,
+        "swaption_priced_frac": swp_priced, "path_finite_frac": path_finite, "anchor_rmse_bp": anchor_rmse_bp,
+        "recon_rmse_bps": float(avg_rmse_bps),
+        "nan_batches": nan_batches,
         "gnorm_lam0": gn_lam0, "gnorm_scale": gn_scale, "lr": lr_now,
         "lambda0_norm": lambda0_norm, "lambda0_l1": lambda0_l1,
         "sigma_scale_mean": scale_now,
@@ -615,6 +709,7 @@ for epoch in range(EPOCHS):
         "lambda0_v3": float(lambda0_now[2]), "lambda0_v4": float(lambda0_now[3]),
         "fwd_bias_diag_bp": mean_bias_diag,
     }
+    
     for c in ccy_order:
         row[f"rmse_bps_{c}"] = (
             float(rmse_per_ccy.get(c, float('nan')))
@@ -625,10 +720,10 @@ for epoch in range(EPOCHS):
     if (epoch // max(LOG_EVERY, 1)) % HEADER_EVERY == 0:
         print(
             f"\n{'ep':>5} {'vol':>10} {'bias':>9} {'l2':>8} {'swp%':>5} {'pth%':>5} "
-            f"{'recon':>7} {'|l0|':>7} {'sv_mean':>7} {'sv_min':>6} {'sv_max':>6} "
-            f"{'bias_bp':>8} {'gn_l0':>7} {'gn_s':>7} {'lr':>8} {'t/ep':>6} {'ETA':>8}  diag"
+            f"{'anchor':>8} {'recon':>7} {'|l0|':>7} {'sv_mean':>7} {'sv_min':>6} {'sv_max':>6} "
+            f"{'bias_bp':>8} {'gn_l0':>7} {'gn_s':>7} {'nan':>4} {'lr':>8} {'t/ep':>6} {'ETA':>8}  diag"
         )
-        print("-" * 175)
+        print("-" * 180)
 
     if batch_diag and (epoch % DIAG_EVERY == 0 or epoch == EPOCHS - 1):
         diag_str = " | ".join(
@@ -645,10 +740,12 @@ for epoch in range(EPOCHS):
         f"{epoch:>5d} "
         f"{ep_vol:>10.4e} {ep_bias:>9.3e} {ep_l2:>8.4e} "
         f"{swp_priced*100:>4.0f}% {path_finite*100:>4.0f}% "
+        f"{anchor_rmse_bp:>8.2f} "
         f"{avg_rmse_bps:>7.2f} "
         f"{lambda0_norm:>7.4f} "
         f"{scale_now:>7.4f} {sv_min:>6.4f} {sv_max:>6.4f} "
-        f"{mean_bias_diag:>+8.1f} {gn_lam0:>7.2e} {gn_scale:>7.2e} {lr_now:>8.2e} "
+        f"{mean_bias_diag:>+8.1f} {gn_lam0:>7.2e} {gn_scale:>7.2e} "
+        f"{nan_batches:>4d} {lr_now:>8.2e} "
         f"{dt_ep:>5.1f}s {eta_str:>8}  {diag_str}"
     )
 
@@ -685,11 +782,12 @@ torch.save({
     "variant":          config.VARIANT,
 }, os.path.join(FIGURES_DIR, f"checkpoint_constant_mpr_ep{EPOCHS}.pt"))
 
-fig, axes = plt.subplots(4, 1, figsize=(9, 13), dpi=150)
+fig, axes = plt.subplots(5, 1, figsize=(9, 15), dpi=150)
 
 axes[0].semilogy(hist["vol"],  lw=1.0, color="darkorange", label="Vol loss")
 axes[0].semilogy(hist["bias"], lw=1.0, color="deeppink",   label="Bias loss")
 axes[0].semilogy(hist["l2"],   lw=1.0, color="royalblue",  label="L2 lambda_0")
+axes[0].semilogy(hist["anchor_loss"], lw=1.0, label="Anchor loss")
 axes[0].set_title("Constant MPR: Loss Components"); axes[0].legend()
 axes[0].set_xlabel("Epoch"); axes[0].set_ylabel("Loss (log)"); axes[0].grid(True, alpha=0.3)
 
@@ -698,13 +796,26 @@ axes[1].plot([100*p for p in hist["path_finite"]], lw=1.0, color="navy",     lab
 axes[1].set_ylim(-2, 102); axes[1].legend()
 axes[1].set_xlabel("Epoch"); axes[1].set_ylabel("%"); axes[1].grid(True, alpha=0.3)
 
-axes[2].plot(hist["sigma_scale"], lw=1.2, color="purple", label="mean(sigma_vec)")
-axes[2].set_xlabel("Epoch"); axes[2].set_title("Diffusion Scale (mean of sigma_vec)"); axes[2].legend()
+# Filter out NaN values for anchor RMSE plot
+anchor_valid = [(i, v) for i, v in enumerate(hist["anchor_rmse"]) if not math.isnan(v)]
+if anchor_valid:
+    epochs_valid, anchor_vals = zip(*anchor_valid)
+    axes[2].plot(epochs_valid, anchor_vals, lw=1.2, color="crimson", 
+                 label=r"Anchor RMSE: $\|\widehat{S}^*(E(S_0)) - S_0^{\mathrm{mkt}}\|$", marker='.')
+    axes[2].axhline(y=5, color='green', linestyle='--', alpha=0.5, label='5 bp (good)')
+    axes[2].axhline(y=20, color='orange', linestyle='--', alpha=0.5, label='20 bp (moderate)')
+    axes[2].axhline(y=50, color='red', linestyle='--', alpha=0.5, label='50 bp (re-anchor needed)')
+axes[2].set_xlabel("Epoch"); axes[2].set_ylabel("RMSE (bp)"); 
+axes[2].set_title("Anchor RMSE: P^* Curve Reconstruction Error"); axes[2].legend()
 axes[2].grid(True, alpha=0.3)
 
-axes[3].plot(hist["lambda0_norm"], lw=1.2, color="teal", label="||lambda_0||")
-axes[3].set_xlabel("Epoch"); axes[3].set_title("Constant Drift Bias Norm"); axes[3].legend()
+axes[3].plot(hist["sigma_scale"], lw=1.2, color="purple", label="mean(sigma_vec)")
+axes[3].set_xlabel("Epoch"); axes[3].set_title("Diffusion Scale (mean of sigma_vec)"); axes[3].legend()
 axes[3].grid(True, alpha=0.3)
+
+axes[4].plot(hist["lambda0_norm"], lw=1.2, color="teal", label="||lambda_0||")
+axes[4].set_xlabel("Epoch"); axes[4].set_title("Constant Drift Bias Norm"); axes[4].legend()
+axes[4].grid(True, alpha=0.3)
 
 fig.tight_layout()
 fig.savefig(os.path.join(FIGURES_DIR, f"constant_mpr_loss_dim{LATENT_DIM}_ep{EPOCHS}.png"), dpi=200)

@@ -48,10 +48,46 @@ def parse_swaption_code(code):
     return option_maturity, swap_tenor
 
 
+def _pick_sheet(excel_path, currency):
+    """
+    Pick the sheet whose name matches the requested currency and the
+    Bachelier (normal) convention.  The Bloomberg-style file uses
+    "SwapNVol" for normal-vol sheets and "SwapVol" for Black/lognormal
+    sheets; we select the normal-vol sheet because the rest of the
+    pricing pipeline uses Bachelier throughout.
+    """
+    xls = pd.ExcelFile(excel_path, engine="openpyxl")
+    ccy = currency.upper().strip()
+
+    candidates = [s for s in xls.sheet_names
+                  if ccy in s.upper() and "SWAPNVOL" in s.upper().replace(" ", "")]
+
+    if not candidates:
+        # Fall back to any sheet matching the currency.
+        fallback = [s for s in xls.sheet_names if ccy in s.upper()]
+        if fallback:
+            print(
+                f"[load_swapvol_ois] WARNING: no SwapNVol (normal-vol) sheet "
+                f"found for {ccy}; falling back to {fallback[0]!r} which may "
+                f"be Black/lognormal vols."
+            )
+            candidates = fallback
+
+    if not candidates:
+        raise ValueError(
+            f"No sheet matching currency {ccy!r} found in {excel_path}. "
+            f"Available sheets: {xls.sheet_names}"
+        )
+
+    chosen = candidates[0]
+    print(f"[load_swapvol_ois] Loading sheet {chosen!r} for currency {ccy}")
+    return chosen
+
+
 def load_swaption_vol_data(
     excel_path=None,
     currency="EUR",
-    sheet_name=0,
+    sheet_name=None,
     code_row_idx=0,
     data_start_row_idx=5,
     first_date_col_pos=1,
@@ -68,6 +104,15 @@ def load_swaption_vol_data(
         Path to the Bloomberg-style Excel file.  When *None* (default),
         resolves to ``<repo_root>/SwapData/SwapVol.xlsx`` relative to this
         file so the script runs unchanged on any machine.
+    currency : str
+        Currency code (e.g. "EUR").  Used to pick the matching sheet if
+        ``sheet_name`` is not given explicitly.
+    sheet_name : str, int or None
+        If None (default), the sheet is selected automatically: the
+        first sheet whose name contains the currency code AND the
+        substring ``SwapNVol`` (Bachelier / normal-vol convention).
+        For EUR this resolves to ``'EUR SwapNVol OIS'``.  Pass an
+        explicit string or index to override.
 
     Expected sheet structure
     ------------------------
@@ -89,6 +134,11 @@ def load_swaption_vol_data(
     """
     if excel_path is None:
         excel_path = _DEFAULT_EXCEL
+
+    if sheet_name is None:
+        sheet_name = _pick_sheet(excel_path, currency)
+    else:
+        print(f"[load_swapvol_ois] Loading sheet {sheet_name!r} (explicit override) for currency {currency}")
 
     raw = pd.read_excel(
         excel_path,
