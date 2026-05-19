@@ -179,104 +179,154 @@ Optimisation is done with Adam. The learning rate is first increased linearly du
 \subsection{Results}
 \label{subsec:cmpr_results}
 
-Table~\ref{tab:constant_mpr_per_cell_all} reports the ATM straddle-volatility errors across the swaption surface. The training and test windows are shown separately, together with the time-averaged forward-bias diagnostic.
+Table~\ref{tab:pricing_combined} summarises the results across all nine swaption cells for all dates, comparing the unadjusted base model, the calibrated pricing layer, and the market. The forward-centering bias is included as a diagnostic column alongside the mean absolute errors across all dates, the training window, and the test window.
 
-\begin{table}[H]
-\centering
-\input{Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_all}
-\end{table}
+%\input{Figures/Pricing/comparison/}
 
-The overall MAE across the swaption surface is \(\mathbf{49.4}\) bp. The error is \(XX.X\) bp on the training window and \(\mathbf{XX.X}\) bp out of sample. The small train--test gap suggests that the eight-parameter pricing layer does not materially overfit the training data. However, the errors are not evenly distributed across the surface. The largest residuals come from the 1Y\(\times\)1Y and 1Y\(\times\)5Y swaptions, with all-date MAEs of \(157.4\) bp and \(93.1\) bp, respectively.
+The results tell a two-part story. The first part is encouraging: the pricing layer is a dramatic improvement over the unadjusted base model. Without any calibration the base model produces straddle vols of 691 at the 1Y\(\times\)1Y cell against a market level of 47, and the overall MAE is 413. After adding the eight-parameter layer the overall MAE falls to \(\mathbf{49.4}\), a reduction of nearly ninety per cent. The layer therefore succeeds in its primary purpose of bringing the simulated volatility level into the right ballpark.
 
-The large short-expiry errors are not surprising. At short expiries, small changes in the terminal forward-swap-rate distribution have a large effect on the annualised implied volatility. The 1Y expiry cells therefore provide a demanding test of whether the model has the right local volatility scale.
+The second part is more sobering. The errors are not uniformly small. The 1Y expiry cells retain MAEs of 157, 93 and 47, while the 10Y cells show only 17--23. At first glance this looks like an expiry-dependent success. However, the forward bias column reveals that the apparently good long-expiry fit is partly misleading. The 10Y cells carry a forward bias of approximately \(+160\), meaning the simulated forward swap rate is shifted roughly 160 basis points above the initial ATM strike. A positive bias inflates the payer swaption price and deflates the receiver price; their average --- the straddle --- is therefore partly lifted by the centering error, not only by the model volatility. The small 10Y MAE is thus partly a spurious cancellation between under-volatility and over-centering, not a genuine match of the terminal distribution.
 
-The forward-bias diagnostic helps separate two different effects. The volatility error measures whether the simulated terminal distribution has the right width. The forward bias measures whether the distribution is centred around the initial ATM strike. A small volatility error does not necessarily mean that both are correct: a model can underproduce volatility but still obtain a reasonable straddle price if the simulated forward rate is shifted away from the strike.
+The training and test periods confirm this picture. On the training window the overall MAE is 43.7; on the 2022--2024 test period it rises to 62.3. The 19-point train-to-test increase is non-trivial for an eight-parameter model, and it is concentrated in the 5Y and 10Y cells, where the forward bias is largest. This suggests the optimiser found a local compromise that happens to work during low-volatility regimes but degrades when the vol surface moves sharply, as it did around 2022.
 
-This is important for interpreting the longer-expiry results. Several 5Y and 10Y expiry swaptions have smaller volatility MAEs, but their forward biases are not always small. In particular, the 10Y expiry cells show large positive forward biases. This means that the simulated forward swap rate is shifted above the initial ATM strike. The shift increases the straddle price and can partly compensate for too little model volatility. The apparently better fit at long expiries should therefore be interpreted with caution: it is partly caused by cancellation between volatility error and centering error.
-
-Figure~\ref{fig:constant_mpr_heatmap} shows the all-date volatility MAE for each swaption. The largest errors are concentrated in the short-expiry part of the surface, especially the 1Y\(\times\)1Y and 1Y\(\times\)5Y cells. The longer-expiry cells have smaller MAEs, but the forward-bias diagnostic shows that this does not necessarily imply a better terminal distribution.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1\textwidth]{Figures/Pricing/comparison/fig_pricing_heatmap_comparison_all.png}
-    \caption{ATM straddle normal-volatility MAE in basis points for each swaption, using the calibrated pricing layer and all dates. The largest residual errors are concentrated in the short-expiry swaptions. Smaller errors at longer expiries should be interpreted together with the forward-bias diagnostic, since part of the fit comes from cancellation between volatility and centering errors.}
-    \label{fig:constant_mpr_heatmap}
-\end{figure}
-
-Figure~\ref{fig:constant_mpr_timeseries} shows the volatility error over time, with the test period highlighted. The errors are fairly stable for much of the sample, but several swaptions move sharply around 2022. The largest residuals remain concentrated among the 1Y expiry swaptions, while some longer-expiry errors are smaller but accompanied by non-negligible forward bias.
+Figure~\ref{fig:constant_mpr_timeseries} shows the vol error over time for all nine cells. The errors are relatively stable until 2022, after which several cells deteriorate sharply. The 1Y expiry errors are persistently large throughout, while the 5Y and 10Y errors are smaller in the training period but widen in the test period.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/Pricing/comparison/fig_pricing_comparison_timeseries.png}
-    \caption{Time series of ATM straddle normal-volatility pricing errors in basis points for the calibrated pricing layer. The shaded region marks the out-of-sample test period. The largest residuals are concentrated in the 1Y expiry swaptions, while several cells show sharp movements around 2022.}
+    \caption{Time series of ATM straddle normal-volatility pricing errors in basis points for the calibrated pricing layer. The shaded region marks the out-of-sample test period (2022--2024). The 1Y expiry errors (blue) are persistently large throughout the sample. The 5Y and 10Y errors appear smaller in-sample but widen after 2022, partly because the forward bias that masked the under-volatility in-sample is less effective out of sample.}
     \label{fig:constant_mpr_timeseries}
 \end{figure}
 
-\subsection{Error decomposition: volatility level and forward bias}
-\label{subsec:cmpr_error_decomposition}
+\subsection{The term-structure trade-off and the masking effect}
+\label{subsec:cmpr_term_structure}
 
-The forward-bias diagnostic shows that the volatility MAE alone does not fully describe the pricing error. The straddle-implied volatility depends both on the width of the terminal swap-rate distribution and on how far its centre is from the ATM strike. A model can therefore obtain a reasonable straddle price even if the underlying terminal distribution is wrong.
+The pattern in Table~\ref{tab:pricing_combined} has a structural explanation rooted in the shape of the model's volatility term structure.
 
-The 1Y expiry swaptions have the largest volatility errors. This is mainly because the calibrated model still produces too much short-expiry volatility. At short expiries, the annualised implied volatility is very sensitive to the local width of the simulated forward distribution, so the 1Y cells are a demanding test of the diffusion scale.
-
-The longer-expiry swaptions look better in the MAE table, but the forward-bias diagnostic shows that this fit is partly misleading. In particular, the 10Y expiry cells have large positive forward biases. This means that the simulated forward swap rate is shifted above the initial ATM strike. The shift increases the straddle value and partly compensates for the fact that the model produces too little volatility at long expiries.
-
-Thus, the smaller 10Y errors are not a clean success. They partly reflect cancellation between two errors: too little volatility and too much positive forward bias. Conversely, the large 1Y errors reflect the fact that short-expiry volatility remains too high after calibration.
+\paragraph{The base model produces the wrong slope.}
+Figure~\ref{fig:term_structure_vol} plots the model-implied forward-rate volatility and the market normal volatility against option expiry, for each of the three swap tenors. The base model (before any pricing adjustment) generates vol that is strongly \emph{decreasing} with expiry: roughly 690 at 1Y, falling to 285 at 5Y and 225 at 10Y. The market normal vol surface is nearly \emph{flat}: approximately 40--70 across all expiries. The two curves have opposite shapes.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{Figures/Pricing/eval_constant_mpr/fig_forward_bias_timeseries.png}
-    \caption{Forward bias \(\widehat b\) in basis points for the calibrated pricing layer, grouped by expiry. The bias is persistent and expiry-dependent, showing that the single drift shift \(\eta\) cannot centre all swaption cells simultaneously.}
-    \label{fig:constant_mpr_forward_bias}
+    \includegraphics[width=\textwidth]{Figures/TrainingResults/dim4_constant_mpr/term_structure_diag/term_structure_vol_by_tenor.png}
+    \caption{Term structure of ATM normal volatility: base model (decreasing, left axis) versus market (flat, dashed). Each panel shows one swap tenor. The base model vol is roughly 10--16 times the market at 1Y expiry and 3--4 times at 10Y expiry, and its annualised vol falls strongly with expiry due to variance saturation in the mean-reverting latent SDE.}
+    \label{fig:term_structure_vol}
 \end{figure}
 
-The residual errors therefore reflect two limitations of the pricing layer. The diffusion scale \(s\) cannot reshape the volatility profile across expiries, and the drift shift \(\eta\) cannot centre all expiry--tenor cells at the same time.
-
-\subsection{Structural limitation: the model volatility term structure}
-\label{subsec:model_vol_term_structure}
-
-The main limitation of the pricing layer is not only the forward-centering bias. Even when the bias is removed, the model produces the wrong term structure of swaption volatility. Table~\ref{tab:model_market_vol_term_structure} compares the scale of the simulated forward-swap-rate volatility with the market normal volatility level.
-
-\begin{table}[H]
-\centering
-\caption{Model-implied forward-rate volatility scale versus market normal volatility. 
-Values are reported in basis points.}
-\label{tab:model_market_vol_term_structure}
-\begin{tabular}{lcc}
-\toprule
-Expiry & Model forward-rate volatility & Market normal volatility \\
-\midrule
-1Y  & 84--157 & 47--68 \\
-5Y  & 45--47  & 71--72 \\
-10Y & 33--36  & 68--71 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The pattern is clear. The model produces too much short-expiry volatility and too little long-expiry volatility. In other words, the volatility generated by the latent SDE decreases strongly with option expiry, whereas the market normal volatility surface is much flatter.
-
-This cannot be fixed by the global diffusion scale \(s\). The scale \(s\) can move the overall volatility level up or down, but it cannot change the shape across expiries. For example, reducing \(s\) would help the 1Y swaptions, but would make the 5Y and 10Y swaptions even too low. Increasing \(s\) would help the 10Y swaptions, but would make the 1Y swaptions much too high. Hence the calibration faces a locked trade-off between short-expiry over-volatility and long-expiry under-volatility.
-
-This suggests that the problem is inherited from the frozen stable model rather than from the small pricing layer. The latent dynamics were trained to fit the historical swap-rate curve, not the risk-neutral term structure of swaption variance. A stable mean-reverting model naturally tends to generate variance that saturates with time, which translates into a decreasing annualised volatility as expiry increases. The market swaption data require a much flatter term structure of volatility.
-
-Therefore, the pricing layer should be interpreted as a diagnostic experiment. It shows that the latent representation contains useful information for pricing, but it does not contain the right risk-neutral variance structure. Matching the market swaption surface would require a richer pricing model, for example expiry-dependent diffusion scales, a recalibration of the drift, or a model trained directly on swaption volatilities.
-
-For a mean-reverting latent process, the variance of the state tends to level off as the expiry grows. Since the reported normal volatility is annualised, this leads approximately to
+The source of the decreasing pattern is variance saturation. For a mean-reverting latent process the variance of the state tends to level off as the horizon grows, because mean reversion pulls paths back towards the centre. Since the reported normal volatility is annualised,
 \[
 \sigma_N(T_\mu)
 \approx
 \sqrt{\frac{\operatorname{Var}(R_{\mathrm{swap}}(T_\mu))}{T_\mu}},
 \]
-so a variance that saturates over time produces a volatility that decreases with expiry.
+a variance that saturates produces an annualised volatility that decreases with expiry. This is a property of the frozen stable model, not of the pricing layer: the latent dynamics were trained to match the historical swap-rate curve, not the risk-neutral term structure of swaption variance. The resulting vol shape is therefore structurally incompatible with the flat market surface.
+
+\paragraph{A single scale \(s\) cannot fix the slope.}
+The pricing layer introduces a per-factor diffusion scale \(s\) that multiplies the entire diffusion matrix. This changes the overall volatility level but leaves the ratio between expiries unchanged: if the base model produces twice as much vol at 1Y than at 5Y, the calibrated model does too. Figure~\ref{fig:scaling_sensitivity} makes this concrete by showing what happens to the model vol at each expiry as \(s\) varies.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{Figures/TrainingResults/dim4_constant_mpr/term_structure_diag/scaling_sensitivity.png}
+    \caption{Model volatility at each expiry as a function of the global diffusion scale \(s\), for tenor 1Y. The dashed horizontal lines are the market targets. No single value of \(s\) can simultaneously hit the 1Y target (requiring \(s \ll 1\)) and the 10Y target (requiring \(s < 1\) but much closer to 1). The term-structure mismatch is therefore locked in regardless of \(s\).}
+    \label{fig:scaling_sensitivity}
+\end{figure}
+
+After calibration the optimiser settles on a scale that reduces the large 1Y over-volatility at the cost of introducing under-volatility at 5Y and 10Y. Table~\ref{tab:term_structure_trained} confirms this: the calibrated model produces 143 at 1Y (market 41--65, ratio 2--3.4$\times$), but only 49 at 5Y (market 68--69, ratio 0.72$\times$) and 52 at 10Y (market 67--69, ratio 0.76$\times$). The slope is inverted relative to the market: the model is over-vol at short expiries and under-vol at long expiries.
+
+\begin{table}[H]
+\centering
+\caption{Model-implied versus market normal volatility after pricing-layer calibration (mean over a 40-date sample). The ratio mod/mkt above 1 indicates over-volatility; below 1 indicates under-volatility. Values in basis points.}
+\label{tab:term_structure_trained}
+\small
+\begin{tabular}{@{}ccrrc@{}}
+\toprule
+\textbf{Expiry} & \textbf{Tenor} & \textbf{Model \(\sigma_F\)} & \textbf{Market \(\sigma_N\)} & \textbf{Ratio} \\
+\midrule
+1Y  & 1Y  & 143 & 41 & 3.44$\times$ \\
+1Y  & 5Y  & 125 & 57 & 2.19$\times$ \\
+1Y  & 10Y & 107 & 65 & 1.65$\times$ \\
+\midrule
+5Y  & 1Y  &  49 & 68 & 0.72$\times$ \\
+5Y  & 5Y  &  49 & 68 & 0.72$\times$ \\
+5Y  & 10Y &  50 & 69 & 0.72$\times$ \\
+\midrule
+10Y & 1Y  &  53 & 69 & 0.76$\times$ \\
+10Y & 5Y  &  45 & 68 & 0.67$\times$ \\
+10Y & 10Y &  50 & 66 & 0.76$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{The masking effect at long expiries.}
+Given that the model under-produces vol at 5Y and 10Y expiries (ratio 0.67--0.76), why do the MAEs in Table~\ref{tab:pricing_combined} appear so small for those cells (17--35)? The answer lies in the forward bias. At 10Y expiry the mean forward bias is approximately \(+160\), meaning the simulated forward swap rate sits 160 basis points above the initial ATM strike. A payer swaption struck at the initial ATM rate is therefore in the money on average, which raises the straddle price above what the vol level alone would predict. In other words, positive centering error compensates for negative vol error, and the two partially cancel in the straddle price. The resulting MAE is misleadingly small.
+
+Figure~\ref{fig:constant_mpr_forward_bias} shows the forward bias over time for all nine cells. The bias is persistent across the full sample and not concentrated in any particular market regime, confirming that it is structural rather than incidental. The 10Y cells (red) carry a large positive bias throughout, while the 1Y cells (blue) show a smaller and more variable bias. This is consistent with the masking mechanism: the 10Y under-vol problem is largely hidden by the centering error, whereas the 1Y over-vol problem is not, because the forward distribution has had only one year to spread and a centering shift is small relative to the width.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Pricing/eval_constant_mpr/fig_forward_bias_timeseries.png}
+    \caption{Forward bias \(\widehat{b}\) in basis points for the calibrated pricing layer (all nine cells grouped by expiry). The 10Y cells (red lines) carry a persistent positive bias of around \(+160\) bp throughout the sample. This bias inflates straddle prices at long expiries, masking the model's under-volatility and producing a misleadingly small MAE.}
+    \label{fig:constant_mpr_forward_bias}
+\end{figure}
+
+The bias reflects the internal inconsistency of the pricing setup: the initial swap curve is decoded by the \emph{stable} model while the terminal curve is decoded by the adjusted model. The two decoders disagree on the forward swap rate even when the latent state at \(t=0\) is the same, producing a systematic shift. We discuss this further in Section~\ref{sec:pricing_limitation}.
+
+%=========================================================
+\section{Internal Consistency of the Pricing Dynamics}
+\label{sec:pricing_limitation}
+%=========================================================
+
+The pricing experiment makes one deliberate compromise, already noted in Section~\ref{sec:constant_mpr}. At the initial date, the swap curve is read from the \emph{stable} decoder. During the pricing simulation, the model uses the adjusted dynamics \(\bigl(\mu+\sigma\eta,\operatorname{diag}(s)\sigma\bigr)\), with the bond-pricing ODE re-solved under those adjusted parameters. The terminal bond prices are therefore decoded using the pricing-layer model. The initial and terminal curves are thus generated by two different sets of parameters, and the initial \(z_0\) is encoded using the stable model rather than the pricing-layer model.
+
+In a fully consistent version, the adjusted decoder would also be used at \(t=0\). This requires an anchoring step: for each observed initial curve, one finds an initial latent state \(z_0^\star\) such that the adjusted decoder reproduces the observed swap curve,
+\[
+z_0^\star
+=
+\arg\min_z
+\left\|
+S^*(z)-S_0
+\right\|^2,
+\]
+and the simulation then starts from \(z_0^\star\). In that case the forward distribution is centred consistently with the adjusted model, and the bias \(\widehat{b}\) should be small apart from numerical and Monte Carlo error.
+
+We implemented this anchored variant. It did not remove the forward bias. The reason is that the stable model was trained to fit market swap rates at their natural scale, while the pricing layer calibrates \(s \ll 1\) to compensate for the base model's massive vol. As a result, the adjusted decoder maps the same observed swap curve to a latent \(z_0^\star\) that is very different from the stable encoder's \(z_0\). Starting from \(z_0^\star\) changes the initial point of the simulation, but the latent SDE dynamics --- and therefore the shape of the vol term structure --- remain fixed. The fundamental problem, a mean-reverting SDE with variance saturation, persists regardless of where in latent space the simulation begins.
+
+The forward bias is therefore not simply an anchoring artefact. It partly reflects the structural mismatch between the stable model's mean-reverting dynamics and the risk-neutral vol term structure. When starting from the re-anchored \(z_0^\star\), the model still drifts toward a different long-run level than the market implies, and the centering error reappears.
+
+The current setup is therefore best viewed as an exploratory experiment that probes how much a small parametric overlay can achieve on top of frozen yield-curve dynamics. A genuinely consistent joint model would require the pricing dynamics to be built into the training objective from the start.
+
+\subsection{Structural limitation: the model volatility term structure}
+\label{subsec:model_vol_term_structure}
+
+The root cause of both the forward bias and the term-structure mismatch is the same: the latent SDE is mean-reverting by design. Mean reversion causes the variance of the latent state to saturate as the simulation horizon grows, because the process is pulled back toward its long-run level. Since the reported normal volatility is annualised,
+\[
+\sigma_N(T_\mu)
+\approx
+\sqrt{\frac{\operatorname{Var}(R_{\mathrm{swap}}(T_\mu))}{T_\mu}},
+\]
+a variance that saturates over time produces an annualised volatility that decreases with expiry. Figure~\ref{fig:FT_distribution} illustrates the saturation directly by showing the distribution of \(F_{T_\mu} - F_0\) at each expiry: the spread grows much more slowly than \(\sqrt{T_\mu}\), so the annualised vol shrinks.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/TrainingResults/dim4_constant_mpr/term_structure_diag/FT_distribution_per_expiry.png}
+    \caption{Distribution of the forward swap rate change \(F_{T_\mu} - F_0\) in basis points for the base model at expiries of 1Y, 5Y and 10Y (tenor 1Y, one representative date). The spread of the distribution grows sub-linearly with expiry, reflecting variance saturation in the mean-reverting latent SDE. Because annualised volatility divides by \(\sqrt{T_\mu}\), the implied vol falls as the expiry increases.}
+    \label{fig:FT_distribution}
+\end{figure}
+
+The market normal vol surface, by contrast, is nearly flat across expiries (see Figure~\ref{fig:term_structure_vol}). Matching a flat surface with a model that inherently produces a decreasing surface requires either expiry-dependent diffusion scales, a fundamentally less mean-reverting dynamics, or a model trained directly on the risk-neutral swaption measure. None of these is achievable within the current frozen-stable-model framework. The pricing layer therefore reveals a genuine structural limitation of using a yield-curve autoencoder as a basis for swaption pricing without modifying the underlying dynamics.
 
 %=========================================================
 \section{Summary}
 \label{sec:pricing_summary}
 %=========================================================
 
-The pricing-layer experiment shows that a small number of additional pricing parameters can capture part of the EUR ATM swaption surface, but the fit remains limited. The layer has only \(8\) trainable parameters, given by a constant drift shift \(\eta\) and a per-factor diffusion scale \(s\), while the stable model itself is kept fixed. It reaches an overall MAE of \(40.1\) bp and an out-of-sample MAE of \(42.0\) bp. The small train--test gap suggests that the result is not mainly driven by overfitting, but the absolute error level is still too large for a fully satisfactory pricing model.
+The pricing-layer experiment shows that a small parametric overlay can fix the \emph{level} of the model's swaption volatility, but not its \emph{slope}. Starting from a base model that produces straddle vols of 691 at 1Y\(\times\)1Y (market: 47) and an overall MAE of 413, the eight-parameter layer --- a global drift shift \(\eta\) and per-factor diffusion scale \(s\) --- reduces the all-date overall MAE to \(\mathbf{49.4}\). On the 2010--2021 training window the MAE is 43.7; on the 2022--2024 out-of-sample period it rises to 62.3.
 
-The largest residual errors occur for the 1Y expiry swaptions, especially the 1Y\(\times\)1Y swaption. These errors are partly explained by a persistent positive forward bias. At short expiries, the total diffusion scale \(\sigma_N\sqrt{T_\mu}\) is small, so a shift in the centre of the forward distribution has a large effect on the implied volatility. The forward-centering problem is therefore more damaging at 1Y expiry than at longer expiries.
+However, the fit is not uniformly genuine. The 1Y expiry cells retain large MAEs (47--157) because the model over-produces volatility at short expiries by a factor of 1.6--3.4 relative to the market, and no single global scale can eliminate this without simultaneously creating under-volatility at longer expiries. After calibration the model under-produces vol at 5Y and 10Y expiries by about 25--30 per cent. The mean-reverting latent SDE generates an annualised vol that decreases with expiry due to variance saturation, whereas the market normal vol surface is nearly flat. This shape mismatch is structural and cannot be resolved by the pricing layer.
 
-The main limitation is internal consistency. The pricing setup uses the stable decoder for the initial curve and the adjusted decoder for the terminal payoff. A fully consistent version would instead use the adjusted decoder throughout and solve an inverse-decoder anchoring problem for the initial state \(z_0\). This would make the method more expensive, but it is the natural next step if the pricing layer is to become a genuine joint model for curves and swaptions.
+The apparently small MAEs at 10Y expiry (17--23) should be interpreted with caution. The 10Y cells carry a persistent forward bias of approximately \(+160\), meaning the simulated forward swap rate is systematically above the initial ATM strike. The resulting inflation of the straddle price partly offsets the under-volatility, producing a misleadingly small error. When the bias is accounted for, the long-expiry fit is no better than the numbers suggest.
+
+The forward bias is partly an internal consistency issue: the initial swap curve is decoded by the stable model while the terminal curve uses the adjusted model. An anchored version, which re-encodes the initial curve under the adjusted decoder, was tested but did not resolve the bias, because the mismatch is rooted in the dynamics rather than the initial condition.
+
+Overall, the experiment demonstrates that a latent yield-curve model contains enough structure to support an approximate swaption pricing layer, but that a genuinely accurate calibration would require either a less mean-reverting latent dynamics, expiry-dependent diffusion scales, or a model trained jointly on swaption volatilities from the outset.
 
