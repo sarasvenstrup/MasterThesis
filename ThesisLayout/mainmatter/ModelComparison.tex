@@ -36,44 +36,43 @@ which are positive and of similar magnitude.
 
 The learned encoder matrix for the $\ell=2$ baseline model is
 $$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
--1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$ Applying this yields
+-1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$ 
+which was trained on data from 2010 -- which largely consists of positive curves. Applying this yields the latent factors
 $$z^{+} = A_1\mathbf{S}^{+}=\begin{pmatrix} -0.0045 \\ -0.0098 \end{pmatrix}, \qquad
-z^{-} = A_1\mathbf{S}^{-}=\begin{pmatrix} -0.0068 \\ +0.0186 \end{pmatrix}.$$
-The second latent factors have opposite signs. For $\mathbf{S}^{+}$, the small 
-positive rates produce small negative products with the negative weights of 
-$a_2$, yielding $z_2^{+} = -0.0098$. For $\mathbf{S}^{-}$, the negative rates 
-interact with the negative weights to produce positive products that dominate, 
-yielding $z_2^{-} = +0.0186$. The second factor is therefore driven by the sign 
-and magnitude of the raw rates rather than by the slope of the curve.\circ
+z^{-} = A_1\mathbf{S}^{-}=\begin{pmatrix} -0.0068 \\ +0.0186 \end{pmatrix},$$
+where the important observation is that the second factors have opposite signs. For $\mathbf{S}^{+}$, the small positive rates produce small negative products with the negative weights of $a_2$, yielding $z_2^{+} = -0.0098$. For $\mathbf{S}^{-}$, the negative rates interact with the negative weights to produce positive products that dominate, yielding $z_2^{-} = +0.0186$. The second factor is therefore seems to be driven by the sign \textcolor{red}{and magnitude} of the raw rates rather than by the slope of the curve.\;\;\circ
 \end{example}
 
 While this does not constitute a formal proof, the figure and example together suggest that the absence of explicit shape information in the input may be a contributing factor to both failure patterns. We therefore propose the augmented model specified in the following subsection.
 
 
-
-
-
-
-
-\newpage
-
-
 \subsection{Model Specification}
-Motivated by this hypothesis, we augment the input vector with 
-derived features. We add a short-end slope $f_1 = S_{10\text{Y}} - S_{1\text{Y}}$, a long-end slope $f_2 = S_{30\text{Y}} - S_{10\text{Y}}$, and a curvature measure $f_3 = 2S_{10\text{Y}} - S_{1\text{Y}} - S_{30\text{Y}}$. The augmented input vector is then
-$$\mathbf{S}^{\text{aug}} = \bigl(S^{(1)}, \ldots, S^{(M)}, f_1, f_2, f_3\bigr)^\top \in \mathbb{R}^{M+3}$$
 
-All three features are invariant to parallel level shifts in the rate level, meaning that replacing 
-$\mathbf{S}$ by $\mathbf{S} + c\mathbf{1}$ leaves $f_1, f_2, f_3$ unchanged. For curves with \textcolor{red}{non-trivial} slope or curvature \textcolor{red}{but a low} or negative level, the derived features therefore carry shape information that the raw rates do not.  However, this argument does not apply to approximately flat curves near zero, 
-where the features are themselves near zero. 
+Motivated by the above, we augment the input vector with derived features. We add a short-end slope $f_1 = S_{10\text{Y}} - S_{1\text{Y}}$, a long-end slope $f_2 = S_{30\text{Y}} - S_{10\text{Y}}$, and a curvature measure $f_3 = 2S_{10\text{Y}} - S_{1\text{Y}} - S_{30\text{Y}}$. The augmented input vector is then
+$$\mathbf{S}^{\text{aug}} = \bigl(S^{(1)}, \ldots, S^{(M)}, f_1, f_2, 
+f_3\bigr)^\top \in \mathbb{R}^{M+3}.$$
+The features are constructed as differences between tenors and therefore capture the slope and curvature of the curve more directly than the raw rates alone. However, since the features depend on absolute rate differences, two curves with different rate levels but similar shapes will not necessarily produce the same feature values.
 
+\begin{example}
+Consider three upward-sloping curves with the same slope shape but different 
+rate levels. A positive-rate curve with $S_{1\text{Y}} = 2\%$ and 
+$S_{10\text{Y}} = 4\%$, a crossing curve with $S_{1\text{Y}} = -2\%$ and 
+$S_{10\text{Y}} = 2\%$, and a negative-rate curve with $S_{1\text{Y}} = -4\%$ 
+and $S_{10\text{Y}} = -2\%$ give
+$$f_1^{\text{pos}} = 4\% - 2\% = 2\%, \qquad f_1^{\text{cross}} = 2\% - (-2\%) 
+= 4\%, \qquad f_1^{\text{neg}} = -2\% - (-4\%) = 2\%.$$
+The features therefore do not fully decouple shape from level, as the crossing 
+curve produces a different $f_1$ despite having a similar upward slope.
+\end{example}
 
-A second motivation is the training objective. Without augmentation, the loss $\lVert \mathbf{S} - \tilde{\mathbf{S}} \rVert^2$ provides no explicit incentive to match slope 
-or curvature. Including the derived features in both the input and the 
-loss directly penalises shape mismatch. Whether these modifications are sufficient to resolve the reconstruction failure for negative-rate curves is an empirical question, assessed in this following section.
+The features nevertheless provide more explicit shape information than the raw 
+rates alone, particularly for curves with a pronounced slope or curvature at 
+low or negative rate levels. This argument does not apply to approximately flat 
+curves near zero, where the features are themselves near zero.
 
 
 The augmented model follows the same encoder-decoder architecture described in Chapter~\ref{chap:encoderdecodermodel}, with two modifications. The encoder receives the 11-dimensional augmented input rather than the raw 8-dimensional swap curve, and the loss is evaluated over the eight reconstructed rates plus the three derived features computed from them, giving eleven terms in total. The decoder output remains an 8-dimensional swap curve $\tilde{\mathbf{S}}$.
+
 
 \subsection{Assessing the fit of Augmented}
 
@@ -82,15 +81,28 @@ Here we assess the in sample fit and oos of the augmented model with the baselin
 %We first assess whether the augmented model addresses the reconstruction failure identified for negative-rate curves. Figure~\ref{...} compares fitted and actual swap curves on the same representative dates used in Chapter~??. The baseline fit is included as a reference.
 
 
-\begin{figure}[H]
+
+
+
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_fitted_vs_actual_all_dims.png}
-    \caption{In-sample fitted versus actual swap curves for the augmented model with
-    $\ell \in \{2, 3, 4\}$ across two representative dates: a calmer market
-    environment (2014-08-29) and the COVID-19 shock (2020-03-31).
-    Rows correspond to market environments; columns to EUR, USD, JPY, and CAD.
-    The solid line with circles denotes the observed swap rate.}
-    \label{fig:augmented_fitted_vs_actual_all_dims}
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/failure_modes_all_models.png}
+    \caption{Baseline and augmented model fits on three representative swap rate 
+    curves, illustrating the two encoder failure modes. 
+    \textit{Left:} EUR 2015-03-31, a low but fully positive curve with 
+    identical shape to the deeply negative example — the baseline fits it well. 
+    \textit{Centre:} EUR 2020-10-30, a deeply negative curve ($\geq\!7/8$ 
+    tenors below zero) — the baseline (dashed) fails to recover the level, 
+    while the augmented models of increasing dimension progressively improve. 
+    \textit{Right:} JPY 2016-09-30, a crossing curve with a negative short end 
+    and positive long end — the baseline again struggles, producing an 
+    upward-biased reconstruction. 
+    RMSE values (bps) are reported in each panel as 
+    $\mathrm{B}$ (baseline $\ell=2$), 
+    $\mathrm{A2}$ (augmented $\ell=2$), 
+    $\mathrm{A3}$ (augmented $\ell=3$), 
+    $\mathrm{A4}$ (augmented $\ell=4$).}
+    \label{fig:failure_modes_all_models}
 \end{figure}
 
 %The augmented model improves the in-sample fit precisely in the cases where the baseline model performed poorly. In particular, for the COVID-19 date, the fitted EUR and JPY curves reproduce more of the observed slope and curvature. This supports the interpretation that the baseline encoder did not provide the decoder with sufficient shape information in low-rate regions of the latent space.
