@@ -76,28 +76,28 @@ The augmented model follows the same encoder-decoder architecture described in C
 
 \subsection{Assessing the fit of Augmented}
 
-Here we assess the in sample fit and oos of the augmented model with the baseline serving as a reference.
 
-%We first assess whether the augmented model addresses the reconstruction failure identified for negative-rate curves. Figure~\ref{...} compares fitted and actual swap curves on the same representative dates used in Chapter~??. The baseline fit is included as a reference.
+\subsection{In-Sample Fit of the Augmented Model}
 
+\subsection{In-Sample Fit of the Augmented Model}
 
+The augmented model is assessed on the same three representative curves used 
+to illustrate the baseline failure patterns in 
+Figure~\ref{fig:baseline_fit_failure_modes}, with the baseline included as a 
+reference. The results are shown in Figure~\ref{fig:failure_modes_all_models}.
 
-
-
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/failure_modes_all_models.png}
     \caption{Baseline and augmented model fits on three representative swap rate 
     curves, illustrating the two encoder failure modes. 
-    \textit{Left:} EUR 2015-03-31, a low but fully positive curve with 
-    identical shape to the deeply negative example — the baseline fits it well. 
+    \textit{Left:} EUR 2015-03-31, a low but fully positive curve — the baseline 
+    fits it well. 
     \textit{Centre:} EUR 2020-10-30, a deeply negative curve ($\geq\!7/8$ 
-    tenors below zero) — the baseline (dashed) fails to recover the level, 
-    while the augmented models of increasing dimension progressively improve. 
+    tenors below zero). 
     \textit{Right:} JPY 2016-09-30, a crossing curve with a negative short end 
-    and positive long end — the baseline again struggles, producing an 
-    upward-biased reconstruction. 
-    RMSE values (bps) are reported in each panel as 
+    and positive long end. 
+    RMSE values (bps) are reported as 
     $\mathrm{B}$ (baseline $\ell=2$), 
     $\mathrm{A2}$ (augmented $\ell=2$), 
     $\mathrm{A3}$ (augmented $\ell=3$), 
@@ -105,9 +105,28 @@ Here we assess the in sample fit and oos of the augmented model with the baselin
     \label{fig:failure_modes_all_models}
 \end{figure}
 
-%The augmented model improves the in-sample fit precisely in the cases where the baseline model performed poorly. In particular, for the COVID-19 date, the fitted EUR and JPY curves reproduce more of the observed slope and curvature. This supports the interpretation that the baseline encoder did not provide the decoder with sufficient shape information in low-rate regions of the latent space.
+For the positive-rate EUR curve on 2015-03-31, both models reconstruct the 
+curve accurately, confirming that the augmentation does not degrade performance 
+on well-behaved curves. For the deeply negative EUR curve on 2020-10-30, the 
+augmented model at all dimensions shows a clear change in behaviour relative 
+to the baseline, attempting to capture the shape of the curve rather than 
+producing a smooth curve in the wrong direction, though the improvement in 
+RMSE is most pronounced at $\ell=4$. For the crossing JPY curve on 2016-09-30, 
+the augmented model at $\ell=3$ substantially improves the fit, better 
+capturing the upward slope, while $\ell=2$ remains close to the baseline and 
+$\ell=4$ overshoots at the long end. The in-sample results therefore suggest 
+that the augmentation helps, though its effectiveness depends on the latent 
+dimension and the specific curve type. It specifically better the curves that have half the tenors that are negative. 
 
-We hereby see a great improvement in sample where the baseline had a hard time. in some way indicating that the information that we forced on the model was indeed missing for curves.
+
+It is again also interesting to look at the OOS fit, where we see that over time we still see that despite the model with three latent factors fit the curves better, OOS it doesnt really help, as it seems to just be a case of overfitting. 
+
+
+However, the improvement is mainly in-sample. The rolling-window evaluation in Figure~\ref{fig:augmented_rolling_regime_dual_axis} shows that the augmented model still suffers from large out-of-sample errors during periods where the test set contains curve shapes that are underrepresented in the training window.
+
+Resulting in that the augmented input vector helped guide the model in sample on better fittinc curves, but this did not translate will into OOS. 
+
+
 
 \begin{figure}[H]
     \centering
@@ -121,7 +140,6 @@ We hereby see a great improvement in sample where the baseline had a hard time. 
     \label{fig:augmented_rolling_regime_dual_axis}
 \end{figure}
 
-%However, the improvement is mainly in-sample. The rolling-window evaluation in Figure~\ref{...} shows that the augmented model still suffers from large out-of-sample errors during periods where the test set contains curve shapes that are underrepresented in the training window.
 
 Hereby indicating that again even with the augmented input the latent dimension 2 is the best oos even though yielding an in sample fit that was looked more like the baseline.
 
