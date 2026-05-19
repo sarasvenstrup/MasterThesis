@@ -181,7 +181,7 @@ Optimisation is done with Adam. The learning rate is first increased linearly du
 
 Table~\ref{tab:pricing_combined} summarises the results across all nine swaption cells for all dates, comparing the unadjusted base model, the calibrated pricing layer, and the market. The forward-centering bias is included as a diagnostic column alongside the mean absolute errors across all dates, the training window, and the test window.
 
-%\input{Figures/Pricing/comparison/}
+%\input{Figures/Pricing/comparison/tab_pricing_combined}
 
 The results tell a two-part story. The first part is encouraging: the pricing layer is a dramatic improvement over the unadjusted base model. Without any calibration the base model produces straddle vols of 691 at the 1Y\(\times\)1Y cell against a market level of 47, and the overall MAE is 413. After adding the eight-parameter layer the overall MAE falls to \(\mathbf{49.4}\), a reduction of nearly ninety per cent. The layer therefore succeeds in its primary purpose of bringing the simulated volatility level into the right ballpark.
 
@@ -233,29 +233,7 @@ The pricing layer introduces a per-factor diffusion scale \(s\) that multiplies 
 
 After calibration the optimiser settles on a scale that reduces the large 1Y over-volatility at the cost of introducing under-volatility at 5Y and 10Y. Table~\ref{tab:term_structure_trained} confirms this: the calibrated model produces 143 at 1Y (market 41--65, ratio 2--3.4$\times$), but only 49 at 5Y (market 68--69, ratio 0.72$\times$) and 52 at 10Y (market 67--69, ratio 0.76$\times$). The slope is inverted relative to the market: the model is over-vol at short expiries and under-vol at long expiries.
 
-\begin{table}[H]
-\centering
-\caption{Model-implied versus market normal volatility after pricing-layer calibration (mean over a 40-date sample). The ratio mod/mkt above 1 indicates over-volatility; below 1 indicates under-volatility. Values in basis points.}
-\label{tab:term_structure_trained}
-\small
-\begin{tabular}{@{}ccrrc@{}}
-\toprule
-\textbf{Expiry} & \textbf{Tenor} & \textbf{Model \(\sigma_F\)} & \textbf{Market \(\sigma_N\)} & \textbf{Ratio} \\
-\midrule
-1Y  & 1Y  & 143 & 41 & 3.44$\times$ \\
-1Y  & 5Y  & 125 & 57 & 2.19$\times$ \\
-1Y  & 10Y & 107 & 65 & 1.65$\times$ \\
-\midrule
-5Y  & 1Y  &  49 & 68 & 0.72$\times$ \\
-5Y  & 5Y  &  49 & 68 & 0.72$\times$ \\
-5Y  & 10Y &  50 & 69 & 0.72$\times$ \\
-\midrule
-10Y & 1Y  &  53 & 69 & 0.76$\times$ \\
-10Y & 5Y  &  45 & 68 & 0.67$\times$ \\
-10Y & 10Y &  50 & 66 & 0.76$\times$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+%\input{Figures/Pricing/comparison/tab_term_structure_trained}
 
 \paragraph{The masking effect at long expiries.}
 Given that the model under-produces vol at 5Y and 10Y expiries (ratio 0.67--0.76), why do the MAEs in Table~\ref{tab:pricing_combined} appear so small for those cells (17--35)? The answer lies in the forward bias. At 10Y expiry the mean forward bias is approximately \(+160\), meaning the simulated forward swap rate sits 160 basis points above the initial ATM strike. A payer swaption struck at the initial ATM rate is therefore in the money on average, which raises the straddle price above what the vol level alone would predict. In other words, positive centering error compensates for negative vol error, and the two partially cancel in the straddle price. The resulting MAE is misleadingly small.
