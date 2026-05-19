@@ -1471,4 +1471,92 @@ else:
     fig_wc.tight_layout()
     save_fig(fig_wc, "baseline_fit_worst_curves")
 
+# ── figure: failure modes — baseline + augmented dim 2/3/4 (1×3) ─────────────
+print("\nGenerating failure modes (augmented dims) figure...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping — no baseline dim=2 checkpoint found")
+else:
+    # Load augmented dim=2 and dim=4 (dim=3 is already S_np_all)
+    _fma_aug_hats = {3: S_np_all}   # dim → reconstructions (N, 8)
+    for _fma_dim in [2, 4]:
+        _fma_ckpt_path = os.path.join(
+            REPO_ROOT, "Figures", "TrainingResults",
+            f"dim{_fma_dim}_augmented_input", f"ep{EPOCHS}",
+            f"checkpoint_dim{_fma_dim}_ep{EPOCHS}.pt",
+        )
+        if not os.path.exists(_fma_ckpt_path):
+            print(f"  ⚠️  Augmented dim={_fma_dim} checkpoint not found: {_fma_ckpt_path}")
+            continue
+        _fma_ckpt  = torch.load(_fma_ckpt_path, map_location=device, weights_only=False)
+        _fma_state = (_fma_ckpt["model_state_dict"]
+                      if "model_state_dict" in _fma_ckpt else _fma_ckpt)
+        _fma_cfg   = (_fma_ckpt.get("model_config", {})
+                      if isinstance(_fma_ckpt, dict) else {})
+        _fma_idim  = _fma_cfg.get("input_dim", augment(X_tensor).shape[1])
+        _fma_m     = FullModel(input_dim=_fma_idim, latent_dim=_fma_dim).to(device)
+        _fma_m.load_state_dict(_fma_state, strict=False)
+        _fma_m.eval()
+        _fma_list  = []
+        with torch.no_grad():
+            for _i in range(0, X_tensor.shape[0], BATCH_SIZE):
+                _xb_aug = augment(X_tensor[_i:_i + BATCH_SIZE].to(device))
+                _fma_list.append(_fma_m(_xb_aug).cpu())
+        _fma_aug_hats[_fma_dim] = torch.cat(_fma_list).numpy()
+        print(f"  Loaded augmented dim={_fma_dim}")
+
+    # Colors matching DIM_COLORS in ResultsGeneratorBaseline.py
+    # DIM_COLORS = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
+    _fma_colors = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
+    _fma_labels = {2: r"Augmented ($\ell=2$)",
+                   3: r"Augmented ($\ell=3$)",
+                   4: r"Augmented ($\ell=4$)"}
+
+    fig_fma, (ax_fma1, ax_fma2, ax_fma3) = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
+
+    def _draw_fma_panel(ax, gi, show_ylabel, rmse_y, rmse_va):
+        _act   = X_np_all[gi] * 100.0
+        _fit_b = _baseline_S_hat[gi] * 100.0
+        _rmse_b = float(np.sqrt(np.mean((X_np_all[gi] - _baseline_S_hat[gi]) ** 2))) * 10_000
+        _ccy   = meta["ccy"].values[gi]
+        _date  = pd.to_datetime(meta["as_of_date"].values[gi]).strftime("%Y-%m-%d")
+
+        ax.plot(tenors, _act,   "o-", color="black", linewidth=1.5,
+                markersize=4, label="Actual")
+        ax.plot(tenors, _fit_b,       color="black",  linewidth=1.5,
+                linestyle="--", label=r"Baseline ($\ell=2$)")
+
+        _rmse_parts = [f"B:{_rmse_b:.1f}"]
+        for _d in [2, 3, 4]:
+            if _d not in _fma_aug_hats:
+                continue
+            _fit_d  = _fma_aug_hats[_d][gi] * 100.0
+            _rmse_d = float(np.sqrt(np.mean((X_np_all[gi] - _fma_aug_hats[_d][gi]) ** 2))) * 10_000
+            ax.plot(tenors, _fit_d, color=_fma_colors[_d], linewidth=1.5,
+                    label=_fma_labels[_d])
+            _rmse_parts.append(f"A{_d}:{_rmse_d:.1f}")
+
+        _rmse_txt = " / ".join(_rmse_parts) + " bps"
+        ax.axhline(0, color="0.7", linewidth=0.8, linestyle=":")
+        ax.set_title(f"{_ccy}  {_date}", fontsize=9)
+        ax.text(0.97, rmse_y, _rmse_txt,
+                transform=ax.transAxes, fontsize=7.5,
+                ha="right", va=rmse_va, color="0.4")
+        ax.set_xlabel("Maturity", fontsize=9)
+        if show_ylabel:
+            ax.set_ylabel("Swap rate (%)", fontsize=9)
+        ax.tick_params(labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    if _fm_gi_eur15 is not None:
+        _draw_fma_panel(ax_fma1, _fm_gi_eur15, show_ylabel=True,  rmse_y=0.97, rmse_va="top")
+    _draw_fma_panel(ax_fma2, _fm_gi_deep,  show_ylabel=False, rmse_y=0.97, rmse_va="top")
+    _draw_fma_panel(ax_fma3, _fm_gi_cross, show_ylabel=False, rmse_y=0.03, rmse_va="bottom")
+
+    _handles_fma, _labels_fma = ax_fma1.get_legend_handles_labels()
+    fig_fma.legend(_handles_fma, _labels_fma, loc="lower center",
+                   bbox_to_anchor=(0.5, -0.05), ncol=5, fontsize=9, frameon=False)
+    fig_fma.tight_layout()
+    save_fig(fig_fma, "failure_modes_all_models")
+
 print("\nResultsGenerator_augmented complete.")
