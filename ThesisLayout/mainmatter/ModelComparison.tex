@@ -20,51 +20,35 @@ HMMMM
 
 \subsection{Motivation}
 
-
-The evaluation in Chapter~\ref{chap:evaluation} establishes that the baseline 
-model struggles with negative-rate curves. Examining the worst-fit curves more 
-closely reveals two distinct failure patterns, shown in 
-Figure~\ref{fig:baseline_fit_failure_modes}. For curves where most tenors are 
-negative, the baseline reconstructs a flat curve near zero. For curves that 
-cross from negative short-end rates to positive long-end rates, the baseline 
-reconstructs a curve sloping in the wrong direction entirely.
+The evaluation in Chapter~\ref{chap:evaluation} establishes that the baseline model struggles with negative-rate curves. Examining the worst-fit curves reveals two distinct failure patterns, shown in 
+Figure~\ref{fig:baseline_fit_failure_modes}. For curves that cross from negative short-end rates to positive long-end rates, where the actual curve is roughly symmetric around zero, the baseline 
+reconstructs a flat curve near zero. For curves where all or most tenors are negative, the baseline reconstructs a curve sloping in the wrong direction entirely.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/baseline_fit_failure_modes.png}
     \caption{Worst-fit curves for the baseline ($\ell=2$), augmented ($\ell=3$), 
-    and stable ($\ell=4$) models, restricted to curves with at least 7 out of 8 
-    negative tenors or with the first 5 tenors negative and a positive long end, 
-    ranked by baseline RMSE.}
+    and stable ($\ell=4$) models, restricted to curves that are either crossing 
+    (first 5 tenors negative with a positive long end) or deeply negative 
+    (all or most tenors negative), ranked by baseline RMSE.}
     \label{fig:baseline_fit_failure_modes}
 \end{figure}
 
-Both failure patterns share a common root. The encoder input $\mathbf{S}$ 
-contains only raw swap rates, which conflate the level and shape of the curve. 
-For a positive-rate curve, the level and shape vary together in a way the 
-encoder has been trained on. For a negative-rate curve, the raw rates partially 
-cancel in the linear projection, and the resulting latent representation no 
-longer carries reliable shape information. The slope and curvature of the curve 
-are not explicitly represented anywhere in the input.
+Both failure patterns suggest that the raw swap rates alone may not provide sufficient shape information for the encoder to produce a reliable latent representation when rates are negative. We hypothesise that this is linked to the linearity of the encoder and the fact that explicit slope and curvature information is absent from the input. The following examples illustrate this hypothesis numerically, though we stress that what follows is speculative rather than a formal result.
 
-The augmentation addresses this directly. By adding level-invariant slope and 
-curvature features to the input, the model receives explicit shape information 
-that is unaffected by whether the rate level is positive or negative. A 
-short-end slope of $f_1 = S_{10\text{Y}} - S_{1\text{Y}} = 0.5\%$ carries the 
-same information regardless of whether rates are at $2\%$ or $-1\%$. The 
-training objective is extended to penalise mismatch in these features directly, 
-giving the model an explicit incentive to match slope and curvature rather than 
-level alone.
+Examples?
 
 
+Motivated by this hypothesis, the augmentation adds level-invariant slope and curvature features to the input, so that the model receives explicit shape information regardless of the rate level. The training objective is extended to penalise mismatch in these features directly, giving the model an explicit incentive to match slope and curvature rather than level alone.
 
-
-
-
-
-
-
-
+\begin{example}
+Consider the EUR swap curve on 2020-10-30, where all tenors are negative with the 1Y rate at $-0.53\%$ and the 10Y rate at $-0.28\%$. The short-end slope feature is
+$$f_1 = S_{10\text{Y}} - S_{1\text{Y}} = -0.28\% - (-0.53\%) = 0.25\%.$$
+Shifting all rates up by $1\%$ gives $S_{1\text{Y}} = 0.47\%$ and 
+$S_{10\text{Y}} = 0.72\%$, yet $f_1 = 0.72\% - 0.47\% = 0.25\%$ remains 
+unchanged. The feature therefore carries the same shape information regardless 
+of the rate level.
+\end{example}
 
 
 
