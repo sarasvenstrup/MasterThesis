@@ -1,13 +1,16 @@
-# ==================== Constant MPR Evaluation ====================
+# ==================== Constant MPR Evaluation (re-anchored, Option B) =========
 """
-Evaluation for Training_constant_mpr.py checkpoint.
+Evaluation for Training_constant_mpr.py checkpoint, with re-anchoring of z0
+under the shifted decoder so that t=0 and t=T_e use the SAME no-arbitrage
+model (the Constant MPR model).  This is the "Option B" variant: fully
+arbitrage-free under P^*, at the cost of an inverse-decoder solve per date.
 
 K_price(z) = K_base(z) + L_base(z) @ lambda_0
   lambda_0 in R^d  (constant, no position-dependent feedback)
   sigma_vec in R^d  (per-factor diffusion scale)
 
 Prices all EUR dates x 9 cells and saves per_cell_final.csv + figures.
-Output -> Figures/pricing/eval_constant_mpr/
+Output -> Figures/pricing/eval_constant_mpr_anchored/
 """
 
 import math, os, sys, time
@@ -41,20 +44,22 @@ from Code.Simulation.simulate_model import simulate_to_expiry_differentiable
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 
 # ── settings ───────────────────────────────────────────────────────────────────
-LATENT_DIM  = 4
-N_PATHS     = 512
-TRAIN_FRAC  = 0.70
-SEED        = 42
-CCY_FILTER  = "EUR"
-RATE_CLIP   = 0.50
-ANNUITY_MAX = 50.0
+LATENT_DIM     = 4
+N_PATHS        = 512
+TRAIN_FRAC     = 0.70
+SEED           = 42
+CCY_FILTER     = "EUR"
+RATE_CLIP      = 0.50
+ANNUITY_MAX    = 50.0
+REANCHOR_STEPS = 200    # inverse-decoder steps to re-anchor z0 under the shifted decoder
 
 PRETRAIN_CKPT = os.path.join(PROJECT_ROOT, "Figures", "TrainingResults",
                               "dim4_stable", "ep5000", "checkpoint_dim4_ep5000.pt")
 LM_CKPT       = os.path.join(PROJECT_ROOT, "Figures", "TrainingResults",
-                              f"dim{LATENT_DIM}_constant_mpr", "ep1000",
+                              f"dim{LATENT_DIM}_constant_mpr_anchored", "ep1000",
                               "checkpoint_constant_mpr_ep1000.pt")
-OUT_DIR       = os.path.join(PROJECT_ROOT, "Figures", "pricing", "eval_constant_mpr")
+OUT_DIR       = os.path.join(PROJECT_ROOT, "Figures", "pricing",
+                              "eval_constant_mpr_anchored")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 torch.manual_seed(SEED)
@@ -137,16 +142,79 @@ print(f"EUR: {len(meta_eur)} curve dates, {len(all_dates)} vol dates")
 print(f"Train: {n_train}  Test: {len(test_dates)}")
 
 # ── pricing ────────────────────────────────────────────────────────────────────
+
+# Cache z0* per date — it depends only on the date, not on the swaption cell,
+# so re-anchoring once per date instead of once per (date × cell) saves 9×.
+anchor_cache = {}   # date -> (z0_star, P0, anchor_rmse_bp)
+anchor_rows  = []   # [{date, anchor_rmse_bp}, ...] for diagnostics
+
+
+def get_reanchored_state(date, xb):
+    """
+    Return (z0_star, P0, anchor_rmse_bp) for this date, computing and caching
+    on first call.  lm is frozen during the inner z-optimisation so that
+    lambda_0 / log_sigma_vec do not accumulate spurious gradients.
+    """
+    date = pd.Timestamp(date).normalize()
+    if date in anchor_cache:
+        return anchor_cache[date]
+
+    with torch.no_grad():
+        z0_init = model.encoder(xb)
+
+    # Freeze lm for the duration of the local inverse solve.
+    old_requires_grad = [p.requires_grad for p in lm.parameters()]
+    for p in lm.parameters():
+        p.requires_grad_(False)
+
+    try:
+        z0 = z0_init.detach().clone().requires_grad_(True)
+        opt = torch.optim.Adam([z0], lr=1e-2)
+        S_target = xb.detach()
+
+        for _ in range(REANCHOR_STEPS):
+            opt.zero_grad(set_to_none=True)
+            _, aux = model.decode_from_z(
+                z0, tau=None, return_aux=True,
+                k_override=lm, sigma_scale=lm.sigma_vec,
+            )
+            S_hat = aux["S_hat"]
+            if S_hat is None:
+                break
+            loss = ((S_hat - S_target) ** 2).mean()
+            if not torch.isfinite(loss):
+                break
+            loss.backward()
+            opt.step()
+
+        z0_star = z0.detach()
+
+    finally:
+        for p, req in zip(lm.parameters(), old_requires_grad):
+            p.requires_grad_(req)
+
+    with torch.no_grad():
+        _, aux0 = model.decode_from_z(
+            z0_star, tau=None, return_aux=True,
+            k_override=lm, sigma_scale=lm.sigma_vec,
+        )
+        P0             = aux0["P_full"][0].detach()
+        S_fit          = aux0["S_hat"].detach()
+        anchor_rmse_bp = float(torch.sqrt(((S_fit - xb) ** 2).mean()) * 1e4)
+
+    anchor_cache[date] = (z0_star, P0, anchor_rmse_bp)
+    anchor_rows.append({"date": date, "anchor_rmse_bp": anchor_rmse_bp})
+    return anchor_cache[date]
+
+
 def price_cell(date, expiry, tenor):
     if date not in date_to_idx:
         return None
     idx = date_to_idx[date]
     xb  = X_eur[idx:idx + 1].to(device)
 
-    with torch.no_grad():
-        z0 = model.encoder(xb)
-        _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True)
-        P0 = aux0["P_full"][0]
+    # Re-anchor z0 under P^* (cached per date, lm frozen inside).
+    z0, P0, anchor_rmse_bp = get_reanchored_state(date, xb)
 
     max_idx = P0.shape[0] - 1
     if expiry + tenor > max_idx:
@@ -208,6 +276,7 @@ def price_cell(date, expiry, tenor):
         "sigma_str_bp":    sigma_str_bp,
         "forward_bias_bp": forward_bias_bp,
         "path_frac":       path_frac,
+        "anchor_rmse_bp":  anchor_rmse_bp,
     }
 
 # ── price all dates ────────────────────────────────────────────────────────────
@@ -253,6 +322,13 @@ for counter, (_, row) in enumerate(combos.iterrows()):
 df = pd.DataFrame(rows)
 df.to_csv(os.path.join(OUT_DIR, "per_cell_final.csv"), index=False)
 print(f"\nPriced {len(df)} observations in {time.time()-t0:.0f}s")
+
+# Save re-anchoring diagnostics
+df_anchor = pd.DataFrame(anchor_rows).drop_duplicates("date")
+df_anchor.to_csv(os.path.join(OUT_DIR, "reanchor_rmse_by_date.csv"), index=False)
+print(f"\nRe-anchoring diagnostics:")
+print(f"  Mean re-anchor RMSE: {df_anchor['anchor_rmse_bp'].mean():.2f} bp")
+print(f"  Max re-anchor RMSE:  {df_anchor['anchor_rmse_bp'].max():.2f} bp")
 
 # ── summary ────────────────────────────────────────────────────────────────────
 CELLS = [(e, t) for e in EXPIRY_VALS for t in TENOR_VALS]
@@ -304,9 +380,9 @@ for split_label2, split_key2, label_suffix in [
 ]:
     lines = [
         r"\begin{table}[H]", r"\centering",
-        (rf"\caption{{Per-cell ATM straddle vol errors: constant MPR pricing "
-         rf"({split_label2}). EUR.}}"),
-        rf"\label{{tab:constant_mpr_per_cell_{label_suffix}}}",
+        (rf"\caption{{Per-cell ATM straddle vol errors: constant MPR pricing, "
+         rf"re-anchored z_0 ({split_label2}). EUR.}}"),
+        rf"\label{{tab:constant_mpr_anchored_per_cell_{label_suffix}}}",
         r"\small",
         r"\begin{tabular}{@{}ccrrrrr@{}}",
         r"\toprule",
@@ -338,7 +414,7 @@ for split_label2, split_key2, label_suffix in [
             f"& {df_pool['forward_bias_bp'].mean():+.1f} \\\\"
         )
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
-    fname = f"tab_constant_mpr_per_cell_{label_suffix}.tex"
+    fname = f"tab_constant_mpr_anchored_per_cell_{label_suffix}.tex"
     with open(os.path.join(OUT_DIR, fname), "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print(f"Saved: {fname}")
@@ -372,7 +448,7 @@ for i, e in enumerate(EXPIRY_VALS):
             ax.text(0.05, 0.95, lbl, transform=ax.transAxes, fontsize=7, va="top",
                     bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.7))
 axes[0][0].legend(fontsize=6, loc="lower right")
-fig.suptitle(r"Constant MPR: Model vs Market Straddle Vol ($K_{\mathrm{price}}=K_{\mathrm{base}}+L\lambda_0$)",
+fig.suptitle(r"Constant MPR (re-anchored): Model vs Market Straddle Vol",
              fontsize=11, fontweight="bold")
 plt.tight_layout(rect=[0, 0, 1, 0.96])
 fig.savefig(os.path.join(OUT_DIR, "fig_vol_surface.png"), dpi=150, bbox_inches="tight")
@@ -407,7 +483,7 @@ for i, e in enumerate(EXPIRY_VALS):
             ax.text(0.04, 0.96, f"MAE={s['mae_bp']:.0f}bp", transform=ax.transAxes,
                     fontsize=7, va="top",
                     bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.7))
-fig.suptitle("Constant MPR: Vol error over time (amber=test)",
+fig.suptitle("Constant MPR (re-anchored): Vol error over time (amber=test)",
              fontsize=11, fontweight="bold")
 plt.tight_layout(rect=[0, 0, 1, 0.96])
 fig.savefig(os.path.join(OUT_DIR, "fig_vol_error_timeseries.png"), dpi=150, bbox_inches="tight")
@@ -437,7 +513,7 @@ for split_label3, split_key3, fname3 in [
                 ax.text(j, i, f"{mae_grid[i,j]:.0f}", ha="center", va="center",
                         fontsize=11, color="black")
     ax.set_xlabel("Tenor"); ax.set_ylabel("Expiry")
-    ax.set_title(f"Constant MPR: Vol MAE per Cell (bp), {split_label3}")
+    ax.set_title(f"Constant MPR (re-anchored): Vol MAE per Cell (bp), {split_label3}")
     plt.tight_layout()
     fig.savefig(os.path.join(OUT_DIR, fname3), dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -464,7 +540,7 @@ for i, e in enumerate(EXPIRY_VALS):
         ax.text(0.04, 0.96, f"mean={sub['forward_bias_bp'].mean():+.0f}bp",
                 transform=ax.transAxes, fontsize=7, va="top",
                 bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.7))
-fig.suptitle("Constant MPR: Forward bias (target: 0 bp, amber=test)",
+fig.suptitle("Constant MPR (re-anchored): Forward bias (target: 0 bp, amber=test)",
              fontsize=11, fontweight="bold")
 plt.tight_layout(rect=[0, 0, 1, 0.96])
 fig.savefig(os.path.join(OUT_DIR, "fig_forward_bias_timeseries.png"), dpi=150,

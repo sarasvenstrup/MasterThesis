@@ -1,13 +1,24 @@
-# ==================== Constant MPR Evaluation ====================
+# ==================== Constant MPR Evaluation (no re-anchoring) ===============
 """
-Evaluation for Training_constant_mpr.py checkpoint.
+Evaluation for Training_constant_mpr.py checkpoint, WITHOUT re-anchoring of z_0.
+
+Both P(0, .) and P(T_e, .) — and the simulation — use the SHIFTED dynamics
+(k_override = lm, sigma_scale = lm.sigma_vec), so the no-arbitrage model
+is internally consistent across the simulation window.  The only difference
+from the anchored counterpart is that z_0 is taken straight from the
+encoder, so S^*(E(S_0)) does NOT in general equal S_0^{mkt}: the t=0 swap
+curve seen by the pricer drifts away from the market curve by the
+encoder/decoder mismatch under the shifted dynamics.
+
+The anchored variant (eval_constant_mpr_anchored.py) eliminates that
+mismatch by solving an inverse-decoder problem for z_0^*.
 
 K_price(z) = K_base(z) + L_base(z) @ lambda_0
   lambda_0 in R^d  (constant, no position-dependent feedback)
   sigma_vec in R^d  (per-factor diffusion scale)
 
 Prices all EUR dates x 9 cells and saves per_cell_final.csv + figures.
-Output -> Figures/pricing/eval_constant_mpr/
+Output -> Figures/pricing/eval_constant_mpr_consistent/
 """
 
 import math, os, sys, time
@@ -41,20 +52,20 @@ from Code.Simulation.simulate_model import simulate_to_expiry_differentiable
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 
 # ── settings ───────────────────────────────────────────────────────────────────
-LATENT_DIM  = 4
-N_PATHS     = 512
-TRAIN_FRAC  = 0.70
-SEED        = 42
-CCY_FILTER  = "EUR"
-RATE_CLIP   = 0.50
-ANNUITY_MAX = 50.0
+LATENT_DIM     = 4
+N_PATHS        = 512
+TRAIN_FRAC     = 0.70
+SEED           = 42
+CCY_FILTER     = "EUR"
+RATE_CLIP      = 0.50
+ANNUITY_MAX    = 50.0
 
 PRETRAIN_CKPT = os.path.join(PROJECT_ROOT, "Figures", "TrainingResults",
                               "dim4_stable", "ep5000", "checkpoint_dim4_ep5000.pt")
 LM_CKPT       = os.path.join(PROJECT_ROOT, "Figures", "TrainingResults",
-                              f"dim{LATENT_DIM}_constant_mpr", "ep1000",
+                              f"dim{LATENT_DIM}_constant_mpr_consistent", "ep1000",
                               "checkpoint_constant_mpr_ep1000.pt")
-OUT_DIR       = os.path.join(PROJECT_ROOT, "Figures", "pricing", "eval_constant_mpr")
+OUT_DIR       = os.path.join(PROJECT_ROOT, "Figures", "pricing", "eval_constant_mpr_consistent")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 torch.manual_seed(SEED)
@@ -137,16 +148,22 @@ print(f"EUR: {len(meta_eur)} curve dates, {len(all_dates)} vol dates")
 print(f"Train: {n_train}  Test: {len(test_dates)}")
 
 # ── pricing ────────────────────────────────────────────────────────────────────
+
 def price_cell(date, expiry, tenor):
     if date not in date_to_idx:
         return None
     idx = date_to_idx[date]
     xb  = X_eur[idx:idx + 1].to(device)
 
+    # z0 from the encoder; P(0, .) under the SHIFTED decoder (no re-anchoring).
+    # The t=0 curve seen by the pricer is S^*(E(S_0)), which differs from the
+    # market curve by the encoder/decoder mismatch under the shifted dynamics.
     with torch.no_grad():
-        z0 = model.encoder(xb)
-        _, aux0 = model.decode_from_z(z0, tau=None, return_aux=True)
-        P0 = aux0["P_full"][0]
+        z0          = model.encoder(xb)
+        _, aux0     = model.decode_from_z(z0, tau=None, return_aux=True,
+                                          k_override=lm,
+                                          sigma_scale=lm.sigma_vec)
+        P0          = aux0["P_full"][0]
 
     max_idx = P0.shape[0] - 1
     if expiry + tenor > max_idx:
@@ -162,6 +179,7 @@ def price_cell(date, expiry, tenor):
     with torch.no_grad():
         eps_half = torch.randn(half, n_steps, LATENT_DIM, device=device)
 
+        # Simulate under the SHIFTED dynamics (k_override, sigma_scale).
         z_T, D_T = simulate_to_expiry_differentiable(
             model, z0, n_steps=n_steps, dt=dt_eff,
             n_paths=N_PATHS, eps=eps_half,
@@ -177,7 +195,7 @@ def price_cell(date, expiry, tenor):
     z_k, D_k = z_T[ok], D_T[ok]
 
     with torch.no_grad():
-        # Use pricing dynamics (consistency fix) — same k and sigma as simulation
+        # Terminal P(T_e, .) under the SHIFTED ODE (consistent with simulation).
         _, aux_T = model.decode_from_z(z_k, tau=None, return_aux=True,
                                        k_override=lm,
                                        sigma_scale=lm.sigma_vec)
@@ -306,7 +324,7 @@ for split_label2, split_key2, label_suffix in [
         r"\begin{table}[H]", r"\centering",
         (rf"\caption{{Per-cell ATM straddle vol errors: constant MPR pricing "
          rf"({split_label2}). EUR.}}"),
-        rf"\label{{tab:constant_mpr_per_cell_{label_suffix}}}",
+        rf"\label{{tab:constant_mpr_consistent_per_cell_{label_suffix}}}",
         r"\small",
         r"\begin{tabular}{@{}ccrrrrr@{}}",
         r"\toprule",
@@ -338,7 +356,7 @@ for split_label2, split_key2, label_suffix in [
             f"& {df_pool['forward_bias_bp'].mean():+.1f} \\\\"
         )
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
-    fname = f"tab_constant_mpr_per_cell_{label_suffix}.tex"
+    fname = f"tab_constant_mpr_consistent_per_cell_{label_suffix}.tex"
     with open(os.path.join(OUT_DIR, fname), "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print(f"Saved: {fname}")
