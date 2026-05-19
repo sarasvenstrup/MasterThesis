@@ -552,6 +552,38 @@ else:
     ax_ra_b.set_ylabel("OOS RMSE (bps, clipped at 50)", fontsize=11)
     ax_ra_b.tick_params(axis="y", labelsize=10)
 
+    # Baseline dim=2 — dashed black reference line
+    _bl2_csv = os.path.join(
+        REPO_ROOT, "Figures", "OOSResults", "Roll",
+        "OOS_roll_dim2_baseline",
+        _ROLL_SUBDIR_A, f"ep{_ROLL_EPOCHS_A}",
+        f"oos_rolling_bbg_dim2_train5Y_test6M_step6M.csv",
+    )
+    if os.path.exists(_bl2_csv):
+        _bl2_df  = pd.read_csv(_bl2_csv)
+        _bl2_df["test_start"] = pd.to_datetime(_bl2_df["test_start"])
+        # Match on test_start from the reference augmented df (same rolling schedule)
+        _bl2_oos = []
+        for _, _rw in _aug_ref_df.iterrows():
+            _ts = str(_rw["test_start"])[:10]   # YYYY-MM-DD
+            _match = _bl2_df[_bl2_df["test_start"].dt.strftime("%Y-%m-%d") == _ts]
+            _bl2_oos.append(float(_match["avg_rmse_bps"].values[0]) if len(_match) else np.nan)
+        _bl2_oos = np.array(_bl2_oos, dtype=float)
+        _bl2_clipped = np.clip(_bl2_oos, 0, 50)
+        ax_ra_b.plot(_aug_x, _bl2_clipped, marker="o", markersize=4, linewidth=2.2,
+                     linestyle="--", color="black",
+                     label=r"OOS RMSE Baseline ($\ell=2$)")
+        for _xi_ra, (_raw, _clip) in enumerate(zip(_bl2_oos, _bl2_clipped)):
+            if _raw > 50:
+                ax_ra_b.annotate(
+                    f"{_raw:.0f}",
+                    xy=(_aug_x[_xi_ra], 50),
+                    xytext=(5, 2), textcoords="offset points",
+                    ha="left", va="top", fontsize=10, color="black",
+                )
+    else:
+        print(f"  ⚠️  Baseline dim=2 rolling CSV not found: {_bl2_csv}")
+
     # event markers
     _aug_win_ts = np.array([pd.Timestamp(w + "-01").value for w in _aug_windows], dtype=float)
     for _ev_lbl, _ev_date in EVENTS.items():
@@ -568,7 +600,7 @@ else:
     _lines_ra_b, _labs_ra_b = ax_ra_b.get_legend_handles_labels()
     fig_ra.legend(_lines_ra_a + _lines_ra_b, _labs_ra_a + _labs_ra_b,
                   loc="lower center", bbox_to_anchor=(0.5, -0.08),
-                  ncol=4, fontsize=10, frameon=False)
+                  ncol=5, fontsize=10, frameon=False)
     fig_ra.tight_layout()
     fig_ra.subplots_adjust(bottom=0.22)
     save_fig(fig_ra, "augmented_rolling_regime_dual_axis")
