@@ -1,0 +1,36 @@
+\begin{table}[H]
+\centering
+\caption{Per-cell ATM straddle normal volatility: market, base model (no pricing adjustment), and calibrated pricing layer (all dates, EUR). MAE and forward bias are reported for the pricing layer. Values in basis points.}
+\label{tab:pricing_combined}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}ccrrrrrrr@{}}
+\toprule
+\textbf{Exp} & \textbf{Ten}
+  & \textbf{Market}
+  & \textbf{Base model}
+  & \textbf{Pricing layer}
+  & \textbf{MAE (all)}
+  & \textbf{MAE (train)}
+  & \textbf{MAE (test)}
+  & \textbf{Fwd bias} \\
+\midrule
+  1Y & 1Y  & 47  & 691  & 192  & 157.4  & 151.3  & 171.4  & +77 \\
+  1Y & 5Y  & 62  & 1136  & 143  & 93.1  & 78.9  & 125.6  & +1 \\
+  1Y & 10Y  & 68  & 718  & 107  & 46.9  & 43.4  & 55.1  & -21 \\
+\midrule
+  5Y & 1Y  & 72  & 331  & 66  & 34.3  & 25.6  & 54.2  & +78 \\
+  5Y & 5Y  & 71  & 416  & 62  & 27.9  & 21.5  & 42.4  & +55 \\
+  5Y & 10Y  & 72  & 295  & 60  & 24.5  & 20.4  & 33.7  & +47 \\
+\midrule
+  10Y & 1Y  & 71  & 231  & 72  & 23.0  & 19.3  & 31.4  & +166\(^\dagger\) \\
+  10Y & 5Y  & 69  & 295  & 70  & 20.0  & 17.6  & 25.5  & +161\(^\dagger\) \\
+  10Y & 10Y  & 68  & 209  & 69  & 17.2  & 15.6  & 21.0  & +160\(^\dagger\) \\
+\midrule
+  \multicolumn{2}{c}{\textbf{All cells}} & 67 & 480 & 93 & \textbf{49.4} & 43.7 & 62.3 & +80 \\
+\bottomrule
+\end{tabular}}
+\smallskip
+
+\noindent\footnotesize{\(^\dagger\) Large positive forward bias at 10Y expiry masks under-volatility; see Section~\ref{subsec:cmpr_term_structure}.}
+\end{table}
