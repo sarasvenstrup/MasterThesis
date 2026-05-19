@@ -1,70 +1,53 @@
 \chapter{Structural versus Objective-Based Model Extensions}
 \label{chap:model_comparison}
 
-
 This chapter introduces two model extensions and evaluates all four model 
 specifications considered in this thesis. The baseline model, assessed in 
-Chapter~\ref{chap:evaluation}, is our implementation of the encoder-decoder framework of \citet{MatinWanPoulsen2025}. The stable model, introduced in Chapter~\ref{chap:simulation}, extends it by imposing restrictions on the neural networks to improve simulation behaviour and out-of-sample generalisation. Both models, however, exhibit difficulty with negative-rate curves. We hypothesise that this difficulty may be rooted in properties of the linear encoder, and therefore propose the \textit{augmented model} to address it by augmenting the input vector with slope and curvature features. Combining the augmentation with the stability restrictions yields a fourth specification, the \textit{augmented stable model}. All four models are then evaluated jointly on in-sample fit and out-of-sample generalisation to assess how each modification improves upon the baseline.
+Chapter~\ref{chap:evaluation}, is our implementation of the encoder-decoder framework of \citet{MatinWanPoulsen2025}. The stable model, introduced in Chapter~\ref{chap:simulation}, extends it by imposing restrictions on the neural networks to improve simulation behaviour and out-of-sample generalisation. Both models, however, exhibit difficulty with negative-rate curves. We hypothesise that this difficulty may be rooted in properties of the linear encoder, and therefore propose the \textit{augmented model} to address it. Specifically, by augmenting the input vector with slope and curvature features. Combining the augmentation with the stability restrictions yields a fourth specification, the \textit{augmented stable model}. All four models are then evaluated jointly on in-sample fit and out-of-sample generalisation to assess how each modification improves upon the baseline.
+
+% SO maybe  more drastic mesaure need to be done than just giving the linear encoder more information that is not scalable, maybe it just needs to not be linear? 
 
 \section{Introducing the Augmented Model}
-%The evaluation in Chapter~\ref{chap:evaluation} identifies a structural limitation of the baseline model. For negative-rate curves, the reconstructed curve captures the approximate level but fails to reproduce the slope and curvature, a pattern that persists regardless of the number of latent factors (Figure~\ref{fig:Q1d}). This section proposes modifications to the encoder input and training objective aimed at addressing this limitation, and assesses whether they improve reconstruction of the problematic curve variants.
-
-
-This section proposes modifications to the encoder input and training objective to address the slope and curvature failure for negative-rate curves, and assesses whether they improve reconstruction of the problematic curve variants.
-
-
-% SO maybe  more drastic mesaure need to be done than just giving the linear encoder more information that is not scalable, maybe it just needs to not be linear?
-HMMMM
- 
-
-
-\subsection{Motivation}
-
-
-The evaluation in Chapter~\ref{chap:evaluation} establishes that the baseline 
-model struggles with negative-rate curves. Examining the worst-fit curves more 
-closely reveals two distinct failure patterns, shown in 
-Figure~\ref{fig:baseline_fit_failure_modes}. For curves where most tenors are 
-negative, the baseline reconstructs a flat curve near zero. For curves that 
-cross from negative short-end rates to positive long-end rates, the baseline 
-reconstructs a curve sloping in the wrong direction entirely.
+The evaluation in Chapter~\ref{chap:evaluation} establishes that the baseline model struggles with negative-rate curves. Two distinct failure patterns emerge. For curves that cross from negative short-end rates to positive long-end rates, the baseline reconstructs a curve sloping in the wrong direction entirely. For curves where all or most tenors are negative, the baseline reconstructs a flat curve near zero. Both patterns are illustrated in Figure~\ref{fig:baseline_fit_failure_modes}, which contrasts a well-reconstructed positive-rate curve with one example of each failure pattern.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/baseline_fit_failure_modes.png}
-    \caption{Worst-fit curves for the baseline ($\ell=2$), augmented ($\ell=3$), 
-    and stable ($\ell=4$) models, restricted to curves with at least 7 out of 8 
-    negative tenors or with the first 5 tenors negative and a positive long end, 
-    ranked by baseline RMSE.}
+    \caption{Baseline ($\ell=2$) reconstruction for three representative EUR and JPY swap curves. The positive-rate EUR curve on 2015-03-31 is reconstructed accurately. The crossing EUR curve on 2020-10-30 and the deeply negative JPY curve on 2016-09-30 illustrate the two distinct failure patterns.}
     \label{fig:baseline_fit_failure_modes}
 \end{figure}
 
-Both failure patterns share a common root. The encoder input $\mathbf{S}$ 
-contains only raw swap rates, which conflate the level and shape of the curve. 
-For a positive-rate curve, the level and shape vary together in a way the 
-encoder has been trained on. For a negative-rate curve, the raw rates partially 
-cancel in the linear projection, and the resulting latent representation no 
-longer carries reliable shape information. The slope and curvature of the curve 
-are not explicitly represented anywhere in the input.
+As established in Chapter~\ref{chap:evaluation}, both failure patterns persist regardless of the number of latent factors, suggesting that the issue lies in how shape information is represented in the input rather than in the expressive capacity of the model. We hypothesise that this is linked to the linearity of the encoder: since $z = A_1\mathbf{S}$ with no bias and no activation function, the latent representation is driven by the sign and magnitude of the raw rates rather than by their shape, as illustrated in Example~\ref{ex:level}.
 
-The augmentation addresses this directly. By adding level-invariant slope and 
-curvature features to the input, the model receives explicit shape information 
-that is unaffected by whether the rate level is positive or negative. A 
-short-end slope of $f_1 = S_{10\text{Y}} - S_{1\text{Y}} = 0.5\%$ carries the 
-same information regardless of whether rates are at $2\%$ or $-1\%$. The 
-training objective is extended to penalise mismatch in these features directly, 
-giving the model an explicit incentive to match slope and curvature rather than 
-level alone.
+\begin{example}\label{ex:level}
+Consider two upward-sloping EUR swap curves: a positive-rate curve and a 
+negative-rate curve, both visible in Figure~\ref{fig:baseline_fit_failure_modes}. 
+Expressed in decimal terms,
+\begin{align*}
+\mathbf{S}^{+} &= \begin{pmatrix} 0.0008 & 0.0008 & 0.0012 & 0.0024 & 
+0.0056 & 0.0072 & 0.0078 & 0.0080 \end{pmatrix}^\top, \\
+\mathbf{S}^{-} &= \begin{pmatrix} -0.0053 & -0.0054 & -0.0054 & -0.0049 & 
+-0.0028 & -0.0009 & -0.0002 & -0.0005 \end{pmatrix}^\top.
+\end{align*}
+Both curves slope upward, as reflected in their short-end slope features,
+$$f_1^{+} = 0.0056 - 0.0008 = 0.0048, \qquad 
+f_1^{-} = -0.0028 - (-0.0053) = 0.0025,$$
+which are positive and of similar magnitude. 
 
+The learned encoder matrix for the $\ell=2$ baseline model is
+$$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
+-1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$ Applying this yields
+$$z^{+} = A_1\mathbf{S}^{+}=\begin{pmatrix} -0.0045 \\ -0.0098 \end{pmatrix}, \qquad
+z^{-} = A_1\mathbf{S}^{-}=\begin{pmatrix} -0.0068 \\ +0.0186 \end{pmatrix}.$$
+The second latent factors have opposite signs. For $\mathbf{S}^{+}$, the small 
+positive rates produce small negative products with the negative weights of 
+$a_2$, yielding $z_2^{+} = -0.0098$. For $\mathbf{S}^{-}$, the negative rates 
+interact with the negative weights to produce positive products that dominate, 
+yielding $z_2^{-} = +0.0186$. The second factor is therefore driven by the sign 
+and magnitude of the raw rates rather than by the slope of the curve.\circ
+\end{example}
 
-
-
-
-
-
-
-
-
+While this does not constitute a formal proof, the figure and example together suggest that the absence of explicit shape information in the input may be a contributing factor to both failure patterns. We therefore propose the augmented model specified in the following subsection.
 
 
 
