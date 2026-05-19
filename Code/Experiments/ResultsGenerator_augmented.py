@@ -29,6 +29,7 @@ for _p in [REPO_ROOT, os.path.dirname(REPO_ROOT)]:
 
 from Code.load_swapdata import my_data, custom_palette
 from Code.model.full_model import FullModel
+from Code.model.full_model_stable import FullModel as FullModelStable
 
 # ── settings ──────────────────────────────────────────────────────────────────
 LATENT_DIM = 3
@@ -941,5 +942,181 @@ else:
         fig_sh.tight_layout()
         fig_sh.subplots_adjust(right=0.72)
         save_fig(fig_sh, "augmented_latent_space_shift")
+
+# ── helper: 3×6 actual-vs-fit grid for a given index set ─────────────────────
+def _plot_fit_grid(indices, regime_label, fname, seed=42):
+    N_PLOTS = 18
+    if len(indices) < N_PLOTS:
+        print(f"  ⚠️  Only {len(indices)} curves for '{regime_label}' — skipping")
+        return
+    _rng = np.random.default_rng(seed=seed)
+    _sel = _rng.choice(indices, size=N_PLOTS, replace=False)
+    _sel = _sel[np.argsort(_sel)]
+
+    fig_g, axes_g = plt.subplots(3, 6, figsize=(18, 9), sharey=False)
+
+    for _pi, _gi in enumerate(_sel):
+        _ax   = axes_g[_pi // 6, _pi % 6]
+        _act  = X_np_all[_gi] * 10_000.0
+        _fit  = _baseline_S_hat[_gi] * 10_000.0
+        _ccy  = meta["ccy"].values[_gi]
+        _date = pd.to_datetime(meta["as_of_date"].values[_gi]).strftime("%Y-%m-%d")
+        _rmse = float(np.sqrt(np.mean((_act - _fit) ** 2)))
+
+        _ax.plot(tenors, _act, "o-",  color="black",           linewidth=1.5,
+                 markersize=3, label="Actual")
+        _ax.plot(tenors, _fit, "s--", color=custom_palette[2], linewidth=1.5,
+                 markersize=3, label=r"Baseline ($\ell=2$)")
+        _ax.axhline(0, color="0.7", linewidth=0.8, linestyle=":")
+        _ax.set_title(f"{_ccy}  {_date}", fontsize=8)
+        _ax.text(0.97, 0.97, f"RMSE = {_rmse:.1f} bps",
+                 transform=_ax.transAxes, fontsize=7,
+                 ha="right", va="top", color="0.4")
+        _ax.tick_params(labelsize=7)
+        _ax.spines["top"].set_visible(False)
+        _ax.spines["right"].set_visible(False)
+        if _pi % 6 == 0:
+            _ax.set_ylabel("Swap rate (bps)", fontsize=7)
+        if _pi // 6 == 2:
+            _ax.set_xlabel("Tenor (years)", fontsize=7)
+
+    _handles, _labels = axes_g[0, 0].get_legend_handles_labels()
+    fig_g.legend(_handles, _labels, loc="lower center",
+                 bbox_to_anchor=(0.5, -0.02), ncol=2, fontsize=9, frameon=False)
+    fig_g.suptitle(
+        f"Baseline model ($\\ell=2$): actual vs fit — {regime_label} curves",
+        fontsize=11, y=1.01,
+    )
+    fig_g.tight_layout()
+    save_fig(fig_g, fname)
+
+
+# ── figure: baseline fit — negative curves (3×6) ─────────────────────────────
+print("\nGenerating baseline fit on negative curves figure...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping — no baseline dim=2 checkpoint found")
+else:
+    _neg_indices = np.where(negative)[0]
+    _plot_fit_grid(_neg_indices, "negative rate", "baseline_fit_negative_curves")
+
+# ── figure: baseline fit — normal curves (3×6) ───────────────────────────────
+print("\nGenerating baseline fit on normal curves figure...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping — no baseline dim=2 checkpoint found")
+else:
+    _norm_indices = np.where(~inverted & ~negative)[0]
+    _plot_fit_grid(_norm_indices, "normal", "baseline_fit_normal_curves")
+
+# ── figure: baseline fit — deeply negative curves (3×6) ──────────────────────
+# "Deeply negative" = mean swap rate <= 0, i.e. the curve is centred at or
+# below zero (approximately symmetric around zero or more negative than that).
+print("\nGenerating baseline fit on deeply negative curves figure...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping — no baseline dim=2 checkpoint found")
+else:
+    _deep_neg_mask    = (X_np_all.mean(axis=1) <= 0) & negative
+    _deep_neg_indices = np.where(_deep_neg_mask)[0]
+    print(f"  Found {len(_deep_neg_indices)} deeply negative curves "
+          f"(mean swap rate <= 0)")
+    _plot_fit_grid(
+        _deep_neg_indices,
+        "deeply negative (mean swap rate $\\leq 0$)",
+        "baseline_fit_deep_negative_curves",
+    )
+
+# ── figure: worst curves — baseline dim=2 + stable dim=4 (3×6) ──────────────
+print("\nGenerating worst curves figure (baseline dim=2 + stable dim=4)...")
+if _baseline_S_hat is None:
+    print("  ⚠️  Skipping — no baseline dim=2 checkpoint found")
+else:
+    # Load stable dim=4 model
+    _stable_ckpt_path = os.path.join(
+        REPO_ROOT, "Figures", "TrainingResults",
+        "dim4_stable", f"ep{EPOCHS}",
+        f"checkpoint_dim4_ep{EPOCHS}.pt",
+    )
+    _stable_S_hat = None
+    if os.path.exists(_stable_ckpt_path):
+        _st_ckpt = torch.load(_stable_ckpt_path, map_location=device,
+                              weights_only=False)
+        _st_state = (_st_ckpt["model_state_dict"]
+                     if "model_state_dict" in _st_ckpt else _st_ckpt)
+        _st_cfg   = (_st_ckpt.get("model_config", {})
+                     if isinstance(_st_ckpt, dict) else {})
+        _st_ldim  = _st_cfg.get("latent_dim", 4)
+        _st_idim  = _st_cfg.get("input_dim",  X_tensor.shape[1])
+        _st_m     = FullModelStable(latent_dim=_st_ldim).to(device)
+        _st_m.load_state_dict(_st_state, strict=False)
+        _st_m.eval()
+        _st_list  = []
+        with torch.no_grad():
+            for _i in range(0, X_tensor.shape[0], BATCH_SIZE):
+                _xb = X_tensor[_i:_i + BATCH_SIZE].to(device)
+                _st_list.append(_st_m(_xb).cpu())
+        _stable_S_hat = torch.cat(_st_list).numpy()
+        print("  Loaded stable dim=4 model")
+    else:
+        print(f"  ⚠️  Stable dim=4 checkpoint not found: {_stable_ckpt_path}")
+
+    # Select 18 worst by baseline RMSE
+    _b_rmse    = np.sqrt(np.mean((X_np_all - _baseline_S_hat) ** 2, axis=1)) * 10_000
+    _worst_idx = np.argsort(_b_rmse)[::-1][:18]
+    _worst_idx = _worst_idx[np.argsort(_worst_idx)]   # sort by dataset index
+    print(f"  Worst RMSE range: {_b_rmse[np.argsort(_b_rmse)[::-1][0]]:.1f} – "
+          f"{_b_rmse[np.argsort(_b_rmse)[::-1][17]]:.1f} bps")
+
+    fig_wc, axes_wc = plt.subplots(3, 6, figsize=(18, 9), sharey=False)
+
+    for _pi, _gi in enumerate(_worst_idx):
+        _ax   = axes_wc[_pi // 6, _pi % 6]
+        _act  = X_np_all[_gi] * 10_000.0
+        _fit_b = _baseline_S_hat[_gi] * 10_000.0
+        _ccy  = meta["ccy"].values[_gi]
+        _date = pd.to_datetime(meta["as_of_date"].values[_gi]).strftime("%Y-%m-%d")
+        _rmse_b = float(np.sqrt(np.mean((_act - _fit_b) ** 2)))
+
+        _fit_a  = S_np_all[_gi] * 10_000.0
+        _rmse_a = float(np.sqrt(np.mean((_act - _fit_a) ** 2)))
+
+        _ax.plot(tenors, _act,   "o-", color="black",         linewidth=1.5,
+                 markersize=3, label="Actual")
+        _ax.plot(tenors, _fit_b,       color="#2c4f8c",      linewidth=1.5,
+                 label=r"Baseline ($\ell=2$)")
+        _ax.plot(tenors, _fit_a,       color="palevioletred", linewidth=1.5,
+                 label=r"Aug. + Stable ($\ell=3$)")
+
+        if _stable_S_hat is not None:
+            _fit_s  = _stable_S_hat[_gi] * 10_000.0
+            _rmse_s = float(np.sqrt(np.mean((_act - _fit_s) ** 2)))
+            _ax.plot(tenors, _fit_s,   color="#c0392b",      linewidth=1.5,
+                     label=r"Stable ($\ell=4$)")
+            _rmse_txt = (f"B:{_rmse_b:.1f} / A:{_rmse_a:.1f} / "
+                         f"S:{_rmse_s:.1f} bps")
+        else:
+            _rmse_txt = f"B:{_rmse_b:.1f} / A:{_rmse_a:.1f} bps"
+
+        _ax.axhline(0, color="0.7", linewidth=0.8, linestyle=":")
+        _ax.set_title(f"{_ccy}  {_date}", fontsize=8)
+        _ax.text(0.97, 0.97, _rmse_txt,
+                 transform=_ax.transAxes, fontsize=6.5,
+                 ha="right", va="top", color="0.4")
+        _ax.tick_params(labelsize=7)
+        _ax.spines["top"].set_visible(False)
+        _ax.spines["right"].set_visible(False)
+        if _pi % 6 == 0:
+            _ax.set_ylabel("Swap rate (bps)", fontsize=7)
+        if _pi // 6 == 2:
+            _ax.set_xlabel("Tenor (years)", fontsize=7)
+
+    _handles_wc, _labels_wc = axes_wc[0, 0].get_legend_handles_labels()
+    fig_wc.legend(_handles_wc, _labels_wc, loc="lower center",
+                  bbox_to_anchor=(0.5, -0.02), ncol=4, fontsize=9, frameon=False)
+    fig_wc.suptitle(
+        r"Worst-fit curves: baseline ($\ell=2$), augmented ($\ell=3$), stable ($\ell=4$)"
+        r" — ranked by baseline RMSE",
+        fontsize=11, y=1.01,
+    )
+    fig_wc.tight_layout()
+    save_fig(fig_wc, "baseline_fit_worst_curves")
 
 print("\nResultsGenerator_augmented complete.")
