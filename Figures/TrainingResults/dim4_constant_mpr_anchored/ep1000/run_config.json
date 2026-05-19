@@ -1,0 +1,17 @@
+{
+  "version": "constant_mpr_anchored",
+  "description": "K_price(z) = K_base(z) + L_base(z) @ lambda_0, stable constant correction",
+  "seed": 0,
+  "latent_dim": 4,
+  "variant": "stable",
+  "epochs": 1000,
+  "lr": 0.0005,
+  "lambda_vol": 1.0,
+  "lambda_bias": 0.5,
+  "lambda_l2": 0.001,
+  "lambda_anchor": 1,
+  "n_swaptions_per_batch": 8,
+  "n_paths_pricing": 512,
+  "dt_pricing": 0.16666666666666666,
+  "n_trainable_params": 8
+}

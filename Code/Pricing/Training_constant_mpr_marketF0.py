@@ -1,6 +1,22 @@
-# ==================== Constant MPR Pricing Calibration ====================
+# ============== Constant MPR Pricing Calibration (market F_0) =================
 """
-Constant Market Price of Risk (MPR) pricing adjustment.
+Constant Market Price of Risk (MPR) pricing adjustment — market-curve variant.
+
+F_0 and A_0 (the swaption strike and forward annuity) are taken DIRECTLY
+from the market par-swap-rate curve via standard bootstrap, NOT from the
+decoder.  This is the "calibration to today's curve" approach used
+throughout the interest-rate options literature (Hull, Andersen-Piterbarg,
+Brigo-Mercurio): the market discount curve is treated as exogenous, and
+the model is asked only to provide the F_{T_e} distribution.
+
+  - t = 0:    P(0, .) = market bootstrap from par swap rates  (exact)
+  - t > 0:    z_t simulated under (μ + σ η, diag(s) σ)
+  - t = T_e:  P^*(T_e, .) from the bond ODE under (μ + σ η, diag(s) σ)
+
+Because the t=0 curve is the market curve by construction, there is no
+anchoring step and no convexity-vs-vol tension in the bond ODE at t=0.
+The optimizer is free to choose any (η, s) that fits the F_{T_e}
+distribution.
 
 This model directly addresses the instability found in Lambda v2.
 The Lambda v2 correction  L(z) @ Lambda @ z  grows with |z|, creating
@@ -23,7 +39,7 @@ Key properties vs Lambda v2:
 Interpretation: lambda_0 is a constant risk-premium vector in latent space.
 L(z) @ lambda_0 maps it to the physical drift correction.
 
-Output: Figures/TrainingResults/dim4_constant_mpr_anchored/ep{EPOCHS}/
+Output: Figures/TrainingResults/dim4_constant_mpr_marketF0/ep{EPOCHS}/
 """
 
 import os, sys
@@ -75,6 +91,7 @@ from Code.load_swapdata import my_data
 from Code.model.full_model_price import FullModelPrice as FullModel
 from Code.Pricing.load_swapvol_ois import load_swaption_vol_data
 from Code.Pricing.pricing import swap_rate_torch, forward_swap_rate_torch
+from Code.Pricing.bootstrap_market_curve import bootstrap_discount_curve
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 from Code.Simulation.simulate_model import simulate_to_expiry_differentiable
 
@@ -98,6 +115,11 @@ N_SWAPTIONS_PER_BATCH = 8
 N_PATHS_PRICING       = 512
 DT_PRICING            = 1 / 6
 
+# Par-swap-rate tenors in X_tensor and max maturity needed for swaptions.
+# expiry + tenor up to 10 + 10 = 20.
+SWAP_TENORS       = [1, 2, 3, 5, 10, 15, 20, 30]
+MAX_TENOR_NEEDED  = 20
+
 PRETRAIN_CKPT = os.path.join(
     PROJECT_ROOT, "Figures", "TrainingResults",
     "dim4_stable", "ep5000", "checkpoint_dim4_ep5000.pt"
@@ -107,7 +129,6 @@ PRETRAIN_CKPT = os.path.join(
 LAMBDA_VOL  = 1.0    # straddle-implied ATM vol MSE
 LAMBDA_BIAS = 0.5    # ATM payer-receiver parity penalty
 LAMBDA_L2   = 1e-3   # L2 on lambda_0  (light regularisation, keeps it bounded)
-LAMBDA_ANCHOR = 1  # pricing-adjusted curve anchor loss
 
 LR = 5e-4
 LR_WARMUP_EPOCHS = 50
@@ -122,7 +143,7 @@ CCY_FILTER = "EUR"
 
 FIGURES_DIR = os.path.join(
     PROJECT_ROOT, "Figures", "TrainingResults",
-    f"dim{LATENT_DIM}_constant_mpr_anchored", f"ep{EPOCHS}"
+    f"dim{LATENT_DIM}_constant_mpr_marketF0", f"ep{EPOCHS}"
 )
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
@@ -240,13 +261,12 @@ def compute_pricing_loss(
     """
     if len(df_vol) == 0 or n_swaptions == 0:
         zero = torch.tensor(0.0, device=device, dtype=dtype)
-        return zero, zero, zero, [], 0, 0, 0.0, float("nan")
+        return zero, zero, [], 0, 0, 0.0, float("nan")
 
     sample = df_vol.sample(n=min(n_swaptions, len(df_vol)))
 
     total_vol  = torch.zeros(1, device=device, dtype=dtype)
     total_bias = torch.zeros(1, device=device, dtype=dtype)
-    total_anchor = torch.zeros(1, device=device, dtype=dtype)
     n_valid      = 0
     n_attempted  = 0
     diagnostics  = []
@@ -268,53 +288,27 @@ def compute_pricing_loss(
         idx = date_to_idx[date]
         xb  = X_batch[idx:idx + 1].to(device)
 
-        # Initial latent state: z0 = E(S_0)
-        # Decoded under pricing dynamics (K_price, sigma_scale) for consistency
+        # z0 = E(S_0) is the starting latent state for the simulation.
+        # F_0 and A_0, however, are read DIRECTLY from the market par-swap
+        # curve via bootstrap — not from the decoder.  This decouples the
+        # strike from the encoder/decoder roundtrip and removes the
+        # convexity-vs-vol tension we'd hit if we required the bond ODE at
+        # t=0 to also reproduce the market curve.
         with torch.no_grad():
             z0 = model.encoder(xb)
 
-        with torch.no_grad():
-            # P^*(0,·): bond prices from the Q^* ODE at today's state z0.
-            # k_override=lm and sigma_scale=lm.sigma_vec are identical to what
-            # is used in simulation and the terminal decode — consistent under Q^*.
-            _, aux0 = model.decode_from_z(
-                z0, tau=None, return_aux=True,
-                k_override=lm, sigma_scale=lm.sigma_vec,
-            )
-            if aux0 is None or "P_full" not in aux0:
-                continue
+        try:
+            P0 = bootstrap_discount_curve(
+                xb.squeeze(0).detach(), SWAP_TENORS, max_tenor=MAX_TENOR_NEEDED,
+            ).to(device)
+        except Exception:
+            continue
+        if not torch.isfinite(P0).all():
+            continue
 
-            S0_hat_star = aux0.get("S_hat", None)
-            if S0_hat_star is not None and torch.isfinite(S0_hat_star).all():
-                anchor_rmse_bp = float(
-                    torch.sqrt(((S0_hat_star - xb) ** 2).mean()).detach().cpu() * 1e4
-                )
-                anchor_errors.append(anchor_rmse_bp)
-            
-            P0_raw = aux0["P_full"]
-            # Handle both (batch, tau) and (tau,) shapes
-            if P0_raw.dim() == 2:
-                P0 = P0_raw[0]  # (tau_max+1,)
-            else:
-                P0 = P0_raw  # already (tau_max+1,)
-            
+
             if not torch.isfinite(P0).all():
                 continue
-
-        # Differentiable anchor loss:
-        # require the pricing-adjusted decoder S^*(z0) to match today's market curve S0.
-        _, aux0_anchor = model.decode_from_z(
-            z0, tau=None, return_aux=True,
-            k_override=lm, sigma_scale=lm.sigma_vec,
-        )
-
-        S0_hat_star_grad = aux0_anchor.get("S_hat", None)
-        if S0_hat_star_grad is None or not torch.isfinite(S0_hat_star_grad).all():
-            continue
-
-        loss_anchor_ij = (((S0_hat_star_grad - xb) * 1e4) / 100.0).pow(2).mean()
-        if not torch.isfinite(loss_anchor_ij):
-            continue
 
         max_idx = P0.shape[0] - 1
         if expiry + tenor > max_idx:
@@ -405,10 +399,9 @@ def compute_pricing_loss(
             if not torch.isfinite(loss_bias_ij):
                 continue
 
-            total_vol = total_vol + loss_vol_ij
+            total_vol  = total_vol  + loss_vol_ij
             total_bias = total_bias + loss_bias_ij
-            total_anchor = total_anchor + loss_anchor_ij
-            n_valid += 1
+            n_valid   += 1
 
             if return_diagnostics:
                 diagnostics.append({
@@ -431,9 +424,9 @@ def compute_pricing_loss(
     mean_anchor_bp = float(np.mean(anchor_errors)) if anchor_errors else float("nan")
     zero = torch.tensor(0.0, device=device, dtype=dtype)
     if n_valid > 0:
-        return (total_vol / n_valid, total_bias / n_valid, total_anchor / n_valid,
+        return (total_vol / n_valid, total_bias / n_valid,
                 diagnostics, n_attempted, n_valid, mean_pfrac, mean_anchor_bp)
-    return zero, zero, zero, diagnostics, n_attempted, 0, mean_pfrac, mean_anchor_bp
+    return zero, zero, diagnostics, n_attempted, 0, mean_pfrac, mean_anchor_bp
 
 
 # ── load data ──────────────────────────────────────────────────────────────────
@@ -513,7 +506,7 @@ ccy_order = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 csv_path  = os.path.join(FIGURES_DIR, f"train_constant_mpr_log_dim{LATENT_DIM}_ep{EPOCHS}.csv")
 csv_cols  = (
     ["epoch", "time_total_sec", "time_interval_sec",
-     "loss_vol", "loss_bias", "loss_anchor", "loss_l2",
+     "loss_vol", "loss_bias", "loss_l2",
      "swaption_priced_frac", "path_finite_frac", "anchor_rmse_bp",
      "recon_rmse_bps", "nan_batches",
      "gnorm_lam0", "gnorm_scale", "lr",
@@ -527,7 +520,7 @@ pd.DataFrame(columns=csv_cols).to_csv(csv_path, index=False)
 print("Logging to:", csv_path)
 
 run_config = {
-    "version":               "constant_mpr_anchored",
+    "version":               "constant_mpr_marketF0",
     "description":           "K_price(z) = K_base(z) + L_base(z) @ lambda_0, stable constant correction",
     "seed":                  SEED,
     "latent_dim":            LATENT_DIM,
@@ -537,7 +530,6 @@ run_config = {
     "lambda_vol":            LAMBDA_VOL,
     "lambda_bias":           LAMBDA_BIAS,
     "lambda_l2":             LAMBDA_L2,
-    "lambda_anchor": LAMBDA_ANCHOR,
     "n_swaptions_per_batch": N_SWAPTIONS_PER_BATCH,
     "n_paths_pricing":       N_PATHS_PRICING,
     "dt_pricing":            DT_PRICING,
@@ -549,7 +541,7 @@ with open(os.path.join(FIGURES_DIR, "run_config.json"), "w") as f:
 # ── training loop ──────────────────────────────────────────────────────────────
 
 hist = {k: [] for k in [
-    "vol", "bias", "anchor_loss", "l2",
+    "vol", "bias", "l2",
     "swp_priced", "path_finite",
     "anchor_rmse",
     "sigma_scale", "lambda0_norm",
@@ -571,7 +563,6 @@ for epoch in range(EPOCHS):
     running_vol  = 0.0
     running_bias = 0.0
     running_l2   = 0.0
-    running_anchor = 0.0
     n_batches     = 0
     nan_batches   = 0
     batch_diag    = []
@@ -585,7 +576,7 @@ for epoch in range(EPOCHS):
               end="", flush=True)
         optim.zero_grad(set_to_none=True)
 
-        loss_vol, loss_bias_raw, loss_anchor_raw, diag, n_att, n_pri, p_frac, anchor_bp = compute_pricing_loss(
+        loss_vol, loss_bias_raw, diag, n_att, n_pri, p_frac, anchor_bp = compute_pricing_loss(
             model=model, lm=lm,
             X_batch=X_tensor_ccy, meta_batch=meta_ccy,
             df_vol=df_vol, date_to_idx=date_to_idx,
@@ -605,11 +596,9 @@ for epoch in range(EPOCHS):
             ep_anchor.append(anchor_bp)
 
         # Light L2 on lambda_0 to keep it bounded
-        loss_l2 = LAMBDA_L2 * lm.lambda_0.pow(2).sum()
-        loss_bias = LAMBDA_BIAS * loss_bias_raw
-        loss_anchor = LAMBDA_ANCHOR * loss_anchor_raw
-
-        loss_total = LAMBDA_VOL * loss_vol + loss_bias + loss_anchor + loss_l2
+        loss_l2    = LAMBDA_L2 * lm.lambda_0.pow(2).sum()
+        loss_bias  = LAMBDA_BIAS * loss_bias_raw
+        loss_total = LAMBDA_VOL * loss_vol + loss_bias + loss_l2
 
         if not torch.isfinite(loss_total):
             nan_batches += 1
@@ -633,7 +622,6 @@ for epoch in range(EPOCHS):
         running_vol  += float(loss_vol.detach().cpu())
         running_bias += float(loss_bias_raw.detach().cpu())
         running_l2   += float(loss_l2.detach().cpu())
-        running_anchor += float(loss_anchor_raw.detach().cpu())
         n_batches    += 1
 
     print("\r" + " " * 40 + "\r", end="", flush=True)
@@ -647,7 +635,6 @@ for epoch in range(EPOCHS):
     ep_vol  = running_vol  / max(n_batches, 1)
     ep_bias = running_bias / max(n_batches, 1)
     ep_l2   = running_l2   / max(n_batches, 1)
-    ep_anchor_loss = running_anchor / max(n_batches, 1)
     swp_priced  = ep_priced  / max(ep_attempted, 1)
     path_finite = float(np.mean(ep_pfracs))   if ep_pfracs   else 0.0
     anchor_rmse_bp = float(np.mean(ep_anchor)) if ep_anchor else float("nan")
@@ -659,17 +646,9 @@ for epoch in range(EPOCHS):
         lambda0_norm   = float(lambda0_now.norm())
         lambda0_l1     = float(lambda0_now.abs().sum())
 
-    for k, v in [
-        ("vol", ep_vol),
-        ("bias", ep_bias),
-        ("anchor_loss", ep_anchor_loss),
-        ("l2", ep_l2),
-        ("swp_priced", swp_priced),
-        ("path_finite", path_finite),
-        ("anchor_rmse", anchor_rmse_bp),
-        ("sigma_scale", scale_now),
-        ("lambda0_norm", lambda0_norm),
-    ]:
+    for k, v in [("vol", ep_vol), ("bias", ep_bias), ("l2", ep_l2),
+                 ("swp_priced", swp_priced), ("path_finite", path_finite), ("anchor_rmse", anchor_rmse_bp),
+                 ("sigma_scale", scale_now), ("lambda0_norm", lambda0_norm)]:
         hist[k].append(v)
 
     do_eval = ((epoch + 1) % EVAL_EVERY == 0) or (epoch == 0) or (epoch == EPOCHS - 1)
@@ -696,7 +675,7 @@ for epoch in range(EPOCHS):
     row = {
         "epoch": epoch, "time_total_sec": round(t_now - t0, 1),
         "time_interval_sec": round(dt_ep, 3),
-        "loss_vol": ep_vol, "loss_bias": ep_bias, "loss_l2": ep_l2, "loss_anchor": ep_anchor_loss,
+        "loss_vol": ep_vol, "loss_bias": ep_bias, "loss_l2": ep_l2,
         "swaption_priced_frac": swp_priced, "path_finite_frac": path_finite, "anchor_rmse_bp": anchor_rmse_bp,
         "recon_rmse_bps": float(avg_rmse_bps),
         "nan_batches": nan_batches,
@@ -787,7 +766,6 @@ fig, axes = plt.subplots(5, 1, figsize=(9, 15), dpi=150)
 axes[0].semilogy(hist["vol"],  lw=1.0, color="darkorange", label="Vol loss")
 axes[0].semilogy(hist["bias"], lw=1.0, color="deeppink",   label="Bias loss")
 axes[0].semilogy(hist["l2"],   lw=1.0, color="royalblue",  label="L2 lambda_0")
-axes[0].semilogy(hist["anchor_loss"], lw=1.0, label="Anchor loss")
 axes[0].set_title("Constant MPR: Loss Components"); axes[0].legend()
 axes[0].set_xlabel("Epoch"); axes[0].set_ylabel("Loss (log)"); axes[0].grid(True, alpha=0.3)
 
@@ -805,8 +783,8 @@ if anchor_valid:
     axes[2].axhline(y=5, color='green', linestyle='--', alpha=0.5, label='5 bp (good)')
     axes[2].axhline(y=20, color='orange', linestyle='--', alpha=0.5, label='20 bp (moderate)')
     axes[2].axhline(y=50, color='red', linestyle='--', alpha=0.5, label='50 bp (re-anchor needed)')
-axes[2].set_xlabel("Epoch"); axes[2].set_ylabel("RMSE (bp)"); 
-axes[2].set_title("Anchor RMSE: P^* Curve Reconstruction Error"); axes[2].legend()
+axes[2].set_xlabel("Epoch"); axes[2].set_ylabel("RMSE (bp)");
+axes[2].set_title("Anchor RMSE: shifted-decoder reconstruction error at t=0"); axes[2].legend()
 axes[2].grid(True, alpha=0.3)
 
 axes[3].plot(hist["sigma_scale"], lw=1.2, color="purple", label="mean(sigma_vec)")
