@@ -1298,67 +1298,77 @@ else:
     fig_aan.tight_layout()
     save_fig(fig_aan, "baseline_fit_all_negative_curves")
 
-# ── figure: two failure modes — baseline only (1×2) ──────────────────────────
+# ── figure: two failure modes — baseline only (GridSpec 2×2) ─────────────────
 print("\nGenerating two failure modes figure (baseline only)...")
 if _baseline_S_hat is None:
     print("  ⚠️  Skipping — no baseline dim=2 checkpoint found")
 else:
     _b_rmse_all = np.sqrt(np.mean((X_np_all - _baseline_S_hat) ** 2, axis=1)) * 10_000
 
-    # Failure group 1: ≥7/8 tenors negative (deeply negative)
-    _fm_mask_deep  = (X_np_all < 0).sum(axis=1) >= 7
-    # Failure group 2: first 5 tenors negative, last tenor positive (crossing)
+    # ── curve indices ─────────────────────────────────────────────────────────
+    # Panel 1 (top-left): worst deeply negative curve (≥7/8 tenors < 0)
+    _fm_mask_deep = (X_np_all < 0).sum(axis=1) >= 7
+    _fm_idx_deep  = np.where(_fm_mask_deep)[0]
+    _fm_gi_deep   = _fm_idx_deep[np.argmax(_b_rmse_all[_fm_idx_deep])]
+
+    # Panel 1 (left): EUR 2015-03-31 — same shape as deeply negative, all positive
+    _fm_eur15_idx = np.where(
+        (meta["ccy"].values == "EUR") &
+        (pd.to_datetime(meta["as_of_date"].values) == pd.Timestamp("2015-03-31"))
+    )[0]
+    if len(_fm_eur15_idx) == 0:
+        print("  ⚠️  EUR 2015-03-31 not found in dataset")
+        _fm_gi_eur15 = None
+    else:
+        _fm_gi_eur15 = _fm_eur15_idx[0]
+
+    # Panel 3 (right column): JPY 2016-09-30 — crossing failure
     _fm_mask_cross = (
         (X_np_all[:, :5] < 0).all(axis=1) & (X_np_all[:, -1] > 0) & ~_fm_mask_deep
     )
-
-    _fm_idx_deep  = np.where(_fm_mask_deep)[0]
-    _fm_idx_cross = np.where(_fm_mask_cross)[0]
-
-    # Group 1: worst-fit deeply negative curve
-    _fm_gi_deep  = _fm_idx_deep[np.argmax(_b_rmse_all[_fm_idx_deep])]
-
-    # Group 2: fixed — JPY 2016-09-30
-    _fm_jpy_idx  = np.where(
+    _fm_jpy_idx = np.where(
         (meta["ccy"].values == "JPY") &
         (pd.to_datetime(meta["as_of_date"].values) == pd.Timestamp("2016-09-30"))
     )[0]
     if len(_fm_jpy_idx) == 0:
         print("  ⚠️  JPY 2016-09-30 not found — falling back to worst crossing curve")
-        _fm_gi_cross = _fm_idx_cross[np.argmax(_b_rmse_all[_fm_idx_cross])]
+        _fm_idx_cross = np.where(_fm_mask_cross)[0]
+        _fm_gi_cross  = _fm_idx_cross[np.argmax(_b_rmse_all[_fm_idx_cross])]
     else:
         _fm_gi_cross = _fm_jpy_idx[0]
 
-    fig_fm, (ax_fm1, ax_fm2) = plt.subplots(1, 2, figsize=(10, 4), sharey=False)
+    # ── layout: 1 row × 3 columns ─────────────────────────────────────────────
+    fig_fm, (ax_fm1, ax_fm2, ax_fm3) = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
 
-    for _ax, _gi, _failure_lbl, _show_ylabel, _rmse_va, _rmse_y in [
-        (ax_fm1, _fm_gi_deep,  "Deeply negative ($\\geq$7/8 tenors $<0$)",       True,  "top",    0.97),
-        (ax_fm2, _fm_gi_cross, "Crossing (first 5 tenors $<0$, long end $>0$)", False, "bottom", 0.03),
-    ]:
-        _act   = X_np_all[_gi] * 100.0           # decimal → percentage
-        _fit_b = _baseline_S_hat[_gi] * 100.0
+    def _draw_fm_panel(ax, gi, show_ylabel, rmse_y, rmse_va):
+        _act      = X_np_all[gi] * 100.0
+        _fit_b    = _baseline_S_hat[gi] * 100.0
         _rmse_bps = float(np.sqrt(np.mean(
-            (X_np_all[_gi] - _baseline_S_hat[_gi]) ** 2
-        ))) * 10_000                              # RMSE annotation stays in bps
-        _ccy   = meta["ccy"].values[_gi]
-        _date  = pd.to_datetime(meta["as_of_date"].values[_gi]).strftime("%Y-%m-%d")
+            (X_np_all[gi] - _baseline_S_hat[gi]) ** 2
+        ))) * 10_000
+        _ccy  = meta["ccy"].values[gi]
+        _date = pd.to_datetime(meta["as_of_date"].values[gi]).strftime("%Y-%m-%d")
 
-        _ax.plot(tenors, _act,   "o-", color="black",   linewidth=1.5,
-                 markersize=4, label="Actual")
-        _ax.plot(tenors, _fit_b,       color="#2c4f8c", linewidth=1.5,
-                 label=r"Baseline ($\ell=2$)")
-        _ax.axhline(0, color="0.7", linewidth=0.8, linestyle=":")
+        ax.plot(tenors, _act,   "o-", color="black",   linewidth=1.5,
+                markersize=4, label="Actual")
+        ax.plot(tenors, _fit_b,       color="#2c4f8c", linewidth=1.5,
+                label=r"Baseline ($\ell=2$)")
+        ax.axhline(0, color="0.7", linewidth=0.8, linestyle=":")
+        ax.set_title(f"{_ccy}  {_date}", fontsize=9)
+        ax.text(0.97, rmse_y, f"RMSE: {_rmse_bps:.1f} bps",
+                transform=ax.transAxes, fontsize=8.5,
+                ha="right", va=rmse_va, color="0.4")
+        ax.set_xlabel("Maturity", fontsize=9)
+        if show_ylabel:
+            ax.set_ylabel("Swap rate (%)", fontsize=9)
+        ax.tick_params(labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
 
-        _ax.set_title(f"{_ccy}  {_date}", fontsize=9)
-        _ax.text(0.97, _rmse_y, f"RMSE: {_rmse_bps:.1f} bps",
-                 transform=_ax.transAxes, fontsize=8.5,
-                 ha="right", va=_rmse_va, color="0.4")
-        _ax.set_xlabel("Maturity", fontsize=9)
-        if _show_ylabel:
-            _ax.set_ylabel("Swap rate (%)", fontsize=9)
-        _ax.tick_params(labelsize=8)
-        _ax.spines["top"].set_visible(False)
-        _ax.spines["right"].set_visible(False)
+    if _fm_gi_eur15 is not None:
+        _draw_fm_panel(ax_fm1, _fm_gi_eur15, show_ylabel=True,  rmse_y=0.97, rmse_va="top")
+    _draw_fm_panel(ax_fm2, _fm_gi_deep,  show_ylabel=False, rmse_y=0.97, rmse_va="top")
+    _draw_fm_panel(ax_fm3, _fm_gi_cross, show_ylabel=False, rmse_y=0.03, rmse_va="bottom")
 
     _handles_fm, _labels_fm = ax_fm1.get_legend_handles_labels()
     fig_fm.legend(_handles_fm, _labels_fm, loc="lower center",
