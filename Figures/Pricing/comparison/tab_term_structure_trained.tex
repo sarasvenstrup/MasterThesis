@@ -1,0 +1,23 @@
+\begin{table}[H]
+\centering
+\caption{Model-implied versus market normal volatility after pricing-layer calibration (mean over a 40-date sample). The ratio mod/mkt above 1 indicates over-volatility; below 1 indicates under-volatility. Values in basis points.}
+\label{tab:term_structure_trained}
+\small
+\begin{tabular}{@{}ccrrc@{}}
+\toprule
+\textbf{Expiry} & \textbf{Tenor} & \textbf{Model \(\sigma_F\)} & \textbf{Market \(\sigma_N\)} & \textbf{Ratio} \\
+\midrule
+1Y  & 1Y  & 142 & 41 & 3.44$\times$ \\
+1Y  & 5Y  & 125 & 57 & 2.19$\times$ \\
+1Y  & 10Y  & 107 & 65 & 1.65$\times$ \\
+\midrule
+5Y  & 1Y  & 49 & 68 & 0.72$\times$ \\
+5Y  & 5Y  & 49 & 68 & 0.72$\times$ \\
+5Y  & 10Y  & 50 & 69 & 0.72$\times$ \\
+\midrule
+10Y  & 1Y  & 52 & 69 & 0.76$\times$ \\
+10Y  & 5Y  & 45 & 68 & 0.67$\times$ \\
+10Y  & 10Y  & 50 & 66 & 0.76$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
