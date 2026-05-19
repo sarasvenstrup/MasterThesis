@@ -32,7 +32,7 @@ sys.path.insert(0, PROJECT_ROOT)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def generate_combined_table():
-    """Generate Table 3.2: market, base, pricing layer, MAE (all/train/test), fwd bias"""
+    """Generate Table 3.2: market, stable, pricing layer, MAE (all/train/test), fwd bias"""
     print("\n[1/7] Generating combined pricing table (Table 3.2)...")
     
     BASE_CSV = os.path.join(PROJECT_ROOT, "Figures", "Pricing", "eval_base", "per_cell_final.csv")
@@ -58,24 +58,26 @@ def generate_combined_table():
                 continue
             
             mkt    = c_all["mkt_bp"].mean()
-            base   = b_all["sigma_str_bp"].mean() if len(b_all) else np.nan
+            stable = b_all["sigma_str_bp"].mean() if len(b_all) else np.nan
             layer  = c_all["sigma_str_bp"].mean()
             
+            stable_mae = b_all["vol_error_bp"].abs().mean() if len(b_all) else np.nan
             mae_all   = c_all["vol_error_bp"].abs().mean()
             mae_train = c_train["vol_error_bp"].abs().mean() if len(c_train) else np.nan
             mae_test  = c_test["vol_error_bp"].abs().mean() if len(c_test) else np.nan
             fwd_bias  = c_all["forward_bias_bp"].mean()
             
             rows.append({
-                "exp": exp, "ten": ten, "mkt": mkt, "base": base, "layer": layer,
-                "mae_all": mae_all, "mae_train": mae_train, "mae_test": mae_test,
-                "fwd_bias": fwd_bias,
+                "exp": exp, "ten": ten, "mkt": mkt, "stable": stable, "layer": layer,
+                "stable_mae": stable_mae, "mae_all": mae_all, "mae_train": mae_train, 
+                "mae_test": mae_test, "fwd_bias": fwd_bias,
             })
 
     # Overall row
     mkt_overall    = df_cmpr["mkt_bp"].mean()
-    base_overall   = df_base["sigma_str_bp"].mean()
+    stable_overall = df_base["sigma_str_bp"].mean()
     layer_overall  = df_cmpr["sigma_str_bp"].mean()
+    stable_mae_overall = df_base["vol_error_bp"].abs().mean()
     mae_all_overall   = df_cmpr["vol_error_bp"].abs().mean()
     mae_train_overall = df_cmpr[df_cmpr["split"]=="train"]["vol_error_bp"].abs().mean()
     mae_test_overall  = df_cmpr[df_cmpr["split"]=="test"]["vol_error_bp"].abs().mean()
@@ -86,17 +88,17 @@ def generate_combined_table():
     with open(out_path, "w") as f:
         f.write("\\begin{table}[H]\n")
         f.write("\\centering\n")
-        f.write("\\caption{Per-cell ATM straddle normal volatility: market, base model (no pricing adjustment), ")
-        f.write("and calibrated pricing layer (all dates, EUR). MAE and forward bias are reported for the pricing layer. ")
+        f.write("\\caption{Per-cell ATM straddle normal volatility: market, stable model, ")
+        f.write("and calibrated pricing layer (all dates, EUR). MAE is reported for both stable model and pricing layer. ")
         f.write("Values in basis points.}\n")
         f.write("\\label{tab:pricing_combined}\n")
         f.write("\\small\n")
         f.write("\\resizebox{\\textwidth}{!}{%\n")
-        f.write("\\begin{tabular}{@{}ccrrrrrrr@{}}\n")
+        f.write("\\begin{tabular}{@{}ccrrrrrrrr@{}}\n")
         f.write("\\toprule\n")
         f.write("\\textbf{Exp} & \\textbf{Ten}\n")
-        f.write("  & \\textbf{Market}\n  & \\textbf{Base model}\n  & \\textbf{Pricing layer}\n")
-        f.write("  & \\textbf{MAE (all)}\n  & \\textbf{MAE (train)}\n  & \\textbf{MAE (test)}\n")
+        f.write("  & \\textbf{Market}\n  & \\textbf{Stable}\n  & \\textbf{Pricing layer}\n")
+        f.write("  & \\textbf{Stable MAE}\n  & \\textbf{MAE (all)}\n  & \\textbf{MAE (train)}\n  & \\textbf{MAE (test)}\n")
         f.write("  & \\textbf{Fwd bias} \\\\\n")
         f.write("\\midrule\n")
         
@@ -109,14 +111,14 @@ def generate_combined_table():
                 bias_str += "\\(^\\dagger\\)"
             
             f.write(f"  {r['exp']}Y & {r['ten']}Y")
-            f.write(f"  & {r['mkt']:.0f}  & {r['base']:.0f}  & {r['layer']:.0f}")
-            f.write(f"  & {r['mae_all']:.1f}  & {r['mae_train']:.1f}  & {r['mae_test']:.1f}")
+            f.write(f"  & {r['mkt']:.0f}  & {r['stable']:.0f}  & {r['layer']:.0f}")
+            f.write(f"  & {r['stable_mae']:.1f}  & {r['mae_all']:.1f}  & {r['mae_train']:.1f}  & {r['mae_test']:.1f}")
             f.write(f"  & {bias_str} \\\\\n")
         
         f.write("\\midrule\n")
         f.write("  \\multicolumn{2}{c}{\\textbf{All cells}}")
-        f.write(f" & {mkt_overall:.0f}  & {base_overall:.0f}  & {layer_overall:.0f}")
-        f.write(f" & \\textbf{{{mae_all_overall:.1f}}}  & {mae_train_overall:.1f}  & {mae_test_overall:.1f}")
+        f.write(f" & {mkt_overall:.0f}  & {stable_overall:.0f}  & {layer_overall:.0f}")
+        f.write(f" & \\textbf{{{stable_mae_overall:.1f}}}  & \\textbf{{{mae_all_overall:.1f}}}  & {mae_train_overall:.1f}  & {mae_test_overall:.1f}")
         f.write(f" & {fwd_bias_overall:+.0f} \\\\\n")
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}}\n")
@@ -126,7 +128,7 @@ def generate_combined_table():
         f.write("\\end{table}\n")
 
     print(f"  ✓ Saved: {out_path}")
-    print(f"    MAEs: All={mae_all_overall:.1f}, Train={mae_train_overall:.1f}, Test={mae_test_overall:.1f}")
+    print(f"    Stable MAE={stable_mae_overall:.1f}, Pricing Layer MAEs: All={mae_all_overall:.1f}, Train={mae_train_overall:.1f}, Test={mae_test_overall:.1f}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
