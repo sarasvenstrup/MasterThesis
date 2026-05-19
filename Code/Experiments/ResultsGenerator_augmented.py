@@ -562,10 +562,11 @@ else:
     if os.path.exists(_bl2_csv):
         _bl2_df  = pd.read_csv(_bl2_csv)
         _bl2_df["test_start"] = pd.to_datetime(_bl2_df["test_start"])
+        # Match on test_start from the reference augmented df (same rolling schedule)
         _bl2_oos = []
-        for _rw in _aug_rows:
-            _ts = _rw["Window"].split(" / ")[1][:7]  # test-end YYYY-MM
-            _match = _bl2_df[_bl2_df["test_start"].dt.strftime("%Y-%m") == _ts]
+        for _, _rw in _aug_ref_df.iterrows():
+            _ts = str(_rw["test_start"])[:10]   # YYYY-MM-DD
+            _match = _bl2_df[_bl2_df["test_start"].dt.strftime("%Y-%m-%d") == _ts]
             _bl2_oos.append(float(_match["avg_rmse_bps"].values[0]) if len(_match) else np.nan)
         _bl2_oos = np.array(_bl2_oos, dtype=float)
         _bl2_clipped = np.clip(_bl2_oos, 0, 50)
