@@ -133,9 +133,9 @@ dz_t
 +
 \operatorname{diag}(s)\sigma(z_t)\,dW_t.
 \]
-The parameter \(\eta\) shifts the centre of the simulated forward distribution, while \(s\) adjusts its width. With \(2d\) parameters in total, namely \((\eta,\log s)\), the layer is calibrated to EUR ATM swaption straddle volatilities on the 2010--2021 training window and evaluated out of sample on 2022--2024.
+The parameter \(\eta\) shifts the centre of the simulated forward distribution, while \(s\) adjusts its width. In the calibration we optimise \(\log s\) rather than \(s\) directly, which ensures that the diffusion scales remain positive. With \(2d\) trainable parameters in total, namely \((\eta,\log s)\), the layer is calibrated to EUR ATM swaption straddle volatilities on \textcolor{red}{the 2010--2021 training window and evaluated out of sample on 2022--2024.}
 
-This is an \emph{exploratory experiment, not a fully consistent joint model}. The bond-pricing ODE is re-solved under the adjusted drift and diffusion, so the simulation and the terminal bond decode at expiry \(T_\mu\) are internally consistent. However, the initial bond curve at \(t=0\) is read from the \emph{stable} decoder so that today's swap curve matches the market by construction. There is therefore a seam between the initial curve and the subsequent pricing dynamics. We return to this in Section~\ref{sec:pricing_limitation} as the main limitation of the experiment.
+This is an \emph{exploratory experiment\textcolor{red}{, not a fully consistent joint model}}. The bond-pricing ODE is re-solved under the adjusted drift and diffusion, so the simulation and the terminal bond decode at expiry \(T_\mu\) are internally consistent. However, the initial bond curve at \(t=0\) is read from the \emph{stable} decoder so that today's swap curve matches the market by construction. There is therefore a mismatch between the initial curve and the subsequent pricing dynamics. We return to this in Section~\ref{sec:pricing_limitation} as the main limitation of the experiment.
 
 \subsection{Calibration}
 \label{subsec:cmpr_calibration}
@@ -163,27 +163,27 @@ The pricing layer is calibrated by minimising a loss with three terms: a volatil
 +
 10^{-3}\|\eta\|^2,
 \]
-where \(\mathcal{B}\) is a mini-batch of randomly sampled EUR swaption observations. Here \(\widehat{\sigma}_{N}^{(i)}\) and \(\sigma_{\mathrm{mkt}}^{(i)}\) are measured in basis points, and \(\widehat b^{(i)}\) is also expressed in basis points. The first term fits the level of the implied normal volatility. The second term penalises violations of the ATM centering condition
+where \(\mathcal{B}\) is a mini-batch of randomly sampled EUR swaption observations. All volatilities and centering biases in the loss are measured in basis points, and the division by \(100\) simply normalises errors to units of \(100\) basis points. The first term fits the level of the implied normal volatility, while the second penalises violations of the ATM centering condition
 \[
 \mathbb{E}^{\mathcal A}
 \!\left[
 S(T_\mu)
 \right]
 =
-R_{\mathrm{swap}}(0),
+R_{\mathrm{swap}}(0).
 \]
-so that the simulated forward swap rate remains centred around the initial ATM strike. The final term keeps the drift shift \(\eta\) from becoming too large.
+This encourages the simulated forward swap rate to remain centred around the initial ATM strike. The final term keeps the drift shift \(\eta\) from becoming too large.
 
 Optimisation is done with Adam. The learning rate is first increased linearly during a short warm-up period and is then decreased using cosine annealing. We train for \(1000\) epochs using \(N_{\mathrm{MC}}=512\) antithetic paths per observation.\footnote{Antithetic variates are a standard Monte Carlo variance-reduction technique \citep{Glasserman2004}. For each Brownian increment vector \(\boldsymbol{\varepsilon}\), we also simulate a mirrored path with increment \(-\boldsymbol{\varepsilon}\). The two payoffs are then averaged, which reduces Monte Carlo noise at little extra cost.}
 
 \subsection{Results}
 \label{subsec:cmpr_results}
 
-Table~\ref{tab:constant_mpr_per_cell_merged} reports the ATM straddle volatility errors for each expiry--tenor cell. The training and test windows are shown separately, together with the time-averaged forward bias diagnostic.
+Table~\ref{tab:constant_mpr_per_cell_all} reports the ATM straddle volatility errors for each expiry--tenor cell. The training and test windows are shown separately, together with the time-averaged forward bias diagnostic.
 
 \begin{table}[H]
 \centering
-\input{../Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_merged.tex}
+\input{Figures/Pricing/eval_constant_mpr/tab_constant_mpr_per_cell_all}
 \end{table}
 
 The overall MAE across the surface is \(\mathbf{40.1}\) bp. The error is \(39.4\) bp on the training window and \(\mathbf{42.0}\) bp out of sample. The small train--test gap suggests that the eight-parameter pricing layer does not materially overfit the training data. The errors, however, are not evenly spread across the surface. The largest residuals come from the 1Y\(\times\)1Y and 1Y\(\times\)5Y cells, with all-dates MAEs of \(148\) bp and \(68\) bp, respectively. This stable total error masks some movement across the surface: the 1Y\(\times\)1Y and 1Y\(\times\)5Y errors fall sharply in the test window, while several 5Y and 10Y expiry cells deteriorate.

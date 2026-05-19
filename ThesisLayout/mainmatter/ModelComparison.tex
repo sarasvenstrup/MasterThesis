@@ -18,69 +18,6 @@ HMMMM
 
 
 
-\begin{example}\label{ex:compression}
-Let $\mathbf{S} \in \mathbb{R}^8$ denote the normal EUR swap curve observed on 
-2014-08-29, and let $\tilde{\mathbf{S}}^- = \mathbf{S} - 0.0045\cdot\mathbf{1}$ 
-denote a stylised counterpart obtained by shifting all tenors down by 45 bps, 
-so that the short end becomes negative while slope and curvature are preserved 
-by construction. Expressed in decimal terms,
-\begin{align*}
-\mathbf{S} &= \begin{pmatrix} 0.0025 & 0.0027 & 0.0032 & 0.0050 & 0.0109 & 
-0.0146 & 0.0164 & 0.0176 \end{pmatrix}^\top, \\
-\tilde{\mathbf{S}}^- &= \begin{pmatrix} -0.0020 & -0.0018 & -0.0013 & 0.0005 & 
-0.0064 & 0.0101 & 0.0119 & 0.0131 \end{pmatrix}^\top.
-\end{align*}
-The learned encoder matrix for the $\ell=2$ baseline model is
-$$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
--1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$
-Consider the second row of $A_1$, denoted $a_2^\top$, and its dot product with 
-each curve. For the normal curve,
-\begin{align*}
-a_2^\top \mathbf{S} &= \underbrace{(-1.12)(0.0025) + (-0.63)(0.0027) + 
-(-0.66)(0.0032) + (-0.83)(0.0050)}_{\text{short-to-mid, all negative}} \\
-&\quad + \underbrace{(-0.50)(0.0109) + (-0.29)(0.0146) + (-0.22)(0.0164)}_{\text{long end, negative}} 
-+ \underbrace{(0.13)(0.0176)}_{\text{30Y, positive}} \\
-&= -0.0240 + 0.0023 = -0.0217.
-\end{align*}
-All tenors are positive, so the dominant negative weights of $a_2$ produce a 
-large negative second factor. For the shifted curve,
-\begin{align*}
-a_2^\top \tilde{\mathbf{S}}^- &= \underbrace{(-1.12)(-0.0020) + (-0.63)(-0.0018) + 
-(-0.66)(-0.0013)}_{\text{short end: negative rates} \times \text{negative weights} = \text{positive}} \\
-&\quad + \underbrace{(-0.83)(0.0005) + (-0.50)(0.0064) + (-0.29)(0.0101) + 
-(-0.22)(0.0119)}_{\text{mid-to-long, negative}}
-+ \underbrace{(0.13)(0.0131)}_{\text{30Y, positive}} \\
-&= +0.0059 - 0.0091 = -0.0032.
-\end{align*}
-The negative short-end rates now interact with the negative weights of $a_2$ to 
-produce positive contributions of $+0.0059$, partially cancelling the negative 
-contributions of $-0.0091$ from the positive mid-to-long-end rates. The net 
-second factor collapses from $-0.0217$ to $-0.0032$. The full latent 
-representations are therefore
-\begin{align*}
-z &= A_1\mathbf{S} = \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \qquad
-\tilde{z}^- = A_1\tilde{\mathbf{S}}^- = \begin{pmatrix} -0.0111 \\ -0.0032 \end{pmatrix},
-\end{align*}
-with $\|z - \tilde{z}^-\| = 0.0187$, despite the two curves having identical 
-slope and curvature. As shown in Figure~\ref{fig:latent_space_regime_shift}, 
-this pushes $\tilde{z}^-$ out of the dense positive-rate region and into the 
-sparse negative-rate cluster of the latent space, where the decoder has little 
-training exposure.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_latent_space_regime_shift.png}
-    \caption{Latent space representation of all in-sample swap rate curves under 
-    the baseline encoder ($\ell = 2$), coloured by curve variant. The points 
-    $\mathbf{z}$ and $\tilde{\mathbf{z}}^-$ denote the latent representations 
-    of the normal EUR curve on 2014-08-29 and its downward-shifted counterpart 
-    respectively. Despite identical slope and curvature, $\tilde{\mathbf{z}}^-$ 
-    lands in the sparse negative-rate cluster while $\mathbf{z}$ sits within the 
-    dense positive-rate region.}
-    \label{fig:latent_space_regime_shift}
-\end{figure}
-\end{example}
-
 
 \newpage
 
@@ -103,63 +40,6 @@ faces an inconsistent mapping: depending on the shape of the negative-rate curve
 it may receive a latent representation from either region, and struggles to 
 reconstruct the correct slope and curvature in both cases. Example~\ref{ex:compression} 
 illustrates this directly.
-
-\begin{example}\label{ex:compression}
-Let $\mathbf{S} \in \mathbb{R}^8$ denote the EUR swap curve observed on 
-2014-08-29, and let $\tilde{\mathbf{S}}^- = \mathbf{S} - 0.0045\cdot\mathbf{1}$ 
-denote a stylised negative-rate counterpart obtained by shifting all tenors down 
-by 45 bps, so that the short end becomes negative while the slope and curvature 
-are preserved by construction. Expressed in decimal terms,
-\begin{align*}
-\mathbf{S} &= \begin{pmatrix} 0.0025 & 0.0027 & 0.0032 & 0.0050 & 0.0109 & 
-0.0146 & 0.0164 & 0.0176 \end{pmatrix}^\top, \\
-\tilde{\mathbf{S}}^- &= \begin{pmatrix} -0.0020 & -0.0018 & -0.0013 & 0.0005 & 
-0.0064 & 0.0101 & 0.0119 & 0.0131 \end{pmatrix}^\top.
-\end{align*}
-Let $A_1 \in \mathbb{R}^{2\times 8}$ denote the learned encoder matrix,
-$$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
--1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$
-For each curve, construct a flat counterpart by setting all tenors to the 
-cross-tenor average, $\mathbf{S}_{\text{flat}} = \bar{S}\cdot\mathbf{1}$ and 
-$\tilde{\mathbf{S}}^-_{\text{flat}} = \bar{\tilde{S}}^-\cdot\mathbf{1}$, so each 
-curve pair shares the same mean rate level but differs only in slope and curvature. 
-Applying $A_1$ gives
-\begin{align*}
-z = A_1\mathbf{S} &= \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \quad
-z_{\text{flat}} = A_1\mathbf{S}_{\text{flat}} = \begin{pmatrix} 0.0046 \\ 
--0.0375 \end{pmatrix}, \quad \|z - z_{\text{flat}}\| = 0.0208, \\
-\tilde{z}^- = A_1\tilde{\mathbf{S}}^- &= \begin{pmatrix} -0.0111 \\ -0.0032 
-\end{pmatrix}, \quad
-\tilde{z}^-_{\text{flat}} = A_1\tilde{\mathbf{S}}^-_{\text{flat}} = 
-\begin{pmatrix} 0.0023 \\ -0.0190 \end{pmatrix}, \quad 
-\|\tilde{z}^- - \tilde{z}^-_{\text{flat}}\| = 0.0208.
-\end{align*}
-The separation between the sloped and flat versions is identical for both curves, 
-confirming that the encoder preserves shape information equally well regardless 
-of the rate level. However, as shown in Figure~\ref{fig:latent_space_regime_shift}, 
-the flat counterpart of the negative-rate curve $\tilde{z}^-_{\text{flat}}$ maps 
-into the positive-rate region of the latent space, while the sloped version 
-$\tilde{z}^-$ maps into the sparse negative-rate cluster. The decoder therefore 
-receives latent representations from very different regions depending on the shape 
-of the curve, and has little basis for consistently recovering slope and curvature 
-for negative-rate curves in either case.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_latent_space_regime_shift.png}
-    \caption{Latent space representation of all in-sample swap rate curves under 
-    the baseline encoder ($\ell = 2$), coloured by curve variant. Four specific 
-    observations are overlaid: $\mathbf{z}$ and $\mathbf{z}_{\mathrm{flat}}$ 
-    denote the latent representations of the normal EUR curve on 2014-08-29 and 
-    its flat counterpart; $\tilde{\mathbf{z}}^-$ and $\tilde{\mathbf{z}}^-_{\mathrm{flat}}$ 
-    denote the corresponding representations for the same curve shifted down by 
-    45 bps. All distances are $d = 0.0208$.}
-    \label{fig:latent_space_regime_shift}
-\end{figure}
-\end{example}
-
-We do not formally verify this hypothesis, but use it as motivation for the 
-augmentation described in the following subsection.
 
 
 
