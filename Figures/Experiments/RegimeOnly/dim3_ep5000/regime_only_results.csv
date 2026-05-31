@@ -1,0 +1,4 @@
+regime,n_total,n_train,n_eval,rmse_bps_train,rmse_bps_eval
+normal_positive,1042,834,208,4.634512424468994,4.674152374267578
+any_negative,294,235,59,,
+inverted,134,107,27,5.00465726852417,5.288166522979736

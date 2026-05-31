@@ -1,0 +1,721 @@
+import math
+import os
+import sys
+import time
+import pandas as pd
+
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+
+try:
+    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    REPO_ROOT = os.getcwd()
+
+PROJECT_ROOT = os.path.abspath(os.path.join(REPO_ROOT, ".."))
+THESIS_ROOT = os.path.abspath(os.path.join(REPO_ROOT, "..", ".."))
+
+if THESIS_ROOT not in sys.path:
+    sys.path.insert(0, THESIS_ROOT)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from Code import config
+from Code.model.full_model_stable import FullModel
+from Code.model.full_model_price import FullModelPrice
+from Code.load_swapdata import my_data
+from Code.model.sigma_matrix import L_from_sigmas_rhos
+
+# ==========================================================
+# Checkpoint switch
+# ==========================================================
+checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\TrainingResults\dim4_stable\ep5000\checkpoint_dim4_ep5000.pt"
+
+
+def load_and_setup_model(device, checkpoint_path, latent_dim=2, use_double=True):
+    state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
+
+    # Auto-detect DecoderGStable checkpoints by the presence of G.z_scale.
+    # Those were trained with FullModelPrice and must be loaded into it so
+    # that the tanh input normalisation is applied during simulation.
+    if "G.z_scale" in state_dict:
+        model = FullModelPrice(latent_dim=latent_dim).to(device)
+        print("  [load] detected DecoderGStable checkpoint — using FullModelPrice")
+    else:
+        model = FullModel(latent_dim=latent_dim).to(device)
+
+    result = model.load_state_dict(state_dict, strict=False)
+    if result.missing_keys:
+        print(f"  [load] missing keys: {result.missing_keys}")
+    if result.unexpected_keys:
+        print(f"  [load] unexpected keys (dropped): {result.unexpected_keys}")
+
+    if use_double:
+        model = model.double()
+
+    model.eval()
+
+    print(f"Loaded model from {checkpoint_path}")
+    print(f"Model dtype: {next(model.parameters()).dtype}")
+    return model
+
+
+@torch.no_grad()
+def get_mu(model, z):
+    return model.K(z)
+
+
+@torch.no_grad()
+def get_L(model, z):
+    sigmas, rhos = model.H(z)
+    return L_from_sigmas_rhos(sigmas, rhos, validate=False)
+
+
+@torch.no_grad()
+def get_r(model, z):
+    r = model.R(z)
+    if r.ndim == 2 and r.shape[-1] == 1:
+        r = r.squeeze(-1)
+    return r
+
+
+def compute_latent_statistics(model, X_tensor, device, latent_dim):
+    z_train_list = []
+
+    with torch.no_grad():
+        for i in range(0, X_tensor.shape[0], 256):
+            batch = X_tensor[i:min(i + 256, X_tensor.shape[0])].to(device=device, dtype=next(model.parameters()).dtype)
+            z_batch = model.encoder(batch)
+            z_train_list.append(z_batch)
+
+    z_train = torch.cat(z_train_list, dim=0)
+    z_train_mean = z_train.mean(dim=0).detach()
+    z_train_cov = torch.cov(z_train.t()).detach()
+    z_train_std = z_train.std(dim=0).detach()
+
+    print("Training latent cloud mean:", z_train_mean.cpu().numpy())
+    print("Training latent cloud std: ", z_train_std.cpu().numpy())
+    for d in range(latent_dim):
+        print(f"  z[{d}] range = [{z_train[:, d].min().item():.6f}, {z_train[:, d].max().item():.6f}]")
+
+    return z_train_mean, z_train_cov, z_train_std
+
+
+def _euler_step_inference(
+    model: object,
+    z: torch.Tensor,           # (n_paths, d) — current state
+    sqrt_dt: float,
+    device: torch.device,
+    dtype: torch.dtype,
+    diffusion_scale: float = 1.0,
+    dW: torch.Tensor = None,   # Optional: pre-generated noise for antithetic variates
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Single Euler-Maruyama step for inference mode (no gradients).
+    
+    Parameters
+    ----------
+    dW : torch.Tensor, optional
+        Pre-generated Brownian increments. If None, generates standard random noise.
+        For antithetic variates, pass paired (positive/negative) noise externally.
+    
+    Returns
+    -------
+    z_new : (n_paths, d)      — updated latent state
+    r     : (n_paths,)        — short rate at new state
+    mu    : (n_paths, d)      — drift at new state
+    L     : (n_paths, d, d)   — diffusion matrix at new state
+    """
+    n_paths = z.shape[0]
+    d = z.shape[1]
+    
+    # Compute diffusion matrix
+    L = get_L(model, z)
+    
+    # Generate or use provided noise
+    if dW is None:
+        dW = torch.randn(n_paths, d, device=device, dtype=dtype) * sqrt_dt
+    
+    # Euler step: z_new = z + μ*dt + L*dW
+    shock = diffusion_scale * torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
+    drift = get_mu(model, z) * (sqrt_dt ** 2)  # dt = sqrt_dt^2
+    z_new = z + drift + shock
+    
+    # Evaluate model at new state
+    r = get_r(model, z_new)
+    mu = get_mu(model, z_new)
+    L_new = get_L(model, z_new)
+    
+    return z_new, r, mu, L_new
+
+
+def simulate_latent_paths(
+        model,
+        z0,
+        n_paths,
+        n_steps,
+        dt,
+        device,
+        diffusion_scale=1.0,
+        use_antithetic=False,
+):
+    """
+    Simulate latent state paths using Euler-Maruyama discretization.
+    
+    Parameters
+    ----------
+    use_antithetic : bool, default False
+        If True, uses antithetic variates for variance reduction.
+        Generates n_paths/2 random paths and pairs them with their negatives.
+        This reduces MC variance by ~30-50% at no extra computational cost.
+    """
+
+    if z0.dim() != 2 or z0.shape[0] != 1:
+        raise ValueError(f"Expected z0 shape (1,d), got {tuple(z0.shape)}")
+
+    if diffusion_scale < 0:
+        raise ValueError("diffusion_scale must be non-negative")
+
+    d = z0.shape[1]
+    sqrt_dt = math.sqrt(dt)
+    dtype = z0.dtype
+
+    z = z0.repeat(n_paths, 1).to(device)
+
+    # Pre-allocate trajectory storage
+    z_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=dtype)
+    r_paths = torch.empty((n_paths, n_steps + 1), device=device, dtype=dtype)
+    mu_paths = torch.empty((n_paths, n_steps + 1, d), device=device, dtype=dtype)
+    L_paths = torch.empty((n_paths, n_steps + 1, d, d), device=device, dtype=dtype)
+
+    # Store initial state
+    z_paths[:, 0, :] = z
+    r_paths[:, 0] = get_r(model, z)
+    mu_paths[:, 0, :] = get_mu(model, z)
+    L_paths[:, 0, :, :] = get_L(model, z)
+
+    # Euler-Maruyama loop with optional antithetic variates
+    for t in range(n_steps):
+        if use_antithetic:
+            # Generate half the paths, then mirror them
+            n_half = n_paths // 2
+            dW_half = torch.randn(n_half, d, device=device, dtype=dtype) * sqrt_dt
+            
+            # Create antithetic pairs: [dW_half, -dW_half]
+            if n_paths % 2 == 0:
+                dW = torch.cat([dW_half, -dW_half], dim=0)
+            else:
+                # If odd number of paths, add one extra from the positive set
+                dW = torch.cat([dW_half, -dW_half, dW_half[:1]], dim=0)
+        else:
+            dW = None  # Let _euler_step_inference generate standard noise
+        
+        z, r, mu, L = _euler_step_inference(
+            model=model,
+            z=z,
+            sqrt_dt=sqrt_dt,
+            device=device,
+            dtype=dtype,
+            diffusion_scale=diffusion_scale,
+            dW=dW,
+        )
+
+        z_paths[:, t + 1, :] = z
+        r_paths[:, t + 1] = r
+        mu_paths[:, t + 1, :] = mu
+        L_paths[:, t + 1, :, :] = L
+
+    return z_paths, r_paths, mu_paths, L_paths
+
+
+def compute_discount_paths(r_paths: torch.Tensor, dt: float) -> torch.Tensor:
+    if dt <= 0:
+        raise ValueError("dt must be positive")
+    if r_paths.ndim != 2:
+        raise ValueError(f"Expected r_paths to have shape (n_paths, n_steps+1), got {tuple(r_paths.shape)}")
+
+    n_paths, n_times = r_paths.shape
+    if n_times < 2:
+        return torch.ones_like(r_paths)
+
+    increments = 0.5 * (r_paths[:, :-1] + r_paths[:, 1:]) * dt
+
+    int_r = torch.cumsum(increments, dim=1)
+    disc = torch.ones((n_paths, n_times), device=r_paths.device, dtype=r_paths.dtype)
+    disc[:, 1:] = torch.exp(-int_r)
+    return disc
+
+
+def plot_simulation_results(results, n_paths_to_plot=20):
+    """
+    Plot the simulation results including latent paths, interest rates, and discount curves.
+
+    Args:
+        results: Dictionary returned from run_simulation
+        n_paths_to_plot: Number of paths to plot (default: 20)
+    """
+    z_paths = results["z_paths"].cpu().numpy()
+    r_paths = results["r_paths"].cpu().numpy()
+    discount_paths = results["discount_paths"].cpu().numpy()
+    P_full_paths = results["P_full_paths"].cpu().numpy()
+    times = results["times"]
+    z0 = results["z0"].cpu().numpy().flatten()
+    z_train_mean = results["z_train_mean"].cpu().numpy()
+    z_train_std = results["z_train_std"].cpu().numpy()
+
+    n_paths_plot = min(n_paths_to_plot, z_paths.shape[0])
+
+    fig = plt.figure(figsize=(14, 10))
+
+    # Plot 1: Latent state paths
+    n_latent = z_paths.shape[2]
+    for d in range(n_latent):
+        ax = plt.subplot(2, 2, d + 1)
+        for i in range(n_paths_plot):
+            ax.plot(times, z_paths[i, :, d], alpha=0.5, linewidth=0.8)
+        ax.axhline(z0[d], color='red', linestyle='--', linewidth=2, label='z0')
+        ax.axhline(z_train_mean[d], color='green', linestyle='--', linewidth=2, label='Train mean')
+        ax.fill_between(
+            times,
+            z_train_mean[d] - z_train_std[d],
+            z_train_mean[d] + z_train_std[d],
+            alpha=0.2,
+            color='green',
+            label='Train ±1 std'
+        )
+        ax.set_xlabel("Time (years)")
+        ax.set_ylabel(f"z[{d}]")
+        ax.set_title(f"Latent State z[{d}]")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Plot 2: Short rate paths
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for i in range(n_paths_plot):
+        ax.plot(times, r_paths[i, :] * 100, alpha=0.5, linewidth=0.8)
+    ax.axhline(r_paths[0, 0] * 100, color='red', linestyle='--', linewidth=2, label='Initial r')
+    ax.set_xlabel("Time (years)")
+    ax.set_ylabel("Short Rate (%)")
+    ax.set_title("Short Rate Paths")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    # Plot 3: Discount factor paths
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for i in range(n_paths_plot):
+        ax.plot(times, discount_paths[i, :], alpha=0.5, linewidth=0.8)
+    ax.set_xlabel("Time (years)")
+    ax.set_ylabel("Discount Factor")
+    ax.set_title("Stochastic Discount Paths")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    # Plot 4: Discount curve term structure at different times
+    fig, ax = plt.subplots(figsize=(12, 6))
+    tau_grid = results["tau_grid"].cpu().numpy()
+    time_indices = np.linspace(0, P_full_paths.shape[1] - 1, min(5, P_full_paths.shape[1]), dtype=int)
+
+    for t_idx in time_indices:
+        time_val = times[t_idx]
+        paths_at_t = P_full_paths[:n_paths_plot, t_idx, :]
+        mean_at_t = paths_at_t.mean(axis=0)
+        std_at_t = paths_at_t.std(axis=0)
+
+        ax.plot(tau_grid, mean_at_t, marker='o', label=f't={time_val:.2f}', linewidth=2)
+        ax.fill_between(
+            tau_grid,
+            mean_at_t - std_at_t,
+            mean_at_t + std_at_t,
+            alpha=0.2
+        )
+
+    ax.set_xlabel("Maturity (years)")
+    ax.set_ylabel("Discount Factor")
+    ax.set_title("Term Structure of Discount Curves")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
+def resolve_curve_index(meta, as_of_date=0):
+    if as_of_date == 0 or as_of_date is None:
+        return 0
+
+    if "as_of_date" not in meta.columns:
+        raise KeyError("meta does not contain column 'as_of_date'")
+
+    target_date = pd.Timestamp(as_of_date).normalize()
+    meta_dates = pd.to_datetime(meta["as_of_date"]).dt.normalize()
+
+    matches = np.where(meta_dates.values == target_date.to_datetime64())[0]
+
+    if len(matches) == 0:
+        raise ValueError(f"No row found for as_of_date={target_date.date()}")
+
+    if len(matches) > 1:
+        print(f"Found {len(matches)} rows for {target_date.date()}; using first match.")
+
+    return int(matches[0])
+
+
+def run_simulation(
+        use="bbg",
+        latent_dim=2,
+        checkpoint_path=None,
+        n_paths=500,
+        n_steps=24,
+        dt=1 / 12,
+        as_of_date=None,
+        ccy_filter="",
+        diffusion_scale=1.0,
+        use_antithetic=False,
+        seed=1234,
+        device=None,
+        show_plot=True,
+        decode_steps=None,
+):
+    """
+    Run Monte Carlo simulation of the latent interest rate model.
+    
+    Parameters
+    ----------
+    use_antithetic : bool, default False
+        If True, uses antithetic variates for variance reduction.
+        Reduces MC standard error by ~30-50% at no extra computational cost.
+        Recommended for production pricing runs.
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"Using device: {device}")
+    print(f"Seed: {seed}")
+    if use_antithetic:
+        print(f"Variance reduction: Antithetic variates ENABLED")
+
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    model = load_and_setup_model(
+        device=device,
+        checkpoint_path=checkpoint_path,
+        latent_dim=latent_dim,
+        use_double=True,
+    )
+
+    meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = my_data(
+        use=use,
+        ccy_filter=ccy_filter,
+    )
+
+    model_dtype = next(model.parameters()).dtype
+    X_tensor = X_tensor.to(dtype=model_dtype)
+    X_tensor_full = X_tensor_full.to(dtype=model_dtype)
+
+    print(f"SCALE_IS_PERCENT from my_data(): {SCALE_IS_PERCENT}")
+
+    start_idx = resolve_curve_index(meta, as_of_date=as_of_date)
+
+    S0 = X_tensor[start_idx:start_idx + 1].to(device=device, dtype=model_dtype)
+    meta_row = meta.iloc[start_idx]
+    print(f"Initial curve metadata row:\n{meta_row}")
+
+    # Training latent statistics
+    z_train_mean, z_train_cov, z_train_std = compute_latent_statistics(model, X_tensor, device, latent_dim)
+
+    # Initial latent state
+    with torch.no_grad():
+        z0 = model.encoder(S0)
+
+    print(f"Initial latent state z0: {z0.detach().cpu().numpy().flatten()}")
+
+    # Decode initial curve directly from latent state using FullModel decoder
+    with torch.no_grad():
+        _, aux0 = model.decode_from_z(
+            z0,
+            tau=None,
+            do_arb_checks=False,
+            return_aux=True,
+        )
+
+    P_full_0 = aux0["P_full"]  # shape (1, tau_max+1)
+    P_mkt_0 = aux0["P_mkt"]  # shape (1, tau_max)
+    S_hat_0 = aux0["S_hat"]  # shape (1, len(tenors))
+    tau_grid = aux0["tau_grid"]
+
+    print(
+        f"Initial decoded discount curve range: "
+        f"[{P_full_0.min().item():.6f}, {P_full_0.max().item():.6f}]"
+    )
+
+    print(
+        f"Simulating {n_paths} paths with {n_steps} steps "
+    )
+
+    t0 = time.time()
+    z_paths, r_paths, mu_paths, L_paths = simulate_latent_paths(
+        model=model,
+        z0=z0,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        dt=dt,
+        device=device,
+        diffusion_scale=diffusion_scale,
+        use_antithetic=use_antithetic,
+    )
+    print(f"Simulation completed in {time.time() - t0:.2f}s.")
+
+    discount_paths = compute_discount_paths(r_paths, dt=dt)
+    print(
+        f"Built path discount factors: D_t range = "
+        f"[{discount_paths.min().item():.6f}, {discount_paths.max().item():.6f}]"
+    )
+
+    n_paths, n_times, d = z_paths.shape
+    times_all = np.arange(n_steps + 1) * dt
+
+    # Determine which time steps to decode.
+    # decode_steps=None means all steps (legacy behaviour).
+    # Pass a list of step indices to only decode what pricing actually needs,
+    # e.g. [0, 12, 60, 120] for expiries {0, 1, 5, 10}Y with dt=1/12.
+    if decode_steps is None:
+        decode_indices = list(range(n_times))
+    else:
+        decode_indices = sorted(set([0] + [int(i) for i in decode_steps if 0 <= i < n_times]))
+
+    n_decode = len(decode_indices)
+    total_states = n_paths * n_decode
+
+    print(f"Decoding {total_states:,} latent states to discount curves "
+          f"({n_decode} time step(s) of {n_times})...")
+
+    # Select only the required latent states
+    z_to_decode = z_paths[:, decode_indices, :]          # (n_paths, n_decode, d)
+    z_flat = z_to_decode.reshape(-1, d)                  # (n_paths * n_decode, d)
+
+    P_full_list = []
+    P_mkt_list = []
+    S_hat_list = []
+    tau_grid = None
+
+    batch_size = 10000
+
+    with torch.no_grad():
+        for batch_start in range(0, total_states, batch_size):
+            batch_end = min(batch_start + batch_size, total_states)
+            z_batch = z_flat[batch_start:batch_end]
+
+            _, aux_batch = model.decode_from_z(
+                z_batch,
+                tau=None,
+                do_arb_checks=False,
+                return_aux=True,
+            )
+
+            P_full_list.append(aux_batch["P_full"])
+            P_mkt_list.append(aux_batch["P_mkt"])
+            if aux_batch["S_hat"] is not None:
+                S_hat_list.append(aux_batch["S_hat"])
+
+            if tau_grid is None:
+                tau_grid = aux_batch["tau_grid"]
+
+            if total_states > 50000 and (batch_end - batch_start) == batch_size:
+                pct = 100 * batch_end / total_states
+                print(f"  Decoded {batch_end:,}/{total_states:,} states ({pct:.1f}%)")
+
+    # Concatenate and reshape to (n_paths, n_decode, tau_max+1)
+    P_full_flat = torch.cat(P_full_list, dim=0)
+    P_mkt_flat  = torch.cat(P_mkt_list,  dim=0)
+    S_hat_flat  = torch.cat(S_hat_list,  dim=0) if S_hat_list else None
+
+    P_full_paths = P_full_flat.reshape(n_paths, n_decode, -1)
+    P_mkt_paths  = P_mkt_flat.reshape( n_paths, n_decode, -1)
+    S_hat_paths  = S_hat_flat.reshape( n_paths, n_decode, -1) if S_hat_flat is not None else None
+
+    # Replace inf (decoder overflow from extreme latent states) with nan so
+    # that pricing's valid_mask simply skips those paths rather than crashing.
+    n_inf = int(torch.isinf(P_full_paths).any(dim=-1).sum().item())
+    if n_inf > 0:
+        print(f"  WARNING: {n_inf} path/step(s) had inf in P_full -- replacing with nan "
+              f"({100*n_inf/(n_paths*n_decode):.2f}% of decoded states)")
+        P_full_paths = torch.where(torch.isinf(P_full_paths),
+                                   torch.tensor(float('nan'), dtype=P_full_paths.dtype),
+                                   P_full_paths)
+    n_fin = int(torch.isfinite(P_full_paths[..., 1:]).all(dim=-1).sum().item())
+    print(
+        f"Decoded latent paths to discount curves: "
+        f"P_full range = [{P_full_paths.nanmean().item():.6f}] "
+        f"({n_fin}/{n_paths*n_decode} states finite)"
+    )
+
+    # times exposed to the pricing layer — only the decoded steps
+    times = times_all[np.array(decode_indices)]
+
+    # ==========================================================
+    # Save simulation latent summary (mean + percentiles + subset)
+    # ==========================================================
+    z_np = z_paths.cpu().numpy()  # (n_paths, n_times, 2)
+
+    # --- Summary statistics across paths, per timestep (uses all steps) ---
+    percentiles = [5, 25, 50, 75, 95]
+    rows = []
+    for t_idx, t_val in enumerate(times_all):
+        z1 = z_np[:, t_idx, 0]
+        z2 = z_np[:, t_idx, 1]
+        row = {"time": t_val}
+        for p in percentiles:
+            row[f"z1_p{p}"] = np.percentile(z1, p)
+            row[f"z2_p{p}"] = np.percentile(z2, p)
+        row["z1_mean"] = z1.mean()
+        row["z2_mean"] = z2.mean()
+        rows.append(row)
+
+    df_sim_summary = pd.DataFrame(rows)
+
+    # --- Small subset of raw paths for trajectory plotting ---
+    n_subset = min(50, n_paths)
+    rng = np.random.default_rng(seed)
+    subset_idx = rng.choice(n_paths, size=n_subset, replace=False)
+    z_subset = z_np[subset_idx]  # (50, n_times, 2)
+
+    path_ids = np.repeat(np.arange(n_subset), len(times_all))
+    df_sim_subset = pd.DataFrame({
+        "path": path_ids,
+        "time": np.tile(times_all, n_subset),
+        "z_1": z_subset[:, :, 0].flatten(),
+        "z_2": z_subset[:, :, 1].flatten(),
+    })
+
+    sim_csv_dir = os.path.dirname(checkpoint_path)
+    ccy_tag = ccy_filter if ccy_filter else "all"
+
+    summary_path = os.path.join(sim_csv_dir, f"latent_sim_summary_{ccy_tag}_npaths{n_paths}_nsteps{n_steps}.csv")
+    subset_path = os.path.join(sim_csv_dir, f"latent_sim_subset_{ccy_tag}_npaths{n_paths}_nsteps{n_steps}.csv")
+
+    df_sim_summary.to_csv(summary_path, index=False)
+    df_sim_subset.to_csv(subset_path, index=False)
+    print("Saved simulation summary:", summary_path)
+    print("Saved simulation subset: ", subset_path)
+
+    annual_indices = list(range(1, P_full_paths.shape[-1]))  # tau = 1,2,...,tau_max
+    bundle_path = None
+
+    results_dict = {
+        "model": model,
+        "meta": meta,
+        "meta_full": meta_full,
+        "S0": S0,
+        "meta_row": meta_row,
+        "z0": z0,
+        "z_paths": z_paths,
+        "r_paths": r_paths,
+        "mu_paths": mu_paths,
+        "L_paths": L_paths,
+        "discount_paths": discount_paths,  # pathwise money-market discounting
+        "P_full_0": P_full_0,  # initial cross-sectional curve incl tau=0
+        "P_mkt_0": P_mkt_0,  # initial cross-sectional curve at 1..tau_max
+        "S_hat_0": S_hat_0,  # reconstructed swaps at t=0
+        "P_full_paths": P_full_paths,  # decoded from simulated z_paths
+        "P_mkt_paths": P_mkt_paths,  # decoded from simulated z_paths
+        "S_hat_paths": S_hat_paths,  # swap curves decoded from simulated z_paths
+        "times": times,
+        "z_train_mean": z_train_mean,
+        "z_train_cov": z_train_cov,
+        "z_train_std": z_train_std,
+        "tenors": tenors,
+        "tau_grid": tau_grid,
+        "annual_indices": annual_indices,
+        "bundle_path": bundle_path,
+    }
+
+    if show_plot:
+        plot_simulation_results(results_dict)
+
+    return results_dict
+
+
+# =============================================================================
+# DIFFERENTIABLE SIMULATION TO EXPIRY
+# =============================================================================
+
+def simulate_to_expiry_differentiable(
+    model,
+    z0          : torch.Tensor,     # (1, d)  — initial latent state, detached
+    n_steps     : int,
+    dt          : float,
+    n_paths     : int,
+    eps         : torch.Tensor,     # (n_paths, n_steps, d) — PRE-DRAWN N(0,1), no grad
+    k_override  = None,             # callable z -> drift; if None uses model.K (K^P)
+    sigma_scale = None,             # scalar tensor, (d,) vector tensor, or float; None → 1.0
+                                    # (d,) vector: per-dimension anisotropic scaling
+    antithetic  : bool = False,     # if True, n_paths must be even; mirrors eps to -eps
+    freeze_H    : bool = False,     # if True, H is evaluated under no_grad (freeze diffusion direction)
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Euler-Maruyama simulation under a Q-measure drift, with optional:
+      - antithetic variance reduction  (antithetic=True, n_paths even)
+      - trainable diffusion scaling    (sigma_scale=lm.sigma_scale)
+      - frozen H network               (freeze_H=True, grad only through sigma_scale and K^Q)
+
+    When antithetic=True the first n_paths//2 rows of eps are used as-is and the
+    second half are their negatives; pass eps of shape (n_paths//2, n_steps, d).
+
+    Returns
+    -------
+    z_T : (n_paths, d)   terminal latent state WITH gradients
+    D_T : (n_paths,)     pathwise discount factor exp(-∫r dt), detached
+    """
+    sqrt_dt = math.sqrt(dt)
+
+    if antithetic:
+        # eps is (half, n_steps, d); expand to full batch with mirrored paths
+        eps = torch.cat([eps, -eps], dim=0)     # (n_paths, n_steps, d)
+
+    z = z0.expand(n_paths, -1).clone()          # (n_paths, d)
+
+    with torch.no_grad():
+        r_prev = model.R(z).squeeze(-1)         # (n_paths,)
+
+    log_D = torch.zeros(n_paths, device=z.device, dtype=z.dtype)
+
+    for t in range(n_steps):
+        # Diffusion — optionally freeze H so grad flows only through sigma_scale
+        if freeze_H:
+            with torch.no_grad():
+                sigmas, rhos = model.H(z.detach())
+                L = L_from_sigmas_rhos(sigmas, rhos, validate=False)
+        else:
+            sigmas, rhos = model.H(z)
+            L = L_from_sigmas_rhos(sigmas, rhos, validate=False)
+
+        dW    = eps[:, t, :] * sqrt_dt                                  # (n_paths, d)
+        scale = sigma_scale if sigma_scale is not None else 1.0
+        shock = scale * torch.bmm(L, dW.unsqueeze(-1)).squeeze(-1)
+
+        # Drift — use k_override (K^Q) if provided, else model.K (K^P)
+        drift = (k_override(z) if k_override is not None else model.K(z)) * dt
+
+        z = z + drift + shock
+
+        # Trapezoid discount (detached — R is frozen, not optimised)
+        with torch.no_grad():
+            r_next = model.R(z.detach()).squeeze(-1)
+            log_D  = log_D - 0.5 * (r_prev + r_next) * dt
+            r_prev = r_next
+
+    D_T = log_D.exp().detach()   # (n_paths,)
+    return z, D_T
+
+
+if __name__ == "__main__":
+    run_simulation(checkpoint_path=checkpoint_path, latent_dim=4, n_steps=120, ccy_filter="EUR", show_plot=True)

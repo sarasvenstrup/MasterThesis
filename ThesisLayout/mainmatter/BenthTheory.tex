@@ -1,0 +1,372 @@
+%========================================================
+\chapter{Neural Networks for Pricing Operators}
+\label{chap:bridging}
+%========================================================
+
+% BRAINSTORM
+
+%The encoder-decoder model of Matin et al. and the Fréchet neural network framework of Benth et al. are both trying to approximate the same underlying object — an arbitrage-free pricing operator — but from fundamentally different directions. Matin et al. work in a finite-dimensional, data-driven, computationally concrete setting with hard no-arbitrage constraints baked in via ODEs. Benth et al. work in an infinite-dimensional, theoretically rigorous setting where no-arbitrage is inherited from the structure of the PDE. The two cannot be directly compared, but they are complementary: Benth provides the theoretical justification that such operators can be approximated, while Matin provides a practical architecture that does approximate them in a specific financial setting.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Chapters~\ref{chap:finance_theory} and~\ref{chap:ml_theory} introduced the two theoretical foundations used in this chapter: arbitrage-free pricing in a Markovian setting and approximation of continuous operators by neural networks on Banach spaces.
+
+The purpose of this chapter is to connect these ideas rigorously. We show that a class of arbitrage-free pricing maps can be viewed as continuous operators between Banach spaces, and therefore fall within the scope of Theorem~\ref{thm:UAT_inf}.
+
+In the Markov setting, the price of a contingent claim can be written as a deterministic function of time and state. We fix the terminal payoff, treat the short-rate specification as input, and study the resulting map from short-rate function to price function. The zero-coupon bond case is the main example for the subsequent chapters.
+
+The key step is to prove continuity of this pricing operator. We do so by identifying the arbitrage-free price function with the solution of a backward parabolic Cauchy problem and then applying Proposition~3.8 of \citet{Benth2024}.
+
+%Although later chapters use Musiela coordinates, that is, time to maturity $\tau = T-t$, the present chapter is formulated in the standard variables $(t,T)$ of current time and maturity date. This is the natural notation for the risk-neutral pricing formula and the associated backward pricing PDE. In the zero-coupon bond case, the same pricing relations can be rewritten in Musiela coordinates.
+
+%--------------------------------------------------------
+\section{Arbitrage-free pricing with fixed terminal payoff}
+\label{sec:pricing_pde}
+%--------------------------------------------------------
+
+We work on a filtered probability space supporting a $d$-dimensional Brownian motion $W$, and assume that under the risk-neutral measure $\mathbb{Q}$ the state variable $X_t \in \mathbb{R}^n$ is a time-homogeneous Markov diffusion with dynamics of the form \eqref{eq:multiSDE},
+\begin{equation}
+    dX_t \;=\; \mu(X_t)\,dt \,+\, \sigma(X_t)\,dW_t^{\mathbb{Q}},
+\label{eq:state_SDE}
+\end{equation}
+where $\mu : \mathbb{R}^n \to \mathbb{R}^n$ and $\sigma : \mathbb{R}^n \to \mathbb{R}^{n\times d}$ satisfy the Lipschitz and linear growth conditions of Proposition~\ref{prop:sde_existence}. The short rate is assumed to be a function of the state, $r_t = r(X_t)$, as is standard in Markovian factor models \citep[Ch.~22--24]{Bjork2020}.
+
+Consider a contingent claim with maturity $T$, terminal payoff $\phi(X_T)$, and no intermediate cash flows. In the Markov setting, its arbitrage-free price can be represented by a deterministic function
+\[
+    u : [0,T]\times\mathbb{R}^n \to \mathbb{R},
+\]
+where $u(t,x)$ denotes the price at time $t$ conditional on the current state being $X_t = x$. By the risk-neutral valuation formula of Chapter~\ref{chap:finance_theory}, using the bank account \eqref{eq:bank_account} as numeraire, we have
+\begin{equation}
+    u(t,x)
+    \;=\;
+    \mathbb{E}^{\mathbb{Q}}\!\left[
+        \exp\!\left(-\int_t^T r(X_s)\,ds\right)\phi(X_T)
+        \,\middle|\, X_t = x
+    \right].
+\label{eq:fixed_payoff_price}
+\end{equation}
+
+Thus $u$ is the arbitrage-free price function for the claim with terminal payoff $\phi(X_T)$.
+
+We now derive the corresponding pricing PDE satisfied by this function $u$. Let $B_t$ denote the bank account \eqref{eq:bank_account}, and define the discounted price process
+\[
+    M_t := B_t^{-1}u(t,X_t).
+\]
+By absence of arbitrage, $M_t$ is a $\mathbb{Q}$-martingale. Since $B_t^{-1}$ has finite variation and satisfies
+\[
+    dB_t^{-1} = -r_t B_t^{-1}\,dt,
+\]
+It\^o's formula (Theorem~\ref{thm:ito}) gives
+\begin{equation}
+    dM_t
+    =
+    B_t^{-1}\!\left[
+        \partial_t u(t,X_t)
+        + \mathcal{A}u(t,X_t)
+        - r(X_t)u(t,X_t)
+    \right]dt
+    +
+    B_t^{-1}\nabla_x u(t,X_t)^{\!\top}\sigma(X_t)\,dW_t.
+\label{eq:dM}
+\end{equation}
+Here $\mathcal{A}$ denotes the infinitesimal generator of $X$ under $\mathbb{Q}$ introduced in Remark~\ref{rem:generator}. Since $M_t$ is a martingale, its drift must vanish. Hence $u$ satisfies the terminal-value problem
+\begin{equation}
+\begin{cases}
+    \partial_t u(t,x) + \mathcal{A}u(t,x) - r(x)u(t,x) = 0,
+    & (t,x)\in[0,T)\times\mathbb{R}^n, \\[4pt]
+    u(T,x)=\phi(x),
+    & x\in\mathbb{R}^n.
+\end{cases}
+\label{eq:cauchy_r}
+\end{equation}
+The pricing equation is therefore a backward parabolic Cauchy problem.
+
+By the Feynman--Kac formula from Chapter~\ref{chap:finance_theory} (Theorem~\ref{thm:fk}), its classical solution is given by the probabilistic representation \eqref{eq:fixed_payoff_price}. Thus the same function \(u\) admits two equivalent interpretations: as the arbitrage-free price function of the claim, and as the solution of the associated backward pricing PDE.
+
+%--------------------------------------------------------
+\section{Continuity of the pricing operator}
+\label{sec:continuity}
+%--------------------------------------------------------
+
+We now change perspective and regard pricing as an operator. We keep the diffusion coefficients $\mu$ and $\sigma$, as well as the payoff function $\phi$, fixed, and let the short-rate function $r$ vary. For each admissible $r$, let $u$ denote the corresponding arbitrage-free price function, equivalently the corresponding solution of \eqref{eq:cauchy_r}. Fix also a time $t \in [0,T)$ and a compact set $K \subset \mathbb{R}^n$. We then define the \emph{pricing operator}
+\begin{equation}
+    \mathcal{P}_{t,K,\phi} : r \longmapsto u(t,\cdot)\big|_K.
+\label{eq:pricing_operator}
+\end{equation}
+Here $u(t,\cdot)|_K$ denotes the function
+\[
+    x \mapsto u(t,x), \qquad x \in K.
+\]
+Thus the input is the short-rate function $r$, while the output is the corresponding price function at time $t$, restricted to the state set $K$.
+
+Our goal is to show that this operator is continuous. To do so, we apply Proposition~3.8 of \citet{Benth2024}, which concerns backward parabolic Cauchy problems with a variable coefficient multiplying $u$.
+
+To match the notation of \citet{Benth2024}, define
+\[
+    c(x):=-r(x).
+\]
+Then the pricing PDE \eqref{eq:cauchy_r} can be written as
+\begin{equation}
+\begin{cases}
+    \partial_t u(t,x)+\mathcal{L}u(t,x)=0,
+    & (t,x)\in[0,T)\times\mathbb{R}^n,\\[4pt]
+    u(T,x)=\phi(x),
+    & x\in\mathbb{R}^n,
+\end{cases}
+\label{eq:cauchy}
+\end{equation}
+where
+\begin{equation}
+    \mathcal{L}u(t,x):=\mathcal{A}u(t,x)+c(x)u(t,x).
+\label{eq:Loperator}
+\end{equation}
+
+We now place the pricing PDE in the framework of \citet{Benth2024}. In their terminology, the function multiplying $u$ is the zeroth-order coefficient. In our setting, this coefficient is $c=-r$, while the spatial part of the equation is
+\[
+    \mathcal{A}u(t,x)
+    =
+    \frac12 \operatorname{tr}\!\big(\sigma(x)\sigma(x)^\top H_xu(t,x)\big)
+    + \mu(x)^\top \nabla_xu(t,x).
+\]
+
+Restricted to the present setting, Proposition~3.8 of \citet{Benth2024} applies under the following assumptions:
+
+\begin{description}
+    \item[Spatial coefficients.] The coefficients of the spatial operator $\mathcal{A}$ satisfy the ellipticity and regularity assumptions imposed in \citet{Benth2024}.
+    
+    \item[Payoff function.] The payoff function $\phi$ is continuous on $\mathbb{R}^n$ and satisfies a polynomial growth condition:
+    \[
+        |\phi(x)| \leq \kappa(1+|x|)^\gamma,
+        \qquad x\in\mathbb{R}^n,
+    \]
+    for some constants $\kappa,\gamma>0$.
+    
+    \item[Coefficient space.] The coefficient $c$ belongs to a Sobolev space $W^{m,p}(\mathbb{R}^n)$, where $m$ and $p$ are chosen such that the Sobolev--Morrey embedding
+    \[
+        W^{m,p}(\mathbb{R}^n)\hookrightarrow C^{0,\lambda}(\mathbb{R}^n)
+    \]
+    holds for some $0<\lambda\leq1$.
+\end{description}
+
+Here $W^{m,p}(\mathbb{R}^n)$ denotes the Sobolev space of functions whose weak derivatives up to order $m$ belong to $L^p(\mathbb{R}^n)$, as introduced in Chapter~\ref{chap:ml_theory}. Under these assumptions, \citet{Benth2024} show that the solution map from the coefficient $c$ to the price function restricted to a compact set $K\subset\mathbb{R}^n$ is continuous from $W^{m,p}(\mathbb{R}^n)$ into $C(K)$.
+
+\paragraph{Verification of the assumptions}
+
+The PDE \eqref{eq:cauchy} is of the form considered in \citet[Prop.~3.8]{Benth2024}. Its second-order part is
+\[
+    \frac12 \operatorname{tr}\!\big(\sigma\sigma^\top H_xu\big),
+\]
+its first-order part is
+\[
+    \mu^\top \nabla_xu,
+\]
+and its coefficient multiplying $u$ is $c=-r$. The required assumptions on the spatial coefficients are satisfied by the standing conditions on $\mu$ and $\sigma$ from Chapter~\ref{chap:finance_theory}. The required assumption on the payoff function is satisfied by the standing assumptions on $\phi$. Finally, we restrict attention to inputs $r$ such that $c=-r$ belongs to $W^{m,p}(\mathbb{R}^n)$, with $m$ and $p$ chosen so that the Sobolev--Morrey embedding holds. Since the map $r\mapsto -r$ is continuous, Proposition~3.8 of \citet{Benth2024} applies equivalently with $r$ as input.
+
+We may therefore state the result in our notation.
+
+\begin{proposition}[Continuity of the pricing operator; {\citealp[Prop.~3.8]{Benth2024}}]
+\label{prop:continuity}
+Under the assumptions stated above, the pricing operator
+\[
+    \mathcal{P}_{t,K,\phi}:W^{m,p}(\mathbb{R}^n)\longrightarrow C(K),
+    \qquad
+    r\longmapsto u(t,\cdot)\big|_K,
+\]
+is continuous.
+\end{proposition}
+
+This is an immediate reformulation of \citet[Prop.~3.8]{Benth2024} under the identification $c=-r$.
+
+%--------------------------------------------------------
+\section{Approximation by neural networks}
+\label{sec:approximation}
+%--------------------------------------------------------
+
+Proposition~\ref{prop:continuity} provides the required bridge to Chapter~\ref{chap:ml_theory}. Since $\mathcal{P}_{t,K,\phi}$ is a continuous operator between the Banach spaces $W^{m,p}(\mathbb{R}^n)$ and $C(K)$, the universal approximation theorem on Banach spaces (Theorem~\ref{thm:UAT_inf}) applies directly. Hence, for every compact set $\mathcal{K}\subset W^{m,p}(\mathbb{R}^n)$ and every $\varepsilon>0$, there exists a Banach-space neural network of the form \eqref{eq:inf_network_Y} whose uniform approximation error over $\mathcal{K}$ is at most $\varepsilon$.
+
+It follows that pricing operators with fixed terminal payoff may be approximated arbitrarily well on compact subsets of the input space by neural networks of the kind introduced in Chapter~\ref{chap:ml_theory}. In other words, once the short-rate specification is viewed as the input and the resulting price function as the output, the pricing problem falls within the scope of the Banach-space approximation theory developed earlier.
+
+Thus zero-coupon bond pricing is a special case of the general pricing-operator framework developed in this chapter. For $\phi\equiv 1$, the pricing operator becomes
+\[
+    \mathcal{P}_{t,K,1}: r \longmapsto \bigl(x\mapsto P(t,x)\bigr)\big|_K,
+\]
+where $P$ denotes the arbitrage-free bond price. In the subsequent chapters, this bond-pricing function is expressed in Musiela coordinates, with time to maturity $\tau=T-t$. This is the case of primary interest, where we use the approximation result above to study the map from a short-rate specification to the corresponding arbitrage-free bond-pricing function on a compact state set.
+
+
+\chapter{Matches and mismatches}
+
+The purpose of this section is to give a short overview of how the affine-inspired encoder--decoder model relates to the operator-theoretic framework of Benth. The aim is not to claim that the encoder--decoder model is directly covered by their theorem, but to identify the main conceptual similarities and technical differences.
+
+\section{Matches}
+
+\subsection{Both frameworks concern arbitrage-free pricing.}
+
+In both frameworks, the central financial idea is that bond prices are determined by
+risk-neutral state dynamics and a short-rate specification:
+\[
+    \text{state dynamics} + \text{short rate}
+    \quad \Longrightarrow \quad
+    \text{bond prices}.
+\]
+Thus, both approaches use financial structure rather than treating the price curve as
+an arbitrary function to be fitted.
+
+\subsection{Both frameworks can be viewed as operator-learning problems.}
+
+In the Benth framework, the pricing problem is formulated as an operator between
+function spaces, for example
+\[
+    r \longmapsto u(t,\cdot),
+\]
+where \(r\) is a short-rate function and \(u\) is the corresponding price function.
+
+In the encoder--decoder model, the decoder can be viewed as a map from a latent state
+to a bond-price curve:
+\[
+    z \longmapsto P_\theta(z,\cdot).
+\]
+Including the encoder, the full model maps observed swap rates to a bond-price curve:
+\[
+    \mathbf S_t
+    \longmapsto
+    P_\theta(E_\theta(\mathbf S_t),\cdot).
+\]
+
+\subsection{Both frameworks produce price functions.}
+
+In the Benth framework, the output is typically a state-to-price function,
+\[
+    x \longmapsto u(t,x).
+\]
+In the zero-coupon bond case, this may be written as
+\[
+    x \longmapsto P(t,T,x).
+\]
+
+In the encoder--decoder model, the output is a maturity-to-price curve,
+\[
+    \tau \longmapsto P_\theta(z,\tau).
+\]
+These are functions of different variables, but they are both price functions.
+
+\subsection{Both frameworks support a structured learning viewpoint.}
+
+The Benth framework shows that, under suitable assumptions, arbitrage-free pricing
+maps can be treated as continuous operators between function spaces and approximated
+by suitable neural networks.
+
+The encoder--decoder model follows the same philosophy in a computational setting:
+it learns a latent representation from market data and then generates an
+arbitrage-free bond curve through a structured decoder.
+
+
+\section{Mismatches}
+
+\subsection{The input spaces are different.}
+
+In the Benth framework, the input is a function, for example
+\[
+    r\in W^{m,p}(\mathbb R^n).
+\]
+In the encoder--decoder model, the input is finite-dimensional: either the observed
+swap-rate vector
+\[
+    \mathbf S_t\in\mathbb R^M,
+\]
+or, at the decoder level, the latent state
+\[
+    z_t\in\mathbb R^\ell.
+\]
+Hence, the encoder--decoder model does not directly approximate the operator
+\[
+    r\mapsto u(t,\cdot).
+\]
+
+\subsection{The output variables are different.}
+
+In the Benth framework, the output is naturally a function of the state variable,
+\[
+    x\mapsto u(t,x).
+\]
+In the encoder--decoder model, the output is a function of maturity,
+\[
+    \tau\mapsto P_\theta(z,\tau).
+\]
+Thus, the two frameworks produce price functions of different variables.
+
+\subsection{The neural-network formalisms are different.}
+
+The Benth framework uses neural networks formulated on Banach or Fréchet spaces.
+The affine maps, activations, and outputs are defined at the level of function
+spaces.
+
+The encoder--decoder model also has a function-valued interpretation, since for fixed
+\(z\) it produces a full curve
+\[
+    P_\theta(z,\cdot).
+\]
+However, this curve is represented through a pointwise parametrisation such as
+\[
+    (z,\tau)\mapsto G_\theta(z,\tau),
+\]
+followed by the ODE-based no-arbitrage construction. Hence, the mismatch is not that
+the encoder--decoder model lacks function-valued outputs, but that it is not written
+in the same Banach-space neural-network formalism as the Benth theorem.
+
+\subsection{The activation assumptions are different.}
+
+The Benth theorem requires an activation function satisfying a separation property on
+a Banach space. The encoder--decoder model uses the centered soft-step scalar
+activation
+\[
+    \psi(x)=\frac{1}{1+e^{-x}}-\frac12.
+\]
+It is not automatic that this scalar activation satisfies the activation assumptions
+required in the Banach-space theorem.
+
+\subsection{The short rate plays a different role.}
+
+In the Benth framework, the short-rate function is an input to the pricing operator.
+In the encoder--decoder model, the short rate is learned internally as a function of
+the latent state:
+\[
+    r(t)=\widetilde r(z_t).
+\]
+Thus, the short rate is external in the Benth framework but internal to the learned
+encoder--decoder structure.
+
+\subsection{Continuous curve versus finite maturity grid.}
+
+The encoder--decoder model can be interpreted as producing a continuous curve
+\[
+    \tau\mapsto P_\theta(z,\tau).
+\]
+However, in implementation the model is trained and evaluated only on finitely many
+maturities,
+\[
+    \tau_1,\ldots,\tau_M.
+\]
+Therefore, the training loss controls errors only on the maturity grid, not
+automatically on the full continuous curve.
+
+\subsection{The implemented decoder includes numerical ODE error.}
+
+The theoretical objects are continuous-time pricing maps. In the encoder--decoder
+implementation, the bond curve is generated by solving ODEs numerically. Hence the
+implemented object is more accurately written as
+\[
+    P_{\theta,h}(z,\tau),
+\]
+where \(h\) denotes the ODE step size. This numerical approximation error is not part
+of the abstract operator-theoretic theorem.

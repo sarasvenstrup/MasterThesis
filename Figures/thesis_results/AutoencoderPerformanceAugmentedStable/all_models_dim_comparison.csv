@@ -1,0 +1,13 @@
+Model,ell,IS_Avg,IS_Median,IS_Max,OOS_Avg,OOS_Median,OOS_Max,selected
+Baseline,\textbf{2},\textbf{10.46},\textbf{9.57},\textbf{13.86},\textbf{16.42},\textbf{10.77},\textbf{77.00},True
+,3,11.61,10.89,16.24,37.21,13.11,632.57,False
+,4,9.31,8.99,13.89,49.07,9.95,691.76,False
+Stable,2,138.73,9.29,2325.76,94.78,10.85,1811.69,False
+,3,10.48,10.31,13.44,19.18,12.04,145.73,False
+,\textbf{4},\textbf{8.06},\textbf{7.72},\textbf{10.70},\textbf{11.61},\textbf{8.59},\textbf{24.22},True
+Augmented,\textbf{2},\textbf{10.91},\textbf{10.06},\textbf{15.57},\textbf{17.06},\textbf{11.43},\textbf{70.79},True
+,3,10.45,11.68,16.73,25.34,10.62,246.90,False
+,4,8.44,8.80,12.23,49.27,9.09,622.78,False
+Aug.+Stable,2,14.52,13.88,20.14,22.47,16.23,53.07,False
+,\textbf{3},\textbf{8.70},\textbf{8.12},\textbf{14.60},\textbf{20.77},\textbf{10.35},\textbf{157.69},True
+,4,9.63,9.25,14.42,37.18,10.19,361.35,False

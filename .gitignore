@@ -1,0 +1,22 @@
+# Claude Code session data
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# PyCharm
+.idea/
+
+# macOS
+.DS_Store
+
+# Large output folders (kept locally, not needed in git/Overleaf)
+Figures/KalmanBenchmarkResults/
+
+# Private data — Bloomberg raw data, not for public distribution
+SwapData/

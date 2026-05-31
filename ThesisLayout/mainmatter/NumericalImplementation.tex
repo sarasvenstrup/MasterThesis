@@ -1,0 +1,134 @@
+\chapter{Numerical Implementation and Estimation Strategy}
+\label{chap:numerical_implementation}
+
+This section describes how the affine-inspired encoder--decoder framework developed in Section~4 is implemented numerically and trained on the data described in Section~5. The implementation follows the theoretical construction closely: the encoder maps observed swap rates to a latent state, the decoder produces the quantities entering the no-arbitrage ODE system, and the resulting bond prices are transformed into model-implied swap rates. Since the arbitrage restrictions are embedded directly in the bond-pricing structure, they remain satisfied throughout.
+
+The model is implemented in Python using the PyTorch library, which provides efficient tensor-based computation and automatic differentiation, allowing the entire pricing pipeline, including the numerical ODE solver, to be treated as a differentiable computational graph. In the following, we set $M=8$ corresponding to the maturity grid
+\[
+\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
+\]
+and consider latent dimensions $\ell \in \{1,2,3,4\}$.
+
+\section{Forward Pass and Numerical Solution}
+\label{sec:forward_pass_numerical_solution}
+
+For each observation date $t$, the input consists of the observed par swap rate vector $\mathbf{S}_t \in \mathbb{R}^8$. The forward pass mirrors the theoretical architecture introduced in Chapter~\ref{chap:encoderdecodermodel}. First, the observed swap curve is encoded into a latent state
+\[
+z_t = A_1 \mathbf{S}_t,
+\qquad
+z_t \in \mathbb{R}^\ell,
+\]
+where $A_1 \in \mathbb{R}^{\ell \times 8}$ is the learned encoder matrix.
+
+Conditional on $z_t$, the decoder evaluates $\mathcal{G}(z_t,\tau)$ together with the parameterisations of the drift $\mu(z_t)$, the volatility matrix $\sigma(z_t)$, and the short rate $\tilde r(z_t)$. The drift is modelled as an affine transformation of the latent state, while the volatility and short-rate functions are obtained from the neural networks $\mathcal{H}$ and $\mathcal{R}$, respectively. The volatility network output is constructed so that the instantaneous covariance matrix
+\[
+\Sigma(z_t) = \sigma(z_t)\sigma(z_t)^\top
+\]
+is positive semidefinite by construction.
+
+Using automatic differentiation, the derivatives of $\mathcal{G}(z_t,\tau)$ required for the coefficient functions $\alpha_{z_t}(\tau)$, $\beta_{z_t}(\tau)$, and $\gamma_{z_t}(\tau)$ are computed on
+\[
+\tau \in \{0,1,\dots,30\}.
+\]
+The inclusion of $\tau=0$ allows the boundary conditions $A_{z_t}(0)=B_{z_t}(0)=0$ to be imposed directly.
+
+For each realised latent state $z_t$, the coupled ODE system
+\begin{align}
+\partial_\tau B_{z_t}(\tau) &= \alpha_{z_t}(\tau) B_{z_t}(\tau) + \beta_{z_t}(\tau), \label{eq:B_ode_num} \\
+\partial_\tau A_{z_t}(\tau) &= B_{z_t}(\tau)^2 \gamma_{z_t}(\tau), \label{eq:A_ode_num}
+\end{align}
+is solved numerically on this grid using a fourth-order Runge--Kutta scheme with the $3/8$-rule.
+
+The resulting functions $A_{z_t}(\tau)$ and $B_{z_t}(\tau)$ are substituted into the bond-price formula~\eqref{affineinspiredzcbprices}, yielding zero-coupon bond prices on maturities $\tau \in \{1,\dots,30\}$. Model-implied swap rates are then obtained from these bond prices using~\eqref{estimatedswaprates}, evaluated at the $M=8$ observed maturities.
+
+Each forward pass therefore maps an observed swap curve $\mathbf{S}_t$ to a reconstructed swap curve $\widetilde{\mathbf{S}}_t$ through the sequence
+\[
+\mathbf{S}_t
+\longrightarrow
+z_t
+\longrightarrow
+(\mathcal{G},\mu,\sigma,\tilde r)
+\longrightarrow
+(\alpha,\beta,\gamma)
+\longrightarrow
+(A,B)
+\longrightarrow
+P(z_t,\tau)
+\longrightarrow
+\widetilde{\mathbf{S}}_t.
+\]
+
+Because all steps are implemented using differentiable tensor operations, the entire pricing map remains differentiable with respect to the model parameters.
+
+\section{Numerical Arbitrage Diagnostics}
+\label{sec:numerical_arbitrage_diagnostics}
+
+Although the decoder is constructed so that the no-arbitrage restriction is satisfied by design, it is useful to verify this numerically after solving the ODE system. For each observation date $t$ and maturity $\tau$, we define the bond-pricing residual
+\begin{equation}
+R_t(\tau)
+=
+- \tilde r(z_t)
+- \partial_\tau A_{z_t}(\tau)
++ \mathcal{G}(z_t,\tau)\partial_\tau B_{z_t}(\tau)
++ B_{z_t}(\tau)\Xi_t(\tau)
++ B_{z_t}(\tau)^2 \gamma_{z_t}(\tau),
+\label{eq:bond_pricing_residual}
+\end{equation}
+where
+\begin{equation}
+\Xi_t(\tau)
+=
+\partial_\tau \mathcal{G}(z_t,\tau)
+-
+\nabla_z \mathcal{G}(z_t,\tau)^\top \mu(z_t)
+-
+\frac{1}{2}
+\mathrm{Tr}\!\left(\sigma(z_t)^\top H_z \mathcal{G}(z_t,\tau)\sigma(z_t)\right).
+\label{eq:Xi_term}
+\end{equation}
+If the decoded bond prices satisfy the no-arbitrage pricing relation exactly, then $R_t(\tau)=0$ for all maturities. A scale-normalised approximate Sharpe-ratio diagnostic is defined as
+\begin{equation}
+\mathrm{SR}_t(\tau) = \frac{R_t(\tau)}{\tau \bar{\sigma}}, \qquad \bar{\sigma} = 0.006.
+\label{eq:approx_sharpe_ratio}
+\end{equation}
+These diagnostics are computed post-estimation on the full grid $\tau=1,\dots,30$ and are not included in the training loss.
+
+\section{Estimation Objective}
+\label{sec:estimation_objective}
+
+Let $\Omega$ denote the collection of all trainable parameters. The model is trained by minimising the mean squared reconstruction error
+\begin{equation}
+\mathcal{L}(\Omega)
+=
+\frac{1}{N}
+\sum_{t=1}^{N}
+\sum_{\tau \in \mathcal{M}}
+\left(
+S_t(\tau) - \widetilde{S}_t(\tau;\Omega)
+\right)^2,
+\label{eq:training_loss}
+\end{equation}
+where $N$ is the number of observations and $\mathcal{M}=\{1,2,3,5,10,15,20,30\}$ is the maturity grid. The estimator is
+\begin{equation}
+\hat{\Omega}
+=
+\operatorname*{arg\,min}_{\Omega}\mathcal{L}(\Omega).
+\label{eq:estimator}
+\end{equation}
+
+\section{Gradient-Based Optimisation}
+\label{sec:gradient_based_optimization}
+
+The optimisation problem~\eqref{eq:training_loss} is solved using mini-batch stochastic gradient descent with the Adam optimiser. Parameter updates are obtained by backpropagating the loss through the full computational graph. A key feature is that differentiation extends through the numerical ODE solver: since the Runge--Kutta recursion is implemented using elementary tensor operations, automatic differentiation propagates gradients through
+\begin{align*}
+\text{Step 1} \quad & \text{the encoder mapping } A_1\mathbf{S}_t, \\
+\text{Step 2} \quad & \text{the parameterisations of } \mathcal{G}(z_t,\tau),\ \mu(z_t),\ \sigma(z_t),\ \text{and } \tilde r(z_t), \\
+\text{Step 3} \quad & \text{the coefficient functions } \alpha_{z_t}(\tau),\ \beta_{z_t}(\tau),\ \text{and } \gamma_{z_t}(\tau), \\
+\text{Step 4} \quad & \text{the numerical solution for } A_{z_t}(\tau)\ \text{and } B_{z_t}(\tau), \\
+\text{Step 5} \quad & \text{and the final transformation from bond prices to swap rates.}
+\end{align*}
+Each parameter update therefore reflects the effect of the corresponding model component on the entire reconstructed term structure.
+
+
+\paragraph{Conclusion.}
+The fitted parameters $\hat{\Omega}$ define a term structure model that simultaneously extracts a low-dimensional representation of the observed swap curve and prices zero-coupon bonds consistently with the risk-neutral no-arbitrage condition.

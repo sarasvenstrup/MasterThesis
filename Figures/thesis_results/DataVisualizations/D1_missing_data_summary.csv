@@ -1,0 +1,10 @@
+Currency,Currency name,First date,Last date,Total obs,Missing curves,Incomplete curves
+AUD,Australian Dollar,2004-03-31,2024-02-29,240,0,0
+CAD,Canadian Dollar,2004-03-31,2024-02-29,234,6,0
+DKK,Danish Krone,2004-03-31,2024-02-29,238,2,0
+EUR,Euro,2004-03-31,2024-02-29,240,0,0
+JPY,Japanese Yen,2009-08-31,2024-02-29,175,0,0
+NOK,Norwegian Krone,2004-03-31,2024-02-29,229,11,0
+SEK,Swedish Krona,2004-03-31,2024-02-29,240,0,0
+GBP,British Pound,2011-05-31,2021-11-30,127,0,0
+USD,United States Dollar,2009-09-30,2023-06-30,166,0,0

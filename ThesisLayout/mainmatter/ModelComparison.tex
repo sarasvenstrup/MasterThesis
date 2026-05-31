@@ -1,0 +1,182 @@
+
+\chapter{From Theory to Practice: Neural Approximation and Model Comparison}
+\label{chap:model_comparison}
+
+%Neural Approximation and Model Design for Continuous Term Structures
+
+% We need another title, as it is also discussing over things that model extensions like benth:
+
+% suggestions:
+% - Discussion: Structure, Flexibility, and Generalisation
+% - Reflections on the Encoder--Decoder Framework
+% - What the Encoder--Decoder Can and Cannot Learn
+
+
+% NOTER:
+% Do we also need to comment that we get similar results to ROLF? and that we find that neural networks are in fact able to reconstruct inputted swap rates, and output arbitrage free term structure of yield curves. Discuss the continuity of the yield curve without interpolation regarding Andreasen, by assuming an affin-inspired term structure on the zero coupon bond prices.
+
+
+% Måske mangler vi også lige at placere os i litteraturen som en del af introductionen?
+% for example like Sokol showed, the model extrapolates better for other currencies when it is modelled on all currencies. We see this effect with curve variants in general over time, where when the model is trained on lesser varied curve data it has a harder time extrapolating.. Or something like that.
+
+
+%This chapter evaluates model specifications considered in this thesis. The baseline model, assessed in Chapter~\ref{chap:evaluation}, is our implementation of the encoder-decoder framework of \citet{MatinWanPoulsen2025}. The stable model, introduced in Chapter~\ref{chap:simulation}, extends it by imposing restrictions on the neural networks to improve simulation behaviour and as result out-of-sample generalisation. Both models, however, exhibit difficulty with negative-rate curves. We hypothesise that this difficulty may be rooted in properties of the linear encoder, and therefore proposed the \textit{augmented model} to address it. Specifically, by augmenting the input vector with slope and curvature features. Combining the augmentation with the stability restrictions yields a fourth specification, the \textit{augmented stable model}. All four models are then evaluated jointly on in-sample fit and out-of-sample generalisation to assess how each modification improves upon the baseline.
+
+%Secondly, it is discuss the findings of the thesis according to model extensions, and how they show what is important to use an encoder--decoder model for the modelling of interest rate term structures. 
+
+% SO maybe  more drastic mesaure need to be done than just giving the linear encoder more information that is not scalable, maybe it just needs to not be linear? 
+
+% ----- 
+
+% HUSK FREDE (Noget jeg lige kom i tanke om imens jeg skriver conclusion): Vores resultsater viser det samme som Rolf over foreskellige currenceis for 2 fimeniosner, men dette er ogsp højere end jesper andreasen så det understøtter det at der er et tradeoff mellem reconstruction of arbitrage-frihed agtig?
+
+This chapter places the models considered throughout this thesis in a broader theoretical context and subsequently compares them. 
+
+%We first relate the encoder--decoder framework to neural approximation of backward parabolic Cauchy problems.  We then compare two approaches to improving the representation of difficult term-structure shapes: supplying additional slope and curvature information, and imposing structural restrictions on the latent dynamics.
+
+% Okay so the story is... we have this problem of a state to curve map. orginial results UAT does not apply. but Benth consider operators which are a solution to this class of cauchy problems can approximate which are similar to the ones we are considering. they exactly show that UAt can be extended to operators which are continuous and further that the class of operators of our interest is exactly that. 
+
+\section{Neural Approximation of State-to-Curve Maps}
+\label{sec:state_to_curve_approximation}
+
+In the encoder--decoder framework studied in this thesis, the generation of a continuous term structures are performed by the decoder. Let \(\theta\) denote the learned model parameters of the decoder. Once these parameters have been learned during training, the decoder defines the map
+\[
+    D_\theta:\mathbb{R}^{\ell}\to C([0,\tau_{\max}]),
+    \qquad
+    z\mapsto P_\theta(z,\cdot),
+\]
+where \(P_\theta(z,\cdot)\) is the maturity-dependent bond-price curve generated from the latent state \(z\), and \(C([0,\tau_{\max}])\) denotes the space of continuous real-valued functions on some prespecified time-to-maturity interval. We refer to \(D_\theta\) as a state-to-curve map.
+
+A natural question is whether a state-to-curve map of this form can be approximated by a neural network. The standard universal approximation theorem (Theorem~\ref{thm:UAT} in Chapter \ref{chap:ml_theory}) guarantees that a sufficiently wide neural network with one layer can approximate continuous functions between finite-dimensional spaces. It therefore does not directly provide an approximation result in the encoder-decoder framework, where the codomain is a function space. A relevant extension, however, is provided by \citet{Benth2023}, who establish a universal approximation result for continuous maps with function-valued inputs or outputs.
+
+Building on this result, \citet{Benth2024} study the solution operator associated with a class of backward parabolic Cauchy problems. They show, under suitable regularity assumptions, that this solution operator is continuous and therefore meets the conditions of the extended universal approximation theorem. Consequently, it can be approximated on compact sets by a neural network. This is relevant here because the no-arbitrage zero-coupon bond-pricing PDE in \eqref{eq:bond_pricing_pde} (Chapter \ref{chap:evaluation}) is a special case of the backward parabolic Cauchy problems considered by \citet{Benth2024}.\footnote{In the notation of \citet{Benth2024}, the zero-coupon bond-pricing problem corresponds to the special case with terminal condition \(\phi\equiv 1\), forcing term \(f\equiv 0\) and zeroth-order coefficient $c=r$, with $r$ being the short rate.} 
+
+However, the result of \citet{Benth2024} is not directly applicable to the state-to-curve map $D_\theta$. A direct application of their result would concern a map from a short-rate specification to the corresponding bond-price curve. In the present framework, by contrast, the short-rate specification is learned as part of the model. The decoder then takes the current finite-dimensional latent state as input, not the short rate, and returns the bond-price curve. Their results therefore do not provide a direct approximation guarantee for the specific encoder--decoder framework used in this thesis.
+
+Nevertheless, the result of \citet{Benth2024} is of theoretical interest as it suggests that neural networks are in principle capable of approximating bond-price curves, even if it does not directly apply to the decoder used in this thesis. A more detailed comparison is provided in Appendix~\ref{app:operator_learning_relation}.
+
+%Thus, the results of \citet{Benth2024} provide a theoretical perspective on learning bond-price curves as function-valued objects, but do not give a direct approximation guarantee for the particular decoder used in this thesis. A more detailed comparison is provided in Appendix~\ref{app:benth_comparison}.
+
+\section{Comparing Curve-Shape Augmentation and Stability Restrictions}
+\label{sec:comparing_model_modifications}
+
+We now turn to the empirical comparison of the models considered throughout this thesis, focusing on two approaches to improve upon the baseline reconstruction accuracy. The first is the augumented model, introduced in Chapter~\ref{chap:augmentedmodel}, which makes slope and curvature information explicit in the model input and training objective. The second is the stable model, introduced in Chapter~\ref{chap:simulation}, which imposes stability restrictions on the neural networks governing the latent dynamics. To complete the comparison, we also construct an \textit{augmented stable} model, which combines the input augmentation with the stable architecture. The four model specifications form a $2\times 2$ design summarised in Table~\ref{tab:variants_2x2}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+& \textbf{Without augmentation} & \textbf{With augmentation} \\
+\midrule
+\textbf{Unrestricted architecture} & Baseline & Augmented \\
+\textbf{Restricted architecture}       & Stable   & Augmented Stable \\
+\bottomrule
+\end{tabular}
+\caption{The four model specifications as a $2\times2$ design, combining architecture choice (rows) with slope and curvature augmentation of the input (columns).}
+\label{tab:variants_2x2}
+\end{table}
+
+Before comparing the performance of the models, we first establish the optimal latent dimension for each model. For each model, this is selected as the smallest number of factors that captures the variation in the swap curves without overfitting out-of-sample. This yields two latent factors for the baseline and augmented models, four for the stable model, and three for the augmented stable model. See Table~\ref{tab:all_models_dim_comparison} in Appendix~\ref{app:modelselectiontable} for details.
+
+
+
+
+We begin the empirical comparison by examining reconstruction quality across four curve observations chosen to span the range of shapes in the data, from a normal upward-sloping curve to the most challenging negative and crossing configurations, as shown in Figure~\ref{fig:all_models_fitted_vs_actual}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/failure_modes_model_comparison.png}
+    \caption{Reconstructed swap-rate curves for the baseline ($\ell=2$), stable ($\ell=4$), augmented ($\ell=2$), and augmented stable ($\ell=3$) models on four representative curve observations. The top-left panel shows a normal EUR curve (2015-03-31), well represented in the training data. The remaining panels show a deeply negative EUR curve (2020-10-30, top right), a crossing JPY curve (2016-09-30, bottom left), and an inverted CAD curve (2023-01-31, bottom right). Annotated RMSE values (bps) are reported for each model as B (baseline), S (stable), A (augmented), and AS (augmented stable). Swap rates are in percentage points.}
+    \label{fig:all_models_fitted_vs_actual}
+\end{figure}
+
+For the normal EUR curve from 2015, all four models reconstruct the overall 
+shape well, as expected for a curve type that is well represented in the training data. The three remaining panels are more revealing. Across the deeply negative EUR curve, the crossing JPY curve, and the inverted CAD curve, the stable model consistently outperforms its unrestricted counterpart, with baseline errors ranging from 19.7 to 50.0 bps reduced to between 5.4 and 
+19.9 bps. Augmentation alone does not replicate this improvement. On the crossing and inverted panels, the augmented model produces errors close to 
+those of the baseline, showing that the explicit slope and curvature inputs do not compensate for the absence of architectural stability constraints. The augmented stable model achieves the lowest errors across the three challenging panels, suggesting that the two modifications are complementary rather than 
+substitutes.
+
+
+
+
+
+This qualitative picture is confirmed quantitatively in Table~\ref{tab:all_models_is_oos_summary}, which reports the reconstruction accuracy of all four models under the rolling-window scheme. Considering first the in-sample results, the models with the stable architecture perform better than those with the unrestricted architecture, reducing the average RMSE by approximately \(2\) bps.
+
+\begin{table}[H]
+\centering
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/all_models_is_oos_summary.csv}\datmodelsummary
+{\footnotesize
+\pgfplotstabletypeset[
+  columns={Model, ell, IS_Avg, IS_Median, IS_Max, OOS_Avg, OOS_Median, OOS_Max},
+  columns/Model/.style={column name={Model}, string type, column type=l},
+  columns/ell/.style={column name={$\ell$}, string type, column type=c},
+  columns/IS_Avg/.style={column name={Avg}, string type, column type=r},
+  columns/IS_Median/.style={column name={Median}, string type, column type=r},
+  columns/IS_Max/.style={column name={Max}, string type, column type=r},
+  columns/OOS_Avg/.style={column name={Avg}, string type, column type=r},
+  columns/OOS_Median/.style={column name={Median}, string type, column type=r},
+  columns/OOS_Max/.style={column name={Max}, string type, column type=r},
+  every head row/.style={
+    before row={%
+      \toprule
+      & & \multicolumn{3}{c}{IS RMSE (bps)} & \multicolumn{3}{c}{OOS RMSE (bps)} \\
+      \cmidrule(lr){3-5}\cmidrule(lr){6-8}
+    },
+    after row=\midrule
+  },
+  every last row/.style={after row=\bottomrule},
+]{\datmodelsummary}
+}
+\caption{In-sample and out-of-sample RMSE (bps) for the four models across 18 rolling windows with 5-year training and 6-month test periods. IS columns report the average, median, and maximum in-sample RMSE across the 18 training windows. OOS columns report the corresponding statistics across the 18 test windows.}
+\label{tab:all_models_is_oos_summary}
+\end{table}
+
+%\textcolor{red}{MAYBE NOT THAT MUCH DETAILS ON WHAT AUG MEAN AND STBALE MEAN, BECAUASE WE HAVE ALREADY EXPLAINED THAT IN THE PREVIOUS CHAPTERS}
+ 
+Turning to the out-of-sample results, the stable model achieves an average RMSE of \(11.61\) bps, compared with \(16.42\) bps for the baseline model and \(17.06\) bps for the augmented model. The improvement is particularly pronounced in the maximum out-of-sample error, which stands at \(24.22\) bps for the stable model, compared with \(77.00\) bps for the baseline and \(70.79\) bps for the augmented model, suggesting that the stability restrictions not only reduce average reconstruction errors but also substantially limit extreme reconstruction failures across the rolling evaluation windows. The median corroborates this, and since it is less sensitive to the few curve shapes that are difficult to reconstruct, it further confirms that the stable model performs better across the full range of curve shapes encountered in the evaluation windows. 
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmentedStable/oos_regime_scatter_all_models.png}
+    \caption{Per-observation out-of-sample RMSE (bps) over the rolling evaluation period (2015--2024) for all four models, coloured by curve type (see Table~\ref{tab:curve_type_counts}). Each point represents one curve observation from the rolling test windows. Observations above 215 bps are clipped. The stacked bars show the quarterly count of clipped observations by curve type, measured on the right axis.}  
+    \label{fig:oos_regime_scatter_all_models}
+\end{figure}
+
+While summary statistics can obscure how reconstruction errors are distributed across individual curves, Figure~\ref{fig:oos_regime_scatter_all_models} shows a scatter plot of the out-of-sample RMSE for each reconstructed curve, colored by curve type, where bars represent curves with errors above \(215\) bps. All models struggle during the 2015-2016 period, when the rolling windows contained very few negative-rate curves in the training data, with the stable model exhibiting the lowest errors during this period.
+
+
+In particular, the augmented stable model produces the largest reconstruction errors during this period, and struggles more than the other models not only here but across the other difficult regions of the sample. This suggests that imposing the stable architecture restrictions and the slope and curvature augmentation simultaneously over-constrains the model, resulting in overfitting. This is further evidenced by the large generalisation gap in Table~\ref{tab:all_models_is_oos_summary}, where the augmented stable model achieves an in-sample average of 8.70 bps but an out-of-sample RMSE of 20.7 bps.
+
+
+
+The comparison reveals that improved out-of-sample generalisation is not obtained simply by providing the model with additional curve-shape information. Despite making slope and curvature explicit in the input and training criterion, the augmented model does not improve upon the baseline, and adding the same augmentation to the stable architecture does not yield further gains. The stable architecture alone, by contrast, prove more effective, suggesting that constraining how the latent dynamic components are learned has better effect than augmenting the input. In the baseline and augmented models, these components are learned freely, whereas the stable architecture imposes explicit restrictions that appear to steer the model towards more reliable latent representations, and thus handling underrepresented curves better in the process, \textcolor{red}{this is seen clearly in Figure \ref{fig:prevalence_baseline_vs_stable}(overgang!)}
+
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/Experiments/PrevalenceSweep/plots_dim2_ep3500_N1500/prevalence_baseline_vs_stable.png}
+    \caption{RMSE (bps) as a function of the share of negative-rate curves in the training set, for the baseline model ($\ell = 2$, left) and the stable model ($\ell = 4$, right). Each point represents a trained model evaluated on a fixed set of negative-rate curves withheld from training (solid line) and a fixed set of normal-rate curves withheld from training (dashed line). For the baseline, negative-rate RMSE decreases and normal-rate RMSE increases as the share increases, suggesting reconstruction accuracy is governed by representation in the training data. For the stable model, negative-rate RMSE decreases more steeply while normal-rate RMSE remains roughly constant, suggesting the stable architecture is less sensitive to changes in training composition.}
+    \label{fig:prevalence_baseline_vs_stable}
+\end{figure}
+
+As discussed in Section~\ref{sec:model_aug} in Chapter \ref{chap:augmentedmodel}, the baseline model reconstructs whichever curve type dominates the training set and produces elevated error for the underrepresented type, which is clearly visible at the 50\% crossover point in Figure~\ref{fig:prevalence_baseline_vs_stable}.
+
+The stable model tells a different story. Negative-rate RMSE decreases as the share of negative curves in training increases, indicating that the model learns to reconstruct these curves better as it sees more of them during training. Unlike the baseline, the two error curves seem more independent of each other - improving the reconstruction of negative curves does not come at the cost of normal-curve reconstruction, suggesting that the stable model can learn multiple curve types at the same time rather than trading one off against the other. 
+
+The roughly constant normal-rate RMSE may reflect that normal-rate curves are well-covered even with a small share in training, since they are relatively homogenous and the model quickly learns their structure. Negative curves, by contrast, span a wider range of shapes, being deeply negative, slightly negative, or crossing at zero at different maturities. The model requires more examples to learn their structure, which is consistent with reconstruction continues to improve. This behaviour may reflect that the stable model's architecture prevents one curve type from dominating the latent representation, allowing both to coexist once enough examples of each have been seen during training.
+
+%So stable handles underrepresetation better, as long as the curve type is represented.
+
+
+
+%These examples sshow that making curve-shape information explicit is not, by itself, sufficient to resolve the reconstruction difficulties. The augmented specification does not visibly overcome the limitations of the unrestricted baseline architecture for the selected non-standard curves. By contrast, imposing stability restrictions allows the model to reproduce these shapes considerably more closely. This suggests that the relevant issue is not only whether slope and curvature information is supplied to the model, but also how the resulting flexibility is controlled through the latent-dynamics architecture. 
+
+
+%The comparison also provides evidence on the relative value of additional information and structural control. The augmented specification does not improve upon the baseline model, despite making slope and curvature information explicit in the input and training criterion. Moreover, adding the same augmentation to the stable architecture does not yield a further improvement: although the augmented stable specification remains competitive in terms of median out-of-sample error, its average and maximum out-of-sample errors are substantially larger than those of the stable specification. The table therefore indicates that improved generalisation is not obtained simply by providing the model with additional curve-shape information. Among the selected specifications, the substantial improvement is instead associated with the stability restrictions imposed on the latent dynamics.
+
+
+
+ 

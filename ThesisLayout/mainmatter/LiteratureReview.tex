@@ -1,0 +1,24 @@
+\chapter{Modelling Term Structures: A Literature Review}
+\label{ch:model-background}
+
+The yield curve describes how interest rates vary across maturities. However, as \citet{Filipovic2009} notes, the term \textit{yield curve} is ambiguous. This thesis is no exception, as it uses the term to refer to both the swap rate curve and the discount curve. In practice, market data are available only at a finite set of maturities, so the underlying continuous term structure must be inferred from market observables, e.g. the swap rates introduced in Chapter~\ref{chap:datadescription}. This creates high dimensional estimation and modelling problems \citep{Filipovic2009}. Therefore, the question is whether the yield curve can be represented by a small number of latent factors, reducing its high dimensionality while preserving its essential structure \citep{Skovmand2025tsm}.
+
+
+%In practice, the underlying term structure is not observed as a continuous curve. Instead, market data are available only at a finite set of maturities, for example through bond prices or swap rates. Empirical modelling therefore relies on finite-dimensional representations of the curve, such as the swap rates introduced in Chapter~\ref{chap:datadescription}. When many maturities are included, each curve becomes a high-dimensional vector of rates or prices. The question is therefore whether the variation in this representation can be explained by a small number of latent factors, reducing complexity while preserving the essential structure of the curve \citep{Skovmand2025tsm}.
+
+%cannot be observed directly but must be inferred from finitely many market observables, such as the swap rates introduced in Chapter~\ref{chap:datadescription}. This creates a high-dimensional problem when estimating and modelling such curves. The question is therefore whether the variation in these observed yields can be explained by a small number of latent factors, reducing this complexity while preserving the essential structure of the curve \citep{Skovmand2025tsm}.
+
+Classical approaches address this through representations that are simple and tractable. The Nelson--Siegel family \citep{NelsonSiegel1987} is perhaps the most well-known example, imposing a fixed parametric form on the curve that is parsimonious but constrained, as a functional shape is determined a priori and cannot adapt to data. An alternative is to make no parametric assumption and instead apply principal component analysis (PCA) \citep{Skovmand2025tsm}, which determines the dominant factors empirically from the data. PCA is more flexible than Nelson--Siegel in this respect, \textcolor{red}{but remains limited to linear combinations of the observables. }
+
+Neural network-based approaches address both of these limitations, learning nonlinear low-dimensional representations directly from data without imposing a fixed functional form. \citet{Kondratyev2018} was among the first to demonstrate that neural networks outperform classical dimensionality reduction methods such as PCA in describing yield curve dynamics. \citet{Sokol2022} built on this by proposing a variational autoencoder as a data-driven replacement for classical parametric factor models, requiring no a priori choice of functional form for the curve. He further shows that training on data from multiple currencies simultaneously improves the model's ability to generalise to curve shapes not observed for any single currency, as encoding all curves into a shared latent space means that shapes unseen for one currency are supported by observations from others.\footnote{As \citet{Sokol2022} notes, any mapping from the yield curve to model state variables must be capable of describing such curve shapes in order to be useful for model construction.}
+
+Such data-driven approaches, however, do not explicitly enforce no-arbitrage conditions. \citet{Andreasen2023} builds on this line of work with this in mind, interpreting the decoder output as zero-coupon bond prices rather than swap rates directly, which allows the stochastic dynamics of the encoded factors to be inferred, yielding a model that is close to dynamically arbitrage-free.
+
+\citet{MatinWanPoulsen2025} take this a step further by imposing the no-arbitrage condition as a hard constraint at the decoding stage, rather than the soft regularisation term used by \citet{Andreasen2023}, producing yield curves that are arbitrage-free by construction. This thesis builds on this model, which we describe in detail in Chapter~\ref{chap:encoderdecodermodel}.
+
+
+
+
+
+
+

@@ -1,0 +1,137 @@
+Repo root: /Users/sarasvenstrup/PycharmProjects/MasterThesis
+Device: cpu
+Args: {'regime': 'any_negative', 'latent_dim': 4, 'epochs': 3500, 'batch_size': 32, 'lr': 0.001, 'seed': 0, 'n_train': 1500, 'eval_frac': 0.3, 'prevalences': '0.00,0.05,0.10,0.15,0.20,0.30,0.40,0.50,0.60,0.75,0.9,1.00', 'use': 'bbg', 'model_type': 'stable', 'tag': ''}
+Loaded 1470 curves with shape (1470, 8)
+Regime 'any_negative': 294 curves (20.0%); non-regime: 1176
+Held-out eval sets: regime=88, non-regime=88 (equal size)
+Training pools:     regime=206, non-regime=1088
+Logging to /Users/sarasvenstrup/PycharmProjects/MasterThesis/Figures/Experiments/PrevalenceSweep/any_negative_dim4_ep3500_N1500_stable/sweep_results.csv
+
+=== Run 1/12: target p=0.00  (n_regime=0, n_nonregime=1500) ===
+  [p=0.00] starting training: N=1500, batches/epoch=47, epochs=3500, latent_dim=4, lr=0.001, device=cpu
+  [p=0.00] epoch 0 batch 1/47 loss=2.800e-04
+  [p=0.00] epoch 0 batch 11/47 loss=1.210e-04
+  [p=0.00] epoch 0 batch 22/47 loss=2.124e-04
+  [p=0.00] epoch 0 batch 33/47 loss=1.097e-04
+  [p=0.00] epoch 0 batch 44/47 loss=1.213e-04
+  [p=0.00] epoch    1/3500 train_rmse=1.300e-02  elapsed=0.0min  ETA=58.8min
+  [p=0.00] .. epoch 10/3500 rmse=8.00e-03
+  [p=0.00] .. epoch 20/3500 rmse=7.74e-03
+  [p=0.00] .. epoch 30/3500 rmse=6.10e-03
+  [p=0.00] .. epoch 40/3500 rmse=4.35e-03
+  [p=0.00] epoch   50/3500 train_rmse=4.051e-03  elapsed=0.7min  ETA=46.6min
+  [p=0.00] .. epoch 60/3500 rmse=3.73e-03
+  [p=0.00] .. epoch 70/3500 rmse=3.29e-03
+  [p=0.00] .. epoch 80/3500 rmse=2.88e-03
+  [p=0.00] .. epoch 90/3500 rmse=2.32e-03
+  [p=0.00] epoch  100/3500 train_rmse=2.282e-03  elapsed=1.4min  ETA=46.9min
+  [p=0.00] .. epoch 110/3500 rmse=2.25e-03
+  [p=0.00] .. epoch 120/3500 rmse=2.21e-03
+  [p=0.00] .. epoch 130/3500 rmse=2.14e-03
+  [p=0.00] .. epoch 140/3500 rmse=2.20e-03
+  [p=0.00] epoch  150/3500 train_rmse=3.102e-03  elapsed=2.1min  ETA=46.0min
+  [p=0.00] .. epoch 160/3500 rmse=2.47e-03
+  [p=0.00] .. epoch 170/3500 rmse=2.20e-03
+  [p=0.00] .. epoch 180/3500 rmse=2.04e-03
+  [p=0.00] .. epoch 190/3500 rmse=1.74e-03
+  [p=0.00] epoch  200/3500 train_rmse=1.793e-03  elapsed=2.7min  ETA=45.2min
+  [p=0.00] .. epoch 210/3500 rmse=1.55e-03
+  [p=0.00] .. epoch 220/3500 rmse=1.55e-03
+  [p=0.00] .. epoch 230/3500 rmse=1.81e-03
+  [p=0.00] .. epoch 240/3500 rmse=2.05e-03
+  [p=0.00] epoch  250/3500 train_rmse=1.372e-03  elapsed=3.4min  ETA=44.8min
+  [p=0.00] .. epoch 260/3500 rmse=1.46e-03
+  [p=0.00] .. epoch 270/3500 rmse=1.37e-03
+  [p=0.00] .. epoch 280/3500 rmse=1.32e-03
+  [p=0.00] .. epoch 290/3500 rmse=1.34e-03
+  [p=0.00] epoch  300/3500 train_rmse=1.510e-03  elapsed=4.2min  ETA=44.5min
+  [p=0.00] .. epoch 310/3500 rmse=1.27e-03
+  [p=0.00] .. epoch 320/3500 rmse=1.46e-03
+  [p=0.00] .. epoch 330/3500 rmse=1.28e-03
+  [p=0.00] .. epoch 340/3500 rmse=1.30e-03
+  [p=0.00] epoch  350/3500 train_rmse=1.202e-03  elapsed=4.9min  ETA=44.5min
+  [p=0.00] .. epoch 360/3500 rmse=1.20e-03
+  [p=0.00] .. epoch 370/3500 rmse=1.18e-03
+  [p=0.00] .. epoch 380/3500 rmse=1.20e-03
+  [p=0.00] .. epoch 390/3500 rmse=1.15e-03
+  [p=0.00] epoch  400/3500 train_rmse=1.141e-03  elapsed=5.7min  ETA=44.2min
+  [p=0.00] .. epoch 410/3500 rmse=1.15e-03
+  [p=0.00] .. epoch 420/3500 rmse=1.09e-03
+  [p=0.00] .. epoch 430/3500 rmse=1.08e-03
+  [p=0.00] .. epoch 440/3500 rmse=1.08e-03
+  [p=0.00] epoch  450/3500 train_rmse=1.079e-03  elapsed=6.5min  ETA=44.0min
+  [p=0.00] .. epoch 460/3500 rmse=1.07e-03
+  [p=0.00] .. epoch 470/3500 rmse=1.07e-03
+  [p=0.00] .. epoch 480/3500 rmse=1.06e-03
+  [p=0.00] .. epoch 490/3500 rmse=1.09e-03
+  [p=0.00] epoch  500/3500 train_rmse=1.040e-03  elapsed=7.3min  ETA=43.6min
+  [p=0.00] .. epoch 510/3500 rmse=1.08e-03
+  [p=0.00] .. epoch 520/3500 rmse=1.03e-03
+  [p=0.00] .. epoch 530/3500 rmse=1.04e-03
+  [p=0.00] .. epoch 540/3500 rmse=1.03e-03
+  [p=0.00] epoch  550/3500 train_rmse=1.028e-03  elapsed=8.1min  ETA=43.3min
+  [p=0.00] .. epoch 560/3500 rmse=1.01e-03
+  [p=0.00] .. epoch 570/3500 rmse=1.00e-03
+  [p=0.00] .. epoch 580/3500 rmse=1.01e-03
+  [p=0.00] .. epoch 590/3500 rmse=1.01e-03
+  [p=0.00] epoch  600/3500 train_rmse=1.008e-03  elapsed=9.0min  ETA=43.3min
+  [p=0.00] .. epoch 610/3500 rmse=9.86e-04
+  [p=0.00] .. epoch 620/3500 rmse=9.95e-04
+  [p=0.00] .. epoch 630/3500 rmse=1.02e-03
+  [p=0.00] .. epoch 640/3500 rmse=9.85e-04
+  [p=0.00] epoch  650/3500 train_rmse=9.747e-04  elapsed=9.8min  ETA=43.0min
+  [p=0.00] .. epoch 660/3500 rmse=9.73e-04
+  [p=0.00] .. epoch 670/3500 rmse=9.69e-04
+  [p=0.00] .. epoch 680/3500 rmse=9.62e-04
+  [p=0.00] .. epoch 690/3500 rmse=9.79e-04
+  [p=0.00] epoch  700/3500 train_rmse=9.701e-04  elapsed=10.6min  ETA=42.3min
+  [p=0.00] .. epoch 710/3500 rmse=9.78e-04
+  [p=0.00] .. epoch 720/3500 rmse=9.50e-04
+  [p=0.00] .. epoch 730/3500 rmse=9.49e-04
+  [p=0.00] .. epoch 740/3500 rmse=9.57e-04
+  [p=0.00] epoch  750/3500 train_rmse=9.626e-04  elapsed=11.4min  ETA=41.6min
+  [p=0.00] .. epoch 760/3500 rmse=9.57e-04
+  [p=0.00] .. epoch 770/3500 rmse=9.55e-04
+  [p=0.00] .. epoch 780/3500 rmse=9.48e-04
+  [p=0.00] .. epoch 790/3500 rmse=9.68e-04
+  [p=0.00] epoch  800/3500 train_rmse=9.360e-04  elapsed=12.2min  ETA=41.1min
+  [p=0.00] .. epoch 810/3500 rmse=9.42e-04
+  [p=0.00] .. epoch 820/3500 rmse=9.27e-04
+  [p=0.00] .. epoch 830/3500 rmse=9.35e-04
+  [p=0.00] .. epoch 840/3500 rmse=9.27e-04
+  [p=0.00] epoch  850/3500 train_rmse=9.290e-04  elapsed=13.0min  ETA=40.4min
+  [p=0.00] .. epoch 860/3500 rmse=9.19e-04
+  [p=0.00] .. epoch 870/3500 rmse=9.26e-04
+  [p=0.00] .. epoch 880/3500 rmse=9.09e-04
+  [p=0.00] .. epoch 890/3500 rmse=9.14e-04
+  [p=0.00] epoch  900/3500 train_rmse=9.064e-04  elapsed=13.8min  ETA=39.8min
+  [p=0.00] .. epoch 910/3500 rmse=9.15e-04
+  [p=0.00] .. epoch 920/3500 rmse=9.12e-04
+  [p=0.00] .. epoch 930/3500 rmse=8.96e-04
+  [p=0.00] .. epoch 940/3500 rmse=9.02e-04
+  [p=0.00] epoch  950/3500 train_rmse=8.897e-04  elapsed=14.6min  ETA=39.2min
+  [p=0.00] .. epoch 960/3500 rmse=8.97e-04
+  [p=0.00] .. epoch 970/3500 rmse=8.98e-04
+  [p=0.00] .. epoch 980/3500 rmse=8.75e-04
+Traceback (most recent call last):
+  File "/Users/sarasvenstrup/PycharmProjects/MasterThesis/Code/Experiments/Experiment_prevalence_sweep.py", line 242, in <module>
+    main()
+  File "/Users/sarasvenstrup/PycharmProjects/MasterThesis/Code/Experiments/Experiment_prevalence_sweep.py", line 195, in main
+    model, _ = train_with_retry(X_train, train_cfg, device=device, tag=tag)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sarasvenstrup/PycharmProjects/MasterThesis/Code/Experiments/_experiment_utils.py", line 282, in train_with_retry
+    model, history = train_baseline(X_train, attempt_cfg, device=device, tag=tag)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sarasvenstrup/PycharmProjects/MasterThesis/Code/Experiments/_experiment_utils.py", line 166, in train_baseline
+    loss.backward()
+  File "/Users/sarasvenstrup/PyCharmMiscProject/.venv/lib/python3.12/site-packages/torch/_tensor.py", line 631, in backward
+    torch.autograd.backward(
+  File "/Users/sarasvenstrup/PyCharmMiscProject/.venv/lib/python3.12/site-packages/torch/autograd/__init__.py", line 381, in backward
+    _engine_run_backward(
+  File "/Users/sarasvenstrup/PyCharmMiscProject/.venv/lib/python3.12/site-packages/torch/autograd/graph.py", line 869, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sarasvenstrup/PyCharmMiscProject/.venv/lib/python3.12/site-packages/torch/_prims_common/wrappers.py", line 292, in _fn
+    @wraps(fn)
+
+KeyboardInterrupt

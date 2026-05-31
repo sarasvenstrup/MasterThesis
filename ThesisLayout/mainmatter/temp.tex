@@ -1,0 +1,272 @@
+
+%=========================================================
+\section{Pricing-Consistency Diagnostics}
+\label{sec:pricing_diagnostics}
+%=========================================================
+
+The Monte Carlo pricing pipeline defined above relies on two identities being satisfied (up to MC error) by the trained model. First, the model-implied discount curve must be reproduced by pathwise discounting,
+\begin{equation}
+  \mathbb{E}^{\mathbb Q}\!\bigl[D(0,T)\bigr]
+  \;=\;
+  P(z_0, T),
+  \qquad T>0,
+  \label{eq:zero-martingale}
+\end{equation}
+and, more generally, the discounted-bond martingale identity
+\begin{equation}
+  \mathbb{E}^{\mathbb Q}\!\bigl[D(0,t)\,P(z_t, T-t)\bigr]
+  \;=\;
+  P(z_0, T),
+  \qquad 0\le t\le T,
+  \label{eq:bond-martingale}
+\end{equation}
+must hold for every intermediate time $t$. Second, the forward swap rate computed from the time-zero curve must equal the annuity-numeraire expectation of the simulated rate at expiry, as already stated in \eqref{eq:swap-martingale}, or equivalently in risk-neutral form
+\begin{equation}
+  F(0)
+  \;=\;
+  \frac{\mathbb{E}^{\mathbb Q}\!\left[D(0,T_\mu)\,\mathcal A(T_\mu)\,F(T_\mu)\right]}
+       {\mathbb{E}^{\mathbb Q}\!\left[D(0,T_\mu)\,\mathcal A(T_\mu)\right]}.
+  \label{eq:swap-martingale-Q}
+\end{equation}
+A violation of \eqref{eq:zero-martingale}--\eqref{eq:swap-martingale-Q} implies that the ATM strike, the annuity, or the pathwise discount used by the Monte Carlo estimator are mutually inconsistent, so any Bachelier implied volatility extracted by inverting \eqref{eq:atm_bachelier_price} will be biased independently of the diffusion calibration.
+
+We assess all three identities for the stable model at every latent dimension $d\in\{2,3,4\}$ in the EUR-only setting, using \(N_{\mathrm{MC}}=10{,}000\) antithetic paths simulated to a ten-year horizon. To separate causes from symptoms, the simulation-based diagnostics in Section~\ref{subsec:simulation_diagnostics_results} are paired with a purely static analysis of the trained checkpoint (Section~\ref{subsec:static_diagnostics_results}), which evaluates the encoder, decoder, and short-rate functions on the encoded training cloud only.
+
+%---------------------------------------------------------
+\subsection{Discounted-bond martingale and zero-coupon repricing}
+\label{subsec:simulation_diagnostics_results}
+%---------------------------------------------------------
+
+Table~\ref{tab:zero_repricing} reports the yield-error of \eqref{eq:zero-martingale}, expressed in basis points, for maturities $T\in\{1,2,3,5,7,10\}$ years and the three latent dimensions. None of the checkpoints satisfies the identity beyond $T=3$\,Y. At $T=10$\,Y the absolute yield error grows to $139$, $1\,388$, and $396$ bps for dim $2$, $3$, and $4$ respectively; the Monte Carlo discount in dim $3$ and dim $4$ even exceeds one, which is not a valid discount factor. Doubling the path count from $4\,000$ to $10\,000$ moved the dim 4 error by less than $3$ bps, confirming that the gap is structural model bias rather than sampling noise.
+
+\begin{table}[ht]
+  \centering
+  \caption{Zero-coupon repricing error
+    \(\hat y_{\mathrm{MC}}(T)-y_{\mathrm{dec}}(T)\) in basis points
+    of yield, EUR curve, \(N_{\mathrm{MC}}=10{,}000\) paths,
+    monthly Euler.}
+  \label{tab:zero_repricing}
+  \begin{tabular}{rrrr}
+    \toprule
+    $T$ (yr) & dim 2 & dim 3 & dim 4 \\
+    \midrule
+       1 & $+123.4$  &  $+749.5$ & $+29.3$  \\
+       2 & $+72.9$   &  $+601.5$ & $-23.9$  \\
+       3 & $+32.4$   &  $+393.0$ & $-85.4$  \\
+       5 & $-34.3$   &  $-167.6$ & $-193.5$ \\
+       7 & $-85.6$   &  $-706.8$ & $-283.5$ \\
+      10 & $-138.7$  & $-1387.7$ & $-395.7$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The full discounted-bond martingale \eqref{eq:bond-martingale} fails in the same way at every intermediate time. For example, in dim 4 the estimator $\hat M(t,10)=\mathbb E[D(0,t)P(z_t,10-t)]$ is $0.7647$ at $t=0.25$\,Y, falls to $0.6733$ at $t=2$\,Y, and rises to $1.0534$ at $t=10$\,Y, instead of remaining flat at the time-zero decoder value $P(z_0,10)=0.7092$. A truly risk-neutral trained model would produce a flat trajectory up to MC noise.
+
+The forward-swap identity \eqref{eq:swap-martingale} is similarly violated. For the $5\text{Y}\times 5\text{Y}$ structure the decoder forward $F(0)$ is $434.7$, $440.6$, and $434.7$ bps in dim $2$, $3$, and $4$, while the annuity-weighted Monte Carlo estimate of $\mathbb E^{\mathcal A}[F(T_\mu)]$ is $324.5$, $3\,069.5$, and $247.0$ bps respectively, even after discarding paths whose discount curve violates the bounds \(0<P\le1\). Through \eqref{eq:bias_parity} this translates into a forward-centring bias $\widehat b$ of roughly $-110$, $+2\,629$, and $-188$ bps; the mis-centring of the strike therefore biases every Bachelier implied volatility extracted from \eqref{eq:straddle_normal_vol}, irrespective of how well the diffusion is calibrated.
+
+The decoder itself produces an invalid discount curve on a substantial fraction of simulated paths. By construction the training-point curves satisfy the no-arbitrage PDE up to machine precision, but the simulated cloud exits the training support within months. At $t=10$\,Y the share of paths with \(P(z_t,\tau)\le1\) and monotone in $\tau$ is $67\%$, $0.1\%$, and $19\%$ in dim $2$, $3$, and $4$; the share with at least one entry exceeding the double-precision range or otherwise non-finite is $6\%$, $42\%$, and $46\%$ in the same three dimensions.
+
+\paragraph{Closed-form residual via the Riccati ODE.}
+To evaluate the no-arbitrage PDE residual without relying on the
+decoder's own output, we exploit the affine structure of the model.
+Writing the decoder factor as $G(z,\tau)$, the bond price admits the
+representation \citep{Poulsen2024}
+\[
+  P(z,\tau)\;=\;\exp\!\bigl(-A(\tau)-B(\tau)^{\!\top}z\bigr),
+\]
+where the coefficient functions $A:\mathbb{R}_{+}\!\to\!\mathbb{R}$
+and $B:\mathbb{R}_{+}\!\to\!\mathbb{R}^{d}$ solve the coupled Riccati
+system
+\begin{equation}
+  \frac{dB}{d\tau} \;=\; \alpha(\tau)\,B(\tau) + \beta(\tau),
+  \qquad
+  \frac{dA}{d\tau} \;=\; \gamma(\tau)\,B(\tau)^{2},
+  \qquad A(0)=0,\;B(0)=0,
+  \label{eq:ab_riccati}
+\end{equation}
+with coefficients
+\[
+  \alpha \;=\; \frac{-\partial_\tau G + \nabla_{\!z}G^{\!\top}\mu(z) + \tfrac12\mathrm{Tr}\bigl[\sigma^{\!\top}\nabla_{\!z}^{2}G\,\sigma\bigr]}{G},
+  \quad
+  \beta  \;=\; \frac{\tilde r(z)}{G},
+  \quad
+  \gamma \;=\; \tfrac12\bigl\lVert\sigma(z)^{\!\top}\nabla_{\!z}G\bigr\rVert^{2}.
+\]
+The derivatives $\partial_\tau G$, $\nabla_{\!z}G$ and
+$\mathrm{Tr}[\sigma^{\!\top}\nabla_{\!z}^{2}G\,\sigma]$ are obtained
+analytically by forward-mode automatic differentiation through the
+decoder network, vectorised over the maturity grid
+(\texttt{Code/utils/ode.py}). System~\eqref{eq:ab_riccati} is then
+integrated by the four-stage \(\tfrac{3}{8}\)-rule Runge--Kutta scheme
+on the same $\tau$-grid as the decoder. The PDE residual reported
+below is
+\[
+  R_\tau(z)
+  \;=\;
+  \partial_\tau P(z,\tau) + \tilde r(z)\,P(z,\tau)
+  -\;\nabla_{\!z}P^{\!\top}\mu(z)
+  -\;\tfrac12\mathrm{Tr}\bigl[\sigma^{\!\top}\nabla_{\!z}^{2}P\,\sigma\bigr],
+\]
+evaluated by comparing the decoder's $P(z,\tau)$ against the
+exponential-affine value implied by the integrated $A(\tau),B(\tau)$
+trajectory. Because the integration runs entirely in latent space and
+uses no Monte Carlo paths, $R_\tau$ isolates pure decoder
+extrapolation error.
+
+The Poulsen PDE residual $\max_\tau\lvert R_\tau\rvert$ rises from
+$\sim 10^{-17}$ at training points to $\mathcal O(1)$ on the $99$-th
+percentile of $z_t$ in dim $3$ and dim $4$. This is the proximate
+cause of the martingale failure: the decoder is no longer
+arbitrage-free at the points where the Monte Carlo estimator
+evaluates it.
+
+The simulation-based source of the failure is identified by the
+equilibrium of the linear drift $\mu(z)=Mz+N$. Setting
+\(\mu(z^\ast)=0\) yields \(z^\ast=-M^{-1}N\), which is
+\((-0.19,-0.06)\) for dim $2$, \((-242.6,-151.7,+79.1)\) for dim $3$,
+and \((-8.5,+3.8,+1.7,-0.6)\) for dim $4$. The training-cloud means
+are \((-0.13,+0.02)\), \((+0.03,-0.05,+0.05)\), and
+\((+0.07,-0.00,+0.03,-0.01)\) respectively. Only the two-factor
+model places the stationary point inside the encoded support.
+Furthermore, the slowest mean-reversion half-life
+$-\log 2/\Re(\lambda_{\min})$ is $0.52$ yr in dim $2$, but
+$684$ yr in dim $3$ and $423$ yr in dim $4$, because the
+parameterisation \(M=-(V^{\!\top}V+\varepsilon I)\) admits a
+near-zero eigenvalue when one row of $V$ collapses during training.
+That direction behaves as a Brownian motion under $\mathbb Q$ over
+the ten-year horizon, driving $z_t$ away from the data manifold.
+
+%---------------------------------------------------------
+\subsection{Static consistency of the trained checkpoint}
+\label{subsec:static_diagnostics_results}
+%---------------------------------------------------------
+
+To verify that the failures above reflect the model itself and not
+the Euler--Maruyama scheme, we evaluate the same checkpoints on a
+purely static set of points: the $170$ encoded EUR training curves
+and the $70$ held-out EUR curves used for out-of-sample analysis in
+Section~\ref{sec:oos_results}.
+
+The autoencoder reconstructs the training swap rates accurately in
+all three dimensions, with global RMSE $8.5$, $11.4$, and $6.0$ bps
+for dim $2$, $3$, and $4$. The out-of-sample RMSE is $11.6$, $10.2$,
+and $8.1$ bps, so higher latent dimension does improve held-out
+reconstruction. The Poulsen PDE residual at training points is at
+the level of machine precision in every dimension, and the
+swap-reduction identity
+\(F=(1-P_T)/\sum_k P_k\) holds to zero. The model is therefore
+internally consistent wherever it has been fit.
+
+The dimensional improvement of the reconstruction is, however,
+\emph{not} reflected in the latent geometry. The empirical
+explained-variance ratios of the encoded training cloud are
+\((0.88,\,0.12)\) in dim $2$,
+\((0.95,\,0.05,\,3\!\times\!10^{-4})\) in dim $3$, and
+\((0.86,\,0.13,\,0.016,\,9\!\times\!10^{-7})\) in dim $4$. The
+fourth axis of the dim-4 model carries no variance, and the third
+axis of dim $3$ carries three orders of magnitude less than the
+second. On the held-out set the standard deviations of those
+collapsed axes are even smaller. The encoder thus fits the data
+using only two or three latent directions in practice, while
+the remaining dimensions act as additional neural-network parameters
+that widen the encoder and decoder linear maps.
+
+This decoupling explains why higher latent dimension simultaneously
+improves reconstruction and degrades simulation. The trained drift
+matrix $M$ inherits the encoder's rank deficiency through the
+parameterisation \(M=-(V^{\!\top}V+\varepsilon I)\): when one row of
+$V$ collapses, the corresponding eigenvalue of $M$ is bounded only by
+the regularisation floor $\varepsilon=10^{-3}$, producing the
+near-zero eigenvalues reported in
+Section~\ref{subsec:simulation_diagnostics_results}.
+
+The reverse direction is verified by a static perturbation test.
+Sampling \(z=\bar z+ k\,\sigma_z u\) with $u$ uniform on the unit
+sphere and $\bar z,\sigma_z$ the per-axis mean and standard
+deviation of the training cloud, we record the fraction of perturbed
+states whose decoded curve is monotone with \(0<P\le1\).
+Table~\ref{tab:static_perturbation} reports this share as a function
+of the perturbation radius $k$.
+
+\begin{table}[ht]
+  \centering
+  \caption{Share of static perturbations
+    \(z=\bar z+k\sigma_z u\) for which the decoder produces a
+    monotone discount curve with \(0<P\le1\). No SDE is simulated.}
+  \label{tab:static_perturbation}
+  \begin{tabular}{rrrr}
+    \toprule
+    $k$ ($\sigma_z$) & dim 2 & dim 3 & dim 4 \\
+    \midrule
+    0 & $100$\,\% & $100$\,\% & $100$\,\% \\
+    1 & $72.3$\,\% & $30.4$\,\% & $71.2$\,\% \\
+    2 & $50.7$\,\% & $21.3$\,\% & $55.6$\,\% \\
+    3 & $36.9$\,\% & $18.0$\,\% & $47.6$\,\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Already at a one-standard-deviation perturbation, between $30\%$
+and $70\%$ of decoded curves fail the validity check, before any
+diffusion is introduced. The Monte Carlo failure of
+Section~\ref{subsec:simulation_diagnostics_results} is therefore not
+a consequence of the SDE; it is a consequence of the decoder being
+fit only on a narrow data cloud and extrapolating outside it.
+
+%---------------------------------------------------------
+\subsection{Implications for the implied volatility surface}
+\label{subsec:diagnostics_implications}
+%---------------------------------------------------------
+
+The combined evidence has direct consequences for the
+model-market gap reported in Section~\ref{sec:market_comparison}.
+Three pricing-pipeline inputs are inconsistent at once: the
+time-zero forward swap rate $F(0)$ comes from the decoder, the
+strike $K$ is set to that same value, while the payoff
+$\mathcal A(T_\mu)(F(T_\mu)-K)^+$ is built from simulated curves
+that no longer respect
+\eqref{eq:zero-martingale}--\eqref{eq:swap-martingale-Q}. The
+payer--receiver averaging in \eqref{eq:straddle_normal_vol} removes
+the first-order directional bias \eqref{eq:bias_parity}, but two
+effects remain. First, the $5\!\times\!5$ forward swap rate is
+mis-centred by roughly $190$\,bps between the decoder and the
+annuity-weighted Monte Carlo estimate
+(Section~\ref{subsec:simulation_diagnostics_results}); that
+mis-centring alone is enough to inflate a $70$-bp ATM
+volatility by an order of magnitude through
+\eqref{eq:atm_bachelier_price}. Second, the variance of the
+simulated $F(T_\mu)$ across paths is dominated by the tail of paths
+whose decoded discount curve violates $0<P\le1$; these contribute a
+spurious volatility term that does not exist in the market.
+
+These two effects act in the same direction and account
+quantitatively for the over-pricing observed in
+Section~\ref{sec:market_comparison}: the average market-vs-model
+gap of $185$\,bps at $10\!\times\!10$ and $678$\,bps at
+$1\!\times\!1$ is consistent with the $400$\,bp zero-coupon yield
+error at $T=10$\,Y reported in Table~\ref{tab:zero_repricing}
+amplified by the inverse-expiry factor $1/\sqrt{T_\mu}$ that appears
+in the Bachelier inversion \eqref{eq:bachelier_inversion}. The shape
+inversion, namely that the model volatility \emph{decreases} with
+expiry while the market volatility \emph{increases}, is the
+signature of the inverse-expiry amplification: short expiries divide
+by a small $\sqrt{T_\mu}$ and so suffer the most from a fixed bias
+in $\widehat V_0$. Both phenomena are therefore explained by the
+simulation and static diagnostics, not by any defect in the
+Bachelier inversion itself.
+
+The dim-$2$ checkpoint is the least pathological in every category
+above, even though it is dominated by dim $3$ and dim $4$ in OOS
+reconstruction. The two failure modes therefore have to be
+addressed by changes to the training objective rather than by
+choosing a higher latent dimension. The static perturbation test
+and the encoder PCA collapse together suggest two targeted
+modifications: (i) a latent whitening penalty
+$\sum_i\bigl(\log\sigma_{z_i}-\log\sigma_{z_0}\bigr)^{\!2}$ that
+prevents axes from collapsing and so removes the near-zero
+eigenvalue of $M$, and (ii) a perturbation-based no-arbitrage
+penalty
+$\mathbb E_{\varepsilon}\!\bigl[\max_\tau\lvert R_\tau(z+\varepsilon,\tau)\rvert^{2}\bigr]$
+that forces the decoder to remain arbitrage-free in a neighbourhood
+of the training cloud. Implementing either is left to future
+training experiments and falls outside the scope of this thesis.

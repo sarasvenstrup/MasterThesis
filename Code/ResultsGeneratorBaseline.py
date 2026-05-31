@@ -1,0 +1,3127 @@
+# ResultsGeneratorBaseline.py
+# Generates all thesis result figures and tables from BASELINE variant checkpoints and CSVs.
+# Run from repo root: python Code/ResultsGeneratorBaseline.py
+#
+# Outputs:
+#   Figures/thesis_results/   → all .png figures
+#   Tables/                   → all .csv tables
+#
+# Dependencies:
+#   - OOS_split_dim{1,2,3,4}/ep2500/rmse_summary.csv       (Q1, Q2, Q3)
+#   - OOS_split_dim3/ep2500/checkpoint_seed*.pt             (Q1, Q5, Q6)
+#   - OOS_split_dim3/ep2500/run_manifest.json               (Q3 seeds table)
+#   - kalman_benchmark_oos/ekf_dns_{1,2,3,4}f/rmse_summary.csv (Q4)
+#   - OOS_roll_dim{1,2,3,4}/train5Y_test6M_step6M/ep2500/   (Q2, Q3, Q4)
+#     └─ rolling CSVs for dim1/dim2 may still be running — those sections
+#        are skipped gracefully with a warning if not yet available. h
+
+import os
+import sys
+import json
+import warnings
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import matplotlib.dates as mdates
+import matplotlib.transforms
+import torch
+
+# ── path setup ─────────────────────────────────────────────────────────────────
+try:
+    REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+    REPO_ROOT = os.path.dirname(REPO_ROOT)   # go up from Code/ to repo root
+except NameError:
+    REPO_ROOT = os.getcwd()
+
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from Code.load_swapdata import my_data, custom_palette, TARGET_TENORS, set_paper_theme
+from Code.model.full_model import FullModel
+
+torch.set_num_threads(4)
+torch.set_num_interop_threads(2)
+device = torch.device("cpu")   # inference only — CPU is fine
+
+# ── output directories ─────────────────────────────────────────────────────────
+THESIS_RESULTS = os.path.join(REPO_ROOT, "Figures", "thesis_results")
+FIGURES_OUT    = os.path.join(THESIS_RESULTS, "AutoencoderPerformance")
+TABLES_OUT     = os.path.join(THESIS_RESULTS, "AutoencoderPerformance")
+EXTRA_OUT      = os.path.join(THESIS_RESULTS, "ExtraFigures")
+os.makedirs(FIGURES_OUT, exist_ok=True)
+os.makedirs(EXTRA_OUT,   exist_ok=True)
+
+# ── constants ──────────────────────────────────────────────────────────────────
+CCY_ORDER   = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
+DIM_COLORS  = {1: custom_palette[8], 2: custom_palette[4],
+               3: custom_palette[0], 4: custom_palette[6]}
+LATENT_DIM       = 3
+SPLIT_EPOCHS     = 2500
+TRAIN_LOG_EPOCHS = 5000
+KALMAN_DIMS      = [1, 2, 3, 4]
+ALL_DIMS_PARAM   = [1, 2, 3, 4]
+
+# Key market event dates for annotation
+EVENTS = {
+    "GFC\n(15 Sep 2008)":      "2008-09-15",
+    "QE\n(22 Jan 2015)":   "2015-01-22",
+    "COVID\n(1 Mar 2020)":     "2020-03-01",
+    "Inflation\n(1 Mar 2022)": "2022-03-01",
+}
+
+# ── apply paper theme ──────────────────────────────────────────────────────────
+_paper_palette = set_paper_theme()
+currency_color_map = {ccy: plt.cm.tab10.colors[i % 10]
+                      for i, ccy in enumerate(CCY_ORDER)}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SETUP: load data and best checkpoint
+# ─────────────────────────────────────────────────────────────────────────────
+print("Loading data...")
+meta, X_tensor, meta_full, X_tensor_full, tenors, df_wide, df_wide_all, SCALE_IS_PERCENT = \
+    my_data(use="bbg")
+
+# Use full dataset for IS analysis, split for OOS
+X_full   = X_tensor_full.float()
+meta_full_df = meta_full.copy()
+meta_full_df["as_of_date"] = pd.to_datetime(meta_full_df["as_of_date"])
+
+TRAIN_MASK = (meta_full_df["as_of_date"] >= "2010-01-01")
+TEST_MASK  = (meta_full_df["as_of_date"] >= "2021-01-01") & \
+             (meta_full_df["as_of_date"] <= "2022-12-31")
+
+X_train    = X_full[TRAIN_MASK.values]
+X_test     = X_full[TEST_MASK.values]
+meta_train = meta_full_df.loc[TRAIN_MASK.values].reset_index(drop=True)
+meta_test  = meta_full_df.loc[TEST_MASK.values].reset_index(drop=True)
+
+TENOR_COLS = list(TARGET_TENORS)   # [1, 2, 3, 5, 10, 15, 20, 30]
+
+# ── model loading helpers ─────────────────────────────────────────────────────
+CKPT_DIR      = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{LATENT_DIM}_baseline",
+                              f"ep{SPLIT_EPOCHS}")
+MANIFEST_PATH = os.path.join(CKPT_DIR, "run_manifest.json")
+
+def _load_state_dict_compat(model, ckpt_path):
+    """Load state dict from checkpoint. Handles both plain state dicts
+    and wrapped dicts (from torch.save({'model_state_dict': ..., ...}))."""
+    state = torch.load(ckpt_path, map_location=device)
+    if isinstance(state, dict) and "model_state_dict" in state:
+        state = state["model_state_dict"]
+    model.load_state_dict(state, strict=True)
+
+def load_ep5000_model(dim):
+    """Load ep5000 training checkpoint from Figures/TrainingResults/dim{N}_baseline/ep5000/."""
+    ckpt_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                             f"ep{TRAIN_LOG_EPOCHS}",
+                             f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
+    if not os.path.exists(ckpt_path):
+        warnings.warn(f"⚠️  ep{TRAIN_LOG_EPOCHS} checkpoint not found for dim={dim} — SKIPPING. "
+                      f"Run Training.py (LATENT_DIM={dim}, EPOCHS={TRAIN_LOG_EPOCHS}) to fix.\n"
+                      f"  Expected: {ckpt_path}")
+        return None, None
+    m = FullModel(latent_dim=dim).to(device)
+    _load_state_dict_compat(m, ckpt_path)
+    m.eval()
+    print(f"  Loaded ep{TRAIN_LOG_EPOCHS} checkpoint dim={dim}: {ckpt_path}")
+    return m, f"ep{TRAIN_LOG_EPOCHS}"
+
+print(f"Loading ℓ={LATENT_DIM} model (ep{TRAIN_LOG_EPOCHS})...")
+best_model, best_model_source = load_ep5000_model(LATENT_DIM)
+_has_main_model = best_model is not None
+if not _has_main_model:
+    print(f"  ⚠️  No checkpoint found for dim={LATENT_DIM} — "
+          f"plots that need this model will be skipped. "
+          f"Run Training.py (LATENT_DIM={LATENT_DIM}, EPOCHS={TRAIN_LOG_EPOCHS}) to fix.")
+else:
+    print(f"  Source: {best_model_source}")
+
+# ── inference helpers ──────────────────────────────────────────────────────────
+@torch.no_grad()
+def run_inference(model, X, batch=256):
+    """Returns S_hat, z, mu, sigma_L, r_tilde for the full dataset X."""
+    S_list, z_list, mu_list, L_list, r_list = [], [], [], [], []
+    for i in range(0, X.shape[0], batch):
+        xb = X[i:i+batch].to(device)
+        S_hat, aux = model(xb, return_aux=True)
+        z = aux["z"]
+        sigma_L = aux["sigma"]
+        mu = aux["mu"]
+        r_tilde = aux["r_tilde"]
+        S_list.append(S_hat.cpu());  z_list.append(z.cpu())
+        mu_list.append(mu.cpu());    L_list.append(sigma_L.cpu())
+        r_list.append(r_tilde.cpu())
+    return (torch.cat(S_list), torch.cat(z_list),
+            torch.cat(mu_list), torch.cat(L_list), torch.cat(r_list))
+
+print("Running inference on train + test sets...")
+if _has_main_model:
+    S_hat_train, Z_train, _, _, _ = run_inference(best_model, X_train)
+    S_hat_test,  Z_test,  _, _, _ = run_inference(best_model, X_test)
+else:
+    S_hat_train = S_hat_test = Z_train = Z_test = None
+
+# finite masks
+def finite_mask(X, S):
+    return torch.isfinite(X).all(1) & torch.isfinite(S).all(1)
+
+if _has_main_model:
+    mask_train = finite_mask(X_train, S_hat_train)
+    mask_test  = finite_mask(X_test,  S_hat_test)
+else:
+    mask_train = torch.zeros(len(X_train), dtype=torch.bool)
+    mask_test  = torch.zeros(len(X_test),  dtype=torch.bool)
+
+def save_fig(fig, name):
+    path = os.path.join(FIGURES_OUT, name + ".png")
+    fig.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {path}")
+
+def save_params_fig(fig, name):
+    path = os.path.join(PARAMS_DIR, name + ".png")
+    fig.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {path}")
+
+def save_extra_fig(fig, name):
+    path = os.path.join(EXTRA_OUT, name + ".png")
+    fig.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {path}")
+
+def save_table(df, name):
+    path = os.path.join(TABLES_OUT, name + ".csv")
+    df.reset_index().to_csv(path, index=False)
+    print(f"  Saved: {path}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1a — Table: IS RMSE per currency × latent dim (d = 1, 2, 3, 4)
+#        Source: Figures/dim{N}/ep5000/train_rmse_log_bbg_dim{N}_ep5000.csv
+#        Uses the final epoch row (epoch 4999) — single full-dataset training run
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1a: IS RMSE table (all dims, ep5000 training logs) ──")
+
+CCY_LOG_COLS = [f"rmse_bps_{c}" for c in CCY_ORDER]
+
+def load_training_log_rmse(dim, epochs=TRAIN_LOG_EPOCHS):
+    """Load final-epoch IS RMSE per currency from dim{N}/ep{E} training log CSV."""
+    path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        f"ep{epochs}", f"train_rmse_log_bbg_dim{dim}_ep{epochs}.csv")
+    if not os.path.exists(path):
+        warnings.warn(f"Missing training log: {path}")
+        return None
+    df = pd.read_csv(path)
+    # Last row = final epoch; guard against incomplete runs (only epoch 0)
+    last = df.iloc[-1]
+    if int(last["epoch"]) < epochs - 2:
+        warnings.warn(f"dim{dim} ep{epochs} log only has epoch {int(last['epoch'])} "
+                      f"— run may be incomplete. Skipping.")
+        return None
+    result = pd.Series({ccy: float(last[f"rmse_bps_{ccy}"]) for ccy in CCY_ORDER})
+    result["Average"] = float(last["avg_rmse_bps"])
+    result["Time (min)"] = round(float(last["time_total_sec"]) / 60, 1)
+    return result
+
+rows_is = {}
+for dim in [1, 2, 3, 4]:
+    is_rmse = load_training_log_rmse(dim)
+    if is_rmse is not None:
+        rows_is[f"$\\ell={dim}$"] = is_rmse
+        print(f"  ell={dim}: avg IS RMSE = {is_rmse['Average']:.2f} bps  "
+              f"  time = {is_rmse['Time (min)']:.1f} min")
+
+table_q1a = pd.DataFrame(rows_is).T
+table_q1a = table_q1a[[c for c in CCY_ORDER + ["Average", "Time (min)"] if c in table_q1a.columns]]
+table_q1a = table_q1a.round(2)
+save_table(table_q1a, "Q1a_IS_rmse_all_dims")
+print(table_q1a.to_string())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1e — Plot: Training loss curves for ℓ=2,3,4 in one figure
+#        Source: Figures/dim{N}/ep5000/train_rmse_log_bbg_dim{N}_ep5000.csv
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q1e: Training loss curves  ──")
+#
+# fig, (ax_full, ax_zoom) = plt.subplots(1, 2, figsize=(14, 4))
+# for dim in [1, 2, 3, 4]:
+#     _log_path = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+#                              f"ep{TRAIN_LOG_EPOCHS}",
+#                              f"train_rmse_log_bbg_dim{dim}_ep{TRAIN_LOG_EPOCHS}.csv")
+#     if not os.path.exists(_log_path):
+#         warnings.warn(f"Missing training log for dim{dim}: {_log_path}")
+#         continue
+#     _log_df = pd.read_csv(_log_path)
+#     for ax in (ax_full, ax_zoom):
+#         ax.plot(_log_df["epoch"], _log_df["avg_rmse_bps"],
+#                 linewidth=1.2, color=DIM_COLORS[dim],
+#                 label=f"$\\ell={dim}$")
+#
+# for ax in (ax_full, ax_zoom):
+#     ax.axvline(3500, color="black", linewidth=1.0, linestyle="--")
+#     ax.set_xlabel("Epoch", fontsize=13)
+#     ax.tick_params(axis="both", labelsize=12)
+# ax_full.set_ylabel("Average Training RMSE (bps)", fontsize=13)
+#
+# ax_zoom.set_xlim(1000, TRAIN_LOG_EPOCHS)
+# ax_zoom.set_ylim(0, 20)
+# ax_zoom.legend(fontsize=13, frameon=False)
+#
+# fig.tight_layout()
+# save_fig(fig, "Q1e_training_loss_curves")
+# ── END REMOVED ──
+print("\n── Q1e: Training loss curves  ──")
+print("  SKIPPED (block removed)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: load OOS RMSE from OOSSplit runs (used by Q2a, Q4)
+# Source: OOS_split_dim{N}/ep{E}/run_manifest.json
+# ─────────────────────────────────────────────────────────────────────────────
+def load_split_rmse(dim, epochs=SPLIT_EPOCHS):
+    """Return (IS mean series, OOS mean series) from OOSSplit run_manifest.json."""
+    manifest_p = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split", f"OOS_split_dim{dim}_baseline",
+                              f"ep{epochs}", "run_manifest.json")
+    if not os.path.exists(manifest_p):
+        warnings.warn(f"⚠️  run_manifest.json not found for dim={dim}_baseline ep{epochs} — SKIPPING.\n"
+                      f"  Expected: {manifest_p}")
+        return None, None
+    with open(manifest_p) as f:
+        mf = json.load(f)
+    results = mf.get("seed_results", {})
+    if not results:
+        warnings.warn(f"⚠️  run_manifest.json for dim={dim} has no seed_results — SKIPPING.")
+        return None, None
+    ccys = CCY_ORDER + ["Average"]
+    is_vals, oos_vals = {c: [] for c in ccys}, {c: [] for c in ccys}
+    DIVERGE_THRESHOLD = 100.0
+    n_skipped = 0
+    for s_info in results.values():
+        oos_avg = s_info["oos_avg_bps"]
+        if oos_avg is None or (isinstance(oos_avg, float) and
+                               (np.isnan(oos_avg) or oos_avg > DIVERGE_THRESHOLD)):
+            n_skipped += 1
+            continue
+        for ccy in CCY_ORDER:
+            is_vals[ccy].append(s_info["is_per_ccy_bps"].get(ccy, np.nan))
+            oos_vals[ccy].append(s_info["oos_per_ccy_bps"].get(ccy, np.nan))
+        is_vals["Average"].append(s_info["is_avg_bps"])
+        oos_vals["Average"].append(s_info["oos_avg_bps"])
+    if n_skipped:
+        print(f"  [dim={dim}] Excluded {n_skipped}/{len(results)} diverged seeds")
+    return (pd.Series({c: np.nanmean(v) for c, v in is_vals.items()}),
+            pd.Series({c: np.nanmean(v) for c, v in oos_vals.items()}))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1b — Plot: Fitted vs actual for 3 representative dates (IS)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1b: Fitted vs actual (representative dates) ──")
+if not _has_main_model:
+    print(f"  ⚠️  Q1b skipped — no checkpoint for dim={LATENT_DIM}")
+if not _has_main_model:
+    print(f"  ⚠️  Q1b skipped — no checkpoint for dim={LATENT_DIM}")
+else:
+    REPRESENTATIVE_DATES = {
+        "Calm market (2016-08-31)":  "2016-08-31",
+        "Crisis (2020-03-31)":         "2020-03-31",
+        "Low-rate (2019-06-30)":       "2019-06-30",
+    }
+    SHOW_CCYS = ["EUR", "USD"]   # show 2 currencies per date for clarity
+
+    scale = 100.0 if SCALE_IS_PERCENT else 1.0
+
+    fig, axes = plt.subplots(len(SHOW_CCYS), len(REPRESENTATIVE_DATES),
+                             figsize=(5 * len(REPRESENTATIVE_DATES), 3.8 * len(SHOW_CCYS)),
+                             sharey=False)
+
+    for col_i, (label, date_str) in enumerate(REPRESENTATIVE_DATES.items()):
+        target_date = pd.Timestamp(date_str)
+
+        for row_i, ccy in enumerate(SHOW_CCYS):
+            ax = axes[row_i][col_i]
+
+            mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
+            if mask_ccy.sum() == 0:
+                ax.set_visible(False)
+                continue
+
+            dates_ccy = pd.to_datetime(meta_train.loc[mask_ccy, "as_of_date"])
+            idx_local  = (dates_ccy - target_date).abs().argmin()
+            actual_date = dates_ccy.iloc[idx_local]
+            global_idx  = np.where(mask_ccy)[0][idx_local]
+
+            actual = X_train[global_idx].numpy() * scale
+            fitted = S_hat_train[global_idx].numpy() * scale
+            fitted_color = custom_palette[CCY_ORDER.index(ccy) % len(custom_palette)]
+
+            ax.plot(tenors, actual, "o-",  color="black", linewidth=2.0, markersize=5)
+            ax.plot(tenors, fitted, "s--", color=fitted_color, linewidth=2.0, markersize=5)
+
+            if row_i == 0:
+                ax.set_title(label, fontsize=10, fontweight="bold")
+            if col_i == 0:
+                ax.set_ylabel(f"{ccy}, {'Rate (%)' if SCALE_IS_PERCENT else 'Rate (dec.)'}",
+                              fontsize=9)
+            ax.tick_params(axis="x", labelsize=8)
+            ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
+                    transform=ax.transAxes, fontsize=7, ha="right", color="0.4")
+
+    fig.tight_layout()
+    save_fig(fig, "Q1b_fitted_vs_actual")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1d — Plot: Fitted vs actual, all latent dims (ℓ=2, 3, 4) overlaid
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1d: Fitted vs actual — all dims overlaid ──")
+
+# Load ep5000 models for Q1d and Q6d (fallback to OOSSplit if not yet available)
+# ℓ=3 is already loaded as best_model above — reuse it to avoid loading twice
+dim_models = {}
+dim_model_sources = {}
+for _dim in [2, 3, 4]:
+    if _dim == LATENT_DIM:
+        if best_model is not None:
+            dim_models[_dim] = best_model
+            dim_model_sources[_dim] = best_model_source
+    else:
+        _m, _src = load_ep5000_model(_dim)
+        if _m is not None:
+            dim_models[_dim] = _m
+            dim_model_sources[_dim] = _src
+
+# Pre-compute S_hat and Z for each dim on X_train
+dim_S_hat = {}
+dim_Z_hat = {}
+for _dim, _m in dim_models.items():
+    _S, _Z, _, _, _ = run_inference(_m, X_train)
+    dim_S_hat[_dim] = _S
+    dim_Z_hat[_dim] = _Z
+
+DIMS_PLOT   = sorted(dim_models.keys())
+DIM_LABELS  = {d: r"$\ell$=" + str(d) for d in DIMS_PLOT}
+DIM_STYLES  = {2: "-",  3: "--", 4: ":"}
+
+# Load dim=1 model for histograms (dims 2,3,4 already in dim_S_hat)
+_all_dim_S_hat = dict(dim_S_hat)
+_m1, _src1 = load_ep5000_model(1)
+if _m1 is not None:
+    _S1, _, _, _, _ = run_inference(_m1, X_train)
+    _all_dim_S_hat[1] = _S1
+
+fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
+axes_flat = axes.flatten()
+
+# first pass: compute residuals and find global x and y axis range
+_resid_data = {}
+_x_min, _x_max = np.inf, -np.inf
+for _dim in [2, 3, 4]:
+    if _dim not in _all_dim_S_hat:
+        continue
+    resid = (X_train[mask_train] - _all_dim_S_hat[_dim][mask_train]).numpy() * 10000
+    resid_flat = resid.flatten()
+    resid_flat = resid_flat[np.isfinite(resid_flat)]
+    if len(resid_flat) == 0:
+        continue
+    _resid_data[_dim] = resid_flat
+    _x_min = min(_x_min, resid_flat.min())
+    _x_max = max(_x_max, resid_flat.max())
+
+# compute y_max using shared x range and same bins
+_y_max = 0
+if not _resid_data or not np.isfinite(_x_min):
+    _shared_bins = np.linspace(-50, 50, 121)  # fallback when no data
+else:
+    _shared_bins = np.linspace(_x_min, _x_max, 121)
+for _dim, resid_flat in _resid_data.items():
+    counts, _ = np.histogram(resid_flat, bins=_shared_bins)
+    _y_max = max(_y_max, counts.max())
+
+# second pass: plot all panels with shared x and y axes
+for ax_i, _dim in enumerate([2, 3, 4]):
+    ax = axes_flat[ax_i]
+    if _dim not in _resid_data:
+        ax.set_visible(False)
+        continue
+
+    resid_flat = _resid_data[_dim]
+    ax.hist(resid_flat, bins=_shared_bins, color=DIM_COLORS[_dim], edgecolor="none", alpha=0.85)
+    ax.axvline(0, color="black", linewidth=1.2, linestyle="--")
+    ax.axvline(np.mean(resid_flat), color="#d7191c", linewidth=1.5, linestyle="--")
+    ax.axvline(np.percentile(resid_flat,  5), color="0.4", linewidth=1.0, linestyle=":")
+    ax.axvline(np.percentile(resid_flat, 95), color="0.4", linewidth=1.0, linestyle=":")
+    ax.set_xlim(_x_min, _x_max)
+    ax.set_ylim(0, _y_max * 1.08)
+    ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Residual (bps)", fontsize=12)
+    if ax_i == 0:
+        ax.set_ylabel("Count", fontsize=12)
+    ax.text(0.97, 0.95,
+            f"N={len(resid_flat):,}\nStd={np.std(resid_flat):.2f} bps\n"
+            f"Kurt={float(pd.Series(resid_flat).kurt()):.2f}",
+            transform=ax.transAxes, fontsize=10, ha="right", va="top",
+            bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"))
+
+fig.tight_layout()
+save_fig(fig, "Q1d_residual_histograms_all_dims")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1d — Plot: Fitted vs actual, all latent dims (ℓ=2, 3, 4) overlaid
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q1d: Fitted vs actual — all dims overlaid (EUR, USD, JPY) ──")
+
+_rep_dates = {
+    "Calm (2014-08-29)": "2014-08-29",
+    "Crisis (2020-03-31)": "2020-03-31",
+}
+_show_ccys_alldim = ["EUR", "USD", "JPY", "CAD"]
+_dim_colors = {d: DIM_COLORS[d] for d in [2, 3, 4]}
+_dim_styles = {2: "-", 3: "-", 4: "-"}
+
+_scale = 100.0 if SCALE_IS_PERCENT else 1.0
+_n_rows = len(_rep_dates)
+_n_cols = len(_show_ccys_alldim)
+
+fig, axes = plt.subplots(_n_rows, _n_cols,
+                         figsize=(4 * _n_cols, 3.5 * _n_rows),
+                         sharey=False)
+
+for row_i, (label, date_str) in enumerate(_rep_dates.items()):
+    target_date = pd.Timestamp(date_str)
+    for col_i, ccy in enumerate(_show_ccys_alldim):
+        ax = axes[row_i][col_i]
+        mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
+        if mask_ccy.sum() == 0:
+            ax.set_visible(False)
+            continue
+        dates_ccy  = pd.to_datetime(meta_train.loc[mask_ccy, "as_of_date"])
+        idx_local  = (dates_ccy - target_date).abs().argmin()
+        actual_date = dates_ccy.iloc[idx_local]
+        global_idx = np.where(mask_ccy)[0][idx_local]
+
+        actual = X_train[global_idx].numpy() * _scale
+        ax.plot(tenors, actual, "o-", color="black", linewidth=2.0,
+                markersize=5, label="Actual", zorder=5)
+
+        for _dim in DIMS_PLOT:
+            fitted = dim_S_hat[_dim][global_idx].numpy() * _scale
+            ax.plot(tenors, fitted,
+                    linestyle=_dim_styles[_dim],
+                    color=_dim_colors[_dim],
+                    linewidth=1.8,
+                    label=DIM_LABELS[_dim])
+
+        if row_i == 0:
+            ax.set_title(ccy, fontsize=14, fontweight="bold")
+        if col_i == 0:
+            ax.set_ylabel(f"{label}\n({'%' if SCALE_IS_PERCENT else 'dec.'})",
+                          fontsize=13)
+        if row_i == _n_rows - 1:
+            ax.set_xlabel("Maturity", fontsize=13)
+        ax.set_xticks(tenors)
+        if row_i == _n_rows - 1:
+            ax.set_xticklabels([str(int(t)) for t in tenors], fontsize=11)
+        else:
+            ax.set_xticklabels([])
+        ax.tick_params(axis="y", labelsize=11)
+
+import matplotlib.lines as mlines
+_leg_handles = [
+    mlines.Line2D([], [], color="black", marker="o", linewidth=2.0, markersize=5, label="Actual curve"),
+] + [
+    mlines.Line2D([], [], color=_dim_colors[_dim], linewidth=1.8, label=DIM_LABELS[_dim])
+    for _dim in DIMS_PLOT
+]
+fig.tight_layout(rect=[0, 0.06, 1, 1])
+fig.legend(handles=_leg_handles, loc="lower center", ncol=len(_leg_handles),
+           fontsize=12, frameon=False, bbox_to_anchor=(0.5, 0.01))
+save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1d_yc — Plot: Model-implied yield curves, all dims (ℓ=2,3,4)
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q1d_yc: Implied yield curves — all dims ──")
+#
+# _tau_grid = torch.arange(0, 31, dtype=torch.float32)   # 0,1,...,30
+#
+# fig_yc, axes_yc = plt.subplots(
+#     _n_rows, _n_cols,
+#     figsize=(4 * _n_cols, 3.5 * _n_rows),
+#     sharey=False,
+# )
+#
+# for row_i, (label, date_str) in enumerate(_rep_dates.items()):
+#     target_date = pd.Timestamp(date_str)
+#     for col_i, ccy in enumerate(_show_ccys_alldim):
+#         ax = axes_yc[row_i][col_i]
+#
+#         # find the closest observation in the training set for this ccy
+#         mask_ccy = (meta_train["ccy"] == ccy).values & mask_train.numpy()
+#         if mask_ccy.sum() == 0:
+#             ax.set_visible(False)
+#             continue
+#         dates_ccy = pd.to_datetime(meta_train.loc[mask_ccy, "as_of_date"])
+#         idx_local  = (dates_ccy - target_date).abs().argmin()
+#         actual_date = dates_ccy.iloc[idx_local]
+#         global_idx  = np.where(mask_ccy)[0][idx_local]
+#         x_obs = X_train[global_idx].unsqueeze(0).to(device)
+#
+#         for _dim in DIMS_PLOT:
+#             _m = dim_models[_dim]
+#             with torch.no_grad():
+#                 _, aux = _m(x_obs, return_aux=True)
+#             P_full = aux["P_full"].squeeze(0).cpu()   # shape (31,)
+#             # yield y(tau) = -1/tau * log P(tau), skip tau=0
+#             taus = _tau_grid[1:]                       # 1,...,30
+#             yields = -torch.log(P_full[1:]) / taus     # continuously compounded
+#             ax.plot(taus.numpy(), yields.numpy(),
+#                     color=_dim_colors[_dim],
+#                     linewidth=1.8,
+#                     label=DIM_LABELS[_dim])
+#
+#         if row_i == 0:
+#             ax.set_title(ccy, fontsize=12, fontweight="bold")
+#         if col_i == 0:
+#             ax.set_ylabel(f"{label}\nYield", fontsize=11)
+#         if row_i == _n_rows - 1:
+#             ax.set_xlabel("Maturity", fontsize=11)
+#         ax.set_xticks([1, 5, 10, 15, 20, 30])
+#         if row_i == _n_rows - 1:
+#             ax.set_xticklabels(["1", "5", "10", "15", "20", "30"], fontsize=9)
+#         else:
+#             ax.set_xticklabels([])
+#         ax.tick_params(axis="y", labelsize=10)
+#         ax.text(0.97, 0.05, actual_date.strftime("%Y-%m-%d"),
+#                 transform=ax.transAxes, fontsize=9, ha="right", color="0.4")
+#
+# # unified legend at bottom
+# _handles_yc, _labels_yc = axes_yc[0][0].get_legend_handles_labels()
+# fig_yc.legend(_handles_yc, _labels_yc, loc="lower center",
+#               bbox_to_anchor=(0.5, -0.02), ncol=len(DIMS_PLOT),
+#               frameon=False, fontsize=10)
+# fig_yc.tight_layout()
+# fig_yc.subplots_adjust(bottom=0.12)
+# save_fig(fig_yc, "Q1d_yield_curves_all_dims")
+# ── END REMOVED ──
+print("\n── Q1d_yc: Implied yield curves — all dims ──")
+print("  SKIPPED (block removed)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1e_zcb — Plot: Swap curves + implied ZCB yields, all currencies, one date
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q1e_zcb: Swap + ZCB curves (all currencies, 2021-11-30) ──")
+# if not _has_main_model:
+#     print(f"  ⚠️  Q1e_zcb skipped — no checkpoint for dim={LATENT_DIM}")
+# else:
+#     _zcb_target = pd.Timestamp("2021-11-30")
+#     _zcb_scale  = 100.0 if SCALE_IS_PERCENT else 1.0
+#
+#     # Use full dataset (train + test combined)
+#     _meta_full_dt = meta_full_df.copy()
+#     _meta_full_dt["as_of_date"] = pd.to_datetime(_meta_full_dt["as_of_date"])
+#
+#     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+#     ax_swap, ax_zcb = axes
+#
+#     for ccy in CCY_ORDER:
+#         _col = currency_color_map[ccy]
+#         mask_ccy = (_meta_full_dt["ccy"] == ccy).values
+#         if mask_ccy.sum() == 0:
+#             continue
+#
+#         dates_ccy = _meta_full_dt.loc[mask_ccy, "as_of_date"]
+#         idx_local = (dates_ccy - _zcb_target).abs().argmin()
+#         global_idx = np.where(mask_ccy)[0][idx_local]
+#         actual_date = dates_ccy.iloc[idx_local]
+#
+#         x_obs = X_full[[global_idx]]   # (1, n_tenors)
+#
+#         with torch.no_grad():
+#             S_hat_obs, aux_obs = best_model(x_obs.to(device), return_aux=True)
+#
+#         actual  = x_obs[0].numpy()   * _zcb_scale
+#         fitted  = S_hat_obs[0].cpu().numpy() * _zcb_scale
+#
+#         # Left panel: swap curves
+#         ax_swap.plot(tenors, actual, "o-",  color=_col, linewidth=1.8,
+#                      markersize=4, label=ccy)
+#         ax_swap.plot(tenors, fitted, "--",  color=_col, linewidth=1.2, alpha=0.8)
+#
+#         # Right panel: ZCB yields from P_full on model's tau_grid
+#         P_full  = aux_obs["P_full"][0].cpu().numpy()       # (n_tau_grid,)
+#         tau_grid = aux_obs["tau_grid"].cpu().numpy()        # (n_tau_grid,)
+#         zcb_yield = -np.log(np.clip(P_full, 1e-8, None)) / tau_grid
+#         ax_zcb.plot(tau_grid, zcb_yield * _zcb_scale, "--", color=_col,
+#                     linewidth=1.5, label=ccy)
+#
+#     ax_swap.set_xlabel("Time to Maturity")
+#     ax_swap.set_ylabel(f"Swap Rate ({'%' if SCALE_IS_PERCENT else 'dec.'})")
+#     ax_swap.set_title("Swap curves", fontsize=10, fontweight="bold")
+#     ax_swap.set_xticks(tenors)
+#     ax_swap.set_xticklabels([str(int(t)) for t in tenors], fontsize=8)
+#
+#     ax_zcb.set_xlabel("Time to Maturity")
+#     ax_zcb.set_ylabel(f"ZCB Yield ({'%' if SCALE_IS_PERCENT else 'dec.'})")
+#     ax_zcb.set_title("Implied ZCB yield curves", fontsize=10, fontweight="bold")
+#
+#     # shared legend below the figure
+#     handles, labels = ax_swap.get_legend_handles_labels()
+#     # keep only actual (solid) handles — one per currency
+#     fig.legend(handles, labels, loc="lower center", ncol=len(CCY_ORDER),
+#                fontsize=8, frameon=False, bbox_to_anchor=(0.5, -0.04))
+#
+#     _actual_dates = []
+#     for ccy in CCY_ORDER:
+#         mask_c = (_meta_full_dt["ccy"] == ccy).values
+#         if mask_c.sum() > 0:
+#             dates_c = _meta_full_dt.loc[mask_c, "as_of_date"]
+#             idx_l = (dates_c - _zcb_target).abs().argmin()
+#             _actual_dates.append(str(dates_c.iloc[idx_l].date()))
+#     _used_date = _actual_dates[0] if _actual_dates else str(_zcb_target.date())
+#
+#     fig.suptitle(f"AE $\\ell={LATENT_DIM}$ — {_used_date}  "
+#                  f"(solid/● observed, dashed reconstructed / implied ZCB)",
+#                  fontsize=9, y=1.01)
+#     fig.tight_layout()
+#     save_fig(fig, f"Q1e_zcb_swap_dim{LATENT_DIM}")
+# ── END REMOVED ──
+print("\n── Q1e_zcb: Swap + ZCB curves (all currencies, 2021-11-30) ──")
+print("  SKIPPED (block removed)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q1c — Plot: Histogram of residuals (actual − fitted) in bps
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q1c: Residual histogram  ──")
+# if not _has_main_model:
+#     print(f"  ⚠️  Q1c skipped — no checkpoint for dim={LATENT_DIM}")
+# else:
+#     resid_train = (X_train[mask_train] - S_hat_train[mask_train]).numpy() * 10000  # → bps
+#     resid_flat  = resid_train.flatten()
+#     resid_flat  = resid_flat[np.isfinite(resid_flat)]
+#
+#     fig, ax = plt.subplots(figsize=(7, 4))
+#     ax.hist(resid_flat, bins=120, color=custom_palette[0], edgecolor="none", alpha=0.85)
+#     ax.axvline(0, color="black", linewidth=1.2, linestyle="--")
+#     ax.axvline(np.mean(resid_flat),  color="#d7191c", linewidth=1.5,
+#                linestyle="--", label=f"Mean = {np.mean(resid_flat):.2f} bps")
+#     ax.axvline(np.percentile(resid_flat, 5),  color="0.4", linewidth=1.0,
+#                linestyle=":", label=f"5th/95th pct = {np.percentile(resid_flat,5):.1f} / "
+#                                     f"{np.percentile(resid_flat,95):.1f} bps")
+#     ax.axvline(np.percentile(resid_flat, 95), color="0.4", linewidth=1.0, linestyle=":")
+#     ax.set_xlabel("Residual (bps)")
+#     ax.set_ylabel("Count")
+#     ax.legend(fontsize=9, frameon=False)
+#     ax.text(0.97, 0.95,
+#             f"N={len(resid_flat):,}\nStd={np.std(resid_flat):.2f} bps\n"
+#             f"Kurt={float(pd.Series(resid_flat).kurt()):.2f}",
+#             transform=ax.transAxes, fontsize=8, ha="right", va="top",
+#             bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"))
+#     fig.tight_layout()
+#     save_fig(fig, "Q1c_residual_histogram")
+# ── END REMOVED ──
+print("\n── Q1c: Residual histogram  ──")
+print("  SKIPPED (block removed)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ── rolling helper constants and functions (used by Q2a, Q2b, Q3b, Q4a) ──────
+ROLL_SUBDIR            = "train5Y_test6M_step6M"
+ROLL_EPOCHS            = 3500   # epoch count used for rolling OOS runs
+ROLL_DIVERGE_THRESHOLD = 100.0
+_ROLL_FALLBACK_SUBDIR  = "train3Y_test3M_step6M"
+
+def load_rolling_avg(dim):
+    """Return average OOS RMSE across all rolling windows for a given dim."""
+    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                        ROLL_SUBDIR, f"ep{ROLL_EPOCHS}",
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline ep{ROLL_EPOCHS} — SKIPPING.\n"
+                      f"  Expected: {path}")
+        return None
+    df = pd.read_csv(path)
+    return float(df["avg_rmse_bps"].mean())
+
+def load_rolling_df(dim):
+    """Return full rolling CSV DataFrame for a given dim."""
+    path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                        ROLL_SUBDIR, f"ep{ROLL_EPOCHS}",
+                        f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        warnings.warn(f"⚠️  Rolling CSV not found for dim={dim}_baseline ep{ROLL_EPOCHS} — SKIPPING.\n"
+                      f"  Expected: {path}")
+        return None
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
+def load_ekf_rolling_avg(n_factors):
+    """Return average OOS RMSE across all rolling windows for EKF DNS."""
+    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    return float(df["avg_rmse_bps"].mean())
+
+def load_ekf_rolling_df(n_factors):
+    """Return full rolling CSV for EKF DNS n_factors model."""
+    path = os.path.join(REPO_ROOT, "Figures", "KalmanBenchmarkResults",
+                        "ekf_dns_rolling",
+                        f"oos_rolling_ekf_{n_factors}f_train5Y_test6M_step6M.csv")
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    df["test_start"] = pd.to_datetime(df["test_start"])
+    return df
+
+def load_ekf_rolling_oos_per_ccy(dim):
+    """Average per-currency OOS RMSE across all EKF rolling windows."""
+    df = load_ekf_rolling_df(dim)
+    if df is None or len(df) == 0:
+        return None
+    # EKF rolling CSV uses plain currency names (AUD, CAD, ...) not rmse_bps_AUD
+    result = pd.Series({
+        ccy: float(df[ccy].mean())
+        for ccy in CCY_ORDER
+        if ccy in df.columns
+    })
+    result["Average"] = float(df["avg_rmse_bps"].mean())
+    return result
+
+def load_rolling_train_time_min(dim):
+    """Average training time (minutes) per rolling window for the AE model."""
+    df = load_rolling_df(dim)
+    if df is None or "time_train_sec" not in df.columns:
+        return None
+    return float(df["time_train_sec"].mean()) / 60.0
+
+def load_ekf_rolling_train_time_min(dim):
+    """Average training time (minutes) per rolling window for the EKF DNS model."""
+    df = load_ekf_rolling_df(dim)
+    if df is None or "time_train_sec" not in df.columns:
+        return None
+    return float(df["time_train_sec"].mean()) / 60.0
+
+# Q2a — Table: IS vs OOS RMSE side-by-side for d = 1, 2, 3, 4
+#        IS  : average per-window in-sample RMSE from rolling CSV (same model as OOS)
+#        OOS : average per-currency RMSE across all rolling windows
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q2a: IS vs OOS RMSE table (all dims, rolling-based) ──")
+
+def load_is_rmse_for_rolling(dim):
+    """Load per-window IS RMSE averaged across all rolling windows.
+    Reads in_rmse_bps_{ccy} and avg_in_rmse_bps columns from the rolling CSV.
+    Returns None if not found or columns missing (old CSV without IS columns).
+    """
+    df = load_rolling_df(dim)
+    if df is None or len(df) == 0:
+        return None
+    if "avg_in_rmse_bps" not in df.columns:
+        warnings.warn(
+            f"⚠️  Rolling CSV for dim={dim} has no 'avg_in_rmse_bps' column — "
+            f"re-run OutOfSampleRoll.py to generate per-window IS RMSE."
+        )
+        return None
+    result = pd.Series({
+        ccy: float(df[f"in_rmse_bps_{ccy}"].mean())
+        for ccy in CCY_ORDER
+        if f"in_rmse_bps_{ccy}" in df.columns
+    })
+    result["Average"] = float(df["avg_in_rmse_bps"].mean())
+    print(f"  [dim={dim}] IS RMSE averaged across {len(df)} rolling windows (from rolling CSV)")
+    return result
+
+def load_rolling_oos_per_ccy(dim):
+    """Average per-currency OOS RMSE across all rolling windows."""
+    df = load_rolling_df(dim)
+    if df is None or len(df) == 0:
+        return None
+    result = pd.Series({
+        ccy: float(df[f"rmse_bps_{ccy}"].mean())
+        for ccy in CCY_ORDER
+        if f"rmse_bps_{ccy}" in df.columns
+    })
+    result["Average"] = float(df["avg_rmse_bps"].mean())
+    return result
+
+rows_q2 = {}
+for dim in [1, 2, 3, 4]:
+    is_mean  = load_is_rmse_for_rolling(dim)
+    oos_mean = load_rolling_oos_per_ccy(dim)
+    if is_mean is not None and oos_mean is not None:
+        rows_q2[("IS",  f"$\\ell={dim}$")] = is_mean
+        rows_q2[("OOS", f"$\\ell={dim}$")] = oos_mean
+    else:
+        if is_mean  is None: print(f"  [dim={dim}] IS  missing — skipped")
+        if oos_mean is None: print(f"  [dim={dim}] OOS missing — run OutOfSampleRoll.py")
+
+table_q2a = pd.DataFrame(rows_q2).T
+table_q2a.index = pd.MultiIndex.from_tuples(table_q2a.index, names=["Split", "Model"])
+table_q2a = table_q2a[[c for c in CCY_ORDER + ["Average"] if c in table_q2a.columns]]
+table_q2a = table_q2a.round(2)
+save_table(table_q2a, "Q2a_IS_vs_OOS_all_dims")
+print(table_q2a.to_string())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Extra — Rolling window experiment diagram
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Extra: Rolling window diagram ──")
+
+_train_years  = 5
+_test_months  = 6
+_step_months  = 6
+_data_start   = pd.Timestamp("2010-01-01")
+_data_end     = pd.Timestamp("2023-12-31")
+_total_months = (_data_end.year - _data_start.year) * 12 + (_data_end.month - _data_start.month)
+
+# generate all window start dates
+_w_starts = []
+_d = _data_start + pd.DateOffset(years=_train_years)
+while _d + pd.DateOffset(months=_test_months) <= _data_end + pd.DateOffset(days=1):
+    _w_starts.append(_d)
+    _d = _d + pd.DateOffset(months=_step_months)
+
+# show 6 consecutive windows starting from the first, to show the staggered structure
+_n_show = 3
+_show   = _w_starts[:_n_show]
+
+def _to_x(ts):
+    return ts.year + (ts.month - 1) / 12.0
+
+_col_train = custom_palette[4]
+_col_test  = custom_palette[6]
+_col_full  = "lightgray"
+_row_h     = 0.45
+_n_rows    = _n_show + 2   # windows + dots row + full series row
+
+fig, ax = plt.subplots(figsize=(11, 3.2))
+
+# ── full series bar at top ────────────────────────────────────────────────────
+_top_y = _n_show + 2
+ax.barh(_top_y, _to_x(_data_end) - _to_x(_data_start),
+        left=_to_x(_data_start), height=_row_h,
+        color=_col_full, edgecolor="none", zorder=2)
+ax.text(_to_x(_data_start) + (_to_x(_data_end) - _to_x(_data_start)) / 2,
+        _top_y, "Full series  (2010–2023)",
+        va="center", ha="center", fontsize=13, color="dimgray")
+
+# ── rolling windows (staggered) — W1 to W5 ───────────────────────────────────
+_extra_gap = 0.8   # extra space between W2 and W3 for bracket labels
+for i, test_start in enumerate(_show):
+    train_start = test_start - pd.DateOffset(years=_train_years)
+    test_end    = test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
+    y = _n_show - i + 1 - (_extra_gap if i >= 2 else 0)   # top window = W1
+
+    ax.barh(y, _to_x(test_start) - _to_x(train_start),
+            left=_to_x(train_start), height=_row_h,
+            color=_col_train, edgecolor="none", zorder=2,
+            label="Training" if i == 0 else "")
+    ax.barh(y, _to_x(test_end) - _to_x(test_start),
+            left=_to_x(test_start), height=_row_h,
+            color=_col_test, edgecolor="none", zorder=2,
+            label="Test" if i == 0 else "")
+    ax.text(_to_x(_data_start) - 0.15, y, f"$W_{{{i+1}}}$",
+            va="center", ha="right", fontsize=13)
+
+# ── dots row ──────────────────────────────────────────────────────────────────
+_dots_y = 1 - _extra_gap
+ax.text(_to_x(_data_start) - 0.15, _dots_y, "$\\vdots$",
+        va="center", ha="right", fontsize=13)
+ax.text(_to_x(_data_start) + 7.5, _dots_y, "$\\vdots$",
+        va="center", ha="center", fontsize=13)
+
+# ── last window Wn ────────────────────────────────────────────────────────────
+_last_test_start = _w_starts[-1]
+_last_train_start = _last_test_start - pd.DateOffset(years=_train_years)
+_last_test_end    = _last_test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
+_last_y = 0 - _extra_gap
+_n_total = len(_w_starts)
+
+ax.barh(_last_y, _to_x(_last_test_start) - _to_x(_last_train_start),
+        left=_to_x(_last_train_start), height=_row_h,
+        color=_col_train, edgecolor="none", zorder=2)
+ax.barh(_last_y, _to_x(_last_test_end) - _to_x(_last_test_start),
+        left=_to_x(_last_test_start), height=_row_h,
+        color=_col_test, edgecolor="none", zorder=2)
+ax.text(_to_x(_data_start) - 0.15, _last_y, f"$W_{{{_n_total}}}$",
+        va="center", ha="right", fontsize=13)
+
+# ── annotation brackets on W2 ────────────────────────────────────────────────
+_w2_i           = 1   # W2 is the second window (index 1)
+_w2_test_start  = _show[_w2_i]
+_w2_train_start = _w2_test_start - pd.DateOffset(years=_train_years)
+_w2_test_end    = _w2_test_start + pd.DateOffset(months=_test_months) - pd.DateOffset(days=1)
+_w2_y           = _n_show - _w2_i + 1   # y-position of W2 row
+_bracket_y      = _w2_y - 0.45          # just below the bar
+_text_y         = _w2_y - 0.72          # text below bracket
+
+_arrowprops = dict(arrowstyle="|-|, widthA=0.2, widthB=0.2",
+                   color="black", lw=0.8)
+
+# 6 months: data_start → train_start of W2
+ax.annotate("", xy=(_to_x(_w2_train_start), _bracket_y),
+            xytext=(_to_x(_data_start), _bracket_y),
+            arrowprops=_arrowprops)
+ax.text((_to_x(_data_start) + _to_x(_w2_train_start)) / 2, _text_y,
+        "6 months", ha="center", va="top", fontsize=11)
+
+# 5 years: train_start → test_start of W2
+ax.annotate("", xy=(_to_x(_w2_test_start), _bracket_y),
+            xytext=(_to_x(_w2_train_start), _bracket_y),
+            arrowprops=_arrowprops)
+ax.text((_to_x(_w2_train_start) + _to_x(_w2_test_start)) / 2, _text_y,
+        "5 years", ha="center", va="top", fontsize=11)
+
+# 6 months: test_start → test_end of W2
+ax.annotate("", xy=(_to_x(_w2_test_end), _bracket_y),
+            xytext=(_to_x(_w2_test_start), _bracket_y),
+            arrowprops=_arrowprops)
+ax.text((_to_x(_w2_test_start) + _to_x(_w2_test_end)) / 2, _text_y,
+        "6 months", ha="center", va="top", fontsize=11)
+
+# ── axes formatting ───────────────────────────────────────────────────────────
+ax.set_xlim(_to_x(_data_start) - 1.5, _to_x(_data_end) + 0.5)
+ax.set_ylim(-1.2 - _extra_gap, _top_y + 0.8)
+ax.set_xticks(range(2010, 2025, 2))
+ax.set_xticklabels([str(y) for y in range(2010, 2025, 2)], fontsize=13)
+ax.set_yticks([])
+ax.text(_to_x(_data_start) - 1.3,
+        (_n_show + 1) / 2, "Windows",
+        va="center", ha="center", fontsize=13, rotation=90, color="dimgray")
+ax.spines[["left", "top", "right"]].set_visible(False)
+ax.legend(fontsize=13, frameon=False,
+          loc="lower center", bbox_to_anchor=(0.5, -0.28), ncol=2)
+fig.tight_layout()
+fig.subplots_adjust(bottom=0.18)
+save_extra_fig(fig, "rolling_window_diagram")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q2b — Plot: OOS RMSE vs latent dimension (rolling average per dim)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q2b: IS + Rolling OOS RMSE vs dim ──")
+
+# IS averages from ep3500 training logs
+is_avgs = {}
+for dim in [2, 3, 4]:
+    _is = load_is_rmse_for_rolling(dim)
+    if _is is not None:
+        is_avgs[dim] = float(_is["Average"])
+
+# OOS rolling averages (ep2500)
+roll_avgs = {}
+for dim in [2, 3, 4]:
+    avg = load_rolling_avg(dim)
+    if avg is not None:
+        roll_avgs[dim] = avg
+
+# EKF DNS rolling averages
+ekf_roll_avgs = {}
+for _nf in [2, 3, 4]:
+    _avg = load_ekf_rolling_avg(_nf)
+    if _avg is not None:
+        ekf_roll_avgs[_nf] = _avg
+
+if len(roll_avgs) >= 1 or len(is_avgs) >= 1:
+    _dims = [d for d in [2, 3, 4] if d in roll_avgs or d in is_avgs]
+    _x    = np.arange(len(_dims))
+    _w    = 0.35
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+
+    # IS bars (solid)
+    _is_vals  = [is_avgs.get(d, np.nan) for d in _dims]
+    _is_bars  = ax.bar(_x - _w/2, _is_vals,
+                       width=_w, color=[DIM_COLORS[d] for d in _dims],
+                       edgecolor="none")
+
+    # OOS rolling bars (hatched)
+    _oos_vals = [roll_avgs.get(d, np.nan) for d in _dims]
+    _oos_bars = ax.bar(_x + _w/2, _oos_vals,
+                       width=_w, color=[DIM_COLORS[d] for d in _dims],
+                       edgecolor=[DIM_COLORS[d] for d in _dims],
+                       alpha=0.5, hatch="////")
+
+    # value labels
+    for bars, vals in [(_is_bars, _is_vals), (_oos_bars, _oos_vals)]:
+        for bar, val in zip(bars, vals):
+            if np.isfinite(val):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                        f"{val:.1f}", ha="center", va="bottom", fontsize=8)
+
+    ax.set_xticks(_x)
+    ax.set_xticklabels([f"$\\ell={d}$" for d in _dims], fontsize=10)
+    ax.set_ylabel("Average RMSE (bps)", fontsize=10)
+    ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
+
+    import matplotlib.patches as mpatches
+    _leg_is  = mpatches.Patch(color="0.4", label="In-sample")
+    _leg_oos = mpatches.Patch(facecolor="0.4", edgecolor="0.4", alpha=0.5,
+                              hatch="////", label="Out-of-sample")
+    fig.tight_layout(rect=[0, 0.08, 1, 1])
+    fig.legend(handles=[_leg_is, _leg_oos], loc="lower center",
+               ncol=2, fontsize=9, frameon=False, bbox_to_anchor=(0.5, 0.01))
+    save_fig(fig, "Q2b_rolling_oos_vs_dim")
+else:
+    print("  SKIPPED — no IS or OOS rolling results available.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q3a — Table: OOS RMSE per currency, all seeds + mean ± std (d=3)
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q3a: OOS seeds table (d=3) ──")
+#
+# if os.path.exists(MANIFEST_PATH):
+#     with open(MANIFEST_PATH) as f:
+#         mf = json.load(f)
+#
+#     seed_results = mf.get("seed_results", {})
+#     seed_keys    = sorted(seed_results.keys(), key=int)
+#
+#     oos_rows = {}
+#     for sk in seed_keys:
+#         per_ccy = seed_results[sk]["oos_per_ccy_bps"]
+#         oos_rows[f"Seed {sk}"] = {ccy: per_ccy.get(ccy, np.nan) for ccy in CCY_ORDER}
+#         oos_rows[f"Seed {sk}"]["Average"] = seed_results[sk]["oos_avg_bps"]
+#
+#     table_q3a = pd.DataFrame(oos_rows).T
+#     table_q3a = table_q3a[[c for c in CCY_ORDER + ["Average"] if c in table_q3a.columns]]
+#     table_q3a = table_q3a.round(2)
+#
+#     # valid mean: exclude diverged seeds (avg > 100 bps or NaN)
+#     _avg_num = pd.to_numeric(table_q3a["Average"], errors="coerce")
+#     _valid_mask = _avg_num.notna() & (_avg_num < 100)
+#     print(f"  Valid seeds: {list(table_q3a.index[_valid_mask])}")
+#     _mean_valid = pd.Series(np.nan, index=table_q3a.columns)
+#     _mean_valid["Average"] = round(_avg_num[_valid_mask].mean(), 2)
+#     print(f"  Mean (valid) Average: {_mean_valid['Average']}")
+#     table_q3a.loc["Mean (valid)"] = _mean_valid
+#
+#     save_table(table_q3a, "Q3a_OOS_seeds_table_dim3")
+#     print(table_q3a.to_string())
+# else:
+#     print("  SKIPPED  — run_manifest.json not found.")
+# ── END REMOVED ──
+print("\n── Q3a: OOS seeds table (d=3) ──")
+print("  SKIPPED (block removed)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q3b — Plot: Rolling OOS RMSE over time (ℓ=2,3,4 average, with explosion bars)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q3b: Rolling RMSE over time (ℓ=2,3,4) ──")
+
+CLIP      = 100
+BAR_WIDTH = pd.Timedelta(days=50)
+_Q3b_COLORS  = {d: DIM_COLORS[d] for d in [2, 3, 4]}
+DIM_OFFSETS = {2: pd.Timedelta(days=-35), 3: pd.Timedelta(days=0), 4: pd.Timedelta(days=35)}
+
+_any_plotted = False
+fig, ax = plt.subplots(figsize=(11, 4.5))
+
+for _dim, _col in _Q3b_COLORS.items():
+    _df = load_rolling_df(_dim)
+    if _df is None:
+        print(f"  SKIPPED dim={_dim} — no rolling CSV found")
+        continue
+    _any_plotted = True
+
+    # average line (clipped at CLIP)
+    avg_clipped = _df["avg_rmse_bps"].clip(upper=CLIP)
+    ax.plot(_df["test_start"], avg_clipped,
+            linewidth=1.8, color=_col, label=f"$\\ell={_dim}$", zorder=5)
+
+    # text annotations alongside spike, rotated to match spike angle
+    _ANNOT_Y = {2: 97, 3: 88, 4: 79}   # staggered y per dim
+    explode_mask = _df["avg_rmse_bps"] > CLIP
+    for _, row in _df[explode_mask].iterrows():
+        true_val = row["avg_rmse_bps"]
+        idx = _df.index.get_loc(row.name)
+
+        # check if another dim has a spike within one step of this date
+        _window = pd.Timedelta(days=200)
+        _other_spike_nearby = any(
+            (load_rolling_df(d) is not None and
+             ((load_rolling_df(d)["avg_rmse_bps"] > CLIP) &
+              (abs(load_rolling_df(d)["test_start"] - row["test_start"]) <= _window)).any())
+            for d in [2, 3, 4] if d != _dim
+        )
+        _use_left = (_dim == 4 and _other_spike_nearby)
+
+        if _use_left and idx > 0:
+            # ascending side: previous point → spike
+            prev_r = _df.iloc[idx - 1]
+            x0 = mdates.date2num(prev_r["test_start"])
+            y0 = min(prev_r["avg_rmse_bps"], CLIP)
+            x1 = mdates.date2num(row["test_start"])
+            y1 = CLIP
+            p0 = ax.transData.transform((x0, y0))
+            p1 = ax.transData.transform((x1, y1))
+            angle = np.degrees(np.arctan2(p1[1] - p0[1], p1[0] - p0[0]))
+            angle = 0.2 * angle + 0.8 * 90    # blend toward vertical upward
+        elif idx < len(_df) - 1:
+            # descending side: spike → next point
+            next_r = _df.iloc[idx + 1]
+            x0 = mdates.date2num(row["test_start"])
+            y0 = CLIP
+            x1 = mdates.date2num(next_r["test_start"])
+            y1 = min(next_r["avg_rmse_bps"], CLIP)
+            p0 = ax.transData.transform((x0, y0))
+            p1 = ax.transData.transform((x1, y1))
+            angle = np.degrees(np.arctan2(p1[1] - p0[1], p1[0] - p0[0]))
+            angle = 0.2 * angle + 0.8 * (-90)  # blend toward vertical downward
+        else:
+            angle = -90
+
+        ax.text(row["test_start"], _ANNOT_Y[_dim],
+                f"{true_val:.0f}", fontsize=7, ha="center", va="bottom",
+                color=_col, fontweight="bold", zorder=6,
+                rotation=angle, rotation_mode="anchor")
+
+if not _any_plotted:
+    print("  Q3b SKIPPED — no rolling CSVs found for any dim")
+else:
+    # event markers
+    ax.set_ylim(0, CLIP)
+    _x_min = min(
+        load_rolling_df(d)["test_start"].min()
+        for d in _Q3b_COLORS if load_rolling_df(d) is not None
+    )
+    _x_max = max(
+        load_rolling_df(d)["test_start"].max()
+        for d in _Q3b_COLORS if load_rolling_df(d) is not None
+    )
+    for label, date_str in EVENTS.items():
+        d = pd.Timestamp(date_str)
+        if _x_min <= d <= _x_max:
+            ax.axvline(d, color="0.5", linewidth=1.0, linestyle="--")
+            ax.text(d, CLIP, label, fontsize=10, ha="center", va="bottom", color="0.4")
+
+    ax.set_ylabel("OOS RMSE (bps)")
+    ax.legend(fontsize=8)
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    save_fig(fig, "Q3b_rolling_rmse_over_time")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q4a — Table: AE IS vs AE OOS RMSE per currency (dims 2, 3, 4)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q4a: AE IS vs OOS table ──")
+
+rows_q4 = {}
+for dim in [2, 3, 4]:
+    is_ae_dim = load_is_rmse_for_rolling(dim)
+    if is_ae_dim is not None:
+        rows_q4[f"$\\ell={dim}$ — IS"] = is_ae_dim
+    oos_ae_dim = load_rolling_oos_per_ccy(dim)
+    if oos_ae_dim is not None:
+        oos_ae_dim["Time (min)"] = load_rolling_train_time_min(dim)
+        rows_q4[f"$\\ell={dim}$ — OOS"] = oos_ae_dim
+
+table_q4a = pd.DataFrame(rows_q4).T
+table_q4a = table_q4a[[c for c in CCY_ORDER + ["Average", "Time (min)"] if c in table_q4a.columns]]
+table_q4a = table_q4a.round(2)
+# split "Model — Set" index into two separate columns
+_q4a_export = table_q4a.reset_index()
+_q4a_split = _q4a_export["index"].str.split(" — ", n=1, expand=True)
+_q4a_export.insert(0, "Model", _q4a_split[0])
+_q4a_export.insert(1, "Set", _q4a_split[1])
+_q4a_export = _q4a_export.drop(columns=["index"])
+_q4a_export.to_csv(
+    os.path.join(TABLES_OUT, "Q4a_AE_vs_Kalman_OOS.csv"), index=False)
+print(f"  Saved: Q4a_AE_vs_Kalman_OOS.csv")
+print(table_q4a.to_string())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q4b — Plot: Per-currency bar chart, one plot per dim (AE ℓ vs EKF DNS ℓf)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q4b: Per-currency bar chart (one plot per dim) ──")
+
+for _dim in [2, 3, 4]:
+    oos_ae = load_rolling_oos_per_ccy(_dim)
+    oos_k  = load_ekf_rolling_oos_per_ccy(_dim)
+
+    if oos_ae is None or oos_k is None:
+        print(f"  SKIPPED dim={_dim} — missing AE or Kalman OOS data.")
+        continue
+
+    x      = np.arange(len(CCY_ORDER))
+    width  = 0.26
+    labels = CCY_ORDER
+
+    fig, ax = plt.subplots(figsize=(11, 5))
+
+    _ae_col = DIM_COLORS[_dim]
+    _ekf_col = custom_palette[8]   # olive/brown — distinct from AE colours
+
+    ax.bar(x - width / 2,
+           [oos_ae.get(c, np.nan) for c in labels],
+           width, label=rf"AE ($\ell$={_dim})",
+           color=_ae_col, edgecolor="none")
+
+    ax.bar(x + width / 2,
+           [oos_k.get(c, np.nan) for c in labels],
+           width, label=rf"EKF DNS ($\ell$={_dim})",
+           color=_ekf_col, edgecolor="none")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("OOS RMSE (bps)")
+    ax.legend(frameon=False, fontsize=9)
+
+    avg_ae = oos_ae.drop("Average", errors="ignore").mean()
+    ax.axhline(avg_ae, color=_ae_col, linewidth=1.0, linestyle="--", alpha=0.7)
+    avg_k = oos_k.drop("Average", errors="ignore").mean()
+    ax.axhline(avg_k, color=_ekf_col, linewidth=1.0, linestyle="--", alpha=0.7)
+
+    fig.tight_layout()
+    save_fig(fig, f"Q4b_per_currency_bar_chart_dim{_dim}")
+    print(f"  Saved Q4b dim={_dim}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q4c — Tables: OOS rolling RMSE by curve regime (inverted / negative rates)
+# Reads combined predictions_test_all.csv for dim=2 baseline
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q4c: OOS rolling RMSE by curve regime (baseline ℓ=2 rolling) ──")
+
+_pred_all_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                               "OOS_roll_dim2_baseline",
+                               ROLL_SUBDIR, f"ep{ROLL_EPOCHS}", "predictions_test_all.csv")
+
+if not os.path.exists(_pred_all_path):
+    print(f"  ⚠️  Q4c skipped — predictions_test_all.csv not found: {_pred_all_path}")
+else:
+        _df_oos = pd.read_csv(_pred_all_path)
+
+        # identify actual and fitted tenor columns
+        _actual_cols = [c for c in _df_oos.columns if c.startswith("actual_tenor_")]
+        _fitted_cols = [c for c in _df_oos.columns if c.startswith("fitted_tenor_")]
+
+        _X_oos = _df_oos[_actual_cols].values
+        _S_oos = _df_oos[_fitted_cols].values
+
+        # per-observation RMSE in bps
+        _rmse_oos = np.sqrt(np.mean((_X_oos - _S_oos) ** 2, axis=1)) * 10_000
+
+        # regime flags
+        _inv_oos = _X_oos[:, 0] > _X_oos[:, -1]
+        _neg_oos = (_X_oos < 0).any(axis=1)
+
+        _df_oos_regime = pd.DataFrame({
+            "ccy":      _df_oos["ccy"].values,
+            "rmse_bps": _rmse_oos,
+            "inverted": _inv_oos,
+            "negative": _neg_oos,
+        })
+
+        def _regime_table_oos(df, flag_col, label_true, label_false):
+            rows = {}
+            for lbl, mask in [(label_true, df[flag_col]), (label_false, ~df[flag_col])]:
+                for stat, fn in [("N",               lambda x: len(x)),
+                                  ("RMSE", lambda x: round(x.mean(), 2)),
+                                  ("Std RMSE (bps)", lambda x: round(x.std(),  2))]:
+                    row = {}
+                    for ccy in CCY_ORDER:
+                        sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                        row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                    sub_all = df.loc[mask, "rmse_bps"]
+                    row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                    rows[f"{lbl} — {stat}"] = row
+            return pd.DataFrame(rows).T
+
+        tbl_inv_oos = _regime_table_oos(_df_oos_regime, "inverted", "Inverted", "Normal")
+        save_table(tbl_inv_oos, "Q4c_oos_rmse_inverted")
+        print("\n  Inverted vs Normal (OOS):")
+        print(tbl_inv_oos.to_string())
+
+        tbl_neg_oos = _regime_table_oos(_df_oos_regime, "negative", "Negative", "Non-negative")
+        save_table(tbl_neg_oos, "Q4c_oos_rmse_negative")
+        print("\n  Negative vs Non-negative rates (OOS):")
+        print(tbl_neg_oos.to_string())
+
+        # combined 4-regime table
+        def _combined_regime_table_oos(df):
+            groups = [
+                ("Normal",   ~df["inverted"] & ~df["negative"]),
+                ("Inverted",  df["inverted"] & ~df["negative"]),
+                ("Negative",       ~df["inverted"] &  df["negative"]),
+                ("Inverted + Negative",      df["inverted"] &  df["negative"]),
+            ]
+            rows = {}
+            for lbl, mask in groups:
+                for stat, fn in [("N",              lambda x: len(x)),
+                                 ("RMSE", lambda x: round(x.mean(), 2)),
+                                 ("Std RMSE (bps)", lambda x: round(x.std(),  2))]:
+                    row = {}
+                    for ccy in CCY_ORDER:
+                        sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                        row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                    sub_all = df.loc[mask, "rmse_bps"]
+                    row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                    rows[f"{lbl} — {stat}"] = row
+            return pd.DataFrame(rows).T
+
+        tbl_combined_oos = _combined_regime_table_oos(_df_oos_regime)
+        save_table(tbl_combined_oos, "Q4c_oos_rmse_combined")
+        print("\n  Combined regime (inverted × negative) (OOS):")
+        print(tbl_combined_oos.to_string())
+
+        # display version: N + IS RMSE + OOS RMSE per regime, then Average rows
+        # load training predictions to compute per-regime IS RMSE
+        _pred_train_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll",
+                                        "OOS_roll_dim2_baseline",
+                                        ROLL_SUBDIR, f"ep{ROLL_EPOCHS}", "predictions_train_all.csv")
+        _df_is = pd.read_csv(_pred_train_path) if os.path.exists(_pred_train_path) else None
+        if _df_is is not None:
+            _actual_cols_is = [c for c in _df_is.columns if c.startswith("actual_tenor_")]
+            _fitted_cols_is = [c for c in _df_is.columns if c.startswith("fitted_tenor_")]
+            _X_is = _df_is[_actual_cols_is].values
+            _S_is = _df_is[_fitted_cols_is].values
+            _rmse_is_vals = np.sqrt(np.mean((_X_is - _S_is) ** 2, axis=1)) * 10_000
+            _df_is_regime = pd.DataFrame({
+                "ccy":      _df_is["ccy"].values,
+                "rmse_bps": _rmse_is_vals,
+                "inverted": _X_is[:, 0] > _X_is[:, -1],
+                "negative": (_X_is < 0).any(axis=1),
+            })
+        else:
+            _df_is_regime = None
+
+        def _fmt_n(v): return str(int(v)) if pd.notna(v) else "---"
+        def _fmt_r(v): return f"{v:.1f}" if pd.notna(v) else "---"
+
+        _groups_disp = [
+            ("Normal",   ~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"],
+                         (~_df_is_regime["inverted"] & ~_df_is_regime["negative"]) if _df_is_regime is not None else None),
+            ("Inverted",  _df_oos_regime["inverted"] & ~_df_oos_regime["negative"],
+                         (_df_is_regime["inverted"]  & ~_df_is_regime["negative"]) if _df_is_regime is not None else None),
+            ("Negative", ~_df_oos_regime["inverted"] &  _df_oos_regime["negative"],
+                         (~_df_is_regime["inverted"] &  _df_is_regime["negative"]) if _df_is_regime is not None else None),
+        ]
+
+        _disp_rows = []
+        for _lbl, _mask_oos, _mask_is in _groups_disp:
+            # N row (count from OOS set)
+            _row_n = {"Curve Variant": r"\multirow{3}{*}{" + _lbl + r"}", "Metric": "N"}
+            for _ccy in CCY_ORDER:
+                _sub = _df_oos_regime.loc[_mask_oos & (_df_oos_regime["ccy"] == _ccy), "rmse_bps"]
+                _row_n[_ccy] = _fmt_n(len(_sub)) if len(_sub) > 0 else "---"
+            _row_n["All"] = _fmt_n(len(_df_oos_regime.loc[_mask_oos]))
+            _disp_rows.append(_row_n)
+
+            # IS RMSE row
+            _row_is = {"Curve Variant": "", "Metric": "IS RMSE"}
+            if _df_is_regime is not None and _mask_is is not None:
+                for _ccy in CCY_ORDER:
+                    _sub = _df_is_regime.loc[_mask_is & (_df_is_regime["ccy"] == _ccy), "rmse_bps"]
+                    _row_is[_ccy] = _fmt_r(_sub.mean()) if len(_sub) > 0 else "---"
+                _row_is["All"] = _fmt_r(_df_is_regime.loc[_mask_is, "rmse_bps"].mean())
+            else:
+                for _ccy in CCY_ORDER + ["All"]:
+                    _row_is[_ccy] = "---"
+            _disp_rows.append(_row_is)
+
+            # OOS RMSE row
+            _row_oos = {"Curve Variant": "", "Metric": "OOS RMSE"}
+            for _ccy in CCY_ORDER:
+                _sub = _df_oos_regime.loc[_mask_oos & (_df_oos_regime["ccy"] == _ccy), "rmse_bps"]
+                _row_oos[_ccy] = _fmt_r(_sub.mean()) if len(_sub) > 0 else "---"
+            _row_oos["All"] = _fmt_r(_df_oos_regime.loc[_mask_oos, "rmse_bps"].mean())
+            _disp_rows.append(_row_oos)
+
+        # Average rows at the bottom (all curves, not regime-specific)
+        _row_avg_is  = {"Curve Variant": r"\multirow{2}{*}{Average}", "Metric": "IS RMSE"}
+        _row_avg_oos = {"Curve Variant": "", "Metric": "OOS RMSE"}
+        for _ccy in CCY_ORDER:
+            if _df_is_regime is not None:
+                _sub_is = _df_is_regime[_df_is_regime["ccy"] == _ccy]["rmse_bps"]
+                _row_avg_is[_ccy] = _fmt_r(_sub_is.mean()) if len(_sub_is) > 0 else "---"
+            else:
+                _row_avg_is[_ccy] = "---"
+            _sub_oos = _df_oos_regime[_df_oos_regime["ccy"] == _ccy]["rmse_bps"]
+            _row_avg_oos[_ccy] = _fmt_r(_sub_oos.mean()) if len(_sub_oos) > 0 else "---"
+        _row_avg_is["All"]  = _fmt_r(_df_is_regime["rmse_bps"].mean()) if _df_is_regime is not None else "---"
+        _row_avg_oos["All"] = _fmt_r(_df_oos_regime["rmse_bps"].mean())
+        _disp_rows.append(_row_avg_is)
+        _disp_rows.append(_row_avg_oos)
+
+        _disp_oos_export = pd.DataFrame(_disp_rows,
+                                        columns=["Curve Variant", "Metric"] + CCY_ORDER + ["All"])
+        _disp_oos_export.to_csv(
+            os.path.join(TABLES_OUT, "Q4c_oos_rmse_combined_display.csv"), index=False)
+        print(f"  Saved: Q4c_oos_rmse_combined_display.csv")
+
+        # transposed version: rows = IS/OOS RMSE, columns = curve variants (All only, no N)
+        _trans_variants = ["Normal", "Inverted", "Negative", "Average"]
+        _trans_metrics  = ["IS RMSE", "OOS RMSE"]
+        _trans_lookup = {}
+        for _row in _disp_rows:
+            _lbl = _row["Curve Variant"].replace(r"\multirow{3}{*}{", "").replace(
+                   r"\multirow{2}{*}{", "").replace("}", "").strip()
+            if _lbl == "":
+                _lbl = _current_lbl
+            else:
+                _current_lbl = _lbl
+            if _row["Metric"] in _trans_metrics:
+                _trans_lookup[(_lbl, _row["Metric"])] = _row["All"]
+        _trans_rows = []
+        for _m in _trans_metrics:
+            _r = {"Metric": _m}
+            for _v in _trans_variants:
+                _r[_v] = _trans_lookup.get((_v, _m), "---")
+            _trans_rows.append(_r)
+        _disp_transposed = pd.DataFrame(_trans_rows, columns=["Metric"] + _trans_variants)
+        _disp_transposed.to_csv(
+            os.path.join(TABLES_OUT, "Q4c_oos_rmse_combined_display_transposed.csv"), index=False)
+        print(f"  Saved: Q4c_oos_rmse_combined_display_transposed.csv")
+
+        # scatter over time: colour encodes regime (negative = red family)
+        _df_oos_regime["as_of_date"] = pd.to_datetime(_df_oos["as_of_date"].values)
+        fig, ax = plt.subplots(figsize=(11, 3))
+        _oos_scatter_groups = [
+            (~_df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Normal",     custom_palette[2]),
+            ( _df_oos_regime["inverted"] & ~_df_oos_regime["negative"], "Inverted",   "black"),
+            (~_df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Negative",   "indianred"),
+            ( _df_oos_regime["inverted"] &  _df_oos_regime["negative"], "Inverted + Negative", custom_palette[8]),
+        ]
+        for _mask, _lbl, _col in _oos_scatter_groups:
+            _sub = _df_oos_regime[_mask]
+            if len(_sub) == 0:
+                continue
+            ax.scatter(_sub["as_of_date"], _sub["rmse_bps"],
+                       s=4, alpha=0.4, color=_col, marker="o", label=_lbl, zorder=3)
+        ax.set_ylabel("RMSE (bps)", fontsize=12)
+        _handles, _labels = ax.get_legend_handles_labels()
+        fig.autofmt_xdate()
+        fig.tight_layout(rect=[0, 0.12, 1, 1])
+        fig.legend(_handles, _labels, loc="lower center",
+                   bbox_to_anchor=(0.5, 0.01), ncol=len(_handles),
+                   fontsize=10, frameon=False, markerscale=3)
+        save_fig(fig, "Q4c_oos_scatter_regime")
+
+        print(f"  Loaded {len(_df_oos)} OOS test observations.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q5a — Plot: Latent factors over time (full IS sample, per currency)
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q5a: Latent factors over time ──")
+# if not _has_main_model:
+#     print(f"  ⚠️  Q5a skipped — no checkpoint for dim={LATENT_DIM}")
+# else:
+#     Z_np    = Z_train[mask_train].numpy()
+#     dates_z = pd.to_datetime(meta_train.loc[mask_train.numpy(), "as_of_date"])
+#     ccys_z  = meta_train.loc[mask_train.numpy(), "ccy"].values
+#
+#     fig, axes = plt.subplots(LATENT_DIM, 1,
+#                              figsize=(12, 3.2 * LATENT_DIM), sharex=True)
+#     if LATENT_DIM == 1:
+#         axes = [axes]
+#
+#     for ccy in CCY_ORDER:
+#         idx = (ccys_z == ccy)
+#         if idx.sum() == 0:
+#             continue
+#         sort_i = np.argsort(dates_z.values[idx])
+#         for dim_i, ax in enumerate(axes):
+#             ax.plot(dates_z.values[idx][sort_i], Z_np[idx][:, dim_i][sort_i],
+#                     linewidth=1.1, alpha=0.8, label=ccy,
+#                     color=currency_color_map[ccy])
+#
+#     for dim_i, ax in enumerate(axes):
+#         ax.set_ylabel(f"$z_{dim_i+1}$", fontsize=12)
+#         ax.axhline(0, color="black", linewidth=0.6, linestyle="--")
+#         for ev_label, ev_date in EVENTS.items():
+#             ax.axvline(pd.Timestamp(ev_date), color="0.6", linewidth=0.8, linestyle=":")
+#
+#     for ev_label, ev_date in EVENTS.items():
+#         axes[0].text(pd.Timestamp(ev_date), axes[0].get_ylim()[1],
+#                      ev_label, fontsize=10, ha="center", va="bottom", color="0.4")
+#     handles, labels = axes[0].get_legend_handles_labels()
+#     fig.tight_layout()
+#     fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
+#                ncol=9, frameon=False, fontsize=8)
+#     fig.subplots_adjust(bottom=0.08)
+#     save_fig(fig, "Q5a_latent_factors_over_time")
+# ── END REMOVED ──
+print("\n── Q5a: Latent factors over time ──")
+print("  SKIPPED (block removed)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q5b — Tables: Correlation of latent factors with level / slope / curvature
+#        One table per latent dimension (ℓ=2, 3, 4)
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q5b: Factor correlation tables (all dims) ──")
+#
+# _corr_matrices = {}  # dim → DataFrame, collected for heatmap below
+#
+# # Rebuild wide swap data aligned to training observations
+# df_is = df_wide_all.copy()
+# df_is["as_of_date"] = pd.to_datetime(df_is["as_of_date"])
+# df_is["ccy"] = df_is["ccy"].str.upper()
+#
+# scale_div = 100.0 if SCALE_IS_PERCENT else 1.0
+#
+# # ── Global PCA on IS swap rates (all currencies stacked) ─────────────────────
+# # Used as model-neutral reference basis for Q5b
+# from sklearn.decomposition import PCA as _SKLearnPCA
+# # Use a direct finite mask on X_train — PCA is model-neutral, does not need mask_train
+# _pca_finite    = torch.isfinite(X_train).all(1)
+# _X_is_all      = X_train[_pca_finite].numpy()                # (N_is, 8)
+# _finite_is     = np.isfinite(_X_is_all).all(axis=1)          # should be all True after above
+# _X_is_pca      = _X_is_all[_finite_is] / scale_div           # scale-consistent
+# _global_pca    = _SKLearnPCA(n_components=8)
+# _global_pca.fit(_X_is_pca)
+# _pc_vecs = _global_pca.components_                            # (8, 8) — rows are eigenvectors
+# print(f"  Global PCA explained variance ratios: "
+#       f"{np.round(_global_pca.explained_variance_ratio_ * 100, 2)}")
+#
+# # ── Plot: PC scores over time (left) + eigenvector loadings (right) ──────────
+# _tenor_labels   = [str(t) for t in TENOR_COLS]
+# _n_plot_pcs     = 3
+# _pc_plot_labels = [f"PC {j+1}" for j in range(_n_plot_pcs)]
+#
+# # compute PC scores for all IS observations, averaged across currencies per date
+# _meta_is       = meta_train.loc[_pca_finite.numpy()].copy().reset_index(drop=True)
+# _meta_is       = _meta_is[_finite_is].copy().reset_index(drop=True)
+# _meta_is["as_of_date"] = pd.to_datetime(_meta_is["as_of_date"])
+# _pc_vecs_plot  = _pc_vecs                            # global eigenvectors
+# for j in range(_n_plot_pcs):
+#     _meta_is[f"PC{j+1}"] = _X_is_pca @ _pc_vecs_plot[j]
+# _pc_ts = (_meta_is
+#           .groupby("as_of_date")[[f"PC{j+1}" for j in range(_n_plot_pcs)]]
+#           .mean()
+#           .sort_index())
+#
+# # ── PC scores over time ───────────────────────────────────────────────────────
+# fig, ax_left = plt.subplots(figsize=(6.5, 3.5))
+# for j in range(_n_plot_pcs):
+#     ax_left.plot(_pc_ts.index, _pc_ts[f"PC{j+1}"],
+#                  linewidth=1.2, color=custom_palette[j], label=_pc_plot_labels[j])
+# ax_left.axhline(0, color="black", linewidth=0.8, linestyle="--")
+# ax_left.set_xlabel("Date", fontsize=10)
+# ax_left.set_ylabel("PC score", fontsize=10)
+# ax_left.legend(fontsize=10, frameon=False)
+# fig.tight_layout()
+# save_fig(fig, "Q5b_pca_scores")
+#
+# # ── eigenvector loadings across maturities ────────────────────────────────────
+# fig, ax_right = plt.subplots(figsize=(6.5, 3.5))
+# for j in range(_n_plot_pcs):
+#     _v = _pc_vecs_plot[j]
+#     ax_right.plot(range(8), _v, marker="o", linewidth=2,
+#                   color=custom_palette[j], label=_pc_plot_labels[j])
+# ax_right.axhline(0, color="black", linewidth=0.8, linestyle="--")
+# ax_right.set_xticks(range(8))
+# ax_right.set_xticklabels(_tenor_labels, fontsize=10)
+# ax_right.set_xlabel("Maturity", fontsize=10)
+# ax_right.set_ylabel("Eigenvector loading", fontsize=10)
+# ax_right.legend(fontsize=10, frameon=False)
+# fig.tight_layout()
+# save_fig(fig, "Q5b_pca_loadings")
+#
+# for _dim in DIMS_PLOT:
+#     _Z    = dim_Z_hat[_dim]
+#     _mask = finite_mask(X_train, dim_S_hat[_dim]) & _pca_finite  # IS only (model-neutral finite mask)
+#     _Z_np = _Z[_mask].numpy()
+#     _X_np = X_train[_mask].numpy() / scale_div                  # (N, 8) scaled
+#
+#     meta_z = meta_train.loc[_mask.numpy()].copy().reset_index(drop=True)
+#     meta_z["as_of_date"] = pd.to_datetime(meta_z["as_of_date"])
+#     for k in range(_dim):
+#         meta_z[f"z{k+1}"] = _Z_np[:, k]
+#
+#     # PC scores: project IS swap rates onto all 8 global PCA eigenvectors
+#     for j in range(8):
+#         meta_z[f"PC{j+1}"] = _X_np @ _pc_vecs[j]
+#
+#     z_cols  = [f"z{k+1}"  for k in range(_dim)]
+#     pc_cols = [f"PC{j+1}" for j in range(8)]
+#
+#     corr_rows = {}
+#     for zc in z_cols:
+#         row = {}
+#         for pc in pc_cols:
+#             valid = meta_z[[zc, pc]].dropna()
+#             row[pc] = round(float(valid[zc].corr(valid[pc])), 3)
+#         corr_rows[zc] = row
+#
+#     table_q5b = pd.DataFrame(corr_rows).T
+#     table_q5b.index   = [f"$z_{k+1}$" for k in range(_dim)]
+#     table_q5b.columns = pc_cols
+#     _corr_matrices[_dim] = table_q5b.copy()
+#     save_table(table_q5b, f"Q5b_factor_correlations_dim{_dim}")
+#     print(f"\n  ℓ={_dim} (AE factor–PC correlations):")
+#     print(table_q5b.to_string())
+#
+#     # ── Weight projection: squared cosine similarity × 100 (Rolf Poulsen method)
+#     # w_{ij} = (W_i · V_j)^2 / ||W_i||^2 × 100  →  sums to 100% across all 8 PCs
+#     _W     = dim_models[_dim].encoder.lin.weight.detach().numpy()  # (d, 8)
+#     _W_hat = _W / np.linalg.norm(_W, axis=1, keepdims=True)        # unit-norm rows
+#     _cos   = _W_hat @ _pc_vecs.T                                    # (d, 8) cosine similarities
+#     _proj  = np.round(_cos ** 2 * 100, 2)                          # (d, 8) percentages
+#     table_wp = pd.DataFrame(
+#         _proj,
+#         index   = [f"$z_{k+1}$" for k in range(_dim)],
+#         columns = [f"PC{j+1}" for j in range(8)],
+#     )
+#     save_table(table_wp, f"Q5b_weight_projection_dim{_dim}")
+#     print(f"\n  ℓ={_dim} weight projection (squared cosine × 100, sums to 100%):")
+#     print(table_wp.to_string())
+#
+# # ── Combined weight projection CSV (all dims stacked, PC1–PC4 columns) ───────
+# _pc_all_cols = [f"PC{j+1}" for j in range(8)]
+#
+# _wp_rows = []
+# _wp_data  = {}   # dim → np array (d, 8), kept for bar plot
+# for _dim in DIMS_PLOT:
+#     _wp_path = os.path.join(TABLES_OUT, f"Q5b_weight_projection_dim{_dim}.csv")
+#     if not os.path.exists(_wp_path):
+#         continue
+#     _wp = pd.read_csv(_wp_path, index_col=0)   # (d, 8)
+#     _wp_data[_dim] = _wp.values.astype(float)
+#     for k in range(_dim):
+#         row = {"model": f"$\\ell={_dim}$" if k == 0 else "", "factor": f"$z_{k+1}$"}
+#         for j in range(8):
+#             row[f"PC{j+1}"] = f"{_wp.iloc[k, j]:.2f}"
+#         _wp_rows.append(row)
+# _wp_combined = pd.DataFrame(_wp_rows, columns=["model", "factor"] + _pc_all_cols)
+# _wp_combined.to_csv(os.path.join(TABLES_OUT, "Q5b_weight_projection_combined.csv"), index=False)
+# print("  Saved: Q5b_weight_projection_combined.csv")
+#
+# # ── Bar plot: ρ_j scree plot (Rolf Figure 4 style) ───────────────────────────
+# _rho       = _global_pca.explained_variance_ratio_   # (8,) — Rolf's ρ_j
+# _pc_labels = [str(j+1) for j in range(8)]
+# _x         = np.arange(8)
+#
+# fig, ax = plt.subplots(figsize=(6.5, 3.5))
+# bars = ax.barh(_x, _rho, height=0.35, color="gray", alpha=0.8,
+#                edgecolor="none", zorder=2)
+# ax.set_yticks(_x)
+# ax.set_yticklabels(_pc_labels, fontsize=10)
+# ax.invert_yaxis()
+# ax.set_ylabel("Principal component", fontsize=10)
+# ax.set_xlabel("PVE", fontsize=10)
+# ax.set_xlim(0, 1.08)
+# ax.tick_params(axis="y", length=0)
+# for bar, val in zip(bars, _rho):
+#     ax.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height() / 2,
+#             f"{val:.3f}", va="center", ha="left", fontsize=9)
+# fig.tight_layout()
+# save_fig(fig, "Q5b_weight_projection_barplot")
+#
+# # ── Q5b heatmap: all dims side by side ───────────────────────────────────────
+# if _corr_matrices:
+#     from matplotlib.colors import LinearSegmentedColormap
+#
+#     # Red (−1) → white (0) → blue (+1), using custom_palette colours
+#     _cmap_q5b = LinearSegmentedColormap.from_list(
+#         "q5b_div",
+#         [custom_palette[4], "white", custom_palette[0]],
+#         N=256
+#     )
+#
+#     _hm_dims    = sorted(_corr_matrices.keys())
+#     _n_panels   = len(_hm_dims)
+#     _row_counts = [len(_corr_matrices[d]) for d in _hm_dims]   # [2, 3, 4]
+#     _total_rows = sum(_row_counts)
+#
+#     # height ratios proportional to number of factors per model
+#     fig, axes = plt.subplots(
+#         _n_panels, 1,
+#         figsize=(9, 0.8 * _total_rows + 0.5 * _n_panels),
+#         gridspec_kw={"height_ratios": _row_counts, "hspace": 0.4},
+#     )
+#     if _n_panels == 1:
+#         axes = [axes]
+#
+#     fig.subplots_adjust(right=0.88)   # leave room for colorbar
+#
+#     for ax, _dim in zip(axes, _hm_dims):
+#         _mat           = _corr_matrices[_dim].values.astype(float)
+#         _nrows, _ncols = _mat.shape
+#         _row_labels    = [f"$z_{k+1}$" for k in range(_nrows)]
+#         _col_labels    = [f"PC{j+1}"   for j in range(_ncols)]
+#
+#         _X = np.arange(_ncols + 1)
+#         _Y = np.arange(_nrows + 1)
+#         im = ax.pcolormesh(_X, _Y, _mat, cmap=_cmap_q5b,
+#                            vmin=-1, vmax=1, edgecolors="face")
+#         ax.invert_yaxis()
+#         ax.set_xticks([c + 0.5 for c in range(_ncols)])
+#         ax.set_xticklabels(_col_labels, fontsize=9)
+#         ax.set_yticks([i + 0.5 for i in range(_nrows)])
+#         ax.set_yticklabels(_row_labels, fontsize=10)
+#         ax.tick_params(length=0)
+#         ax.set_title(r"$\ell=" + str(_dim) + r"$", fontsize=11,
+#                      fontweight="bold", loc="left", pad=4)
+#
+#         for r in range(_nrows):
+#             for c in range(_ncols):
+#                 val = _mat[r, c]
+#                 txt_color = "white" if abs(val) > 0.6 else "black"
+#                 ax.text(c + 0.5, r + 0.5, f"{val:.3f}",
+#                         ha="center", va="center", fontsize=9, color=txt_color)
+#
+#     # shared colorbar
+#     cbar_ax = fig.add_axes([0.90, 0.15, 0.02, 0.7])
+#     fig.colorbar(im, cax=cbar_ax, label="Pearson $\\rho$")
+#     save_fig(fig, "Q5b_factor_correlation_heatmap")
+# ── END REMOVED ──
+print("\n── Q5b: Factor correlation tables (all dims) ──")
+print("  SKIPPED (block removed)")
+
+
+# Q5c removed — EKF DNS factor correlation heatmap dropped from analysis
+
+
+# ── ℓ=2 model setup for Q6a, Q6b, Q6e ───────────────────────────────────────
+_Q6_DIM = 2
+print(f"\n── Loading ℓ={_Q6_DIM} model for Q6a/Q6b/Q6e ──")
+_m_q6, _src_q6 = load_ep5000_model(_Q6_DIM)
+if _m_q6 is not None:
+    _S_hat_q6, _, _, _, _ = run_inference(_m_q6, X_train)
+    _mask_q6 = finite_mask(X_train, _S_hat_q6)
+    _has_q6_model = True
+else:
+    _S_hat_q6 = _mask_q6 = None
+    _has_q6_model = False
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q6a — Plot: RMSE broken down by tenor (1Y, 2Y, 3Y, 5Y, 10Y, 15Y, 20Y, 30Y)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q6a: RMSE by tenor (full dataset, ep5000 training run) ──")
+if not _has_q6_model:
+    print(f"  ⚠️  Q6a skipped — no checkpoint for dim={_Q6_DIM}")
+    X_eval = S_eval = None
+else:
+    X_eval = X_train[_mask_q6].numpy()
+    S_eval = _S_hat_q6[_mask_q6].numpy()
+
+if _has_q6_model:
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+
+    ax = axes[0]
+    for _dim in DIMS_PLOT:
+        _S_eval_dim = dim_S_hat[_dim][mask_train].numpy()
+        _finite     = np.isfinite(X_eval).all(1) & np.isfinite(_S_eval_dim).all(1)
+        _rmse_dim   = np.sqrt(np.mean((X_eval[_finite] - _S_eval_dim[_finite])**2, axis=0)) * 10000
+        ax.plot(TENOR_COLS, _rmse_dim, marker="o", linewidth=1.4, markersize=4,
+                color=DIM_COLORS[_dim], label=f"$\\ell={_dim}$")
+    ax.set_ylabel("RMSE (bps)", fontsize=12)
+    ax.set_xlabel("Maturity", fontsize=12)
+    ax.set_xticks(TENOR_COLS)
+    ax.legend(frameon=False, fontsize=12)
+
+    ax = axes[1]
+    for ccy in CCY_ORDER:
+        idx = (meta_train.loc[mask_train.numpy(), "ccy"].values == ccy)
+        if idx.sum() == 0:
+            continue
+        rmse_ccy = np.sqrt(np.mean((X_eval[idx] - S_eval[idx])**2, axis=0)) * 10000
+        ax.plot(TENOR_COLS, rmse_ccy, marker="o", linewidth=1.4,
+                markersize=4, color=currency_color_map[ccy], label=ccy)
+
+    ax.set_xlabel("Maturity", fontsize=12)
+    ax.set_xticks(TENOR_COLS)
+    ax.legend(frameon=False, fontsize=12, loc="center left",
+              bbox_to_anchor=(1.02, 0.5))
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.85)
+    save_fig(fig, "Q6a_rmse_by_tenor")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q6d — Plot: IS RMSE by tenor — all latent dims overlaid (ℓ=2, 3, 4)
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q6d: RMSE by tenor — all dims (bar chart) ──")
+# if not _has_main_model:
+#     print(f"  ⚠️  Q6d skipped — no checkpoint for dim={LATENT_DIM} (mask_train undefined)")
+# else:
+#     _oos_mask = ~mask_train
+#     rmse_by_dim = {}
+#     for _dim in DIMS_PLOT:
+#         _S_hat  = dim_S_hat[_dim]
+#         _X_oos  = X_train[_oos_mask].numpy()
+#         _S_oos  = _S_hat[_oos_mask].numpy()
+#         _finite = np.isfinite(_X_oos).all(1) & np.isfinite(_S_oos).all(1)
+#         rmse_by_dim[_dim] = np.sqrt(
+#             np.mean((_X_oos[_finite] - _S_oos[_finite])**2, axis=0)) * 10000
+#
+#     _oos_k3_q6d = load_ekf_rolling_oos_per_ccy(3)
+#     n_tenors = len(TENOR_COLS)
+#     n_dims   = len(DIMS_PLOT)
+#     width    = 0.22
+#     x        = np.arange(n_tenors)
+#     _dim_styles_q6d = {2: "-", 3: "--", 4: ":"}
+#
+#     fig, ax = plt.subplots(figsize=(11, 4.5))
+#     for i, _dim in enumerate(DIMS_PLOT):
+#         offset = (i - (n_dims - 1) / 2) * width
+#         ax.bar(x + offset, rmse_by_dim[_dim], width,
+#                label=r"AE ($\ell$=" + str(_dim) + ")",
+#                color=DIM_COLORS[_dim], edgecolor="none")
+#
+#     for _dim in DIMS_PLOT:
+#         avg = float(np.mean(rmse_by_dim[_dim]))
+#         ax.axhline(avg, color=DIM_COLORS[_dim], linewidth=1.2,
+#                    linestyle=_dim_styles_q6d.get(_dim, "--"), alpha=0.85)
+#
+#     if _oos_k3_q6d is not None:
+#         _avg_k3 = float(_oos_k3_q6d.drop("Average", errors="ignore").mean())
+#         ax.axhline(_avg_k3, color=custom_palette[0], linewidth=1.4, linestyle="-.",
+#                    label=r"EKF DNS ($\ell$=3) avg", zorder=5)
+#
+#     ax.set_xticks(x)
+#     ax.set_xticklabels([str(t) for t in TENOR_COLS])
+#     ax.set_ylabel("OOS RMSE (bps)")
+#     ax.legend(frameon=False, fontsize=10)
+#     fig.tight_layout()
+#     save_fig(fig, "Q6d_rmse_by_tenor_all_dims")
+# ── END REMOVED ──
+print("\n── Q6d: RMSE by tenor — all dims (bar chart) ──")
+print("  SKIPPED (block removed)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q6e — Tables: IS RMSE by curve regime (inverted vs normal, negative vs non-neg)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q6e: RMSE by curve regime (inverted / negative rates) ──")
+
+if not _has_q6_model:
+    print(f"  ⚠️  Q6e skipped — no checkpoint for dim={_Q6_DIM}")
+else:
+    # ── build per-observation dataframe ──────────────────────────────────────
+    _X  = X_train[_mask_q6].numpy()          # (N, n_tenors) actual rates
+    _S  = _S_hat_q6[_mask_q6].numpy()        # (N, n_tenors) fitted rates
+    _m  = meta_train.loc[_mask_q6.numpy()].reset_index(drop=True)
+
+    # per-observation RMSE in bps
+    _rmse_obs = np.sqrt(np.mean((_X - _S) ** 2, axis=1)) * 10_000
+
+    # regime flags (on actual rates)
+    _inverted = _X[:, 0] > _X[:, -1]          # short end > long end
+    _negative = (_X < 0).any(axis=1)          # any tenor negative
+
+    _df_regime = pd.DataFrame({
+        "ccy":        _m["ccy"].values,
+        "as_of_date": pd.to_datetime(_m["as_of_date"].values),
+        "rmse_bps":   _rmse_obs,
+        "inverted":   _inverted,
+        "negative":   _negative,
+    })
+
+    def _regime_table(df, flag_col, label_true, label_false):
+        """Build transposed regime table: rows = stats, cols = currencies + All."""
+        rows = {}
+        for lbl, mask in [(label_true, df[flag_col]), (label_false, ~df[flag_col])]:
+            for stat, fn in [("N", lambda x: len(x)),
+                             ("RMSE", lambda x: round(x.mean(), 2)),
+                             ("Std RMSE (bps)", lambda x: round(x.std(), 2))]:
+                row = {}
+                for ccy in CCY_ORDER:
+                    sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                    row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                sub_all = df.loc[mask, "rmse_bps"]
+                row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                rows[f"{lbl} — {stat}"] = row
+        return pd.DataFrame(rows).T
+
+    # inverted table
+    tbl_inv = _regime_table(_df_regime, "inverted", "Inverted", "Normal")
+    save_table(tbl_inv, "Q6e_rmse_inverted")
+    print("\n  Inverted vs Normal:")
+    print(tbl_inv.to_string())
+
+    # negative rates table
+    tbl_neg = _regime_table(_df_regime, "negative", "Negative", "Non-negative")
+    save_table(tbl_neg, "Q6e_rmse_negative")
+    print("\n  Negative vs Non-negative rates:")
+    print(tbl_neg.to_string())
+
+    # combined 4-regime table
+    def _combined_regime_table(df):
+        groups = [
+            ("Normal",   ~df["inverted"] & ~df["negative"]),
+            ("Inverted",  df["inverted"] & ~df["negative"]),
+            ("Negative",       ~df["inverted"] &  df["negative"]),
+            ("Inverted + Negative",      df["inverted"] &  df["negative"]),
+        ]
+        rows = {}
+        for lbl, mask in groups:
+            for stat, fn in [("N",              lambda x: len(x)),
+                             ("RMSE", lambda x: round(x.mean(), 2)),
+                             ("Std RMSE (bps)", lambda x: round(x.std(),  2))]:
+                row = {}
+                for ccy in CCY_ORDER:
+                    sub = df.loc[mask & (df["ccy"] == ccy), "rmse_bps"]
+                    row[ccy] = fn(sub) if len(sub) > 0 else np.nan
+                sub_all = df.loc[mask, "rmse_bps"]
+                row["All"] = fn(sub_all) if len(sub_all) > 0 else np.nan
+                rows[f"{lbl} — {stat}"] = row
+        return pd.DataFrame(rows).T
+
+    tbl_combined = _combined_regime_table(_df_regime)
+    save_table(tbl_combined, "Q6e_rmse_combined")
+    print("\n  Combined regime (inverted × negative):")
+    print(tbl_combined.to_string())
+
+    # display version: N + Avg only, drop Std and the empty Inverted, Negative block
+    _display_rows = [r for r in tbl_combined.index
+                     if "Std" not in r and "Inverted + Negative" not in r]
+    _disp = tbl_combined.loc[_display_rows].copy().astype(object)
+    for _idx in _disp.index:
+        if _idx.endswith("— N"):
+            _disp.loc[_idx] = _disp.loc[_idx].apply(
+                lambda v: str(int(v)) if pd.notna(v) else "---")
+        else:  # Avg RMSE
+            _disp.loc[_idx] = _disp.loc[_idx].apply(
+                lambda v: f"{v:.2f}" if pd.notna(v) else "---")
+    # split "Regime — Metric" index into two separate columns
+    _disp_export = _disp.reset_index()
+    _split_disp = _disp_export["index"].str.split(" — ", n=1, expand=True)
+    _disp_export.insert(0, "Curve Variant", _split_disp[0])
+    _disp_export.insert(1, "Metric", _split_disp[1])
+    _disp_export = _disp_export.drop(columns=["index"])
+    _disp_export.to_csv(
+        os.path.join(TABLES_OUT, "Q6e_rmse_combined_display.csv"), index=False)
+    print(f"  Saved: Q6e_rmse_combined_display.csv")
+
+    _df_regime["as_of_date"] = pd.to_datetime(_m["as_of_date"].values)
+
+    # ── REMOVED ──
+    # # ── 1. Bar chart: avg RMSE ± std per currency ─────────────────────────────
+    # for flag_col, labels, fname in [
+    #     ("inverted", ("Inverted", "Normal"),               "Q6e_bar_inverted"),
+    #     ("negative", ("Negative", "Non-negative"),   "Q6e_bar_negative"),
+    # ]:
+    #     fig, ax = plt.subplots(figsize=(9, 4))
+    #     _x = np.arange(len(CCY_ORDER))
+    #     _w = 0.35
+    #     for offset, (lbl, mask) in zip([-_w/2, _w/2],
+    #                                     [(labels[0], _df_regime[flag_col]),
+    #                                      (labels[1], ~_df_regime[flag_col])]):
+    #         _means = [_df_regime.loc[mask & (_df_regime["ccy"]==c), "rmse_bps"].mean() for c in CCY_ORDER]
+    #         _stds  = [_df_regime.loc[mask & (_df_regime["ccy"]==c), "rmse_bps"].std()  for c in CCY_ORDER]
+    #         ax.bar(_x + offset, _means, width=_w, label=lbl, yerr=_stds,
+    #                capsize=3, error_kw=dict(lw=0.8))
+    #     ax.set_xticks(_x); ax.set_xticklabels(CCY_ORDER, fontsize=9)
+    #     ax.set_ylabel("RMSE"); ax.legend(fontsize=9, frameon=False)
+    #     fig.tight_layout()
+    #     save_fig(fig, fname)
+    # ── END REMOVED ──
+
+    # ── REMOVED ──
+    # # ── 2. Box plot: RMSE distribution per currency ───────────────────────────
+    # for flag_col, labels, fname in [
+    #     ("inverted", ("Inverted", "Normal"),               "Q6e_box_inverted"),
+    #     ("negative", ("Negative", "Non-negative"),   "Q6e_box_negative"),
+    # ]:
+    #     fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
+    #     for ax, (lbl, mask) in zip(axes, [(labels[0], _df_regime[flag_col]),
+    #                                        (labels[1], ~_df_regime[flag_col])]):
+    #         _data = [_df_regime.loc[mask & (_df_regime["ccy"]==c), "rmse_bps"].dropna().values
+    #                  for c in CCY_ORDER]
+    #         ax.boxplot(_data, labels=CCY_ORDER, patch_artist=True,
+    #                    boxprops=dict(facecolor="steelblue", alpha=0.5),
+    #                    medianprops=dict(color="navy", lw=1.5),
+    #                    flierprops=dict(marker=".", markersize=3, alpha=0.4))
+    #         ax.set_title(lbl, fontsize=10)
+    #         ax.set_ylabel("RMSE (bps)")
+    #         ax.tick_params(axis="x", labelsize=8)
+    #     fig.tight_layout()
+    #     save_fig(fig, fname)
+    # ── END REMOVED ──
+
+    # ── 3. Scatter over time: colour encodes regime (negative = red family)
+    fig, ax = plt.subplots(figsize=(11, 4))
+    _scatter_groups = [
+        (~_df_regime["inverted"] & ~_df_regime["negative"], "Normal",     custom_palette[2]),
+        ( _df_regime["inverted"] & ~_df_regime["negative"], "Inverted",   "black"),
+        (~_df_regime["inverted"] &  _df_regime["negative"], "Negative",   "indianred"),
+        ( _df_regime["inverted"] &  _df_regime["negative"], "Inverted + Negative", custom_palette[8]),
+    ]
+    for mask, lbl, col in _scatter_groups:
+        sub = _df_regime[mask]
+        if len(sub) == 0:
+            continue
+        ax.scatter(sub["as_of_date"], sub["rmse_bps"],
+                   s=4, alpha=0.4, color=col, marker="o", label=lbl, zorder=3)
+    ax.set_ylabel("RMSE (bps)", fontsize=12)
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
+              ncol=1, fontsize=10, frameon=False, markerscale=3)
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.82)
+    save_fig(fig, "Q6e_scatter_regime")
+
+    # ── REMOVED ──
+    # # ── 4. Heatmap: avg RMSE — currencies × regime ────────────────────────────
+    # _regimes = {
+    #     "Inverted":        _df_regime["inverted"],
+    #     "Normal":         ~_df_regime["inverted"],
+    #     "Negative":        _df_regime["negative"],
+    #     "Non-negative":   ~_df_regime["negative"],
+    # }
+    # _hmap = pd.DataFrame({
+    #     lbl: {ccy: _df_regime.loc[mask & (_df_regime["ccy"]==ccy), "rmse_bps"].mean()
+    #           for ccy in CCY_ORDER}
+    #     for lbl, mask in _regimes.items()
+    # })
+    # fig, ax = plt.subplots(figsize=(7, 4))
+    # im = ax.imshow(_hmap.values.T, aspect="auto", cmap="YlOrRd")
+    # ax.set_xticks(range(len(CCY_ORDER))); ax.set_xticklabels(CCY_ORDER, fontsize=9)
+    # ax.set_yticks(range(len(_hmap.columns))); ax.set_yticklabels(_hmap.columns, fontsize=9)
+    # for i, ccy in enumerate(CCY_ORDER):
+    #     for j, lbl in enumerate(_hmap.columns):
+    #         val = _hmap.loc[ccy, lbl]
+    #         if np.isfinite(val):
+    #             ax.text(i, j, f"{val:.1f}", ha="center", va="center", fontsize=7,
+    #                     color="white" if val > _hmap.values[np.isfinite(_hmap.values)].mean() else "black")
+    # fig.colorbar(im, ax=ax, label="RMSE")
+    # fig.tight_layout()
+    # save_fig(fig, "Q6e_heatmap")
+    # ── END REMOVED ──
+    print("  Saved Q6e figures.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q6b — Plot: RMSE over time (monthly average IS)
+# ─────────────────────────────────────────────────────────────────────────────
+if not _has_q6_model:
+    print(f"  ⚠️  Q6b skipped — no checkpoint for dim={_Q6_DIM}")
+else:
+    meta_eval_z = meta_train.loc[_mask_q6.numpy()].copy().reset_index(drop=True)
+    meta_eval_z["as_of_date"] = pd.to_datetime(meta_eval_z["as_of_date"])
+    meta_eval_z["rmse_bps"] = np.sqrt(np.mean((X_eval - S_eval)**2, axis=1)) * 10000
+    meta_eval_z["ym"] = meta_eval_z["as_of_date"].dt.to_period("M")
+
+    monthly_avg   = meta_eval_z.groupby("ym")["rmse_bps"].mean()
+    monthly_dates = monthly_avg.index.to_timestamp()
+
+    fig, ax = plt.subplots(1, 1, figsize=(12, 5))
+
+    for ccy in CCY_ORDER:
+        idx_c = meta_eval_z["ccy"] == ccy
+        if idx_c.sum() == 0:
+            continue
+        m_ccy = meta_eval_z.loc[idx_c].groupby("ym")["rmse_bps"].mean()
+        ax.plot(m_ccy.index.to_timestamp(), m_ccy.values,
+                linewidth=1.1, alpha=0.75, color=currency_color_map[ccy], label=ccy)
+
+    ax.plot(monthly_dates, monthly_avg.values, linewidth=2.2, color="black",
+            linestyle="--", label="All-ccy avg", zorder=5)
+    ax.set_ylabel("RMSE (bps)", fontsize=12)
+
+    for ev_label, ev_date in EVENTS.items():
+        if "GFC" in ev_label:
+            continue   # GFC predates the training sample — skip
+        ax.axvline(pd.Timestamp(ev_date), color="0.55", linewidth=1.0, linestyle="--")
+        ax.text(pd.Timestamp(ev_date), ax.get_ylim()[1],
+                ev_label, fontsize=12, ha="center", va="bottom", color="0.4")
+
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18),
+              ncol=5, frameon=False, fontsize=10)
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.subplots_adjust(bottom=0.22)
+    save_fig(fig, "Q6b_rmse_over_time")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q6c — Table: Top 10 worst-fitting (currency, date) pairs
+# ─────────────────────────────────────────────────────────────────────────────
+# ── REMOVED ──
+# print("\n── Q6c: Top worst-fitting pairs ──")
+# if not _has_main_model:
+#     print(f"  ⚠️  Q6c skipped — no checkpoint for dim={LATENT_DIM}")
+# else:
+#     meta_eval_z2 = meta_train.loc[mask_train.numpy()].copy().reset_index(drop=True)
+#     meta_eval_z2["as_of_date"] = pd.to_datetime(meta_eval_z2["as_of_date"])
+#     meta_eval_z2["rmse_bps"] = np.sqrt(np.mean((X_eval - S_eval)**2, axis=1)) * 10000
+#
+#     for i, t in enumerate(TENOR_COLS):
+#         meta_eval_z2[f"resid_{t}Y_bps"] = (S_eval[:, i] - X_eval[:, i]) * 10000
+#
+#     worst = (meta_eval_z2.nlargest(10, "rmse_bps")
+#              [["as_of_date", "ccy", "rmse_bps"] +
+#               [f"resid_{t}Y_bps" for t in TENOR_COLS]]
+#              .reset_index(drop=True))
+#     worst["as_of_date"] = worst["as_of_date"].dt.strftime("%Y-%m-%d")
+#     worst = worst.round(2)
+#     worst.index = worst.index + 1
+#
+#     save_table(worst, "Q6c_top10_worst_pairs")
+#     print(worst[["as_of_date", "ccy", "rmse_bps"]].to_string())
+# ── END REMOVED ──
+print("\n── Q6c: Top worst-fitting pairs ──")
+print("  SKIPPED (block removed)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Q7 — IS Sharpe ratio by tenor, one plot per latent dimension
+#      Source: ep5000 checkpoint (fallback: OOSSplit best seed)
+#      Data:   X_train (2010-2020)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Q7: IS Sharpe ratio by tenor (all dims) ──")
+
+TAU_GRID = np.arange(1, 31)   # tenors 1..30
+
+@torch.no_grad()
+def extract_sharpe(model, X, batch=256):
+    """Run forward pass on X and return R_tau and SR_tau (N, 30)."""
+    r_list, sr_list = [], []
+    for i in range(0, X.shape[0], batch):
+        xb = X[i:i+batch].to(device)
+        _, aux = model(xb, do_arb_checks=True, return_aux=True)
+        r_list.append(aux["arb"]["R_tau"].cpu())
+        sr_list.append(aux["arb"]["SR_tau"].cpu())
+    return torch.cat(r_list), torch.cat(sr_list)   # (N, 30)
+
+_dim = 2
+print(f"  ℓ={_dim} ...", end=" ")
+_m, _src = load_ep5000_model(_dim)
+if _m is not None:
+    R_all, SR_all = extract_sharpe(_m, X_train)
+    x_finite = torch.isfinite(X_train).all(1)
+    R_all    = R_all[x_finite].numpy()
+    SR_all   = SR_all[x_finite].numpy()
+    _meta_q7 = meta_train[x_finite.numpy()].reset_index(drop=True)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for ccy in CCY_ORDER:
+        _idx = (_meta_q7["ccy"].values == ccy)
+        if _idx.sum() == 0:
+            continue
+        _r_ccy = R_all[_idx].mean(axis=0)           # (30,)
+        ax.plot(TAU_GRID, _r_ccy,
+                color=currency_color_map[ccy], linewidth=1.4, label=ccy)
+    ax.axhline(0, color="black", linewidth=1.8, linestyle="--")
+    ax.set_xlim(0, 30)
+    ax.set_xlabel("Maturity", fontsize=10)
+    ax.set_ylabel("PDE Residual", fontsize=10)
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
+              ncol=1, frameon=False, fontsize=8)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.82)
+    save_fig(fig, "Q7_sharpe_ratio_IS_dim2")
+    print("done")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P — Parameter plots over time (one figure per latent dimension)
+#     Source: ep5000 checkpoint (fallback: OOSSplit best seed)
+#     Data:   X_train (2004-2020)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Parameter plots ──")
+
+# CCY colours
+_ccy_colors = {ccy: plt.cm.tab10.colors[i % 10]
+               for i, ccy in enumerate(CCY_ORDER)}
+
+def extract_parameters(model, X_data, meta_df, mask):
+    """
+    Run encoder on X_data[mask] and extract μ, σ, ρ, r̃ per observation.
+    Returns a DataFrame with columns: as_of_date, ccy, mu_1..d,
+    sigma_1..d, rho_12.., r_tilde.
+    """
+    model.eval()
+    with torch.no_grad():
+        X_m   = X_data[mask]
+        z     = model.encoder(X_m)                    # (N, d)
+        mu    = model.K(z)                            # (N, d)
+        sigmas, rhos = model.H(z)                     # (N,d), (N,n_corr)
+        r_til = model.R(z).squeeze(-1)                # (N,)
+
+    d      = model.latent_dim
+    n_corr = d * (d - 1) // 2
+
+    rec = meta_df.loc[mask.numpy()].copy().reset_index(drop=True)
+    rec["as_of_date"] = pd.to_datetime(rec["as_of_date"])
+
+    for k in range(d):
+        rec[f"mu_{k+1}"]    = mu[:, k].cpu().numpy()
+        rec[f"sigma_{k+1}"] = sigmas[:, k].cpu().numpy()
+
+    idx = 0
+    for i in range(d):
+        for j in range(i + 1, d):
+            rec[f"rho_{i+1}{j+1}"] = rhos[:, idx].cpu().numpy()
+            idx += 1
+
+    rec["r_tilde"] = r_til.cpu().numpy()
+    return rec
+
+
+def _param_label(name):
+    """Convert column name to LaTeX-style label."""
+    if name.startswith("mu_"):
+        k = name.split("_")[1]
+        return r"$\mu_{" + k + r"}$"
+    if name.startswith("sigma_"):
+        k = name.split("_")[1]
+        return r"$\sigma_{" + k + r"}$"
+    if name.startswith("rho_"):
+        ij = name.split("_")[1]
+        return r"$\rho_{" + ",".join(ij) + r"}$"
+    if name == "r_tilde":
+        return r"$\tilde{r}$"
+    return name
+
+
+for _dim in ALL_DIMS_PARAM:
+    print(f"\n── Parameters: ℓ={_dim} ──")
+    _m, _src = load_ep5000_model(_dim)
+    if _m is None:
+        print(f"  No model for ℓ={_dim}, skipping.")
+        continue
+
+    # parameters live inside the training results folder for this dim/epoch
+    _dim_dir = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                            f"dim{_dim}_baseline", f"ep{TRAIN_LOG_EPOCHS}", "parameters")
+    os.makedirs(_dim_dir, exist_ok=True)
+
+    if _dim in dim_S_hat:
+        _mask = finite_mask(X_train, dim_S_hat[_dim])
+    else:
+        with torch.no_grad():
+            _S_tmp = _m(X_train)
+        _mask = finite_mask(X_train, _S_tmp)
+
+    df_p = extract_parameters(_m, X_train, meta_train, _mask)
+
+    # Build list of parameter columns in display order
+    d = _dim
+    mu_cols    = [f"mu_{k+1}"    for k in range(d)]
+    sig_cols   = [f"sigma_{k+1}" for k in range(d)]
+    rho_cols   = [f"rho_{i+1}{j+1}"
+                  for i in range(d) for j in range(i + 1, d)]
+    param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
+
+    for col in param_cols:
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+
+        for ccy in CCY_ORDER:
+            sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
+            if sub.empty:
+                continue
+            ax.plot(sub["as_of_date"], sub[col],
+                    color=_ccy_colors[ccy], linewidth=0.8,
+                    alpha=0.75)
+
+        ax.set_title(_param_label(col), fontsize=11)
+        ax.tick_params(axis="x", rotation=30, labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        fig.tight_layout()
+
+        # save to parameters/dim{N}/{col}.png
+        out_path = os.path.join(_dim_dir, col + ".png")
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  Saved: {out_path}")
+
+    # ── Combined 3×2 figure for dim=2 (thesis figure) ─────────────────────────
+    if _dim == 2:
+        _combined_labels = [_param_label(c) for c in param_cols]
+
+        fig_c, axes_c = plt.subplots(3, 2, figsize=(10, 10.5))
+        axes_flat = axes_c.flatten()
+
+        for ax, col, label in zip(axes_flat, param_cols, _combined_labels):
+            for ccy in CCY_ORDER:
+                sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
+                if sub.empty:
+                    continue
+                ax.plot(sub["as_of_date"], sub[col],
+                        color=_ccy_colors[ccy], linewidth=1.0, alpha=0.85)
+            ax.set_title(label, fontsize=12)
+            ax.tick_params(axis="x", rotation=30, labelsize=9)
+            ax.tick_params(axis="y", labelsize=9)
+
+        # Shared legend along the bottom — one entry per currency
+        _leg_lines = [
+            mlines.Line2D([], [], color=_ccy_colors[ccy], linewidth=2.0, label=ccy)
+            for ccy in CCY_ORDER
+        ]
+        fig_c.legend(handles=_leg_lines, loc="lower center", ncol=len(CCY_ORDER),
+                     fontsize=10, frameon=False, bbox_to_anchor=(0.5, 0.0))
+
+        # Leave room at the bottom for the legend
+        fig_c.tight_layout(rect=[0, 0.06, 1, 1])
+
+        _combined_path = os.path.join(_dim_dir, "model_parameters_combined.png")
+        fig_c.savefig(_combined_path, dpi=300, bbox_inches="tight")
+        plt.close(fig_c)
+        print(f"  Saved combined: {_combined_path}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DONE — Output summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OK   = "✅"
+_WARN = "⚠️ "
+_SKIP = "❌"
+
+# determine model source for each dim
+def _model_src(dim):
+    src = dim_model_sources.get(dim, None)
+    if src is not None:
+        if "ep5000"   in src: return (_OK,   "ep5000 checkpoint")
+        if "OOSSplit" in src: return (_WARN, "fallback: OOSSplit ep2500 (rerun after ep5000 training)")
+        return (_OK, src)
+    # not loaded as a model — check file directly
+    ckpt = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        f"ep{TRAIN_LOG_EPOCHS}", f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
+    if os.path.exists(ckpt):
+        return (_OK, "ep5000 checkpoint")
+    return (_SKIP, "no checkpoint found")
+
+# determine rolling source for each dim
+def _roll_src(dim):
+    new_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                            ROLL_SUBDIR, f"ep{ROLL_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    old_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{ROLL_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+    if os.path.exists(new_path): return (_OK,   "train5Y_test6M_step6M")
+    if os.path.exists(old_path): return (_WARN, "fallback: train3Y_test3M_step6M (rerun OutOfSampleRoll.py)")
+    return (_SKIP, "no rolling CSV found — run OutOfSampleRoll.py")
+
+_manifest_ok = os.path.exists(MANIFEST_PATH)
+
+# ── per-dim split CSV check ────────────────────────────────────────────────────
+def _split_csv_ok(dim):
+    p = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split",
+                     f"OOS_split_dim{dim}_baseline", f"ep{SPLIT_EPOCHS}", "rmse_summary.csv")
+    return os.path.exists(p)
+
+print(f"\n{'='*65}")
+print(f"  OUTPUT SUMMARY")
+print(f"{'='*65}")
+
+# ── IN-SAMPLE ─────────────────────────────────────────────────────────────────
+print(f"\n  {'IN-SAMPLE':─<55}")
+# Q1a / Q1e only need CSV logs (no checkpoint)
+_csv_dims_ok = [d for d in [1, 2, 3, 4]
+                if os.path.exists(os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                                               f"dim{d}_baseline", f"ep{TRAIN_LOG_EPOCHS}",
+                                               f"train_rmse_log_bbg_dim{d}_ep{TRAIN_LOG_EPOCHS}.csv"))]
+_csv_icon = _OK if set(_csv_dims_ok) >= {2, 3, 4} else (_WARN if _csv_dims_ok else _SKIP)
+print(f"  {_csv_icon}  Q1a  IS RMSE table          — ep{TRAIN_LOG_EPOCHS} logs found for dims {_csv_dims_ok}")
+print(f"  {_csv_icon}  Q1e  Training loss curves   — ep{TRAIN_LOG_EPOCHS} logs found for dims {_csv_dims_ok}")
+
+# Q1b uses LATENT_DIM only
+icon_q1b, src_q1b = _model_src(LATENT_DIM)
+print(f"  {icon_q1b}  Q1b  Fitted vs actual (dim={LATENT_DIM}) — {src_q1b}")
+
+# Q1d / residuals / Q6a / Q6b use all dims
+print(f"  {'IN-SAMPLE (per dim)':─<52}")
+for _d in [1, 2, 3, 4]:
+    _icon_d, _src_d = _model_src(_d)
+    print(f"    {_icon_d}  dim={_d}  Q1d/Q1c/Q6a/Q6b/params — {_src_d}")
+
+# Q7 uses dim=3 hardcoded
+icon_q7, src_q7 = _model_src(3)
+print(f"  {icon_q7}  Q7   Sharpe ratio (dim=3)  — {src_q7}")
+
+# ── OUT-OF-SAMPLE (SPLIT) ─────────────────────────────────────────────────────
+print(f"\n  {'OUT-OF-SAMPLE (SPLIT)':─<55}")
+for _d in [1, 2, 3, 4]:
+    _icon_s = _OK if _split_csv_ok(_d) else _SKIP
+    _src_s  = f"ep{SPLIT_EPOCHS} OOSSplit CSV found" if _split_csv_ok(_d) \
+              else f"SKIPPED — run OutOfSampleSplit.py (dim={_d})"
+    print(f"  {_icon_s}  Q2a  IS vs OOS RMSE (dim={_d}) — {_src_s}")
+
+print(f"  {'✅' if _manifest_ok else _SKIP}  Q3a  Seed robustness table   — "
+      f"{'run_manifest.json found' if _manifest_ok else 'SKIPPED — run OutOfSampleSplit.py (all dims)'}")
+print(f"  {'✅'}  Q4a  AE vs EKF DNS table     — fixed split OOS")
+
+_q4b_dims_ok = [d for d in [2, 3, 4] if _split_csv_ok(d)]
+_q4b_icon = _OK if set(_q4b_dims_ok) >= {2, 3, 4} else (_WARN if _q4b_dims_ok else _SKIP)
+print(f"  {_q4b_icon}  Q4b  Per-currency bar chart — split OOS dims {_q4b_dims_ok} available")
+
+# ── OUT-OF-SAMPLE (ROLLING) ───────────────────────────────────────────────────
+print(f"\n  {'OUT-OF-SAMPLE (ROLLING)':─<55}")
+for _d in [2, 3, 4]:
+    icon_r, src_r = _roll_src(_d)
+    print(f"  {icon_r}  Q2b/Q3b  dim={_d}              — {src_r}")
+
+# ── LATENT FACTOR ─────────────────────────────────────────────────────────────
+print(f"\n  {'LATENT FACTOR':─<55}")
+icon_q5a, src_q5a = _model_src(LATENT_DIM)
+print(f"  {icon_q5a}  Q5a  Latent factors over time (dim={LATENT_DIM}) — {src_q5a}")
+print(f"  {_OK}  Q5b  PCA heatmap + projections — global PCA on IS data")
+print(f"  {_OK}  Q5b  Scree plot (PVE)           — global PCA on IS data")
+
+# ── ACTION REQUIRED ───────────────────────────────────────────────────────────
+_actions = []
+
+# Missing ep5000 checkpoints
+_missing_ckpt_dims = [d for d in [1, 2, 3, 4] if dim_model_sources.get(d) is None]
+_fallback_ckpt_dims = [d for d in [1, 2, 3, 4]
+                       if dim_model_sources.get(d) is not None and "OOSSplit" in dim_model_sources.get(d, "")]
+if _missing_ckpt_dims:
+    _actions.append(f"  🔴  Run Training.py for dims {_missing_ckpt_dims} at ep={TRAIN_LOG_EPOCHS} "
+                    f"→ regenerates checkpoint_dim{{N}}_ep{TRAIN_LOG_EPOCHS}.pt")
+if _fallback_ckpt_dims:
+    _actions.append(f"  🟡  Run Training.py for dims {_fallback_ckpt_dims} at ep={TRAIN_LOG_EPOCHS} "
+                    f"→ currently using OOSSplit ep{SPLIT_EPOCHS} fallback (results are approximate)")
+
+# Missing OOS split CSVs
+_missing_split_dims = [d for d in [1, 2, 3, 4] if not _split_csv_ok(d)]
+if _missing_split_dims:
+    _actions.append(f"  🔴  Run OutOfSampleSplit.py for dims {_missing_split_dims} "
+                    f"→ needed for Q2a, Q3a, Q4a, Q4b")
+
+# Missing rolling CSVs
+_missing_roll_dims = [d for d in [2, 3, 4] if _roll_src(d)[0] == _SKIP]
+_fallback_roll_dims = [d for d in [2, 3, 4] if _roll_src(d)[0] == _WARN]
+if _missing_roll_dims:
+    _actions.append(f"  🔴  Run OutOfSampleRoll.py for dims {_missing_roll_dims} "
+                    f"→ needed for Q2b, Q3b")
+if _fallback_roll_dims:
+    _actions.append(f"  🟡  Run OutOfSampleRoll.py for dims {_fallback_roll_dims} "
+                    f"→ currently using train3Y fallback (rerun for train5Y results)")
+
+# Missing seed manifest
+if not _manifest_ok:
+    _actions.append(f"  🔴  Run OutOfSampleSplit.py (generates run_manifest.json) "
+                    f"→ needed for Q3a seed robustness table")
+
+print(f"\n  {'ACTION REQUIRED':─<55}")
+if _actions:
+    for _a in _actions:
+        print(_a)
+else:
+    print("  ✅  All prerequisites met.")
+
+print(f"  ℓ={_dim} ...", end=" ")
+_m, _src = load_ep5000_model(_dim)
+if _m is not None:
+    R_all, SR_all = extract_sharpe(_m, X_train)
+    x_finite = torch.isfinite(X_train).all(1)
+    R_all    = R_all[x_finite].numpy()
+    SR_all   = SR_all[x_finite].numpy()
+    _meta_q7 = meta_train[x_finite.numpy()].reset_index(drop=True)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for ccy in CCY_ORDER:
+        _idx = (_meta_q7["ccy"].values == ccy)
+        if _idx.sum() == 0:
+            continue
+        _r_ccy = R_all[_idx].mean(axis=0)           # (30,)
+        ax.plot(TAU_GRID, _r_ccy,
+                color=currency_color_map[ccy], linewidth=1.4, label=ccy)
+    ax.axhline(0, color="black", linewidth=1.8, linestyle="--")
+    ax.set_xlim(0, 30)
+    ax.set_xlabel("Maturity", fontsize=10)
+    ax.set_ylabel("PDE Residual", fontsize=10)
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5),
+              ncol=1, frameon=False, fontsize=8)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.82)
+    save_fig(fig, "Q7_sharpe_ratio_IS_dim2")
+    print("done")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P — Parameter plots over time (one figure per latent dimension)
+#     Source: ep5000 checkpoint (fallback: OOSSplit best seed)
+#     Data:   X_train (2004-2020)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Parameter plots ──")
+
+# CCY colours
+_ccy_colors = {ccy: plt.cm.tab10.colors[i % 10]
+               for i, ccy in enumerate(CCY_ORDER)}
+
+def extract_parameters(model, X_data, meta_df, mask):
+    """
+    Run encoder on X_data[mask] and extract μ, σ, ρ, r̃ per observation.
+    Returns a DataFrame with columns: as_of_date, ccy, mu_1..d,
+    sigma_1..d, rho_12.., r_tilde.
+    """
+    model.eval()
+    with torch.no_grad():
+        X_m   = X_data[mask]
+        z     = model.encoder(X_m)                    # (N, d)
+        mu    = model.K(z)                            # (N, d)
+        sigmas, rhos = model.H(z)                     # (N,d), (N,n_corr)
+        r_til = model.R(z).squeeze(-1)                # (N,)
+
+    d      = model.latent_dim
+    n_corr = d * (d - 1) // 2
+
+    rec = meta_df.loc[mask.numpy()].copy().reset_index(drop=True)
+    rec["as_of_date"] = pd.to_datetime(rec["as_of_date"])
+
+    for k in range(d):
+        rec[f"mu_{k+1}"]    = mu[:, k].cpu().numpy()
+        rec[f"sigma_{k+1}"] = sigmas[:, k].cpu().numpy()
+
+    idx = 0
+    for i in range(d):
+        for j in range(i + 1, d):
+            rec[f"rho_{i+1}{j+1}"] = rhos[:, idx].cpu().numpy()
+            idx += 1
+
+    rec["r_tilde"] = r_til.cpu().numpy()
+    return rec
+
+
+def _param_label(name):
+    """Convert column name to LaTeX-style label."""
+    if name.startswith("mu_"):
+        k = name.split("_")[1]
+        return r"$\mu_{" + k + r"}$"
+    if name.startswith("sigma_"):
+        k = name.split("_")[1]
+        return r"$\sigma_{" + k + r"}$"
+    if name.startswith("rho_"):
+        ij = name.split("_")[1]
+        return r"$\rho_{" + ",".join(ij) + r"}$"
+    if name == "r_tilde":
+        return r"$\tilde{r}$"
+    return name
+
+
+for _dim in ALL_DIMS_PARAM:
+    print(f"\n── Parameters: ℓ={_dim} ──")
+    _m, _src = load_ep5000_model(_dim)
+    if _m is None:
+        print(f"  No model for ℓ={_dim}, skipping.")
+        continue
+
+    # parameters live inside the training results folder for this dim/epoch
+    _dim_dir = os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                            f"dim{_dim}_baseline", f"ep{TRAIN_LOG_EPOCHS}", "parameters")
+    os.makedirs(_dim_dir, exist_ok=True)
+
+    if _dim in dim_S_hat:
+        _mask = finite_mask(X_train, dim_S_hat[_dim])
+    else:
+        with torch.no_grad():
+            _S_tmp = _m(X_train)
+        _mask = finite_mask(X_train, _S_tmp)
+
+    df_p = extract_parameters(_m, X_train, meta_train, _mask)
+
+    # Build list of parameter columns in display order
+    d = _dim
+    mu_cols    = [f"mu_{k+1}"    for k in range(d)]
+    sig_cols   = [f"sigma_{k+1}" for k in range(d)]
+    rho_cols   = [f"rho_{i+1}{j+1}"
+                  for i in range(d) for j in range(i + 1, d)]
+    param_cols = mu_cols + sig_cols + rho_cols + ["r_tilde"]
+
+    for col in param_cols:
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+
+        for ccy in CCY_ORDER:
+            sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
+            if sub.empty:
+                continue
+            ax.plot(sub["as_of_date"], sub[col],
+                    color=_ccy_colors[ccy], linewidth=0.8,
+                    alpha=0.75)
+
+        ax.set_title(_param_label(col), fontsize=11)
+        ax.tick_params(axis="x", rotation=30, labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        fig.tight_layout()
+
+        # save to parameters/dim{N}/{col}.png
+        out_path = os.path.join(_dim_dir, col + ".png")
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  Saved: {out_path}")
+
+    # ── Combined 3×2 figure for dim=2 (thesis figure) ─────────────────────────
+    if _dim == 2:
+        _combined_labels = [_param_label(c) for c in param_cols]
+
+        fig_c, axes_c = plt.subplots(3, 2, figsize=(10, 10.5))
+        axes_flat = axes_c.flatten()
+
+        for ax, col, label in zip(axes_flat, param_cols, _combined_labels):
+            for ccy in CCY_ORDER:
+                sub = df_p[df_p["ccy"] == ccy].sort_values("as_of_date")
+                if sub.empty:
+                    continue
+                ax.plot(sub["as_of_date"], sub[col],
+                        color=_ccy_colors[ccy], linewidth=1.0, alpha=0.85)
+            ax.set_title(label, fontsize=12)
+            ax.tick_params(axis="x", rotation=30, labelsize=9)
+            ax.tick_params(axis="y", labelsize=9)
+
+        # Shared legend along the bottom — one entry per currency
+        _leg_lines = [
+            mlines.Line2D([], [], color=_ccy_colors[ccy], linewidth=2.0, label=ccy)
+            for ccy in CCY_ORDER
+        ]
+        fig_c.legend(handles=_leg_lines, loc="lower center", ncol=len(CCY_ORDER),
+                     fontsize=10, frameon=False, bbox_to_anchor=(0.5, 0.0))
+
+        # Leave room at the bottom for the legend
+        fig_c.tight_layout(rect=[0, 0.06, 1, 1])
+
+        _combined_path = os.path.join(_dim_dir, "model_parameters_combined.png")
+        fig_c.savefig(_combined_path, dpi=300, bbox_inches="tight")
+        plt.close(fig_c)
+        print(f"  Saved combined: {_combined_path}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DONE — Output summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OK   = "✅"
+_WARN = "⚠️ "
+_SKIP = "❌"
+
+# determine model source for each dim
+def _model_src(dim):
+    src = dim_model_sources.get(dim, None)
+    if src is not None:
+        if "ep5000"   in src: return (_OK,   "ep5000 checkpoint")
+        if "OOSSplit" in src: return (_WARN, "fallback: OOSSplit ep2500 (rerun after ep5000 training)")
+        return (_OK, src)
+    # not loaded as a model — check file directly
+    ckpt = os.path.join(REPO_ROOT, "Figures", "TrainingResults", f"dim{dim}_baseline",
+                        f"ep{TRAIN_LOG_EPOCHS}", f"checkpoint_dim{dim}_ep{TRAIN_LOG_EPOCHS}.pt")
+    if os.path.exists(ckpt):
+        return (_OK, "ep5000 checkpoint")
+    return (_SKIP, "no checkpoint found")
+
+# determine rolling source for each dim
+def _roll_src(dim):
+    new_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                            ROLL_SUBDIR, f"ep{ROLL_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train5Y_test6M_step6M.csv")
+    old_path = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Roll", f"OOS_roll_dim{dim}_baseline",
+                            _ROLL_FALLBACK_SUBDIR, f"ep{ROLL_EPOCHS}",
+                            f"oos_rolling_bbg_dim{dim}_train3Y_test3M_step6M.csv")
+    if os.path.exists(new_path): return (_OK,   "train5Y_test6M_step6M")
+    if os.path.exists(old_path): return (_WARN, "fallback: train3Y_test3M_step6M (rerun OutOfSampleRoll.py)")
+    return (_SKIP, "no rolling CSV found — run OutOfSampleRoll.py")
+
+_manifest_ok = os.path.exists(MANIFEST_PATH)
+
+# ── per-dim split CSV check ────────────────────────────────────────────────────
+def _split_csv_ok(dim):
+    p = os.path.join(REPO_ROOT, "Figures", "OOSResults", "Split",
+                     f"OOS_split_dim{dim}_baseline", f"ep{SPLIT_EPOCHS}", "rmse_summary.csv")
+    return os.path.exists(p)
+
+print(f"\n{'='*65}")
+print(f"  OUTPUT SUMMARY")
+print(f"{'='*65}")
+
+# ── IN-SAMPLE ─────────────────────────────────────────────────────────────────
+print(f"\n  {'IN-SAMPLE':─<55}")
+# Q1a / Q1e only need CSV logs (no checkpoint)
+_csv_dims_ok = [d for d in [1, 2, 3, 4]
+                if os.path.exists(os.path.join(REPO_ROOT, "Figures", "TrainingResults",
+                                               f"dim{d}_baseline", f"ep{TRAIN_LOG_EPOCHS}",
+                                               f"train_rmse_log_bbg_dim{d}_ep{TRAIN_LOG_EPOCHS}.csv"))]
+_csv_icon = _OK if set(_csv_dims_ok) >= {2, 3, 4} else (_WARN if _csv_dims_ok else _SKIP)
+print(f"  {_csv_icon}  Q1a  IS RMSE table          — ep{TRAIN_LOG_EPOCHS} logs found for dims {_csv_dims_ok}")
+print(f"  {_csv_icon}  Q1e  Training loss curves   — ep{TRAIN_LOG_EPOCHS} logs found for dims {_csv_dims_ok}")
+
+# Q1b uses LATENT_DIM only
+icon_q1b, src_q1b = _model_src(LATENT_DIM)
+print(f"  {icon_q1b}  Q1b  Fitted vs actual (dim={LATENT_DIM}) — {src_q1b}")
+
+# Q1d / residuals / Q6a / Q6b use all dims
+print(f"  {'IN-SAMPLE (per dim)':─<52}")
+for _d in [1, 2, 3, 4]:
+    _icon_d, _src_d = _model_src(_d)
+    print(f"    {_icon_d}  dim={_d}  Q1d/Q1c/Q6a/Q6b/params — {_src_d}")
+
+# Q7 uses dim=3 hardcoded
+icon_q7, src_q7 = _model_src(3)
+print(f"  {icon_q7}  Q7   Sharpe ratio (dim=3)  — {src_q7}")
+
+# ── OUT-OF-SAMPLE (SPLIT) ─────────────────────────────────────────────────────
+print(f"\n  {'OUT-OF-SAMPLE (SPLIT)':─<55}")
+for _d in [1, 2, 3, 4]:
+    _icon_s = _OK if _split_csv_ok(_d) else _SKIP
+    _src_s  = f"ep{SPLIT_EPOCHS} OOSSplit CSV found" if _split_csv_ok(_d) \
+              else f"SKIPPED — run OutOfSampleSplit.py (dim={_d})"
+    print(f"  {_icon_s}  Q2a  IS vs OOS RMSE (dim={_d}) — {_src_s}")
+
+print(f"  {'✅' if _manifest_ok else _SKIP}  Q3a  Seed robustness table   — "
+      f"{'run_manifest.json found' if _manifest_ok else 'SKIPPED — run OutOfSampleSplit.py (all dims)'}")
+print(f"  {'✅'}  Q4a  AE vs EKF DNS table     — fixed split OOS")
+
+_q4b_dims_ok = [d for d in [2, 3, 4] if _split_csv_ok(d)]
+_q4b_icon = _OK if set(_q4b_dims_ok) >= {2, 3, 4} else (_WARN if _q4b_dims_ok else _SKIP)
+print(f"  {_q4b_icon}  Q4b  Per-currency bar chart — split OOS dims {_q4b_dims_ok} available")
+
+# ── OUT-OF-SAMPLE (ROLLING) ───────────────────────────────────────────────────
+print(f"\n  {'OUT-OF-SAMPLE (ROLLING)':─<55}")
+for _d in [2, 3, 4]:
+    icon_r, src_r = _roll_src(_d)
+    print(f"  {icon_r}  Q2b/Q3b  dim={_d}              — {src_r}")
+
+# ── LATENT FACTOR ─────────────────────────────────────────────────────────────
+print(f"\n  {'LATENT FACTOR':─<55}")
+icon_q5a, src_q5a = _model_src(LATENT_DIM)
+print(f"  {icon_q5a}  Q5a  Latent factors over time (dim={LATENT_DIM}) — {src_q5a}")
+print(f"  {_OK}  Q5b  PCA heatmap + projections — global PCA on IS data")
+print(f"  {_OK}  Q5b  Scree plot (PVE)           — global PCA on IS data")
+
+# ── ACTION REQUIRED ───────────────────────────────────────────────────────────
+_actions = []
+
+# Missing ep5000 checkpoints
+_missing_ckpt_dims = [d for d in [1, 2, 3, 4] if dim_model_sources.get(d) is None]
+_fallback_ckpt_dims = [d for d in [1, 2, 3, 4]
+                       if dim_model_sources.get(d) is not None and "OOSSplit" in dim_model_sources.get(d, "")]
+if _missing_ckpt_dims:
+    _actions.append(f"  🔴  Run Training.py for dims {_missing_ckpt_dims} at ep={TRAIN_LOG_EPOCHS} "
+                    f"→ regenerates checkpoint_dim{{N}}_ep{TRAIN_LOG_EPOCHS}.pt")
+if _fallback_ckpt_dims:
+    _actions.append(f"  🟡  Run Training.py for dims {_fallback_ckpt_dims} at ep={TRAIN_LOG_EPOCHS} "
+                    f"→ currently using OOSSplit ep{SPLIT_EPOCHS} fallback (results are approximate)")
+
+# Missing OOS split CSVs
+_missing_split_dims = [d for d in [1, 2, 3, 4] if not _split_csv_ok(d)]
+if _missing_split_dims:
+    _actions.append(f"  🔴  Run OutOfSampleSplit.py for dims {_missing_split_dims} "
+                    f"→ needed for Q2a, Q3a, Q4a, Q4b")
+
+# Missing rolling CSVs
+_missing_roll_dims = [d for d in [2, 3, 4] if _roll_src(d)[0] == _SKIP]
+_fallback_roll_dims = [d for d in [2, 3, 4] if _roll_src(d)[0] == _WARN]
+if _missing_roll_dims:
+    _actions.append(f"  🔴  Run OutOfSampleRoll.py for dims {_missing_roll_dims} "
+                    f"→ needed for Q2b, Q3b")
+if _fallback_roll_dims:
+    _actions.append(f"  🟡  Run OutOfSampleRoll.py for dims {_fallback_roll_dims} "
+                    f"→ currently using train3Y fallback (rerun for train5Y results)")
+
+# Missing seed manifest
+if not _manifest_ok:
+    _actions.append(f"  🔴  Run OutOfSampleSplit.py (generates run_manifest.json) "
+                    f"→ needed for Q3a seed robustness table")
+
+print(f"\n  {'ACTION REQUIRED':─<55}")
+if _actions:
+    for _a in _actions:
+        print(_a)
+else:
+    print(f"  {_OK}  All figures generated — no missing inputs detected.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Short rate \tilde{r} across latent dimensions 2, 3, 4
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Short rate across dims ──")
+
+_dims_r = [2, 3, 4]
+fig_r, axes_r = plt.subplots(1, 3, figsize=(13, 4), sharey=False)
+
+for ax_i, _dim in enumerate(_dims_r):
+    ax = axes_r[ax_i]
+    _m, _src = load_ep5000_model(_dim)
+    if _m is None:
+        ax.set_visible(False)
+        continue
+
+    # run inference on full training data to get r_tilde
+    with torch.no_grad():
+        r_all = []
+        for i in range(0, X_full.shape[0], 256):
+            xb = X_full[i:i+256].to(device)
+            _, aux = _m(xb, return_aux=True)
+            r_all.append(aux["r_tilde"].cpu())
+    r_all = torch.cat(r_all).numpy()
+
+    df_r = meta_full_df.copy()
+    df_r["r_tilde"] = r_all
+    df_r = df_r[df_r["as_of_date"] >= "2010-01-01"].sort_values("as_of_date")
+
+    for ccy in CCY_ORDER:
+        ccy_df = df_r[df_r["ccy"] == ccy]
+        ax.plot(ccy_df["as_of_date"], ccy_df["r_tilde"],
+                color=currency_color_map[ccy], linewidth=0.8, label=ccy)
+
+    ax.set_title(f"$\\ell={_dim}$", fontsize=13)
+    ax.grid(True, alpha=0.3)
+    ax.tick_params(axis="both", labelsize=11)
+    if ax_i == 0:
+        ax.set_ylabel(r"$\tilde{r}$", fontsize=13)
+
+handles_r, labels_r = axes_r[0].get_legend_handles_labels()
+fig_r.legend(handles_r, labels_r, loc="lower center",
+             bbox_to_anchor=(0.5, -0.02), ncol=len(CCY_ORDER),
+             frameon=False, fontsize=11)
+fig_r.tight_layout()
+fig_r.subplots_adjust(bottom=0.15)
+save_fig(fig_r, "r_tilde_all_dims")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rolling window regime table
+# Columns: Window | Train #Neg | Train #Inv | IS RMSE ℓ=2,3,4
+#                | Test  #Neg | Test  #Inv | OOS RMSE ℓ=2,3,4
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n── Rolling window regime table ──")
+
+_ROLL_DIMS    = [2, 3, 4]
+_actual_cols  = [f"actual_tenor_{i}" for i in range(8)]
+
+def _regime_counts(pred_df):
+    """Return per-window (test_start) counts of negative and inverted curves."""
+    if pred_df is None or pred_df.empty:
+        return {}
+    counts = {}
+    for ts, grp in pred_df.groupby("test_start"):
+        neg = int((grp[_actual_cols].min(axis=1) < 0).sum())
+        inv = int((grp["actual_tenor_0"] > grp["actual_tenor_7"]).sum())
+        counts[ts] = {"n_neg": neg, "n_inv": inv}
+    return counts
+
+_train_counts = None
+_test_counts  = None
+_roll_dfs     = {}
+
+for _d in _ROLL_DIMS:
+    _roll_path = os.path.join(
+        REPO_ROOT, "Figures", "OOSResults", "Roll",
+        f"OOS_roll_dim{_d}_baseline", ROLL_SUBDIR,
+        f"ep{ROLL_EPOCHS}",
+        f"oos_rolling_bbg_dim{_d}_train5Y_test6M_step6M.csv"
+    )
+    if os.path.exists(_roll_path):
+        _roll_dfs[_d] = pd.read_csv(_roll_path, parse_dates=["test_start", "test_end", "train_start"])
+    else:
+        print(f"  ⚠️  Rolling CSV not found for dim={_d}")
+
+    if _train_counts is None:
+        _train_path = os.path.join(
+            REPO_ROOT, "Figures", "OOSResults", "Roll",
+            f"OOS_roll_dim{_d}_baseline", ROLL_SUBDIR,
+            f"ep{ROLL_EPOCHS}", "predictions_train_all.csv"
+        )
+        _test_path = os.path.join(
+            REPO_ROOT, "Figures", "OOSResults", "Roll",
+            f"OOS_roll_dim{_d}_baseline", ROLL_SUBDIR,
+            f"ep{ROLL_EPOCHS}", "predictions_test_all.csv"
+        )
+        if os.path.exists(_train_path) and os.path.exists(_test_path):
+            _train_pred   = pd.read_csv(_train_path)
+            _test_pred    = pd.read_csv(_test_path)
+            _train_counts = _regime_counts(_train_pred)
+            _test_counts  = _regime_counts(_test_pred)
+
+if not _roll_dfs:
+    print("  ⚠️  No rolling CSVs found — skipping regime table.")
+else:
+    _ref_df = next(iter(_roll_dfs.values()))
+    rows = []
+    for _, rw in _ref_df.iterrows():
+        ts  = str(rw["test_start"])[:10]
+        te  = str(rw["test_end"])[:10]
+        window_label = f"{rw['train_start'].strftime('%Y-%m')} / {te}"
+
+        tc  = _train_counts.get(ts, {}) if _train_counts else {}
+        ec  = _test_counts.get(ts, {})  if _test_counts  else {}
+
+        # get n_train and n_test from rolling CSV
+        _ref_row = next(iter(_roll_dfs.values()))
+        _ref_row = _ref_row[_ref_row["test_start"].dt.strftime("%Y-%m-%d") == ts]
+        _n_train = float(_ref_row["n_train"].values[0]) if len(_ref_row) else np.nan
+        _n_test  = float(_ref_row["n_test"].values[0])  if len(_ref_row) else np.nan
+
+        _train_neg = tc.get("n_neg", np.nan)
+        _train_inv = tc.get("n_inv", np.nan)
+        _test_neg  = ec.get("n_neg", np.nan)
+        _test_inv  = ec.get("n_inv", np.nan)
+
+        row = {
+            "Window (train start / test end)": window_label,
+            "Train # Neg": _train_neg,
+            "Train # Inv": _train_inv,
+            "Train % Neg": round(100 * _train_neg / _n_train, 1) if np.isfinite(_n_train) and _n_train > 0 else np.nan,
+            "Train % Inv": round(100 * _train_inv / _n_train, 1) if np.isfinite(_n_train) and _n_train > 0 else np.nan,
+        }
+        for _d in _ROLL_DIMS:
+            if _d in _roll_dfs:
+                _drow = _roll_dfs[_d][_roll_dfs[_d]["test_start"].dt.strftime("%Y-%m-%d") == ts]
+                row[f"IS RMSE l={_d}"] = round(float(_drow["avg_in_rmse_bps"].values[0]), 2) if len(_drow) else np.nan
+            else:
+                row[f"IS RMSE l={_d}"] = np.nan
+
+        row["Test # Neg"]  = _test_neg
+        row["Test # Inv"]  = _test_inv
+        row["Test % Neg"]  = round(100 * _test_neg / _n_test, 1) if np.isfinite(_n_test) and _n_test > 0 else np.nan
+        row["Test % Inv"]  = round(100 * _test_inv / _n_test, 1) if np.isfinite(_n_test) and _n_test > 0 else np.nan
+
+        for _d in _ROLL_DIMS:
+            if _d in _roll_dfs:
+                _drow = _roll_dfs[_d][_roll_dfs[_d]["test_start"].dt.strftime("%Y-%m-%d") == ts]
+                row[f"OOS RMSE l={_d}"] = round(float(_drow["avg_rmse_bps"].values[0]), 2) if len(_drow) else np.nan
+            else:
+                row[f"OOS RMSE l={_d}"] = np.nan
+
+        rows.append(row)
+
+    regime_table = pd.DataFrame(rows)
+    _regime_table_path = os.path.join(FIGURES_OUT, "rolling_regime_table.csv")
+    regime_table.to_csv(_regime_table_path, index=False)
+    print(regime_table.to_string(index=False))
+    print(f"  Saved → {_regime_table_path}")
+
+    # ── Figure 1: Dual-axis — test regime counts (bars) + OOS RMSE (lines) ──
+    _windows = [r["Window (train start / test end)"].split(" / ")[1][:7]
+                for r in rows]
+    _x       = np.arange(len(_windows))
+    _neg     = np.array([r["Test % Neg"] for r in rows], dtype=float)
+    _inv     = np.array([r["Test % Inv"] for r in rows], dtype=float)
+
+    fig1, ax1a = plt.subplots(figsize=(12, 5))
+    ax1b = ax1a.twinx()
+    _train_neg = np.array([r["Train % Neg"] for r in rows], dtype=float)
+    _train_inv = np.array([r["Train % Inv"] for r in rows], dtype=float)
+
+    _w = 0.2
+    _neg_color = custom_palette[2]   # not used by DIM_COLORS
+    _inv_color = custom_palette[5]   # not used by DIM_COLORS
+    ax1a.bar(_x - 1.5*_w, _train_neg, width=_w, label="% Neg (Train)", color="slategrey", alpha=0.4)
+    ax1a.bar(_x - 0.5*_w, _neg,       width=_w, label="% Neg (Test)",  color="slategrey", alpha=0.9)
+    ax1a.bar(_x + 0.5*_w, _train_inv, width=_w, label="% Inv (Train)", color=_inv_color,  alpha=0.5)
+    ax1a.bar(_x + 1.5*_w, _inv,       width=_w, label="% Inv (Test)",  color=_inv_color,  alpha=1.0)
+    ax1a.set_ylabel("% of curves in set", fontsize=11)
+    ax1a.set_xticks(_x)
+    ax1a.set_xticklabels(_windows, rotation=45, ha="right", fontsize=10)
+    ax1a.tick_params(axis="y", labelsize=10)
+
+    _dim_line_colors = {d: DIM_COLORS[d] for d in _ROLL_DIMS}
+    _n_dims = len(_ROLL_DIMS)
+    for _di, _d in enumerate(_ROLL_DIMS):
+        _oos = np.array([r[f"OOS RMSE l={_d}"] for r in rows], dtype=float)
+        _oos_clipped = np.clip(_oos, 0, 50)   # clip spikes for readability
+        ax1b.plot(_x, _oos_clipped, marker="o", markersize=4, linewidth=2.2,
+                  label=f"OOS RMSE $\\ell={_d}$",
+                  color=_dim_line_colors[_d])
+        # annotate clipped values with the true OOS RMSE
+        for _xi, (_raw, _clip) in enumerate(zip(_oos, _oos_clipped)):
+            if _raw > 50:
+                # stack downward inside the plot so annotations stay within axes
+                _yoff = 2 - _di * 8
+                _left_window = "2022-06"
+                _on_left = _windows[_xi].startswith(_left_window)
+                ax1b.annotate(
+                    f"{_raw:.0f}",
+                    xy=(_x[_xi], 50),
+                    xytext=(-5 if _on_left else 5, _yoff),
+                    textcoords="offset points",
+                    ha="right" if _on_left else "left",
+                    va="top",
+                    fontsize=10,
+                    color=_dim_line_colors[_d],
+                )
+    ax1b.set_ylabel("OOS RMSE (bps, clipped at 50)", fontsize=11)
+    ax1b.tick_params(axis="y", labelsize=10)
+
+    # event markers — interpolate event dates onto the integer x-axis
+    _win_ts = np.array([pd.Timestamp(w + "-01").value for w in _windows], dtype=float)
+    for _ev_label, _ev_date_str in EVENTS.items():
+        _ev_ts = pd.Timestamp(_ev_date_str).value
+        if _win_ts[0] <= _ev_ts <= _win_ts[-1]:
+            _ev_x = float(np.interp(_ev_ts, _win_ts, _x))
+            ax1a.axvline(_ev_x, color="0.5", linewidth=1.0, linestyle="--", zorder=0)
+            # place label above the axes using a blended transform
+            _ev_trans = matplotlib.transforms.blended_transform_factory(
+                ax1b.transData, ax1b.transAxes)
+            ax1b.text(_ev_x, 1.02, _ev_label, fontsize=9, ha="center", va="bottom",
+                      color="0.4", transform=_ev_trans, clip_on=False)
+
+    lines1, labs1 = ax1a.get_legend_handles_labels()
+    lines2, labs2 = ax1b.get_legend_handles_labels()
+    fig1.legend(lines1 + lines2, labs1 + labs2, loc="lower center",
+                bbox_to_anchor=(0.5, -0.06), ncol=4, fontsize=10, frameon=False)
+    fig1.tight_layout()
+    fig1.subplots_adjust(bottom=0.24)
+    save_fig(fig1, "Q8a_rolling_regime_dual_axis")
+
+    # ── REMOVED ──
+    # # ── Figure 2: Scatter — test # neg / # inv vs OOS RMSE ──
+    # fig2, axes2 = plt.subplots(1, 2, figsize=(12, 5))
+    # for ax2, _xcol, _xlabel in zip(
+    #     axes2,
+    #     ["Test # Neg", "Test # Inv"],
+    #     ["Test # Neg curves", "Test # Inv curves"]
+    # ):
+    #     for _d in _ROLL_DIMS:
+    #         _xvals = np.array([r[_xcol] for r in rows], dtype=float)
+    #         _yvals = np.array([r[f"OOS RMSE l={_d}"] for r in rows], dtype=float)
+    #         _mask  = np.isfinite(_xvals) & np.isfinite(_yvals) & (_yvals < 50)
+    #         ax2.scatter(_xvals[_mask], _yvals[_mask], label=f"$\\ell={_d}$",
+    #                     color=_dim_line_colors[_d], alpha=0.8, s=40)
+    #     ax2.set_xlabel(_xlabel)
+    #     ax2.set_ylabel("OOS RMSE (bps, < 50)")
+    #     ax2.legend(fontsize=8, frameon=False)
+    #     ax2.grid(True, alpha=0.3)
+    # axes2[0].set_title("Negative curves vs OOS RMSE")
+    # axes2[1].set_title("Inverted curves vs OOS RMSE")
+    # fig2.tight_layout()
+    # save_fig(fig2, "Q8b_rolling_regime_scatter")
+    # ── END REMOVED ──
+
+    # ── REMOVED ──
+    # # ── Figure 3: Heatmap — windows × dims coloured by OOS RMSE ──
+    # _oos_matrix = np.array([
+    #     [min(r[f"OOS RMSE l={_d}"], 50) for _d in _ROLL_DIMS]
+    #     for r in rows
+    # ], dtype=float)
+    #
+    # fig3, ax3 = plt.subplots(figsize=(6, 9))
+    # im = ax3.imshow(_oos_matrix, aspect="auto", cmap="YlOrRd",
+    #                 vmin=0, vmax=50)
+    # ax3.set_xticks(range(len(_ROLL_DIMS)))
+    # ax3.set_xticklabels([f"$\\ell={d}$" for d in _ROLL_DIMS])
+    # ax3.set_yticks(range(len(_windows)))
+    # ax3.set_yticklabels(
+    #     [f"{w}  neg={r['Test # Neg']:.0f} inv={r['Test # Inv']:.0f}"
+    #      for w, r in zip(_windows, rows)],
+    #     fontsize=7
+    # )
+    # ax3.set_title("OOS RMSE (bps, clipped at 50)\nby window and latent dim")
+    # plt.colorbar(im, ax=ax3, label="OOS RMSE (bps)")
+    # fig3.tight_layout()
+    # save_fig(fig3, "Q8c_rolling_regime_heatmap")
+    # ── END REMOVED ──
+
+print(f"\n{'='*65}")
+print(f"  Figures → {FIGURES_OUT}")
+print(f"  Params  → Figures/TrainingResults/dim{{N}}_baseline/ep{TRAIN_LOG_EPOCHS}/parameters/")
+print(f"{'='*65}\n")

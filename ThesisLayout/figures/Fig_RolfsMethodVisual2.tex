@@ -1,0 +1,123 @@
+\begin{figure}[H]
+\centering
+
+\begin{tikzpicture}[
+    scale=0.8,
+    transform shape,
+    >=stealth,
+    neuron/.style={circle, minimum size=9mm, inner sep=0pt},
+    hnode/.style={circle, minimum size=9mm, inner sep=0pt},
+    outnode/.style={
+        circle,
+        minimum width=13mm,
+        minimum height=13mm,
+        inner sep=0pt,
+        fill=red!20
+    },
+    darkarrow/.style={->, draw=darkgrey, line width=0.6pt}
+]
+
+\definecolor{darkgrey}{RGB}{90,90,90}
+
+% =====================================
+% Latent layer (left)
+% =====================================
+\node[neuron, fill=red!70] (tau) at (0, 6.0) {$\tau$};
+
+\node[neuron, fill=red!70] (z1) at (0, 4.2) {$z_1$};
+\node                      (zvd) at (0, 3.0) {$\vdots$};
+\node[neuron, fill=red!70] (zl) at (0, 1.8) {$z_\ell$};
+
+% =====================================
+% X positions
+% =====================================
+\def\xHidden{4.3}
+\def\xOut{8.0}
+
+% =====================================
+% Y positions of stacked networks
+% =====================================
+\def\yG{5.0}
+\def\yK{2.5}
+\def\yH{0.5}
+\def\yR{-2.5}
+
+% =====================================
+% Hidden layers
+% =====================================
+\def\HiddenSep{0.9}
+
+\newcommand{\HiddenRange}[4]{%
+  \node[hnode, fill=red!40] (#1hTop)  at (\xHidden, {#2+\HiddenSep}) {#3};
+  \node                      (#1hDots) at (\xHidden, {#2}) {$\vdots$};
+  \node[hnode, fill=red!40] (#1hBot)  at (\xHidden, {#2-\HiddenSep}) {#4};
+}
+
+% G: x_{1,G}^(1) ... x_{1,G}^(10)
+\HiddenRange{G}{\yG}{$x_{1,\mathcal{G}}^{(1)}$}{$x_{1,\mathcal{G}}^{(10)}$}
+% H: x_{1,H}^(1) ... x_{1,H}^(4)
+\HiddenRange{H}{\yH}{$x_{1,\mathcal{H}}^{(1)}$}{$x_{1,\mathcal{H}}^{(4)}$}
+% R: x_{1,R}^(1) ... x_{1,R}^(4)
+\HiddenRange{R}{\yR}{$x_{1,\mathcal{R}}^{(1)}$}{$x_{1,\mathcal{R}}^{(4)}$}
+
+% =====================================
+% Output nodes
+% =====================================
+\node[outnode] (Gout) at (\xOut, \yG) {$\mathcal{G}(z,\tau)$};
+\node[outnode] (Kout) at (\xOut, \yK) {$\mathcal{K}(z)$};
+\node[outnode] (Hout) at (\xOut, \yH) {$\mathcal{H}(z)$};
+\node[outnode] (Rout) at (\xOut, \yR) {$\mathcal{R}(z)$};
+
+% =====================================
+% Latent -> G hidden
+% =====================================
+\draw[darkarrow] (z1.east) to[out=20, in=180] (GhTop.north west);
+\draw[darkarrow] (zl.east) to[out=35, in=180] (GhTop.south west);
+
+\draw[darkarrow] (z1.east) to[out=5,  in=180] (GhBot.north west);
+\draw[darkarrow] (zl.east) to[out=15, in=180] (GhBot.south west);
+
+% tau -> G hidden
+\draw[darkarrow] (tau.east) to[out=-10, in=170] (GhTop.west);
+\draw[darkarrow] (tau.east) to[out=-25, in=170] (GhBot.west);
+
+% =====================================
+% Latent -> K output (direct, no hidden layer)
+% =====================================
+\draw[darkarrow] (z1.east) to[out=-20, in=180] (Kout.west);
+\draw[darkarrow] (zl.east) to[out=-20, in=180] (Kout.west);
+
+% =====================================
+% Latent -> H hidden
+% =====================================
+\draw[darkarrow] (z1.east) to[out=-25, in=180] (HhTop.north west);
+\draw[darkarrow] (zl.east) to[out=-10, in=180] (HhTop.south west);
+\draw[darkarrow] (z1.east) to[out=-40, in=180] (HhBot.north west);
+\draw[darkarrow] (zl.east) to[out=-25, in=180] (HhBot.south west);
+
+% =====================================
+% Latent -> R hidden
+% =====================================
+\draw[darkarrow] (z1.east) to[out=-45, in=180] (RhTop.north west);
+\draw[darkarrow] (zl.east) to[out=-35, in=180] (RhTop.south west);
+
+\draw[darkarrow] (z1.east) to[out=-60, in=180] (RhBot.north west);
+\draw[darkarrow] (zl.east) to[out=-50, in=180] (RhBot.south west);
+
+% =====================================
+% Hidden -> outputs
+% =====================================
+\draw[darkarrow] (GhTop.east) -- (Gout.west);
+\draw[darkarrow] (GhBot.east) -- (Gout.west);
+
+\draw[darkarrow] (HhTop.east) -- (Hout.west);
+\draw[darkarrow] (HhBot.east) -- (Hout.west);
+
+\draw[darkarrow] (RhTop.east) -- (Rout.west);
+\draw[darkarrow] (RhBot.east) -- (Rout.west);
+
+\end{tikzpicture}
+\caption{The latent factors $z = (z_1, \ldots, z_\ell)^\top$ feed into four neural networks with different architectures and roles. $\mathcal{K}(z)$ is a linear map with no hidden layer. $\mathcal{H}(z)$ and $\mathcal{R}(z)$ each pass through a hidden layer of width 4 to produce their respective outputs. $\mathcal{G}(z, \tau)$ additionally takes the maturity $\tau$ as input and passes through a hidden layer of width 10.}
+\label{fig:rolf_architecture_details}
+
+\end{figure}

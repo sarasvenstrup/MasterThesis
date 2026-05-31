@@ -1,0 +1,14 @@
+{
+  "regime": "any_negative",
+  "latent_dim": 2,
+  "epochs": 2000,
+  "batch_size": 32,
+  "lr": 0.001,
+  "seed": 0,
+  "n_train": 2000,
+  "eval_frac": 0.3,
+  "prevalences": "0.05,0.15,0.30,0.50,0.75",
+  "use": "bbg",
+  "model_type": "baseline",
+  "tag": ""
+}

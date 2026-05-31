@@ -1,0 +1,341 @@
+\chapter{Discussion (title?)}
+\label{ch:discussion}
+
+% Opening paragraph:
+% - Explain that this chapter interprets the empirical results.
+% - Main theme: reconstruction, simulation and pricing are related but distinct objectives.
+% - The model works well as an arbitrage-free curve representation, but dynamic use requires more structure.
+% - The chapter discusses reconstruction, latent dimension, no-arbitrage, regime dependence, stability, pricing and limitations.
+
+% paragraph 1
+
+%The central problem in term-structure modelling is how to represent an entire curve of interest rates across maturities. At each point in time, the object of interest is not a single rate, but a collection of rates linked across the maturity dimension. A natural way to make this problem tractable is to assume that the curve can be described by a lower-dimensional state. The question studied in this thesis is whether such a lower-dimensional state can instead be learned from data using machine learning.
+
+%An encoder--decoder architecture is a natural choice for this task, since it is designed to compress an input into a latent representation and then reconstruct the object of interest from that representation. However, using a neural network for this task requires additional care. Neural networks provide flexible function approximation and can learn nonlinear relationships from data, but they do not automatically respect the pricing relations required of a financially admissible term structure. 
+
+%The relevant question is thus whether a machine-learning model can learn a low-dimensional representation of the swap-rate curve while still generating curves that are consistent with arbitrage-free term-structure theory.
+
+This section discusses whether the results of the thesis support the use of machine learning methods for learning low-dimensional, arbitrage-free representations of term structures.
+
+This is where the affine-inspired encoder--decoder framework of \citet{MatinWanPoulsen2025} becomes relevant. The encoder provides the low-dimensional latent state, while the decoder imposes financial structure by mapping this state into zero-coupon bond prices before converting them into swap rates. The decoder is therefore more than a fitted vector of swap rates. For a fixed latent state \(z\), it produces a bond-price curve as a function of time to maturity,
+\[
+    \tau \mapsto P_\theta(z,\tau).
+\]
+The learned representation can therefore be viewed as a state-to-curve map, which generates a model-implied term structure from a small number of latent factors.
+
+% paragraph 2
+
+A natural question is why such a state-to-curve map should be learnable by a neural network. The standard universal approximation theorem (Theorem~\ref{thm:UAT}) concerns neural-network approximation of real- or vector-valued functions. It therefore does not directly address operators or function-valued outputs such as
+\[
+    z \mapsto P_\theta(z,\cdot).
+\]
+This motivates the operator-learning perspective. 
+
+% skal man så ikke introducere resultatet af benth først. Og så nævne kort om hvordan det relaterer sig til rolfs model.
+
+% NOTE
+% A recent article by \citet{Benth2024} prove a universal approximation theorem for using neural networks to approximate solution operators for backward parabolic cauchy problems. This being interesting for the case of the decoder in the encoder--decoder model proposed by \cite{matin} since it lays som foudnation for whether pricing functions are learnable objects in a finance setting. However there are differences, why there result does not apply directly, and we hereby refer to the appendix to why. The interesting point being that it intersting to discuss whether if Rolfs proposed decoder, can approxiamte the true pricing operator.
+
+In particular, \citet{Benth2024} study neural approximation of solution operators for backward parabolic Cauchy problems. The connection is relevant because the no-arbitrage bond-pricing PDE used in this thesis can be viewed as a backward parabolic Cauchy problem. This operator-learning perspective provides theoretical motivation for treating pricing functions as learnable objects.
+
+The connection is not exact. The framework of \citet{Benth2024} concerns operators between infinite-dimensional function spaces, where the input may be a coefficient or terminal condition and the output is a PDE solution function. In contrast, the encoder--decoder used here takes a finite-dimensional latent state \(z\in\mathbb{R}^{\ell}\) as input and is trained on swap rates observed at finitely many maturities. For fixed \(z\), however, the output remains function-valued because the decoder generates a curve over time to maturity. The model can therefore be viewed as learning a map
+\[
+    D_\theta:\mathbb{R}^{\ell}\to C([0,\tau_{\max}]),
+    \qquad
+    z\mapsto P_\theta(z,\cdot),
+\]
+where \(C([0,\tau_{\max}])\) denotes the space of continuous real-valued functions on the time-to-maturity interval \([0,\tau_{\max}]\). Thus, the theory of \citet{Benth2024} does not guarantee the performance of the specific encoder--decoder architecture used here, but it supports the interpretation of the decoder as a learnable state-to-curve map. Appendix~\ref{app:operator_learning_relation} provides a more detailed comparison between the two frameworks.
+
+
+% The operator-learning perspective provides theoretical motivation for treating pricing functions as learnable objects.
+
+% it places rolf in the broader litterature .... 
+
+The next question is how well this idea works in the concrete setting of swap-rate curves. We therefore discuss the baseline model of \citet{MatinWanPoulsen2025} and the stable variant proposed in this thesis.
+
+\textcolor{red}{The operator-learning perspective provides theoretical motivation for treating pricing functions as learnable objects.(redundant)} The remaining question is how well this idea works empirically in the concrete setting of swap-rate curves. 
+
+% PURPOSE OF RECONSTRUCTION BEFORE EVALUTION????? 
+
+% Before discussing the empirical results, it is useful to clarify the role of reconstruction in this setting. Reconstruction is not the final objective of an interest-rate model, since the observed swap curve is already known at the time of evaluation. Rather, reconstruction is the first diagnostic of whether the lower-dimensional latent state contains enough information to represent the term structure. If the decoder can regenerate the observed curve from only a few latent factors, this suggests that the latent state captures the main cross-sectional information in the swap-rate curve. Reconstruction accuracy therefore provides a way to assess whether the learned state is informative enough to serve as a basis for curve generation, simulation and pricing.
+
+
+% paragraph 3
+
+%Turning to the evaluation of the baseline model, it was evident that overfitting occurred when we had more than two latent dimension. The insample reconstruction accuracy of the baseline model with two latent factors, had very similar results across all 9 currencies ranging from 9.6 to 18.4 with an average of 12.9 in \cite{MatinWanPoulsen2025}, and we achieved 9.8 to 17.6, with an average of 12.1, over a horizon of 10 years. When performing the test OOS we actually saw that training the model over 5 years a double as short of a time horizon the in sample errors on average, where still on the same level as training over a larger horizon over the 10 years. Since the first date of negative swap rates occur is in the first sample we train on has noe curves with negative rates. Opdater Figure 1.11 til også at inkludere hvor mange negative renter der er i daten.
+
+% Note 1: Skal man egentlige faktisk kommentere på denne sammenlinging (se foroven) i selve evalueringen, og så her i diskussionen på nævne det overfladisk(se forneden)?:
+
+Turning to the evaluation of the baseline model, it was evident that overfitting occurred when we had more than two latent dimension. The insample reconstruction accuracy of the baseline model with two latent factors, had very similar results across all 9 currencies as \cite{MatinWanPoulsen2025}. Further it was evident that the training with more data did not necessarily worsen the in sample average. However, what this 5 year horizon of data contained of a different variety of swap curves, did had quite a big of an impact on the OOS performance. Indicating, that is it not only a matter of having more data, but having more varied data. Such that the model, shows poor extrapolation, in these cases when it is trained on something never seen before. this both happening for both inverted curves and negative rate curves, when moving into the QE regime and the inflation regime. This is all quantative. So when assessing the qualitative results, by comparing how the constructed curves with the actual curve, we clearly see that the model struggles with these (should we add a an inverted curve) negative rate curves in sample none-the-less, so not just in the OOS case. We found here that the model finds the level of the curve, but fails to find the slope and curvature, regardless of the number latent dimensions, demonstrating that the model is lacking that information in some way. This lead us to testing the so-called augment model. By a \textit{soft} constraint we tried to include more input in the model, by using simple proxys for slope and curvature of the code, and also trained across this, the model was then able to capture these curves better. However, OOS the model still struggles with region change. So to sum up - the baseline model struggles in two ways. when trained over a period of regime shifts, and is missing information in some way to capture the slope and curvature of the curve.
+
+However, the model that actually learned the curvature without having these augmented inputs, and was able to learn the undelrying dynamics best OOS as well, was the stable model, indiciating, that if the model just learns freely is necessarily not enought to produce reconstructed curves, but with more restrictions, and this also more latent factors, the stable model actually performance very well, outperforming all other models both in-sample and out-of-sample.
+
+The restrictions imposed for the stable variant, resulted in us being able to simulate from the learned latent dynamcis as opposed to the baseline. The baseline succedeed in reconstruction, but the latent dynamics it self are not learned to be mearn reverting especially not when simulating across longer horizons. 
+
+
+
+Another point we need to make is that adding restrictions into the input vector and training over this really betters the in sample, but not the OOS, it leads to overfitting. And we need more latent factors in order to improve the fit. So this indicates, that trying to model with better fit is better through the models themselves then instead of reconstruction error. 
+
+
+% maybe paragraph 3 is all baseline and therefore this belongs here??:
+
+% The comparison across latent dimensions evaluates how many factors are needed to represent the swap-rate curve. In-sample, reconstruction improves as the number of latent factors increases, indicating that additional dimensions provide greater flexibility. The one-factor model is too restrictive, while the gains from moving beyond two factors are smaller and come with higher computational cost. However, the rolling out-of-sample results show that this flexibility can come at the cost of robustness. For the baseline model, the higher-dimensional specifications are more sensitive to regime shifts, while the two-factor model gives the most stable out-of-sample performance.
+
+
+% paragraph 4
+
+% We namely see when we tested our stable variant of the model, which performed better than the baseline in our OOS test, indicating that model restrictions that constrain the model in a less free way, actually improves reconstruction, further also improving reconstuction of curves that the baseline model could not reconstruct well. (latent dimensions: Flexibility versus robustness / The purpose of Reconstruction)
+
+
+The most striking result of the rolling-window comparison is that the stable variant changes the apparent relationship between latent dimension and out-of-sample performance. For the baseline model, increasing the latent dimension improves the in-sample fit but worsens the rolling out-of-sample results. The four-factor baseline performs better than the two-factor baseline
+in-sample, yet generalises worse out-of-sample. This is consistent with a model
+whose additional flexibility is not sufficiently constrained. A natural
+interpretation would be that the swap curve does not support additional
+unconstrained latent factors.
+
+The stable specification changes this interpretation. Once the drift is
+constrained to be mean-reverting, the diffusion is bounded with valid
+correlation matrices, and the short-rate specification is controlled, the
+four-factor stable model performs best both in-sample and out-of-sample. The
+improvement is therefore not obtained by sacrificing training accuracy. Read
+literally, this suggests that additional latent flexibility is useful when it is
+appropriately constrained, and that the baseline's flexibility--robustness
+trade-off reflects the freedom of the learned dynamics rather than the latent
+dimension alone.
+
+This conclusion requires several qualifications. First, the result does not
+establish that the out-of-sample improvement is due specifically to the
+financial content of the restrictions. A purely statistical regularisation of
+comparable strength might also improve generalisation, and this thesis does not
+include such a control experiment. The claim that financial structure improves
+generalisation should therefore be interpreted as suggestive rather than
+conclusive. The particular bounds and parametrisations used in the stable model
+are also modelling choices, and the analysis does not establish that they are
+optimal. Second, the latent dimension is not chosen by a formal selection
+criterion. We compare \(\ell\in\{1,2,3,4\}\) and find that the four-factor
+stable specification performs best, but the analysis does not test
+\(\ell>4\) or prove that the gains saturate at four factors. Third, higher
+latent dimensions come with an interpretability cost. With two factors, the
+latent state may be related informally to level and slope movements, while the
+meaning of individual coordinates is less transparent in four dimensions. The
+stable specification restores the empirical usefulness of additional latent
+dimensions, but not necessarily their interpretability.
+
+The conclusion is therefore more modest than saying that flexibility should
+simply be controlled rather than removed. The rolling-window results show that
+the baseline's out-of-sample deterioration at higher dimensions can be
+substantially mitigated by imposing financially motivated restrictions, and
+that the specific four-factor stable model tested here delivers the best
+performance among the variants considered. Whether the same conclusion would
+hold against alternative regularisation strategies or higher latent dimensions
+remains open.
+
+The stable variant also improves the qualitative behaviour of the reconstructions. The baseline model struggles with less common curve shapes, such as negative-rate and inverted curves, where it often captures the level of the curve more reliably than its slope and curvature. By restricting the latent dynamics, the stable model produces smoother and more controlled reconstructions in these regimes without requiring slope or curvature features as auxiliary inputs. This supports the broader interpretation that financial structure can improve not only simulation stability, but also reconstruction robustness.
+
+At the same time, the stable model does not remove all regime sensitivity. It still exhibits elevated errors during difficult periods, including the COVID shock and the 2022 tightening cycle. The restrictions therefore reduce the model's sensitivity to regime changes, but they do not eliminate it.
+
+The simulation experiment shows why these restrictions matter beyond reconstruction. The baseline dynamics, although trained for cross-sectional reconstruction, can produce explosive trajectories when simulated forward. Under the stable restrictions, the simulated paths remain bounded and the decoded curves stay on an interpretable scale. Reconstruction is therefore only a static test of the latent state, while simulation is a dynamic test of the learned dynamics.
+
+These two limitations --- a sensitivity to regime shifts and a structural inability to reproduce slope and curvature in atypical regimes --- both stem from allowing the latent dynamics to evolve too freely during training. The stable variant developed in this thesis responds to this by restricting the dynamics themselves rather than enriching the input or expanding the latent state. The remainder of this section examines whether the restrictions deliver what they were designed to deliver, and where they fall short.
+
+% paragraph 5
+
+%The stable model also improves the qualitative behaviour of the reconstructions. The baseline model struggles with curves that are less common in the training data, such as negative-rate or inverted curves. By restricting the latent dynamics, the stable model produces smoother and more controlled reconstructions in such regimes. This supports the broader interpretation that machine learning models for term structures should not be allowed to learn freely from the data alone. Financial structure can improve not only simulation stability, but also reconstruction robustness.
+
+
+The most striking result of the rolling-window comparison is that the stable variant changes the apparent relationship between latent dimension and out-of-sample performance. For the baseline model, increasing the latent dimension improves the in-sample fit but worsens the rolling out-of-sample results. The four-factor baseline performs better than the two-factor baseline in-sample, yet generalises worse out-of-sample. This is consistent with a model whose additional flexibility is not sufficiently constrained. A natural interpretation would be that the swap curve does not support additional unconstrained latent factors.
+
+The stable specification changes this interpretation. Once the drift is constrained to be mean-reverting, the diffusion is bounded with valid correlation matrices, and the short-rate specification is controlled, the four-factor stable model performs best both in-sample and out-of-sample. The improvement is therefore not obtained by sacrificing training accuracy. Read literally, this suggests that additional latent flexibility is useful when it is appropriately constrained, and that the baseline's flexibility--robustness trade-off reflects the freedom of the learned dynamics rather than the latent dimension alone.
+
+This conclusion requires several qualifications. First, the result does not establish that the out-of-sample improvement is due specifically to the financial content of the restrictions. A purely statistical regularisation of comparable strength might also improve generalisation, and this thesis does not include such a control experiment. The claim that financial structure improves generalisation should therefore be interpreted as suggestive rather than conclusive. The particular bounds and parametrisations used in the stable model are also modelling choices, and the analysis does not establish that they are optimal. Second, the latent dimension is not chosen by a formal selection criterion. We compare \(\ell\in\{1,2,3,4\}\) and find that the four-factor stable specification performs best, but the analysis does not test \(\ell>4\) or prove that the gains saturate at four factors. Third, higher latent dimensions come with an interpretability cost. With two factors the latent state may be related informally to level and slope movements, while the meaning of individual coordinates is less transparent in four dimensions. The stable specification restores the empirical usefulness of additional latent dimensions, but not necessarily their interpretability.
+
+The conclusion is therefore more modest than saying that flexibility should simply be controlled rather than removed. The rolling-window results show that the baseline's out-of-sample deterioration at higher dimensions can be substantially mitigated by imposing financially motivated restrictions, and that the specific four-factor stable model tested here delivers the best performance among the variants considered. Whether the same conclusion would hold against alternative regularisation strategies or higher latent dimensions remains open.
+
+
+% paragraph 6
+
+% When implemtning the stable variatn the originl goal was to see if the learned latent dynamics from the baseline were able to be put to use and be simulated from. We clearly saw that this was not possible for the baseline, but when adding restrictions this helped alot. Further we wanted to test whether this now "nicer" looking simulations, actually could be used to price a swaption. 
+
+
+
+\newpage
+\section{The overall story}
+
+% paragraph 1 (Frede)
+want to discuss if we can modeling term strucutre models of interest rates with machine learning concepts. recall the different models 
+
+% paragraph 2 (Frede)
+We do this by implementing rolfs model which despise his peers achieves an arbitragefree model by construction. Here then discuss the decoder as a state-to-curve map and note the benth theoyr. (The Decoder as a State-to-curve Map)
+
+
+% paragraph 3 (Sara) - model comparison
+When we then evaluate this model, we see that the reconstrction accuracy quantatively is good, als compared to jesper andreasen. (shouldnt we also compare ourselves to Rolfs article?). however qualitatlevy we see some patterns regarding swap rate curves with negative rates and also inverted curves.  
+We see that the hard constraint still has good results realtively to jespter andreasen, and overall serves as a learning of when we use neural networks to learn dynamics in underlying data, that we may also need to restrict the model so that it does not learn freely. 
+
+% paragraph 4 (Frede) - model comparison
+We namely see when we tested our stable variant of the model, which performed better than the baseline in our OOS test, indicating that model restrictions that constrain the model in a less free way, actually improves reconstruction, further also improving reconstuction of curves that the baseline model could not reconstruct well. (latent dimensions: Flexibility versus robustness / The purpose of Reconstruction)
+
+% paragraph 5 (Sara) - model comparison
+The stable model by these restrictions was seen to better capture some of the curvature and slope of the curves with negative rates that the baseline could not. 
+When we then augmented the input to force the model to take slope and curvature informaiton into account this improved the qualtialve reconstruction of the curves that the baseline could not. However the OOS test shows that the stable model still performed better, indicating ....
+
+% paragraph 6 (both) - simulation discussion
+When implemtning the stable variatn the originl goal was to see if the learned latent dynamics from the baseline were able to be put to use and be simulated from. We clearly saw that this was not possible for the baseline, but when adding restrictions this helped alot. Further we wanted to test whether this now "nicer" looking simulations, actually could be used to price a swaption. 
+
+\section{Arguments/Findings}
+
+\subsection{The Purpose of Reconstruction}
+
+The purpose is not simply to copy the observed curve, but to test whether the swap-rate curve can be represented by a lower-dimensional latent state. The reconstruction error therefore measures how much term-structure information is retained in this representation. If the model can accurately reconstruct the observed curve from only a few latent factors, this suggests that the latent state captures the main cross-sectional information in the curve.
+
+Reconstruction is therefore a natural first diagnostic for the model. A good reconstruction indicates that the latent state is informative enough to represent the current term structure, which is necessary before the model can be used for curve generation, simulation or pricing. Reconstruction should therefore be viewed as a starting point rather than the final objective of the model.
+
+
+\subsection{Latent Dimension: Flexibility versus Robustness}
+
+The comparison across latent dimensions evaluates how many factors are needed to represent the swap-rate curve. In-sample, reconstruction improves as the number of latent factors increases, indicating that additional dimensions provide greater flexibility. The one-factor model is too restrictive, while the gains from moving beyond two factors are smaller and come with higher computational cost. However, the rolling out-of-sample results show that this flexibility can come at the cost of robustness. For the baseline model, the higher-dimensional specifications are more sensitive to regime shifts, while the two-factor model gives the most stable out-of-sample performance.
+
+The stable variant changes this conclusion. Once the latent dynamics are constrained through mean reversion, bounded volatility, valid correlations and bounded short-rate behaviour, the additional dimensions become useful rather than destabilising. The four-factor stable model performs best both in-sample and out-of-sample, suggesting that model complexity is not problematic in itself. Rather, the results indicate that additional latent flexibility is valuable when the dynamics are sufficiently constrained.
+
+
+\subsection{The Decoder as a State-to-Curve Map}
+
+The decoder is more than a fitted vector of swap rates. Although the model takes swap rates at eight maturities as input, the decoder generates zero-coupon bond prices on a richer maturity grid. For a fixed latent state \(z\), the decoder therefore produces a maturity-dependent bond-price curve,
+\[
+    \tau \mapsto P_\theta(z,\tau).
+\]
+The latent state can consequently be used to generate a model-implied term structure, including bond prices, yields, forward rates and swap rates at maturities beyond the original input set.
+
+A natural question is why such a state-to-curve map should be learnable by a neural network. The decoder is not only asked to fit individual maturities. It is asked to learn a structured map from a latent state to an entire pricing function. This is conceptually related to \citet{Benth2024}, who study neural approximation of solution operators for backward parabolic Cauchy problems. This is relevant because Markovian bond-pricing equations are also backward parabolic PDEs under standard assumptions. Their results therefore support the broader view that pricing functions arising from such equations can be treated as learnable objects.
+
+The connection is not exact. The framework of \citet{Benth2024} concerns operators between infinite-dimensional function spaces, where the input may be a coefficient or terminal condition and the output is a PDE solution function. In contrast, the encoder--decoder used here takes a finite-dimensional latent state \(z\in\mathbb{R}^{\ell}\) as input and is trained on swap rates observed at finitely many maturities. For fixed \(z\), however, the output remains function-valued because the decoder generates a maturity curve. The model can therefore be viewed as learning a map
+\[
+    D_\theta:\mathbb{R}^{\ell}\to C([0,T]),
+    \qquad
+    z\mapsto P_\theta(z,\cdot),
+\]
+rather than a full function-to-function operator. In this sense, the theory of \citet{Benth2024} does not prove that the specific encoder--decoder architecture used in this thesis will succeed. It instead provides mathematical motivation for the broader idea that pricing functions generated by parabolic PDEs are suitable objects for neural approximation.
+
+\subsection{The Role of No-Arbitrage}
+
+In this thesis, the state-to-curve representation is financially structured. The decoder maps the latent state into zero-coupon bond prices before converting them into swap rates. A successful reconstruction therefore indicates not only that the curve can be compressed, but also that it can be regenerated within an arbitrage-free term-structure framework.
+
+This matters because an unconstrained neural network could fit the observed swap rates while producing curves that violate basic pricing relations. The no-arbitrage decoder restricts the output to curves that are consistent with zero-coupon bond prices and swap-pricing identities. The empirical results suggest that imposing this structure does not prevent accurate reconstruction. At the same time, the PDE residual diagnostic confirms that the no-arbitrage restriction is satisfied numerically.
+
+The main trade-off is computational. The decoder requires automatic differentiation, the evaluation of Hessian-trace terms and the numerical solution of the no-arbitrage ODE system. These operations become more expensive as the latent dimension increases. Thus, the no-arbitrage decoder provides financial consistency without destroying reconstruction accuracy, but it makes the model slower and more complex to train.
+
+\subsection{Regime Dependence and Difficult Curve Shapes}
+
+\begin{itemize}
+    \item Reconstruction errors are not evenly distributed.
+    \item Errors vary by maturity, currency and time period.
+    \item The short and long ends are harder to reconstruct than mid-range maturities.
+    \item Short-end difficulty may reflect the lack of maturities below one year.
+    \item Long-end difficulty may reflect long-run expectations and term-premium effects.
+    \item Negative-rate curves are harder to reconstruct.
+    \item Inverted curves are particularly difficult out-of-sample.
+    \item These shapes are less frequent and regime-specific.
+    \item EUR and JPY struggle more, likely due to prolonged low/negative-rate environments.
+    \item DKK may also behave differently because of its connection to EUR.
+    \item Errors increase around COVID and the 2022 tightening cycle.
+    \item The model learns dominant historical configurations better than rare or stressed regimes.
+\end{itemize}
+
+The model performs best in regimes well represented in the training data and struggles with atypical curve shapes and regime shifts.
+
+\subsection{Stable Dynamics and Simulation}
+
+\begin{itemize}
+    \item Reconstruction is a static test; simulation is a dynamic test.
+    \item A model can reconstruct observed curves but still have unstable latent dynamics.
+    \item The baseline model may simulate explosive paths because the drift is unconstrained.
+    \item The stable model imposes:
+    \begin{itemize}
+        \item mean-reverting drift,
+        \item bounded volatility,
+        \item positive-definite correlation matrices,
+        \item bounded short-rate output.
+    \end{itemize}
+    \item These restrictions keep simulated paths on a controlled scale.
+    \item The stable model produces more interpretable long-horizon scenarios.
+    \item Stability restrictions are practically important, not only theoretically convenient.
+    \item The stable model also allows higher latent dimensions to be useful.
+\end{itemize}
+
+Good reconstruction does not imply stable simulation; stability must be imposed on the latent dynamics.
+
+* What reconstruction does not guarantee
+- It does not guarantee stable simulation or good swaption pricing.
+
+Successful reconstruction is only one requirement for a useful term-structure model. Reconstruction accuracy measures whether the current curve can be represented by the latent state, but it does not guarantee that the latent dynamics are stable when simulated forward. Nor does it guarantee accurate derivative pricing, since swaption prices depend on the risk-neutral distribution of future swap rates rather than only the current curve.
+
+The main implication is that arbitrage-free reconstruction, stable simulation and derivative pricing are related but distinct objectives.
+
+\subsection{Pricing and the Limits of Reconstruction}
+
+\begin{itemize}
+    \item Pricing tests a different object than reconstruction.
+    \item Reconstruction fits the current curve.
+    \item Swaption pricing depends on the future risk-neutral distribution of swap rates.
+    \item The plain reconstruction model prices swaptions poorly.
+    \item A small constant market-price-of-risk layer with eight parameters reduces the implied-vol error from approximately 415 bp to around 40 bp.
+    \item The latent state therefore contains useful information for pricing once the risk-neutral dynamics are recalibrated.
+    \item The residual error concentrates at the 1Y expiry and is driven by a persistent forward bias that the single global drift correction cannot fully eliminate.
+\end{itemize}
+
+Arbitrage-free reconstruction is not sufficient for derivative pricing because pricing depends on the future risk-neutral distribution of swap rates.
+
+
+
+\subsection{Concluding Remarks}
+
+Discussion points:
+
+Long and short end are hard to fit, maybe to do with no dates for tenors less than 1Y, but maybe also to do with some inverse swapcurves.
+
+
+
+
+Specific currencies are struggling
+
+
+% ─────────────────────────────────────────────────────────────
+\section{Summary}
+% ─────────────────────────────────────────────────────────────
+
+The evaluation yields three main findings. First, the autoencoder achieves reasonable in-sample reconstruction accuracy once at least two latent factors are used, while the one-factor specification is too restrictive. Increasing the number of latent factors improves the in-sample fit, but with diminishing marginal gains and higher computational cost.
+
+Second, the no-arbitrage diagnostic confirms that the generated zero-coupon bond prices satisfy the bond-pricing PDE up to numerical approximation error. The residuals are close to zero across maturities and currencies, indicating that the arbitrage-free construction is preserved in practice.
+
+Third, the rolling-window analysis reveals a substantial generalization gap. Although the higher-dimensional specifications fit the training windows well, their out-of-sample performance deteriorates markedly, especially for $\ell=3$ and $\ell=4$. The $\ell=2$ model is less accurate in-sample but more stable on unseen data. This suggests that additional latent flexibility improves reconstruction within the estimation sample, but weakens out-of-sample robustness in the rolling-window setting.
+
+% --- BRAIN STORM ----
+
+Bullet points:
+
+\begin{itemize}
+    \item discuss the hard constraint. so compared to andreasen, what are we to achieve with this hard constraint ? are we expecting a trade off with something? we see the same reconstruction, but even with no arbitrage internally, the model still struggles in regime shifts 
+    \item latent dimensions can improve insample fit, men harm generalistion. The baseline results reveal a trade-off between flexibility and robustness. Additional latent factors improve the in-sample representation of the swap curve, but they also make the model more sensitive to changes in the market environment.
+    \item the stable model changes the conclusion about the laten dimnesions. The stable specification shows that higher-dimensional latent representations can be useful when combined with suitable restrictions on the dynamics. The issue is therefore not model complexity alone, but whether that complexity is controlled.
+    \item the model is very regime dependent. The results suggest that the model learns dominant historical curve configurations well, but struggles when the interest-rate environment changes.
+    \item Negative-rate curves remain challenging across specifications, suggesting that the architecture does not fully capture the structural features of low-rate environments.
+    \item The single-curve assumption provides a tractable link between swap rates and discount factors, but it abstracts from multi-curve market practice
+\end{itemize}
+
+The single-curve assumption makes the relation between swap rates and
+discount factors tractable by using the same curve for discounting and
+forwarding. In practice, however, modern swap markets often distinguish
+between discount curves and forward curves. The model therefore abstracts from
+multi-curve effects such as tenor basis, collateralisation and liquidity
+premia.
+
+
+
+% ----------
+
+\begin{itemize}
+    \item It tests whether the swap curve can be compressed into a lower-dimensional latent state.
+    \item this is then what we evalute with looking at the model for different latent dimensions. how many latent dimensions are neccesary and sufficeitn to represent? and the answer to this question depends on perspective / what angle you look at. 
+    \item at first sight, it seems like in sample the more idmensins the better. but this seems to not hold any longer, when looking at oos. the higher dimensions adds senstive to model, which harsly react to regime shift and crisis periods, and therefor the robustness of two dimensions win. 
+    \item but when this flexibility / complexity of the model is controlled and constrained in the stable model, we see the additional dimensions outperform in and out of sample. confirming that complexity  provides the flexibility the model needs to fit the market, but needs financial strucutre and constraints to stay stable ????
+\end{itemize}

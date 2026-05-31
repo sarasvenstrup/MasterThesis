@@ -1,0 +1,38 @@
+\chapter{Introduction}
+\label{chap:intro}
+
+The term structure of interest rates is a fundamental object in financial modelling, with applications such as investing, pricing and forecasts as well as risk management of fixed income instruments and other financial assets. A central challenge is that the curve is high-dimensional, yet empirical evidence suggests that a small number of latent factors suffices to capture most of its variation \citep{Skovmand2025tsm}. The literature on the modelling of interest rates is vast and a complete overview is out of scope for this thesis. However, one classical approach to this dimensionality reduction problem is Nelson--Siegel \citep{NelsonSiegel1987}, which imposes a fixed parametric form on the curve, while more recent data-driven approaches use neural networks to learn non-linear representations directly from data \citep{Sokol2022, Andreasen2023, MatinWanPoulsen2025}. Among these, \citet{MatinWanPoulsen2025} propose an affine-inspired encoder--decoder framework that ensures arbitrage-free term structures by construction. The purpose of this thesis is to implement this framework, analyse and evaluate its empirical performance and based on this analysis contribute with extensions and improvements.
+
+%The present thesis builds on this framework and evaluates its empirical performance.
+
+\citet{MatinWanPoulsen2025} establish the theoretical framework and provide an initial empirical evaluation, but their analysis is limited to a two-dimensional latent representation and does not consider out-of-sample performance. This thesis therefore examines how well such a model performs across different latent-space dimensions and how well it generalises to unseen data, including periods in which curve shapes that were underrepresented during training enter the evaluation sample.
+
+
+We implement the affine-inspired encoder--decoder model of \citet{MatinWanPoulsen2025}, referred to as the baseline, training it on par swap rate data across multiple currencies and maturities. The model compresses the swap curve into a low-dimensional latent representation through an encoder, and reconstructs it through a decoder that is constrained to produce arbitrage-free zero-coupon bond prices.
+
+
+This thesis makes the following contributions. We extend the arbitrage-free affine-inspired encoder--decoder model of \citet{MatinWanPoulsen2025} to support an arbitrary number of latent factors, finding that two suffice both in- and out-of-sample. We identify two limitations of the model. First, it exhibits limited ability to generalise to curve shapes poorly represented during training. Second, it struggles to reconstruct both inverted and negative-rate curves accurately. \textcolor{red}{(Comment: But is it two distinct limitations??)} We propose two model extensions to address these limitations, finding that imposing structural constraints such as mean-reverting dynamics is more effective than augmenting the input with more explicit features describing a swap curve. We further show that when latent states are simulated from the latent dynamics of the model the paths explode. The structural constraints we introduce in our stable model resolve this instability, producing stable paths over a ten-year horizon. \textcolor{red}{Finally, using the stable model to price swaptions via Monte Carlo simulation, we find that reconstruction accuracy alone does guarantee dynamics suitable for derivative pricing.}
+
+The remainder of the thesis is organised as follows. Chapters~\ref{chap:finance_theory} and~\ref{chap:ml_theory} present the financial and machine-learning theory used throughout the thesis. Chapter~\ref{ch:model-background} places the encoder--decoder within the term-structure modelling literature, and Chapter~\ref{chap:encoderdecodermodel} describes the model architecture. Chapter~\ref{chap:datadescription} presents the swap-rate dataset. Chapter~\ref{chap:evaluation} evaluates the baseline model in terms of in-sample and out-of-sample reconstruction accuracy, and examines whether the decoded curves satisfy the no-arbitrage conditions. Chapter~\ref{chap:simulation} introduces the stable model and studies the simulated latent dynamics. Chapter~\ref{chap:model_comparison} places the framework in a broader theoretical perspective and discusses the empirical findings and model limitations. Finally, Chapter~\ref{chap:con} concludes.
+
+
+\begin{enumerate}
+    \item Representation experiment
+    \item Simulation experiment
+    \item Missing mean reversion, so parametring M to be Mean reverting
+    \item extending to multiple dimensions and using hypersperical choleksy to enure well defined volaitlities matrics 
+    \item checking whether latent dynamics are matehmatically well defined
+    \item confirming with oos test how many altent factors are needed but that differs depenedned on how many restrictions are made wihtin the model
+    \item pricing
+\end{enumerate}
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,12 @@
+Curve Variant,Metric,Baseline l=2,Augmented l=2,Augmented l=3,Augmented l=4
+Normal,N,518,518,518,518
+Normal,IS RMSE,8.6,10.6,7.5,7.1
+Normal,OOS RMSE,11.4,12.2,11.5,9.1
+Inverted,N,122,122,122,121
+Inverted,IS RMSE,12.9,14.5,13.5,9.3
+Inverted,OOS RMSE,20.4,21.7,21.9,165.0
+Negative,N,294,294,294,294
+Negative,IS RMSE,13.1,12.7,14.8,12.0
+Negative,OOS RMSE,23.5,23.6,61.4,72.4
+Average,IS RMSE,9.8,11.3,9.4,8.2
+Average,OOS RMSE,16.4,17.1,28.6,49.3

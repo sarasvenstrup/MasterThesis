@@ -1,0 +1,29 @@
+\chapter{Conclusion}
+\label{chap:con}
+
+This thesis demonstrates that encoder--decoder models can effectively serve as a dimensionality reduction technique for reconstructing swap rate curves. It builds upon the affine-inspired arbitrage-free encoder--decoder framework proposed by \citet{MatinWanPoulsen2025}, here referred to as the baseline model, in which the encoder compresses the curve into a latent representation, from which the decoder reconstructs it subject to a hard no-arbitrage constraint. The thesis extends this framework to support $\ell$ latent factors rather than two, to empirically determine how many latent factors are sufficient.
+
+For the baseline model, in-sample reconstruction improves with the number of latent factors, consistent with the in-sample finding of \citet{Andreasen2023}, who finds that two to three latent factors are sufficient. However, the rolling window out-of-sample evaluation reveals that this improvement does not generalise, and that two latent factors are the optimal choice in terms of out-of-sample reconstruction accuracy.
+
+
+
+Reconstruction accuracy is, nevertheless, found to be driven less by the volume of training data and more by the diversity of curve shapes present in it. This relates to the findings of \citet{Sokol2022}, who shows that training across multiple currencies improves reconstruction when a given currency exhibits curve shapes not previously seen, as the model can draw on similar shapes observed in other currencies. Analogously, during periods where the training data across all currencies lacks exposure to certain curve shapes, the model extrapolates poorly, as illustrated by the transition to negative interest rates around 2015, driven by the quantitative easing programmes undertaken by central banks.
+
+
+
+This distributional sensitivity represents one of two central limitations identified in the thesis. The second concerns the linear encoder, which, having been trained predominantly on positive-rate curves, is shown to organise the latent space primarily by the level of rates rather than by curve shape, making it structurally ill-suited to reconstruct negative-rate curves that share the same shape as positive-rate ones, with deeply negative curves proving the most challenging. This points to a structural limitation that requires architectural modifications to the model.
+
+Two such modifications are explored. The first augments the input with slope and curvature features, which improves in-sample reconstruction and yields qualitatively better capture of curve shape for an additional latent factor. However, it does not generalise out-of-sample, with the augmented model failing to improve upon the baseline in terms of out-of-sample reconstruction accuracy.
+
+The second imposes architectural restrictions on the latent dynamic components, including enforcing mean reversion in the drift and constraining the short rate. This proves more effective, reducing both average and maximum out-of-sample error and substantially limiting the extreme failures observed during periods of distributional shift, including the 2015 period. Notably, the stable variant captures slope and curvature well despite retaining the linear encoder. However, this comes with at the cost of requiring more latent factors, suggesting a tradeoff between architectural constraints and representational capacity.
+
+Applying both modifications simultaneously does not yield a further improvement. Both modifications retain the linear encoder, and although the stable variant performs well despite this, the findings with the augmented model suggest that a more flexible encoder architecture may be a promising direction for future research. 
+
+%Applying both modifications simultaneously does not yield a further improvement. Both modifications retain the linear encoder. Although the stable variant performs well despite this, the level-sensitivity analysis used to motivate the augmented model suggests that investigating a more flexible encoder may be a useful direction for future research.
+
+Beyond reconstruction, the stable variant produces simulated paths that remain on an interpretable scale throughout a ten-year horizon. While \citet{MatinWanPoulsen2025} suggest that the affine drift can capture mean reversion, it is not restricted to do so by construction, and in practice the learned drift matrix exhibits positive eigenvalues, causing latent paths to explode exponentially. The stable variant addresses this by explicitly constraining the drift to be mean-reverting by construction.
+
+\textcolor{red}{Finally, when the learned dynamics are used to price swaptions, by simulating from them and computing monte carlo price estimates, the model fails to reproduce market-implied volatility smiles and skews. add concrete pricing observation here. This points to a fundamental tension in the framework: a latent representation sufficient for curve reconstruction does not guarantee that the learned dynamics under $\mathbb{Q}$ are rich enough for derivative pricing. As a tool for low-dimensional arbitrage-free curve reconstruction, the model performs reasonably well. Pushing it toward derivative pricing, however, reveals that static representational accuracy and dynamic pricing richness are distinct and not automatically aligned.}
+
+
+

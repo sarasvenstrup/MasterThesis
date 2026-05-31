@@ -1,0 +1,311 @@
+%=========================================================
+\chapter{Simulation-Based Swaption Pricing}
+\label{chap:pricing_methodology}
+%=========================================================
+
+The stable model introduced in Chapter~\ref{chap:simulation} yields numerically well-behaved latent-state simulations. This chapter investigates whether the model can be used for the Monte Carlo pricing of European swaptions and whether the resulting normal implied volatilities are consistent with observed market quotes.
+
+%=========================================================
+\section{Monte Carlo Swaption Pricing}
+\label{sec:swaption_pricing_methodology}
+%=========================================================
+
+We consider European swaptions \citep{Filipovic2009} written on the interest rate swap introduced in Section~\ref{subsec:interest_rate_swaps}. The option expires at \(T_{\mu}\) and gives the holder the right to enter a swap running from \(T_{\mu}\) to \(T_{\nu}\), with annual fixed-leg payment dates \(T_{\mu+1},\ldots,T_{\nu}\). The notional is normalised to one, and we retain the single-curve, annual-payment conventions used earlier in the thesis. These conventions are sufficient for the present diagnostic exercise, but they should be kept in mind when comparing the results with market quotes.
+
+In the decoder introduced in Chapter~\ref{chap:encoderdecodermodel}, zero-coupon bond prices are represented as
+\[
+P(t,T)=P(z_t,T-t),
+\]
+where \(z_t\) is the latent state and \(T-t\) is the remaining time to maturity. Let \(z_0=A_1\mathbf S_0\) denote the latent state obtained from the observed initial swap-rate curve. The time-zero annuity of the underlying swap is
+\[
+\mathcal A_0
+:=
+\sum_{k=\mu+1}^{\nu} P(z_0,T_k).
+\]
+For an at-the-money (ATM) swaption, the strike is set equal to the time-zero par forward swap rate implied by the initial decoded zero-coupon bond-price curve:
+\begin{equation}
+K
+=
+S_{\mu,\nu}(0)
+=
+\frac{
+P(z_0,T_{\mu})-P(z_0,T_{\nu})
+}{
+\mathcal A_0
+}.
+\label{eq:atm_swaption_strike}
+\end{equation}
+Thus, ATM is defined relative to the model-implied initial curve used for pricing.
+
+We simulate \(N_{\mathrm{MC}}\) paths of the latent process under the learned risk-neutral dynamics, using monthly time steps from time zero to the option expiry \(T_{\mu}\). Let
+\[
+z_{T_{\mu}}^{(m)},
+\qquad
+m=1,\ldots,N_{\mathrm{MC}},
+\]
+denote the latent state at expiry on simulated path \(m\). For each path, the decoder maps this terminal state into an expiry-date zero-coupon bond-price curve,
+\[
+\tau \longmapsto
+P\!\left(z_{T_{\mu}}^{(m)},\tau\right),
+\]
+where \(\tau\) denotes the remaining time to maturity measured from \(T_{\mu}\).
+
+Because the underlying swap begins at option expiry, its pathwise annuity and par swap rate at \(T_{\mu}\) are
+\begin{equation}
+\mathcal A_{\mu,\nu}^{(m)}(T_{\mu})
+=
+\sum_{k=\mu+1}^{\nu}
+P\!\left(z_{T_{\mu}}^{(m)},T_k-T_{\mu}\right),
+\qquad
+S_{\mu,\nu}^{(m)}(T_{\mu})
+=
+\frac{
+1-P\!\left(z_{T_{\mu}}^{(m)},T_{\nu}-T_{\mu}\right)
+}{
+\mathcal A_{\mu,\nu}^{(m)}(T_{\mu})
+}.
+\label{eq:pathwise_annuity_swap_rate}
+\end{equation}
+Here, the numerator is the value of the floating leg at the swap start date. Since the underlying swap begins at option expiry, \(P(T_{\mu},T_{\mu})=1\), and the floating-leg value is therefore \(1-P(T_{\mu},T_{\nu})\).
+
+The corresponding pathwise payer and receiver swaption payoffs are
+\begin{equation}
+X_{T_{\mu}}^{(m),\mathrm{pay}}
+=
+\mathcal A_{\mu,\nu}^{(m)}(T_{\mu})
+\bigl(S_{\mu,\nu}^{(m)}(T_{\mu})-K\bigr)^+,
+\qquad
+X_{T_{\mu}}^{(m),\mathrm{rec}}
+=
+\mathcal A_{\mu,\nu}^{(m)}(T_{\mu})
+\bigl(K-S_{\mu,\nu}^{(m)}(T_{\mu})\bigr)^+,
+\label{eq:pathwise_swaption_payoffs}
+\end{equation}
+where \(x^+ := \max\{x,0\}\).
+
+Each simulated payoff is discounted to time zero using the pathwise discount factor
+\[
+D_{0,T_{\mu}}^{(m)}
+=
+\exp\!\left(
+-\int_0^{T_{\mu}} \widetilde r\!\left(z_s^{(m)}\right)\,ds
+\right),
+\]
+where \(\widetilde r\) denotes the short-rate function of the stable model. The integral is approximated on the simulation grid using the trapezoidal rule, as described in Chapter~\ref{chap:simulation}. The Monte Carlo estimators of the payer and receiver swaption prices are therefore
+\begin{equation}
+\widehat V_{0,\mathrm{MC}}^{\,j}
+=
+\frac{1}{N_{\mathrm{MC}}}
+\sum_{m=1}^{N_{\mathrm{MC}}}
+D_{0,T_{\mu}}^{(m)}
+X_{T_{\mu}}^{(m),j},
+\qquad
+j\in\{\mathrm{pay},\mathrm{rec}\}.
+\label{eq:mc_swaption_prices}
+\end{equation}
+
+%---------------------------------------------------------
+\subsection{Normal Implied Volatility}
+\label{subsec:normal_implied_volatility}
+%---------------------------------------------------------
+
+Swaptions are commonly quoted in terms of normal implied volatilities, obtained by inverting the Bachelier pricing formula.\footnote{See \citet{Skovmand2025tsm7}, p.~60, lecture notes, week 7.} Under the Bachelier quoting convention, the terminal swap rate of an ATM swaption is modelled under the swap-annuity measure as
+\[
+S_{\mu,\nu}(T_{\mu})
+=
+K+\sigma_N\sqrt{T_{\mu}}\,Z,
+\qquad
+Z\sim\mathcal N(0,1),
+\]
+where \(K\) is the relevant ATM forward swap rate. The corresponding ATM payer and receiver values coincide under the Bachelier formula:
+\begin{equation}
+V_0^{\mathrm{pay}}
+=
+V_0^{\mathrm{rec}}
+=
+V_0^{\mathrm{ATM}}
+=
+\mathcal A_0
+\frac{\sigma_N\sqrt{T_{\mu}}}{\sqrt{2\pi}}.
+\label{eq:atm_bachelier_price}
+\end{equation}
+
+At the ATM strike, the payer and receiver swaptions capture movements of the swap rate above and below the strike, respectively. We use their average, the half-straddle price, as a symmetric measure of the simulated ATM option value:
+\begin{equation}
+\widehat V_{0,\mathrm{MC}}^{\,\mathrm{hs}}
+:=
+\frac{1}{2}
+\left(
+\widehat V_{0,\mathrm{MC}}^{\,\mathrm{pay}}
++
+\widehat V_{0,\mathrm{MC}}^{\,\mathrm{rec}}
+\right).
+\label{eq:half_straddle_price}
+\end{equation}
+Under the ATM Bachelier quote, the half-straddle has the value of one ATM swaption. 
+
+Using the simulated payoffs in \eqref{eq:pathwise_swaption_payoffs}, the half-straddle estimator may be written as
+\begin{equation}
+\widehat V_{0,\mathrm{MC}}^{\,\mathrm{hs}}
+=
+\frac{1}{2N_{\mathrm{MC}}}
+\sum_{m=1}^{N_{\mathrm{MC}}}
+D_{0,T_{\mu}}^{(m)}
+\mathcal A_{\mu,\nu}^{(m)}(T_{\mu})
+\left|
+S_{\mu,\nu}^{(m)}(T_{\mu})-K
+\right|.
+\label{eq:mc_half_straddle_price}
+\end{equation}
+The reported normal implied volatility is obtained by inverting \eqref{eq:atm_bachelier_price}:
+\begin{equation}
+\widehat{\sigma}_{N}^{\mathrm{imp}}
+=
+\frac{
+\widehat V_{0,\mathrm{MC}}^{\,\mathrm{hs}}
+\sqrt{2\pi}
+}{
+\mathcal A_0\sqrt{T_{\mu}}
+}.
+\label{eq:normal_implied_volatility}
+\end{equation}
+
+%=========================================================
+\section{Market Comparison}
+\label{sec:market_comparison}
+%=========================================================
+
+We now compare model-implied normal volatilities with observed market quotes. The benchmark is a panel of EUR ATM normal implied volatilities from Bloomberg covering \(161\) monthly observation dates from October 2010 to February 2024. At each date we have swaptions with option expiries \({1\mathrm{Y},5\mathrm{Y},10\mathrm{Y}}\) and underlying swap tenors \({1\mathrm{Y},5\mathrm{Y},10\mathrm{Y}}\), giving nine expiry--tenor combinations.
+
+We use the stable model with latent dimensions \(\ell = 4\) introduced in Chapter~\ref{chap:simulation}. At each observation date \(d\), the observed EUR swap curve is encoded into an initial latent state \(z_0^{(d)}\), and time is reset to zero. From this initial state, we simulate \(N_{\mathrm{MC}}=10{,}000\) paths of the latent dynamics up to the longest option expiry of \(10\) years. For each simulated path and each option expiry, the corresponding terminal latent state is decoded into an expiry zero-coupon bond-price curve. The same simulated paths are then used to price the three underlying swap tenors associated with that expiry. Hence, for each observation date, one simulation produces model-implied normal volatilities for all nine expiry--tenor combinations.
+
+The implied volatilities in Table~\ref{tab:market_comparison} are averages over the \(161\) observation dates for each expiry--tenor combination. The absolute error \(\lvert\Delta\rvert\) is the mean pointwise absolute difference over dates.
+
+\input{Figures/MarketComparison/EUR_dim4_stable/market_comparison_table}
+
+Table~\ref{tab:market_comparison} shows that the model produces much higher normal implied volatilities than those observed in the market. The average model-implied volatilities range from \(253.0\) to \(768.8\) basis points, while the Bloomberg quotes range from \(46.7\) to \(71.7\) basis points. Thus, the model overestimates market volatility for all expiry--tenor combinations. The difference is largest for short-expiry swaptions. For example, for the \(1\mathrm{Y}\times5\mathrm{Y}\) swaption, the model produces \(768.8\) basis points, compared with a market quote of \(61.8\) basis points. This corresponds to an average absolute error of \(707.0\) basis points. The smallest difference is found for the \(10\mathrm{Y}\times10\mathrm{Y}\) swaption, where the model is still \(185.2\) basis points above the market quote on average.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{Figures/MarketComparison/EUR_dim4_stable/model_vs_market_timeseries.png}
+  \caption{Monthly time series of model-implied versus market-implied
+    normal volatility for the nine expiry-tenor cells in
+    Table~\ref{tab:market_comparison}. dim-$4$ stable checkpoint,
+    $N_{\mathrm{MC}}=10{,}000$ paths.}
+  \label{fig:market_comparison}
+\end{figure}
+
+Figure~\ref{fig:market_comparison} confirms that the large differences shown in Table~\ref{tab:market_comparison} are present throughout the sample period. For all nine expiry--tenor combinations, the model-implied volatility remains well above the corresponding market quote over time. The difference is especially large for the \(1\)-year expiry swaptions, where the model series stays several hundred basis points above the market series throughout the period. Although both the model and market volatilities show some variation over time, the model does not closely follow the movements in the market quotes. This suggests that the pricing errors are not driven by a few unusual dates, but reflect a persistent mismatch between the model-generated volatility levels and the observed market surface.
+
+
+%=========================================================
+\section{Diagnosing the Pricing Breakdown}
+\label{sec:dynamic_consistency_diagnostics}
+%=========================================================
+
+The market comparison in Section~\ref{sec:market_comparison} shows that the stable model produces ATM normal implied volatilities far above the observed market quotes. Earlier chapters assessed the encoder--decoder model through its ability to reconstruct observed swap curves at encoded states. For swaption pricing, however, the decoded bond prices must also be consistent with the risk-neutral dynamics used to simulate future states. This section tests that dynamic consistency and illustrates how the resulting pricing output differs from the benchmark implied by market quotes.
+
+%---------------------------------------------------------
+\subsection{Expiry-Bond Martingale Diagnostic}
+\label{subsec:expiry_bond_martingale_diagnostic}
+%---------------------------------------------------------
+
+For a swaption expiring at \(T_\mu\), the underlying swap depends on zero-coupon bond prices with maturities \(T_\mu,T_{\mu+1},\ldots,T_\nu\). Under risk-neutral valuation, discounted tradable asset prices must be martingales under the pricing measure \(\mathbb Q\) \citep{Bjork2020}. Accordingly, if the decoded bond prices and the simulated risk-neutral dynamics define a dynamically consistent pricing model, then
+\begin{equation}
+\mathbb E^{\mathbb Q}\!\left[D_{0,T_\mu}P\!\left(z_{T_\mu},T_\ell-T_\mu\right)\right]=P(z_0,T_\ell),\qquad \ell=\mu,\ldots,\nu.
+\label{eq:expiry_bond_martingale}
+\end{equation}
+The right-hand side is obtained from the time-zero decoded curve, whereas the left-hand side is estimated from discounted bond prices evaluated at the simulated option-expiry states. In the special case \(\ell=\mu\), the identity reduces to
+\[
+\mathbb E^{\mathbb Q}\!\left[D_{0,T_\mu}\right]=P(z_0,T_\mu),
+\]
+since \(P(z_{T_\mu},0)=1\).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{Figures/PricingResults/Diagnostics/EUR_dim4_stable/plots/E_expiry_bond_martingale.png}
+\caption{Expiry-bond martingale diagnostic in \eqref{eq:expiry_bond_martingale}, averaged across the selected diagnostic dates. The blue curve shows the time-zero decoded bond price \(P(z_0,T_\ell)\), and the red curve shows the simulated estimate of \(\mathbb E^{\mathbb Q}[D_{0,T_\mu}P(z_{T_\mu},T_\ell-T_\mu)]\). The horizontal axis reports the remaining maturity \(T_\ell-T_\mu\) in years. Shaded bands indicate \(\pm1\) cross-date standard deviation.}
+\label{fig:expiry_bond_martingale}
+\end{figure}
+
+Figure~\ref{fig:expiry_bond_martingale} shows that the simulated discounted bond-price curve does not coincide with the time-zero decoded curve. At the one-year option expiry, the discrepancy is relatively small for short remaining maturities but increases across the maturity range. At the five- and ten-year option expiries, the simulated curve lies clearly below the time-zero decoded curve throughout. The discrepancy therefore becomes more pronounced as the simulation horizon increases. Hence, the initial bond prices used to determine the ATM strike and annuity are not reproduced by the discounted bond prices generated under the simulated dynamics.
+
+The failure of \eqref{eq:expiry_bond_martingale} is sufficient to establish that the Monte Carlo swaption calculation is not dynamically consistent with the initial decoded curve. This finding does not identify the precise cause of the inconsistency, nor does it establish that dynamic inconsistency is the only source of the model--market discrepancy. It does, however, show that the large pricing errors cannot be interpreted solely as a poor calibration of swaption volatility.
+
+%---------------------------------------------------------
+\subsection{Non-Finite Decoder Outputs Along Simulated Paths}
+\label{subsec:nonfinite_decoder_outputs}
+%---------------------------------------------------------
+
+The martingale failure is accompanied by a more basic numerical limitation: on average \(52\%\) of simulated paths yield non-finite decoder outputs and must be excluded from the pricing calculation entirely. The resulting Monte Carlo estimate is therefore conditional on the decoder remaining finite, not an unconditional model price.
+
+\paragraph{Why the decoder fails: a fragile latent dimension.}
+The bond-price computation inside the decoder evaluates ODE coefficients involving the instantaneous forward rate process \(G(z,\tau)\). This calculation is reliable only within the distribution of latent states seen during training. To investigate whether out-of-distribution drift explains the decoder failures, Figure~\ref{fig:ood_drift_comparison} repeats the diagnostic for both the \(\ell=2\) and \(\ell=4\) stable models.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{Figures/PricingResults/Diagnostics/EUR_dim_comparison/plots/ood_drift_dim2_vs_dim4.png}
+\caption{Out-of-distribution drift (left) and non-finite decoder fraction (right) for the \(\ell=2\) and \(\ell=4\) stable models. Both series are based on 5{,}000 paths with monthly time steps. OOD is defined as any latent dimension outside the training min--max range.}
+\label{fig:ood_drift_comparison}
+\end{figure}
+
+The left panel shows that both models drift out of the training distribution at nearly the same rate: by the one-year horizon approximately \(99\%\) of paths have left the training range in at least one dimension, regardless of \(\ell\). OOD drift alone therefore cannot explain why the \(\ell=4\) decoder fails while the \(\ell=2\) decoder does not. The right panel reveals the key difference: the \(\ell=2\) decoder produces zero non-finite outputs throughout the ten-year horizon, whereas the \(\ell=4\) decoder produces non-finite outputs for approximately \(31\%\) of paths at the one-year horizon, stabilising near \(40\%\) thereafter.
+
+The explanation lies in the learned dynamics of the \(\ell=4\) model. Inspecting the drift matrix \(M = -(V^\top V + \varepsilon I)\), its four mean-reversion speeds are approximately \(5.08,\, 2.31,\, 1.04,\, 0.0007\). The fourth latent dimension has a reversion speed of \(0.0007\), making it effectively a random walk: the mean-reversion constraint guarantees a negative eigenvalue, but the learned \(V\) places almost no weight on that direction, so the \(\varepsilon\)-regularisation alone determines the speed. At the same time, the fourth dimension has the narrowest training range of the four (\([-0.04,\, 0.04]\)), so even small diffusion shocks carry it far outside the region where the decoder was trained. The \(G\)-network evaluated at these extreme states produces outputs that destabilise the ODE computation and yield non-finite bond prices. The \(\ell=2\) model, by contrast, has uniform reversion speeds of approximately \(1.0\) in both dimensions and does not exhibit this pathology.
+
+The occurrence of non-finite outputs reinforces the conclusion from the expiry-bond martingale diagnostic: numerical stability of the latent-state paths is not sufficient for reliable derivative pricing if the decoder is fragile at the states the dynamics actually visit.
+
+%---------------------------------------------------------
+\subsection{Finite-Path Pricing Distribution and Market Benchmark}
+\label{subsec:pricing_distribution}
+%---------------------------------------------------------
+
+We next examine the terminal swap-rate deviations entering the option payoff on paths for which the decoder produces finite pricing outputs. For one representative pricing date, Figure~\ref{fig:pricing_distribution} compares the finite-path model deviation
+\[
+S_{\mu,\nu}(T_\mu)-K^{\mathrm{model}}
+\]
+with the centred benchmark distribution implied by the corresponding observed ATM normal-volatility quote.
+
+Under the Bachelier quoting convention, an ATM market quote \(\sigma_{N,\mathrm{market}}\) corresponds to
+\begin{equation}
+S_{\mu,\nu}(T_\mu)-K^{\mathrm{market}}
+\sim
+\mathcal N\!\left(0,\sigma_{N,\mathrm{market}}^{2}T_\mu\right)
+\label{eq:bachelier_benchmark_distribution}
+\end{equation}
+under the swap-annuity measure \citep{Bjork2020}. The model histogram is constructed from the retained simulated deviations \(S_{\mu,\nu}^{(m)}(T_\mu)-K^{\mathrm{model}}\), weighted by the discounted annuities entering the half-straddle estimator. Because non-finite paths are excluded and the martingale identity in \eqref{eq:expiry_bond_martingale} fails, this histogram is interpreted only as a finite-path pricing diagnostic, rather than as a dynamically consistent annuity-measure distribution.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{Figures/PricingResults/Diagnostics/EUR_dim4_stable/plots/pricing_distribution.png}
+\caption{Finite-path pricing distribution and market-implied Bachelier benchmark for the representative pricing date 29 February 2024. In each panel, the horizontal axis reports the terminal swap-rate deviation from the relevant ATM forward rate. The red histogram shows the discounted-annuity-weighted distribution of \(S_{\mu,\nu}(T_\mu)-K^{\mathrm{model}}\) over simulated paths for which all required decoder outputs are finite, while the blue curve shows the centred normal distribution implied by the corresponding Bloomberg ATM normal-volatility quote, \(\mathcal N(0,\sigma_{N,\mathrm{market}}^{2}T_\mu)\).}
+\label{fig:pricing_distribution}
+\end{figure}
+
+Figure~\ref{fig:pricing_distribution} shows that the simulated pricing distribution differs substantially from the benchmark implied by the market quote. Across all expiry--tenor combinations, the model-generated distribution is considerably wider than the corresponding Bachelier benchmark. For the five- and ten-year option expiries, it is also visibly displaced from zero, indicating that the simulated terminal swap rate is not centred around the model-implied ATM strike used in the option calculation.
+
+These differences are directly relevant for the ATM half-straddle price, which depends on the discounted-annuity-weighted absolute deviation from the strike,
+\[
+\left|S_{\mu,\nu}(T_\mu)-K^{\mathrm{model}}\right|.
+\]
+A wider distribution, and in some cases a distribution shifted away from the strike, generates larger absolute deviations and therefore contributes to the high model-implied normal volatilities reported in Section~\ref{sec:market_comparison}. The figure illustrates an important pricing-side feature of the model output, but it is not a complete decomposition of the pricing error.
+
+%---------------------------------------------------------
+\subsection{Strike Dependence of Model-Implied Volatility}
+\label{subsec:model_implied_smile}
+%---------------------------------------------------------
+
+The preceding diagnostics focus on ATM contracts, for which market quotes are available. As a final model-internal illustration, we examine how the model-implied normal volatility varies across nearby strike levels for one representative pricing date. This is relevant because swaption implied volatilities commonly vary with strike, producing volatility smile or skew patterns.
+
+Since the present dataset contains only ATM market quotes, Figure~\ref{fig:vol_smile_representative} cannot be used to assess the model's fit to the observed market smile. Instead, it shows the strike dependence generated by the model around its ATM contract.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{Figures/PricingResults/Diagnostics/EUR_dim4_stable/plots/vol_smiles_2024-02-29.png}
+\caption{Model-implied normal volatility across nearby strikes for the representative pricing date 29 February 2024. Each point is obtained by pricing a swaption at the stated strike under the Monte Carlo model and inverting the full off-ATM Bachelier formula. Strike offsets are measured relative to the model-implied ATM forward rate \(F_0\). The figure is a model-internal diagnostic, since market quotes away from ATM are not available in the present dataset.}
+\label{fig:vol_smile_representative}
+\end{figure}
+
+Figure~\ref{fig:vol_smile_representative} shows that the high model-implied ATM volatility level persists across nearby strikes. Some slope is visible in individual panels, but the curves show limited curvature and no consistent smile or skew pattern across expiry--tenor combinations. Thus, the figure does not provide a comparison with the observed market smile, but it does show that the model's elevated pricing level is not confined to the ATM strike and that its internally generated strike dependence is limited and uneven across the grid.
+
+The pricing analysis shows that the stable model does not provide a satisfactory swaption-pricing framework in its present form. The model produces ATM normal implied volatilities that remain far above the observed market quotes throughout the sample period. The expiry-bond martingale diagnostic shows that the decoded bond prices and the simulated risk-neutral dynamics do not satisfy the dynamic consistency condition required for Monte Carlo valuation. In addition, a substantial fraction of simulated paths yields non-finite decoder outputs and must be excluded from the pricing calculation. Even on the remaining finite paths, the discounted-annuity-weighted terminal swap-rate deviations are substantially wider than, and at longer expiries shifted relative to, the market-implied Bachelier benchmarks. The strike analysis further shows that the high model-implied volatility level persists away from ATM. These results demonstrate that numerical stability of the latent-state simulation is not sufficient for reliable derivative pricing: the pricing construction must also preserve dynamic no-arbitrage consistency and produce option values compatible with market observations.

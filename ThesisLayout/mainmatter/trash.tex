@@ -1,0 +1,1133 @@
+
+%--------------------------------------------------------
+\subsection{Finite-Dimensional Factor Representations}
+%--------------------------------------------------------
+
+A general term structure model describes an entire curve of bond prices across maturities. In practice, however, it is often assumed that the term structure is driven by a finite-dimensional state vector
+\[
+z_t \in \mathbb{R}^{\ell}.
+\]
+
+Under this assumption, zero-coupon bond prices admit the representation
+\begin{equation}
+P(t,T)=P(z_t,\tau), \qquad \tau=T-t.
+\label{eq:state_representation}
+\end{equation}
+Hence, the full term structure at time \(t\) is determined by the current value of the state vector \(z_t\).
+
+The short rate may then be written as a function of the state variable,
+\begin{equation}
+r(t)=\tilde r(z_t),
+\label{eq:short_rate_state}
+\end{equation}
+so that the instantaneous risk-free rate is also determined by the current state.
+
+Since bond prices are characterized by arbitrage-free pricing, the relevant state dynamics for valuation are the dynamics under the risk-neutral measure. We therefore assume that the state process evolves according to
+\begin{equation}
+dz_t=\mu(z_t)\,dt+\sigma(z_t)\,dW_t^{\mathbb Q},
+\label{eq:state_dynamics}
+\end{equation}
+where \(\mu(\cdot)\) and \(\sigma(\cdot)\) denote the drift and diffusion functions under \(\mathbb Q\).
+
+This representation provides a tractable way of modeling the term structure through a small number of underlying factors rather than as an unrestricted infinite-dimensional object. It also forms the basis for many classical term structure models, including affine term structure models.
+
+
+
+
+Correlation theory:
+
+
+
+
+
+The setup above assumes independent Brownian motions. \textcolor{red}{In many applications (måske specificere til denne opgave)}, however, the driving disturbance terms are correlated, and we therefore extend the framework to accommodate this. Given the independent Brownian motions $\bar{W}^1,...,\bar{W}^d$ and a deterministic constant matrix
+$$\delta = \begin{bmatrix}
+\delta_{11} & \delta_{12} & \dots  & \delta_{1d} \\
+\delta_{21} & \delta_{22} & \dots  & \delta_{2d} \\
+\vdots      & \vdots      & \ddots & \vdots      \\
+\delta_{n1} & \delta_{n2} & \dots  & \delta_{nd}
+\end{bmatrix}$$
+we define the $n$-dimensional process $W=(W_1,...,W^n)^\top$ by $W=\delta \bar{W}$, or componentwise
+$$W_t^i=\sum_{j=1}^d \delta_{ij}\bar{W}_t^j,\;\;\;i=1,\dots,n$$
+
+Assuming that the rows of $\delta$ have unit length, i.e.
+$$||\delta_i||=\sqrt{\sum_{j=1}^d \delta_{ij}^2}=1,\;\;\;\;\;i=1,...,n,$$
+each component $W^i$ is itself a standard Brownian motion with unit variance. The instantaneous correlation structure between the components is captures by the correlation matrix $\rho$, defined by
+$$\rho_{ij}\,dt=\text{Cov}[dW_t^i,dW_t^j],$$
+which can be shown to satisfy $\rho=\delta\delta^\top$. The process $W$ is then called a vector of correlated Brownian motions with correlation matrix $\rho$.
+
+
+\begin{definition}[Correlated Brownian Motions]
+The process $W=(W^1,...,W^n)^\top$, constructed as above, is called a vector of correlated Brownian motions with correlation matrix $\rho=\delta\delta^\top$.
+\end{definition}
+
+The multiplication table from the independent case stated in Remark \ref{rem:multitable} is then modified, the only change being that
+$$dW_t^i\cdot dW_t^j=\rho_{ij}\,dt,$$
+replacing the earlier rule $dW_t^i\cdot dW_t^j=0$ for $i\neq j$.
+
+
+THe old subsection of the generator
+
+\subsection{The Infinitesimal Generator}
+
+
+Examining the drift term in Itô's formula, we observe that the dynamics $f(t,X_t)$ are governed by two components: the explicit time derivative $\partial_t f$ and a purely spatial part determined by the coefficients $\mu$ and $\sigma$ of the SDE \eqref{eq:SDE}. This spatial part appears repeatedly in the analysis and it is therefore convenient to give it a name.
+
+\begin{definition}[Infinitesimal Generator]
+Given the SDE defined in \eqref{eq:SDE}, the infinitesimal generator $\mathcal{P}$ is defined for any $f\in C^2(\mathbb{R}^n)$ by
+\begin{equation}
+    \mathcal{P}f(x) = \sum_{i=1}^n \mu_i(t,x) \frac{\partial f}{\partial x_i}(x) + \frac{1}{2} \sum_{i,j=1}^n (\sigma\sigma^\top)_{ij}(t,x) \frac{\partial^2 f}{\partial x_i \partial x_j}(x).
+\end{equation}
+The operator $\mathcal{P}$ differentiates with respect to $x$ only with time entering through the coefficients $\mu(t,x)$ and $\sigma(t,x)$.
+\label{def:generator}
+\end{definition}
+
+In terms of $\mathcal{P}$, Itô's formula for a time-dependent function $f(t,X_t)$ takes the compact form 
+\begin{equation}
+    df(t, X_t) = \left(\partial_t f + \mathcal{P}f\right)dt + \nabla_x f \cdot \sigma\, dW_t.
+\end{equation}
+In particular, recalling Corollary \ref{cor:SImartingale}, $f(t,X_t)$ is a martingale if and only if $\partial_t f+\mathcal{P}f=0$, which is a partial differential equation (PDE) in $(t,x)$. \textcolor{red}{This connection between the probabilistic dynamics of $X$ and the theory of PDEs is the foundation of analysis carried on later on.}
+
+
+
+Fredes foreslag til itos formel afsntitet med ændret struktur ift correleret BMs:
+
+\subsection{Itô's Formula}
+
+Having established the stochastic integral, we now ask how to 
+differentiate a smooth function $f(t, X_t)$ of a diffusion process. 
+In ordinary calculus, the chain rule gives 
+$df = \partial_t f\,dt + \nabla_x f\,dX$. However, this fails for 
+stochastic processes: because Brownian motion has non-zero quadratic 
+variation, $(dW_t)^2 = dt$, the second-order term in the Taylor 
+expansion does not vanish and must be retained. Itô's formula is the 
+stochastic analogue of the chain rule that accounts for this correction.
+
+We work in the general setting of an $n$-dimensional process 
+$X = (X^1, \ldots, X^n)^\top$ driven by $d$ Brownian motions 
+$W = (W^1, \ldots, W^d)^\top$ with instantaneous correlation structure
+\begin{equation}
+    dW^i_t \cdot dW^j_t = \rho_{ij}\,dt,
+\end{equation}
+where $\rho$ is the correlation matrix. The dynamics of $X$ are given by
+\begin{equation}
+    dX_t = \mu_t\,dt + \sigma_t\,dW_t,
+
+\end{equation}
+where $\mu_t \in \mathbb{R}^n$ is the drift vector and 
+$\sigma_t \in \mathbb{R}^{n \times d}$ is the diffusion matrix.
+
+\begin{theorem}[Itô's Formula]
+Let $X$ have dynamics given by \eqref{eq:multiSDE} and let 
+$f \in C^{1,2}(\mathbb{R}_+ \times \mathbb{R}^n)$. Then $f(t,X_t)$ 
+is itself an Itô process with stochastic differential
+\begin{equation}
+    df(t,X_t) = \left\{
+        \frac{\partial f}{\partial t}
+        + \sum_{i=1}^n \mu_t^i \frac{\partial f}{\partial x^i}
+        + \frac{1}{2}\,\mathrm{tr}\!\left[\sigma_t^\top H_f \sigma_t\right]
+    \right\}dt
+    + \sum_{i=1}^n \frac{\partial f}{\partial x^i}\,\sigma_t^i\,dW_t,
+\end{equation}
+where $H_f$ denotes the Hessian with entries 
+$[H_f]_{ij} = \partial^2 f / \partial x^i \partial x^j$, and $\sigma_t^i$ 
+denotes the $i$-th row of $\sigma_t$. Compared to the ordinary chain 
+rule, the additional term $\frac{1}{2}\,\mathrm{tr}[\sigma_t^\top H_f 
+\sigma_t]\,dt$ arises precisely from the non-zero quadratic variation 
+of $W$, and is the defining correction of Itô calculus. The formula 
+follows from the formal multiplication rules
+\begin{equation}
+\begin{cases}
+    (dt)^2 = 0,\\
+    dt \cdot dW^i_t = 0,\\
+    dW^i_t \cdot dW^j_t = \rho_{ij}\,dt,
+\end{cases}
+\end{equation}
+where the last rule reduces to $dW^i_t \cdot dW^j_t = 0$ for $i \neq j$ 
+in the independent case.
+\end{theorem}
+
+\begin{remark}[Infinitesimal Generator]
+The drift in \eqref{eq:Ito} decomposes naturally into an explicit time 
+derivative $\partial_t f$ and a purely spatial part determined by 
+$\mu$ and $\sigma$. Defining the latter as the infinitesimal generator
+\begin{equation}
+    \mathcal{A}f(x) = \sum_{i=1}^n \mu_i\frac{\partial f}{\partial x_i}
+    + \frac{1}{2}\sum_{i,j=1}^n (\sigma\sigma^\top)_{ij}
+    \frac{\partial^2 f}{\partial x_i \partial x_j},
+\end{equation}
+Itô's formula takes the compact form 
+$df = (\partial_t f + \mathcal{A}f)\,dt + \nabla_x f \cdot \sigma\,dW_t$.
+In particular, since the stochastic integral has zero mean by 
+Proposition~\ref{prop:SIproperties}, $f(t,X_t)$ is a martingale if and 
+only if $\partial_t f + \mathcal{A}f = 0$. This connection between the 
+dynamics of $X$ and the theory of PDEs will resurface in 
+Section~\ref{sec:pricing}.
+\end{remark}
+
+
+
+Old plan for Cauchy problem generalisation:
+
+
+\subsection{Placeholder for Cauchy problem for now}
+
+Now we know what the SDE is, when a solution exists, but the biggest question of them all, is how to find it. This is where Feynman Kac comes into the picture. However in a very specific setup of Cauchy problems that we will now introduce.
+
+
+Still considering the $n$-dimensional SDE, we are in need of \textcolor{red}{write the motivation for looking at the operator theory here!}
+
+Through the Itô formula, the process above is closely connected to a \textbf{partial differential operator} $\mathcal{P}$, which we define below
+
+\begin{definition}
+    Given the SDE in \textcolor{red}{reference to the sde above} the partial differential operator $\mathcal{P}$, referred to as the infinitesimal operator of $X$, is defined, for any function $h$ with $h\in C^2(\mathbb{R}^n)$, by
+
+    \begin{equation}
+        \mathcal{P} h(t,x)= \sum_{i=1}^{n} \mu_i(t,x) \frac{\partial h}{\partial x_i} (x) + \frac{1}{2} \sum_{i,j=1}^{n} (\sigma \sigma^\top)_{ij}(t,x) \frac{\partial^2 h}{\partial x_i \partial x_j}(x)
+    \end{equation}
+
+    \begin{equation}
+        \mathcal{P} = \mu(t,x)\frac{\partial}{\partial x} + \frac{1}{2}\sigma^2(t,x)\frac{\partial^2}{\partial x^2}
+    \end{equation}
+\end{definition}
+\textcolor{red}{why does h depend only on x in some parts?}
+
+we note that in terms of the infinitesimal generator, the Itô formula takes the form
+... (page 72)
+
+
+This is an important result in order to define the problem we intend to selv with the modeling of yield curves, which we will start of formulating in a purely mathematical sense and afterwards.
+
+Now we know what the SDE is, when a solution exists, but the biggest question of them all, is how to find it. This is where Feynman Kac comes into the picture. However in a very specific setup of Cauchy problems that we will now introduce.
+
+We will define and example of the so called \textbf{Cauchy Problem} which is a \textbf{boundary value problem}
+
+
+\textcolor{red}{so we need define the problem that is what we will essentially solve}
+
+and then how Feynman Kac is way to find one of the "nice" solutions.
+
+
+
+
+
+From the article FredNilsLuca we have the more general:
+
+We start by defining the parabolic Cauchy Problem from \textcolor{red}{FredNilsLuca}, which follow Friedman \textcolor{red}{(1975)}.
+
+We are interested in solving the following backward parabolic Cauchy problem in $\mathbb{R}^n$
+
+\textcolor{write up there problem but in our framework of pricing perspectiv, but still purelty matehatmical. Then after the ML section, we can introduce the final problem, that we intent to solve with neural networks and hereof write about the benchmarks in the same section.}
+
+
+
+
+
+% infinisteaml cases:
+
+
+\textcolor{red}{
+\begin{remark}[Infinitesimal Generator \textcolor{red}{(1dim)}]
+The drift in \eqref{eq:Ito} decomposes naturally into an explicit time 
+derivative $\partial_t f$ and a purely spatial part determined by 
+$\mu$ and $\sigma$. Defining the latter as the infinitesimal generator
+\begin{equation}
+    \mathcal{A}f(x) = \sum_{i=1}^n \mu_i\frac{\partial f}{\partial x_i}
+    + \frac{1}{2}\sum_{i,j=1}^n (\sigma\sigma^\top)_{ij}
+    \frac{\partial^2 f}{\partial x_i \partial x_j},
+\end{equation}
+Itô's formula takes the compact form 
+$df = (\partial_t f + \mathcal{A}f)\,dt + \nabla_x f \cdot \sigma\,dW_t$.
+In particular, since the stochastic integral has zero mean by 
+Proposition~\ref{prop:SIproperties}, $f(t,X_t)$ is a martingale if and 
+only if $\partial_t f + \mathcal{A}f = 0$. This connection between the dynamics of $X$ and the theory of partial differential equations is made precise by the Feynman-Kac formula of Section~\ref{subsec:fk}, and underlies the pricing framework developed in later chapters.
+\end{remark}
+}
+
+\textcolor{red}{
+\begin{remark}[Infinitesimal Generator \textcolor{red}{(multidim)}]
+The drift in \eqref{eq:Ito} decomposes naturally into an explicit 
+time derivative $\partial_t f$ and a purely spatial part determined by 
+$\mu_t$ and $\sigma_t$. Defining the latter as the infinitesimal generator
+\begin{equation}
+    \mathcal{A}f(x) = \sum_{i=1}^n \mu_t^i \frac{\partial f}{\partial x^i}
+    + \frac{1}{2}\operatorname{tr}\!\left[\sigma_t^\top H_f \sigma_t\right],
+\end{equation}
+where $H_f$ denotes the Hessian matrix with entries 
+$[H_f]_{ij} = \frac{\partial^2 f}{\partial x^i \partial x^j}$, 
+Itô's formula takes the compact form
+\begin{equation}
+    df = \left(\partial_t f + \mathcal{A}f\right)dt 
+    + \sum_{i=1}^n \frac{\partial f}{\partial x^i}\sigma_t^i\, dW_t.
+\end{equation}
+In particular, $f(t, X_t)$ is a martingale if and only if 
+$\partial_t f + \mathcal{A}f = 0$, which is a partial differential 
+equation in $(t,x)$ whose coefficients are exactly those of the 
+SDE \eqref{eq:multiSDE}. This connection between the dynamics of $X$ 
+and the theory of partial differential equations is the foundation 
+of the subsequent analysis.
+\end{remark}
+}
+
+
+
+
+
+
+% OLD FEYNMAN KAC SECTION
+
+
+
+
+
+
+\newpage
+
+\subsection{The Feynman--Kac Formula}
+\label{subsec:fk}
+
+Remark~\ref{rem:generator} established one direction of the link between diffusion processes and partial differential equations: if $f(t,X_t)$ is a martingale, then its drift must vanish, which leads to the equation
+\[
+\partial_t f + \mathcal{A}f = 0.
+\]
+In financial applications, the converse direction is particularly important. Prices are typically expressed as conditional expectations under a pricing measure, and one then seeks the differential equation satisfied by that expectation. For Markov diffusion processes, the Feynman--Kac formula provides precisely this connection between conditional expectations and parabolic PDEs.
+
+We state a version that allows for a zeroth-order term in the PDE. This is the form relevant for asset-pricing applications, where the quantity of interest is a discounted conditional expectation and the discounting enters through the additional term $-k\,u$.
+
+\begin{theorem}[Feynman--Kac, {\citealp[Prop.~5.6]{Bjork2020}}]
+\label{thm:fk}
+Let $\varphi : \mathbb{R}^n \to \mathbb{R}$ be continuous and satisfy a polynomial growth condition, let $k : [0,T] \times \mathbb{R}^n \to \mathbb{R}$ be bounded and continuous, and suppose that
+\[
+u \in C([0,T]\times\mathbb{R}^n)\cap C^{1,2}([0,T)\times\mathbb{R}^n)
+\]
+solves the terminal-value problem
+\begin{equation}
+\begin{cases}
+    \partial_t u(t,x)+\mathcal{A}u(t,x)-k(t,x)\,u(t,x)=0,
+    & (t,x)\in[0,T)\times\mathbb{R}^n, \\[4pt]
+    u(T,x)=\varphi(x),
+    & x\in\mathbb{R}^n,
+\end{cases}
+\label{eq:fk_pde}
+\end{equation}
+where $\mathcal{A}$ is the infinitesimal generator defined in \eqref{eq:generator}. Then $u$ admits the probabilistic representation
+\begin{equation}
+u(t,x)
+=
+\mathbb{E}\!\left[
+    \exp\!\left(-\int_t^T k(s,X_s)\,ds\right)\varphi(X_T)
+    \,\middle|\,
+    X_t=x
+\right],
+\label{eq:fk_formula}
+\end{equation}
+where $X$ is the diffusion process with dynamics \eqref{eq:multiSDE}.
+\end{theorem}
+
+\begin{proof}
+See \citet[Prop.~5.6]{Bjork2020}. A version under weaker regularity conditions is given in \citet[Thm.~5.3]{Friedman1975}.
+\end{proof}
+
+Two aspects of \eqref{eq:fk_formula} are particularly important. First, the representation depends on the past only through the current state $(t,x)$, reflecting the Markov property from Definition~\ref{def:markov}. Second, if $k\equiv 0$, then \eqref{eq:fk_formula} reduces to
+\[
+u(t,x)=\mathbb{E}\!\left[\varphi(X_T)\mid X_t=x\right],
+\]
+while \eqref{eq:fk_pde} reduces to
+\[
+\partial_t u+\mathcal{A}u=0,
+\]
+which is exactly the drift condition from Remark~\ref{rem:generator}. The Feynman--Kac formula can therefore be viewed as the natural extension of the martingale relation to the case where the conditional expectation is weighted by an exponential discount factor.
+
+This result will be central in the pricing theory developed below. In particular, when the discount factor is generated by the short rate, the Feynman--Kac formula yields the PDE representation of arbitrage-free bond prices.
+
+
+
+
+
+% The old Neural Networks as Function Approximators:
+
+
+\section{Neural Networks as Function Approximators}
+
+A feedforward neural network defines a parametric family of functions. The goal is to find parameters $\Omega$ such that $f(x;\Omega)$ approximate some target function $f^*$ well 
+
+%that minimise the discrepancy between $f(x;\Omega)$ and $f^*(x)$ over the training data.
+
+%The architecture of a network, meaning the number of layers, the width of each layer, and the activation functions, is fixed before training. 
+
+The parameters $\Omega = \{W_h, b_h\}_{h=1}^H$ are then free, and each choice of $\Omega$ produces a different function. The full set of functions the network can represent is therefore the class
+\[
+    \bigl\{f(\,\cdot\,;\Omega) : \Omega \in \Theta\bigr\},
+\]
+where $\Theta$ denotes the parameter space. Equivalently, after identifying all weights and biases with a vector of parameters, one may regard $\Theta \subseteq \mathbb{R}^p$, where $p$ is the total number of parameters.
+
+Training is the process of searching through this class to find a parameter choice $\Omega$ for which $f(\,\cdot\,;\Omega)$ approximates $f^*$ well on the available data. 
+
+
+
+
+A natural question is whether this class is rich enough to approximate any target function of interest, or whether the architecture imposes fundamental limitations. The following theorem gives the classical finite-dimensional universal approximation property. We state it in notation consistent with the neural-network framework introduced above. A classical result of this type is due to \citet{Hornik1989}.
+
+\begin{theorem}[Finite-dimensional universal approximation theorem, cf.\ \citealt{Hornik1989}]
+\label{thm:UAT}
+Let $\psi : \mathbb{R} \to \mathbb{R}$ be continuous and non-constant. Then for any compact set $K \subset \mathbb{R}^{M_0}$, any continuous target function $f^* : K \to \mathbb{R}$, and any $\varepsilon > 0$, there exist a width $M_1 \in \mathbb{N}$ and parameters
+\[
+    \Omega = (W_1,b_1,W_2,b_2),
+\]
+with
+\[
+    W_1 \in \mathbb{R}^{M_1 \times M_0},
+    \qquad
+    b_1 \in \mathbb{R}^{M_1},
+    \qquad
+    W_2 \in \mathbb{R}^{1 \times M_1},
+    \qquad
+    b_2 \in \mathbb{R},
+\]
+such that the network
+\[
+    f(x;\Omega) = W_2\,\psi(W_1x+b_1) + b_2,
+\]
+where $\psi$ is applied element-wise, satisfies
+\[
+    \sup_{x \in K} |f^*(x)-f(x;\Omega)| < \varepsilon.
+\]
+\end{theorem}
+
+The approximating class in Theorem~\ref{thm:UAT} is a feedforward network with a single hidden layer of width $M_1$ and an identity activation in the output layer, and is therefore a special case of the broader architecture in \eqref{eq:network}. The theorem shows that even this restricted architecture can approximate any continuous scalar-valued function on a compact set to arbitrary accuracy.
+
+However, the theorem is an existence result only. It does not specify how large the width $M_1$ must be, whether deeper architectures can achieve the same approximation more efficiently, or how suitable parameters are to be found in practice. Thus, for a fixed architecture, approximation may still be poor if the network is too narrow, and suitable parameters may remain difficult to obtain through training. In practice, such questions of architecture design and optimisation are therefore addressed empirically, typically through model selection and validation on data not used for training.
+
+
+
+
+
+
+
+
+
+% NOTES FROM LITERATURE:
+he aim of this section, is to set the scene of yield curve modeling.
+
+
+According to \citep{MatinWanPoulsen2025}: 
+
+\begin{itemize}
+    \item Yield curve modeling has traditionally been dominated by parametric representations from the Nelson-Siegel family or classical linear principal component analysis. The extension to nonlinear representations using autoencoders was pioneered by \cite{Kondratyev2018} in 2018. 
+    \item points out that non-linear or non-parametric dimensionality reduction is fitting for modeling curve dynamics in finance, which was conducted by \cite{Sokol2022} and \cite{Kondratyev2018}. These models however are not AF.
+    \item Impose the no-arbitrage condition at the decoding stage as a hard constraint, which enables them to specify and train a model in which the encoder-decoder itself produces a continuous representation that is exactly arbitrage-free by construction.
+    
+\end{itemize}
+
+
+ACcording to \cite{Andreasen2023}: 
+
+\begin{itemize}
+    \item \cite{Kondratyev2018} and more recently \cite{Sokol2022} show that the question can be answered by fitting so-called auto-encoder neural networks to empirically observed yield curves. Suprisingly, the answer to that is two to three factors are sufficient. Further, that same auto-encoder can be used across all-currencies. 
+    \item Contrary to the work by \cite{Kondratyev2018} and \cite{Sokol2022} , Jesper Andreasen does not interpret the output of the neural network directly as swap rates but rather as ZCB-prices. These are first splined and converted to zero-coupon bond prices and the secondly to swap rates through the formula from Bjork.
+    \item Why does Jesper execute this additional step? Well, because he will make explcit use of the ZCB prices to infer information about the stochastic nature of the yield curve dynamics.
+    \item It is assumed that yield curves are weighted equally, such that Jesper us treating the different currencies and numeraires equally, essentially assuming that they can be represented by the same Neural Network. This approach is in line with the analysis by Sokol (2018), who concludes that there doesn't seem to be much empirical support for using seperate networks or additional input to seperate the currencies.
+    \item states that \cite{Kondratyev2018} and \cite{Sokol2022} answer the question of how many factors are required to describe the dynamics of the yield curves. They do so by fitting so-called auto-encoder neural networks to empirically observed yield curves, and that 2 to 3 factors are sufficient. Jesper Andreasen confirms this empirically. He further shows that these autoencoder networks are \underline{close} to being dynamically AF. AND that can be decoded to identify the risk-neutral dynamics of the encoded factors and thereby the full yield curve.
+    \item contrary to \cite{Kondratyev2018} and \cite{Sokol2022}, Jesper Andreasen does not interpret the output of the neural network directly at as swap rates but rather as zero coupon rates, the splined and converted in into zeroc coupon bond prices and then to swap rates.
+    \item All yield curves are weighted equally. So we are treating the different currencies and numeraires equally, essentially assuming they can be represented by the same NN. This is in line with Sokole 2018? IS THIS A  MISTAKE?
+    \item As mentioned earlier, in this analysis, we are treating the yield curves of different currencies as if they represent the same numeraire but observed at
+    different levels of the encoded state variable $z$. In other words, as if the same SDE governs all yield curves --- only the current states differ. It seems
+    like a strict assumption, but the empirical results do not seem to contradict this assumption. \citet{Sokol2022} does a more in-depth analysis of this and reaches a similar conclusion.
+\end{itemize}
+
+
+ACcording to \cite{Sokol2022}:
+\begin{itemize}
+    \item He says that \cite{Kondratyev2018} demonstrated that feed forward neural networks outperform classical regression techniques such as PCA in describing the evolution of interest rate curve shapes in P-measure. This was one of the early successes of using machine learning for dimensionality reduction.
+\end{itemize}
+
+
+
+
+
+All three of this authors preceding Rolf, agree that the three factors result in a better fit than the two factor.
+
+
+
+
+
+% GAMLE LITERATURE REVIEW:
+
+
+This chapter motivates the modelling framework developed later in the thesis by placing it within the literature on low-dimensional yield-curve representations and arbitrage-free term-structure modelling. 
+
+The term structure of interest rates is observed at a discrete set of maturities, yielding a high-dimensional object, especially so when observed over many years of data. A central finding in the term structure literature is that most of this cross-sectional variation can be captured by a small number of common factors, motivating low-dimensional representations for practical use.
+
+Classical approaches achieve this through parsimonious representations, such as the Nelson--Siegel family, which imposes a fixed parametric form, or linear dimension-reduction methods such as principal component analysis. 
+
+Neural encoder--decoder models provide a more flexible nonlinear alternative. In this setting, an encoder compresses the observed curve into a low-dimensional latent state, while a decoder reconstructs the curve from that state. The relevant factors are therefore learned from the data rather than imposed ex ante. Kondratyev (2018) and Sokol (2022) apply this idea to empirically observed yield curves and show that only a small number of latent factors are needed to obtain accurate reconstructions. In particular, two or three factors are typically sufficient, consistent with the level--slope--curvature interpretation from principal component analysis. Their results also suggest that yield curves across several currencies can be pooled and represented using a common neural-network structure, thereby increasing the amount of training data available for estimation.
+
+The main limitation of flexible autoencoder approaches is that accurate reconstruction does not, by itself, guarantee no-arbitrage. This may be acceptable in a purely statistical setting, where the objective is only to approximate observed curves, but it is insufficient once the model is interpreted in a risk-neutral pricing framework. A decoder that maps directly to swap rates may fit the data well, while still failing to correspond to an arbitrage-free discount curve or to economically consistent term-structure dynamics.
+
+Andreasen (2023) moves towards addressing this issue by interpreting the output of the autoencoder through zero-coupon bond prices rather than directly as swap rates. The generated zero-coupon curve is then converted back into swap rates. This additional step is important because zero-coupon bond prices are the fundamental objects in arbitrage-free term-structure theory. Andreasen further uses the bond-price representation to infer risk-neutral quantities such as the short rate, drift, and diffusion of the encoded factors, and evaluates the extent to which the resulting curves are dynamically arbitrage-free. However, the no-arbitrage condition is not imposed as a hard constraint in the decoder itself.
+
+The model studied in this thesis is motivated by this remaining distinction between statistical reconstruction and arbitrage-free pricing. As in the earlier encoder--decoder literature, the encoder maps observed par swap rates into a low-dimensional latent representation. The key difference is that the decoder is constrained so that reconstructed swap rates are generated from an arbitrage-free zero-coupon bond curve, rather than being produced directly. Thus, the framework combines the flexibility of neural latent-factor models with the discipline of arbitrage-free term-structure modelling. The detailed construction of the model is presented in the following model chapter.
+
+
+
+
+
+% Placeholder for now:
+
+\subsection{Motivation}
+
+The failure to reproduce slope and curvature for negative-rate curves may be linked to the linearity of the encoder, though what follows is a speculative hypothesis rather than a formal result. 
+Since the encoder computes (Chapter~\ref{chap:encoderdecodermodel},\eqref{eq:linear_encoder})
+$$z = A_1\mathbf{S}, \qquad \mathbf{S}=(S^{(1)},\ldots,S^{(M)})^\top,$$
+with no bias and no activation function, $z$ is a linear projection of the raw swap rates with no intercept. When a negative-rate curve is passed through the encoder, the positive and negative rate values partially cancel in the linear projection, producing a $z$ that is both near the origin and less informative about the shape of the curve. Two negative-rate curves with very different slopes or curvatures may therefore map to nearly indistinguishable latent representations, a problem that does not arise for positive-rate curves where 
+$A_1$ was predominantly trained. We do not formally verify this, but use it as motivation for the augmentation described below. The following two examples illustrate the compression effect using the learned encoder matrix of the $\ell=2$ baseline model.
+
+
+\begin{example}
+The following example illustrates that the linear encoder loses shape information 
+specifically for negative-rate curves, compressing them into a sparse region of 
+the latent space where the decoder has little training exposure.
+
+Let $\mathbf{S}, \mathbf{S}^* \in \mathbb{R}^8$ denote the EUR swap curves 
+observed on 2014-08-29 and 2020-03-31 respectively, expressed in decimal terms,
+\begin{align*}
+\mathbf{S} &= \begin{pmatrix} 0.0025 & 0.0027 & 0.0032 & 0.0050 & 0.0109 & 
+0.0146 & 0.0164 & 0.0176 \end{pmatrix}^\top, \\
+\mathbf{S}^* &= \begin{pmatrix} -0.0032 & -0.0032 & -0.0031 & -0.0023 & -0.0002 
+& 0.0016 & 0.0023 & 0.0018 \end{pmatrix}^\top,
+\end{align*}
+and let $A_1 \in \mathbb{R}^{2\times 8}$ denote the learned encoder matrix,
+$$A_1 = \begin{pmatrix} 0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\ 
+-1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13 \end{pmatrix}.$$
+For each curve, construct a synthetic flat counterpart at the same mean level,
+$\mathbf{S}_{\text{flat}} = \bar{S}\cdot\mathbf{1}$ and 
+$\mathbf{S}^*_{\text{flat}} = \bar{S}^*\cdot\mathbf{1}$, so each pair differs 
+only in slope and curvature. Applying $A_1$ gives
+\begin{align*}
+z = A_1\mathbf{S} &= \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \quad
+z_{\text{flat}} = A_1\mathbf{S}_{\text{flat}} = \begin{pmatrix} 0.0046 \\ 
+-0.0375 \end{pmatrix}, \quad \|z - z_{\text{flat}}\| = 0.0208, \\
+z^* = A_1\mathbf{S}^* &= \begin{pmatrix} -0.0057 \\ 0.0089 \end{pmatrix}, \quad
+z^*_{\text{flat}} = A_1\mathbf{S}^*_{\text{flat}} = \begin{pmatrix} -0.0004 \\ 
+0.0032 \end{pmatrix}, \quad \|z^* - z^*_{\text{flat}}\| = 0.0078.
+\end{align*}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_latent_space_regime.png}
+    \caption{Latent space representation of all in-sample swap rate curves under 
+    the baseline encoder ($\ell = 2$), coloured by curve variant. Four specific 
+    observations are overlaid: $\mathbf{z}$ and $\mathbf{z}_{\mathrm{flat}}$ 
+    denote the latent representations of the EUR 2014-08-29 curve and its flat 
+    counterpart, with Euclidean distance $d = 0.0208$; $\mathbf{z}^*$ and 
+    $\mathbf{z}^*_{\mathrm{flat}}$ denote the corresponding representations for 
+    the EUR 2020-03-31 negative-rate curve, with distance $d = 0.0078$.}
+    \label{fig:latent_space_regime}
+\end{figure}
+
+As shown in Figure~\ref{fig:latent_space_regime}, the normal curve and its flat counterpart are well separated within a densely populated region of the latent 
+space ($\|z - z_{\text{flat}}\| = 0.0208$), meaning the encoder preserves shape information for positive-rate curves. The negative-rate curve and its flat counterpart, by contrast, are compressed into a sparse region near the origin with a separation of only $0.0078$, roughly one third of the normal case. Since the two curves differ only in slope and curvature, this confirms that the encoder 
+loses precisely this information for negative-rate curves, leaving the decoder with representations that are nearly indistinguishable regardless of curve shape.
+
+\end{example}
+
+
+
+\begin{example}
+The previous example showed that shape information is compressed for curves that 
+already have negative rates. The following example shows that this compression is 
+a consequence of the rate level itself, not a property specific to historically 
+observed negative-rate curves.
+
+Take the same normal EUR curve $\mathbf{S}$ from 2014-08-29 and consider two 
+parallel shifts,
+$$\tilde{\mathbf{S}}^{\pm} = \mathbf{S} \pm 0.005\cdot\mathbf{1},$$
+leaving slope and curvature unchanged by construction. Since the encoder is linear, 
+the effect of any parallel shift $c\cdot\mathbf{1}$ on the latent representation 
+is given exactly by
+$$\Delta z = c \cdot A_1\mathbf{1} = c\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix},$$
+so the three latent representations are
+\begin{align*}
+z &= A_1\mathbf{S} = \begin{pmatrix} -0.0088 \\ -0.0217 \end{pmatrix}, \\
+\tilde{z}^{-} &= z - 0.005\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix} = 
+\begin{pmatrix} -0.0114 \\ -0.0011 \end{pmatrix}, \\
+\tilde{z}^{+} &= z + 0.005\begin{pmatrix} 0.51 \\ -4.12 \end{pmatrix} = 
+\begin{pmatrix} -0.0063 \\ -0.0423 \end{pmatrix}.
+\end{align*}
+The upward shift moves $z$ further into the dense normal training region, while 
+the downward shift moves it into the sparse region near the origin occupied by 
+negative-rate curves, landing close to $z^* = (-0.0057, 0.0089)^\top$, the 
+actual negative-rate EUR curve from 2020-03-31. Figure~\ref{fig:latent_space_shift} 
+illustrates this, confirming that the compression is driven by the rate level: 
+any curve shifted toward zero will have its latent representation pushed into a 
+region that is sparsely covered during training, regardless of its shape.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/AutoencoderPerformanceAugmented/augmented_latent_space_shift.png}
+    \caption{Latent space representation of all in-sample swap rate curves under 
+    the baseline encoder ($\ell = 2$), coloured by curve variant. The reference 
+    point $\mathbf{z}$ denotes the latent representation of the EUR 2014-08-29 
+    swap rate curve. The points $\mathbf{z}_{-}$ and $\mathbf{z}_{+}$ are obtained 
+    by shifting all tenors by $-0.005$ and $+0.005$ respectively before encoding. 
+    The actual negative-rate EUR curve from 2020-03-31 is shown as $\mathbf{z}^*$.}
+    \label{fig:latent_space_shift}
+\end{figure}
+\end{example}
+
+
+
+
+
+%FORESLAG TIL EKSEMPEL I AUGMENTED MOTIVTAION
+
+\begin{example}\label{ex:level_shape_entanglement}
+The baseline encoder is linear, \(z=A_1\mathbf S\), so changes in the input curve translate directly into changes in the latent state. We illustrate this using the positive EUR curve from Figure~\ref{fig:baseline_fit_failure_modes},
+\[
+\mathbf S
+=
+\begin{pmatrix}
+0.0008 & 0.0008 & 0.0012 & 0.0024 &
+0.0056 & 0.0072 & 0.0078 & 0.0080
+\end{pmatrix}^{\top}.
+\]
+For the learned baseline encoder,
+\[
+A_1 =
+\begin{pmatrix}
+0.46 & 0.37 & 0.00 & 0.40 & 0.26 & -0.23 & -0.66 & -0.10 \\
+-1.12 & -0.63 & -0.66 & -0.83 & -0.50 & -0.29 & -0.22 & 0.13
+\end{pmatrix},
+\]
+the encoded point is
+\[
+z=A_1\mathbf S
+=
+(-0.0045,-0.0097)^\top.
+\]
+
+First consider a pure parallel level shift. Let \(\mathbf 1=(1,\ldots,1)^\top\) and set
+\[
+\mathbf S^{\mathrm{lev}}=\mathbf S+c\mathbf 1.
+\]
+The latent displacement caused by this level shift is
+\[
+\Delta z_{\mathrm{lev}}
+:=
+z^{\mathrm{lev}}-z
+=
+A_1(\mathbf S+c\mathbf 1)-A_1\mathbf S
+=
+cA_1\mathbf 1.
+\]
+Since
+\[
+A_1\mathbf 1=(0.50,-4.12)^\top,
+\]
+a \(100\) bp level shift, \(c=0.01\), gives
+\[
+\Delta z_{\mathrm{lev}}
+=
+(0.0050,-0.0412)^\top,
+\qquad
+\|\Delta z_{\mathrm{lev}}\|\approx 0.0415.
+\]
+
+Now compare this with a slope change that keeps the average level fixed. Let
+\[
+v=
+\begin{pmatrix}
+-1 & -1 & -1 & -1 & 1 & 1 & 1 & 1
+\end{pmatrix}^{\top},
+\qquad
+\mathbf S^{\mathrm{slope}}=\mathbf S+qv.
+\]
+This lowers the short maturities and raises the long maturities. Since the entries of \(v\) sum to zero, it changes the slope without changing the average level. Define
+\[
+\Delta z_{\mathrm{slope}}
+:=
+z^{\mathrm{slope}}-z
+=
+A_1(\mathbf S+qv)-A_1\mathbf S
+=
+qA_1v.
+\]
+For the same encoder,
+\[
+A_1v=(-1.96,2.36)^\top.
+\]
+Taking \(q=0.005\), which lowers the first four maturities by \(50\) bp and raises the last four by \(50\) bp, gives
+\[
+\Delta z_{\mathrm{slope}}
+=
+(-0.0098,0.0118)^\top,
+\qquad
+\|\Delta z_{\mathrm{slope}}\|\approx 0.0153.
+\]
+
+Thus a \(100\) bp parallel level shift moves the latent representation about
+\[
+\frac{0.0415}{0.0153}\approx 2.7
+\]
+times more than this \(100\) bp steepening. The example illustrates that the baseline encoder is strongly affected by the absolute level of rates, while slope information is not represented separately. This motivates augmenting the input with explicit slope and curvature features.\;\;\(\circ\)
+\end{example}
+
+While this is only a local numerical illustration, it highlights the issue with the baseline representation. The linear encoder reacts strongly to the absolute level of the curve, while slope and curvature are not separated explicitly. This can be problematic for negative-rate and crossing curves, where the level is unusual but the shape may still contain familiar information. The augmented model therefore adds explicit slope and curvature features to the encoder input, so that these aspects of the curve are made directly available to the latent representation.
+
+\begin{example}\label{ex:features}
+Consider a simplified crossing curve observed at three maturities, representing the 1Y, 10Y, and 30Y points,
+\[
+\mathbf S
+=
+\begin{pmatrix}
+-a & 0 & a
+\end{pmatrix}^{\top},
+\qquad a>0.
+\]
+This curve starts negative, crosses zero, and ends positive. Its augmented features are
+\[
+f_1 = S^{(10Y)}-S^{(1Y)} = 0-(-a)=a,
+\]
+\[
+f_2 = S^{(30Y)}-S^{(10Y)} = a-0=a,
+\]
+and
+\[
+f_3 = 2S^{(10Y)}-S^{(1Y)}-S^{(30Y)}
+=
+2\cdot 0-(-a)-a
+=
+0.
+\]
+
+Now suppose the baseline reconstructs the curve as flat at the same average level,
+\[
+\widetilde{\mathbf S}
+=
+\begin{pmatrix}
+0 & 0 & 0
+\end{pmatrix}^{\top}.
+\]
+This reconstruction has the correct average level, but it has lost the upward slope. Its features are
+\[
+\widetilde f_1 = 0,
+\qquad
+\widetilde f_2 = 0,
+\qquad
+\widetilde f_3 = 0.
+\]
+Thus,
+\[
+(f_1,f_2,f_3)=(a,a,0),
+\qquad
+(\widetilde f_1,\widetilde f_2,\widetilde f_3)=(0,0,0).
+\]
+
+In the baseline model, this loss of slope is only penalised through the individual rate errors. In the augmented model, it is also penalised directly through the feature errors,
+\[
+(f_1-\widetilde f_1)^2
++
+(f_2-\widetilde f_2)^2
++
+(f_3-\widetilde f_3)^2
+=
+2a^2.
+\]
+The augmentation therefore does not add new market information, since the features are computed from the same swap rates. Instead, it makes slope and curvature errors explicit in the training objective. This targets the failure mode where a negative or crossing curve is reconstructed as too flat.\;\;\(\circ\)
+\end{example}
+
+Example~\ref{ex:level_shape_entanglement} shows that the baseline encoder can be strongly affected by level shifts, while slope information is not represented separately. Example~\ref{ex:features} shows how the augmented loss addresses the resulting failure mode: when a crossing curve is reconstructed as flat, the slope features of the reconstruction collapse to zero and the augmented loss penalises this directly. The augmented model therefore does not add new market information, but it changes the representation and loss so that curve shape receives more direct attention.
+
+
+
+% SKAL VI RYKKE DETTE NED I ML THEORY?
+Artificial neural networks are mathematical models inspired by the biology of the human brain. The brain consists of neurons connected by synapses, which learn by strengthening or weakening their connections, a process known as \textit{synaptic plasticity}. \textcolor{red}{mangler måske hvad deres formål er i hjernen}
+
+Neural networks mirror this structure, where artificial neurons, also called nodes, connected by weights receive input data, transform it through hidden layers, and produce a final prediction. Learning occurs by adjusting these weights, analogous to synaptic plasticity in the brain \citep{QBI2016}.
+
+
+
+
+% The old training part in the machine learning theory section:
+
+%--------------------------------------------------------
+\section{Training}
+\label{sec:training}
+%--------------------------------------------------------
+
+Training a neural network consists of choosing the parameter set $\Omega$ so that the network performs well on the training data according to a prescribed loss function. This leads to an optimisation problem of the form
+\[
+    \min_{\Omega} \mathcal{L}(\Omega),
+\]
+where $\mathcal{L}$ quantifies how well the network fulfils the learning objective. In general, this problem does not admit a closed-form solution, and one therefore relies on iterative numerical methods. When $\mathcal{L}$ is differentiable with respect to $\Omega$, gradient-based methods are a natural choice, since the gradient $\nabla_\Omega \mathcal{L}$ gives the direction of steepest local increase of the loss. Consequently, moving the parameters in the opposite direction tends to decrease the loss locally \citep[Chs.~6,~8]{Goodfellow2016}.
+
+\subsection{Loss function}
+
+Given a dataset $\mathcal{D} = \{(x_n,y_n)\}_{n=1}^N$ with $N$ data points, training consists of finding parameters $\Omega$ that minimise the empirical risk
+\begin{equation}
+    \mathcal{L}(\Omega)
+    =
+    \frac{1}{N} \sum_{n=1}^{N}
+    \ell\bigl(y_n,\, f(x_n;\Omega)\bigr),
+\label{eq:empirical_risk}
+\end{equation}
+where $\ell$ is a \emph{loss function} measuring the discrepancy between the target $y_n$ and the model output $f(x_n;\Omega)$. The quantity $\mathcal{L}(\Omega)$ is the corresponding \emph{empirical risk}, that is, the average loss over the dataset \citep[Ch.~6]{Goodfellow2016}. Since the target and predicted outputs are vectors, a natural choice is the squared Euclidean norm,
+\[
+    \ell(y,\hat{y}) = \|y-\hat{y}\|^2,
+\]
+
+which sums the squared errors across all vector components.
+
+
+
+
+
+
+
+% The old appendix about the latent dynmaic proof for stbale and baseline:
+
+
+\section{Existence and Uniqueness of Solutions to the Latent Dynamics}
+\label{app:sde_wellposed}
+
+This section verifies that the latent dynamics satisfy the sufficient conditions for existence and uniqueness stated in Proposition~\ref{prop:sde_existence}, using $L$ in place of $\sigma$ for the diffusion coefficient. These conditions require the existence of a constant $K>0$ such that, for all $z,y\in\mathbb{R}^\ell$,
+\[
+\|\mu(z)-\mu(y)\|\leq K\|z-y\|,
+\qquad
+\|L(z)-L(y)\|\leq K\|z-y\|,
+\]
+and
+\[
+\|\mu(z)\|+\|L(z)\|\leq K\bigl(1+\|z\|\bigr).
+\]
+For the stable model, all conditions are verified unconditionally. For the baseline model, the verification is conditional on an additional assumption 
+on the correlation structure, stated explicitly below.
+
+
+
+
+
+
+
+
+
+
+\subsection{Baseline Latent Dynamics}
+\label{app:baseline_sde_wellposed}
+
+The baseline latent dynamics are given by
+\begin{equation}
+    dz_t
+    =
+    \mu_{\mathrm{base}}(z_t)\,dt
+    +
+    L_{\mathrm{base}}(z_t)\,dW_t^{\mathbb Q},
+    \label{eq:app_baseline_sde}
+\end{equation}
+where $\mu_{\mathrm{base}}(z)=Mz+N$. The volatility network $\mathcal{H}$ produces raw outputs \(h_i(z)\) and \(g_{ij}(z)\), which determine the factor volatilities and pairwise correlations through
+\[
+    \sigma_i(z)=\exp\bigl(h_i(z)\bigr),
+    \qquad
+    \rho_{ij}(z)=\tanh\bigl(g_{ij}(z)\bigr),
+    \qquad
+    1\leq j<i\leq\ell.
+\]
+Letting $D(z)=\operatorname{diag}\bigl(\sigma_1(z),\ldots,\sigma_\ell(z)\bigr)$ and $R(z)$ denote the correlation matrix with entries $\rho_{ij}(z)$, the baseline volatility matrix is
+\[
+    L_{\mathrm{base}}(z)=D(z)C(z).
+\]
+where $C(z)$ is the lower-triangular Cholesky factor of $R(z)$.
+
+The $\tanh$ parameterisation constrains each pairwise correlation $\rho_{ij}(z)\in(-1,1)$ individually, but for $\ell\geq3$ this does not guarantee positive definiteness of the full matrix $R(z)$. We therefore 
+impose the following assumption.
+
+\begin{assumption}
+\label{ass:baseline_cholesky}
+For every $z\in\mathbb{R}^\ell$, the correlation matrix $R(z)$ is positive 
+definite, and there exists a constant $K_C>0$ such that
+\[
+\|C(z)-C(y)\|\leq K_C\|z-y\|
+\]
+for all $z,y\in\mathbb{R}^\ell$.
+\end{assumption}
+
+
+\begin{description}[
+    style=unboxed,
+    leftmargin=0pt,
+    labelindent=0pt,
+    labelsep=0.5em
+]
+
+\item[Drift.]
+The drift satisfies
+\[
+\|\mu_{\mathrm{base}}(z)-\mu_{\mathrm{base}}(y)\|
+=
+\|M(z-y)\|
+\leq
+\|M\|\,\|z-y\|,
+\]
+so the drift is globally Lipschitz with constant $\|M\|$.
+
+\item[Diffusion.]
+The volatility network $\mathcal{H}$ computes
+\[
+\begin{pmatrix} h_1(z) \\ \vdots \\ g_{(\ell-1)\ell}(z) \end{pmatrix}
+=
+W_2\,\psi(W_1 z + b_1) + b_2,
+\]
+where $\psi$ is the centered soft-step activation function
+\[
+\psi(x)=\frac{1}{1+e^{-x}}-\frac{1}{2},
+\]
+applied elementwise. Since $\psi(x)\in(-\tfrac{1}{2},
+\tfrac{1}{2})$ for all $x$, the outputs $h_i(z)$ and $g_{ij}(z)$ are
+bounded uniformly in $z$. For the Lipschitz property, let
+$z,y\in\mathbb{R}^\ell$. Since $|\psi'(x)|\leq\tfrac{1}{4}$ for all $x$,
+\[
+\|h_i(z)-h_i(y)\|
+\leq
+\|W_2\|\,\|\psi(W_1 z+b_1)-\psi(W_1 y+b_1)\|
+\leq
+\frac{\|W_1\|\,\|W_2\|}{4}\|z-y\|,
+\]
+and the same bound holds for each $g_{ij}(z)$. Hence $h_i(z)$ and $g_{ij}(z)$ are bounded and globally Lipschitz.
+
+Since $h_i(z)$ is bounded, the exponential $\sigma_i(z)=\exp(h_i(z))$ is evaluated only on a bounded interval, on which the exponential function is 
+globally Lipschitz. Hence each map $z\mapsto\sigma_i(z)$ is bounded and globally Lipschitz, and therefore $D(z)$ is bounded and globally Lipschitz.
+
+
+Since tanh is globally Lipschitz with constant $1$ and $g_{ij}(z)$ is globally Lipschitz, each map $z\mapsto\rho_{ij}(z)=\tanh(g_{ij}(z))$ is bounded and globally Lipschitz.
+
+Under Assumption~\ref{ass:baseline_cholesky}, $C(z)$ is globally Lipschitz
+with constant $K_C$. Since $D(z)$ is bounded and globally Lipschitz, there
+exist constants $M_D,M_C,K_D>0$ such that $\|D(z)\|\leq M_D$,
+$\|C(z)\|\leq M_C$ and $\|D(z)-D(y)\|\leq K_D\|z-y\|$. Using
+$L_{\mathrm{base}}(z)=D(z)C(z)$,
+\[
+\begin{aligned}
+\|L_{\mathrm{base}}(z)-L_{\mathrm{base}}(y)\|
+&=
+\|D(z)C(z)-D(y)C(y)\| \\
+&=
+\bigl\|D(z)\bigl(C(z)-C(y)\bigr)
++\bigl(D(z)-D(y)\bigr)C(y)\bigr\| \\
+&\leq
+\|D(z)\|\,\|C(z)-C(y)\|
++\|D(z)-D(y)\|\,\|C(y)\| \\
+&\leq
+\bigl(M_DK_C+K_DM_C\bigr)\|z-y\|.
+\end{aligned}
+\]
+Hence $L_{\mathrm{base}}$ is globally Lipschitz with constant
+$M_DK_C+K_DM_C$.
+
+\item[Linear growth.]
+The boundedness of $D(z)$ and $C(z)$ gives
+\[
+\begin{aligned}
+\|\mu_{\mathrm{base}}(z)\|+\|L_{\mathrm{base}}(z)\|
+&\leq
+\|M\|\,\|z\|+\|N\|+M_DM_C \\
+&\leq
+\bigl(\|M\|+\|N\|+M_DM_C\bigr)(1+\|z\|).
+\end{aligned}
+\]
+Hence the linear growth condition is satisfied.
+
+\end{description}
+
+Taking 
+$$K=\max\{\|M\|,\,M_DK_C+K_DM_C,\,\|M\|+\|N\|+M_DM_C\},$$
+all conditions of Proposition~\ref{prop:sde_existence} are satisfied under Assumption~\ref{ass:baseline_cholesky}. Hence the baseline latent SDE admits a unique solution that is $\mathcal{F}_t^W$-adapted, has continuous sample paths, and satisfies the Markov property.
+
+\begin{remark}
+For $\ell=2$, Assumption~\ref{ass:baseline_cholesky} is automatically
+satisfied. The correlation matrix has a single off-diagonal entry
+$\rho_{12}(z)=\tanh(g_{12}(z))\in(-1,1)$, which is bounded and globally
+Lipschitz by construction. The explicit Cholesky factor
+\[
+C(z)=
+\begin{pmatrix}
+1 & 0 \\
+\rho_{12}(z) & \sqrt{1-\rho_{12}(z)^2}
+\end{pmatrix}
+\]
+is therefore bounded and globally Lipschitz, and no additional assumption
+is required.
+\end{remark}
+
+
+
+\subsection{Stable Latent Dynamics}
+\label{app:stable_sde_wellposed}
+
+The stable latent dynamics are given by
+\begin{equation}
+    dz_t
+    =
+    \mu_{\mathrm{st}}(z_t)\,dt
+    +
+    L_{\mathrm{st}}(z_t)\,dW_t^{\mathbb Q},
+    \label{eq:app_stable_sde}
+\end{equation}
+where
+\[
+    \mu_{\mathrm{st}}(z)
+    =
+    Mz+N,
+    \qquad
+    M=-(V^\top V+\varepsilon I_\ell),
+    \qquad
+    \varepsilon>0.
+\]
+The factor volatilities are defined by
+\[
+    \log \sigma_i(z)
+    =
+    \log \sigma_{\min}
+    +
+    \bigl(
+        \log \sigma_{\max}
+        -
+        \log \sigma_{\min}
+    \bigr)
+    \operatorname{sigmoid}\bigl(h_i(z)\bigr),
+\]
+where
+\[
+    0<\sigma_{\min}<\sigma_{\max}<\infty.
+\]
+The correlation factor is constructed through the hyperspherical parameterisation of Section~\ref{app:hyperspherical_cholesky}. In particular,
+\[
+    \theta_{ij}(z)
+    =
+    \pi\,\operatorname{sigmoid}\bigl(g_{ij}(z)\bigr),
+    \qquad
+    1\leq j<i\leq\ell,
+\]
+determines the lower-triangular factor \(C_\theta(z)\). The stable volatility matrix is then
+\[
+    L_{\mathrm{st}}(z)
+    =
+    D(z)C_\theta(z),
+    \qquad
+    D(z)
+    =
+    \operatorname{diag}
+    \bigl(\sigma_1(z),\ldots,\sigma_\ell(z)\bigr).
+\]
+
+
+\begin{description}[
+    style=unboxed,
+    leftmargin=0pt,
+    labelindent=0pt,
+    labelsep=0.5em
+]
+
+\item[Drift.]
+The drift satisfies
+\[
+\|\mu_{\mathrm{st}}(z)-\mu_{\mathrm{st}}(y)\|
+=
+\|M(z-y)\|
+\leq
+\|M\|\,\|z-y\|,
+\]
+so the drift is globally Lipschitz with constant $\|M\|$.
+
+\item[Diffusion.]
+The volatility network $\mathcal{H}$ computes
+\[
+\begin{pmatrix} h_1(z) \\ \vdots \\ g_{(\ell-1)\ell}(z) \end{pmatrix}
+=
+W_2\,\psi(W_1 z + b_1) + b_2,
+\]
+where $\psi$ is applied elementwise. Since $\psi(x)\in(-\tfrac{1}{2},\tfrac{1}{2})$
+for all $x$, the outputs $h_i(z)$ and $g_{ij}(z)$ are bounded uniformly in $z$.
+For the Lipschitz property, let $z,y\in\mathbb{R}^\ell$. Since
+$|\psi'(x)|\leq\tfrac{1}{4}$ for all $x$, we have
+\[
+\|h_i(z)-h_i(y)\|
+\leq
+\|W_2\|\,\|\psi(W_1 z+b_1)-\psi(W_1 y+b_1)\|
+\leq
+\frac{\|W_1\|\,\|W_2\|}{4}\|z-y\|,
+\]
+and the same bound holds for each $g_{ij}(z)$. Hence $h_i(z)$ and $g_{ij}(z)$
+are bounded and globally Lipschitz.
+
+Since sigmoid is globally Lipschitz with constant $\tfrac{1}{4}$, each map
+$z\mapsto\log\sigma_i(z)$ is globally Lipschitz as a composition. Moreover,
+since $\operatorname{sigmoid}(\cdot)\in(0,1)$, the log-volatilities are confined
+to $(\log\sigma_{\min},\log\sigma_{\max})$, so the exponential transformation
+has bounded derivative on this interval and each map $z\mapsto\sigma_i(z)$ is
+bounded and globally Lipschitz. Hence $D(z)$ is bounded and globally Lipschitz.
+
+Similarly, each angle map
+$z\mapsto\theta_{ij}(z)=\pi\,\operatorname{sigmoid}(g_{ij}(z))$
+is globally Lipschitz. Since sine and cosine are bounded and globally Lipschitz,
+each entry of $C_\theta(z)$ is a finite product of bounded globally Lipschitz
+functions and is therefore bounded and globally Lipschitz. Hence $C_\theta(z)$
+is bounded and globally Lipschitz. Furthermore, by
+Section~\ref{subsec:validity}, $R(z)=C_\theta(z)C_\theta(z)^\top$ is positive
+definite for every latent state $z$.
+
+There therefore exist constants $M_D,M_R,K_D,K_R>0$ such that
+\begin{align*}
+    \|D(z)\|&\leq M_D, \\
+    \|C_\theta(z)\|&\leq M_R\\
+    \|D(z)-D(y)\|&\leq K_D\|z-y\|\\
+    \|C_\theta(z)-C_\theta(y)\|&\leq K_R\|z-y\|
+\end{align*}
+for all $z,y\in\mathbb{R}^\ell$. Using $L_{\mathrm{st}}(z)=D(z)C_\theta(z)$,
+\[
+\begin{aligned}
+\|L_{\mathrm{st}}(z)-L_{\mathrm{st}}(y)\|
+&=
+\|D(z)C_\theta(z)-D(y)C_\theta(y)\| \\
+&=
+\bigl\|
+D(z)\bigl(C_\theta(z)-C_\theta(y)\bigr)
++
+\bigl(D(z)-D(y)\bigr)C_\theta(y)
+\bigr\| \\
+&\leq
+\|D(z)\|\,\|C_\theta(z)-C_\theta(y)\|
++
+\|D(z)-D(y)\|\,\|C_\theta(y)\| \\
+&\leq
+\bigl(M_DK_R+K_DM_R\bigr)\|z-y\|.
+\end{aligned}
+\]
+Hence $L_{\mathrm{st}}$ is globally Lipschitz with constant $M_DK_R+K_DM_R$.
+
+\item[Linear growth.]
+The boundedness of $D(z)$ and $C_\theta(z)$ gives
+\[
+\begin{aligned}
+\|\mu_{\mathrm{st}}(z)\|+\|L_{\mathrm{st}}(z)\|
+&\leq
+\|M\|\,\|z\|+\|N\|+M_DM_R \\
+&\leq
+\bigl(\|M\|+\|N\|+M_DM_R\bigr)(1+\|z\|).
+\end{aligned}
+\]
+Hence the linear growth condition is satisfied.
+
+\end{description}
+
+
+Defining
+\[
+K_{\mathrm{st}}
+=
+\max\Bigl\{
+\|M\|,\;
+M_DK_R+K_DM_R,\;
+\|M\|+\|N\|+M_DM_R
+\Bigr\},
+\]
+all conditions of Proposition~\ref{prop:sde_existence} are satisfied for general latent dimension $\ell$, without additional assumptions. Hence, the stable latent SDE admits a unique solution that is $\mathcal{F}_t^W$, has continuous sample paths, and satisfies the Markov property.

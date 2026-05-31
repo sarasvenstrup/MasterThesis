@@ -1,0 +1,103 @@
+\chapter{Data Description and Sample Construction}
+\label{chap:datadescription}
+
+This chapter describes the panel data of par swap rates used throughout the 
+thesis. The dataset is used for both model training and evaluation, and its 
+characteristics are important for interpreting the results in later chapters. 
+We begin by presenting the data source and coverage, before describing how 
+the dataset sample is constructed.
+
+\section{Data Description}
+
+All data are obtained from Bloomberg and consist of quoted par swap rates reported in percentage terms. Prior to use, the rates are converted to decimal form. The data cover nine currencies,
+\[
+\{\text{AUD}, \text{CAD}, \text{DKK}, \text{EUR}, \text{GBP}, \text{JPY}, \text{NOK}, \text{SEK}, \text{USD}\},
+\]
+observed at monthly frequency over the period 2004--2024, although the exact sample period differs across currencies. Table \ref{tab:data_summary} summarizes the sample period and number of observations for each currency.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/DataVisualizations/D1_missing_data_summary.csv}\datdone
+\pgfplotstabletypeset[
+  columns={Currency, Currency name, First date, Last date, Total obs, Missing curves, Incomplete curves},
+  columns/Currency/.style={column name={Currency}, string type, column type=l},
+  columns/Currency name/.style={column name={Currency name}, string type, column type=l},
+  columns/First date/.style={column name={First date}, string type, column type=c},
+  columns/Last date/.style={column name={Last date}, string type, column type=c},
+  columns/Total obs/.style={column name={Obs.}, column type=r},
+  columns/Missing curves/.style={column name={Missing months}, column type=c},
+  columns/Incomplete curves/.style={column name={Incomplete curves}, column type=c},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datdone}
+\caption{Data availability summary per currency. Obs.\ is the total number of monthly observations. Missing months counts calendar months with no curve observation. Incomplete curves counts the number of curves with at least one missing maturity.}
+\label{tab:data_summary}
+\end{table}
+
+With start and end dates varying, the panel is unbalanced across currencies. Most currencies span the full period from March 2004 to February 2024, while JPY and USD begin in 2009 and GBP covers a notably shorter period from May 2011 to November 2021, yielding only 127 observations. NOK, CAD and DKK have a small number of missing months within their respective sample periods. Importantly, the missing observations correspond to absent monthly swap curves rather than incomplete ones, as all available curves contain the full set of maturities.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{Figures/thesis_results/DataVisualizations/D2b_10y_timeseries.png}
+    \caption{Time series of the 10-year swap rate for each currency. Circles mark the first and last available observation for each currency. Vertical dashed lines indicate macroeconomic regimes that  changes in the swap-rate environment are associated with.}
+    \label{fig:D2b_10y_timeseries}
+\end{figure}
+
+% Notes for self:
+%Remember that a par swap rate are directly determined by the term strucutre of zero-coupon bond prices, which are fundamentally driin by expectations of future short rates under the risk-neutral measure. So when central banks lower short rates we expect bond prices to increase and swap rates to fall. 
+%So in the global financial crisis central banks lowered interest rates to...
+%ECB QE announcement in January 2015 pushed European interest rates further toward and below zero.
+%Following the global financial crisis policy interst rates reached the zero "lower" bound, since central banks cur taes so agressively. and they could no longer cut further resulting in conventional monetary policy to be no longer effective. So the normal tool for stimulating the economy was not useful, so central banks turned to unconventional tools. Quantative easing involved the central bank creating new mony and using it to buy financial assets, this increases the deman for bonds, pushing prices up, and therefore pushes yields and swap rates down, even when the policy rate cannot go lower. 
+
+Having established the data coverage, we now turn to the main time-series characteristics of the swap rate data. The 10-year swap rates in Figure~\ref{fig:D2b_10y_timeseries} show a declining trend across currencies from the beginning of the dataset until around 2020, followed by a sharp increase from 2022 onwards. Four macroeconomic regimes are particularly visible.
+% The economy following the GFC was still weak as demand was depressed, as households and businesses were paying down debt and saving rather than spending and investing, also resulting in less people being hired. Banks where not lending after suffering massive losses trying to rebuild capital. 
+\begin{itemize}
+    \item \textbf{Regime 1} \textcolor{UCPHred}{\textbf{|}} \; The Global Financial Crisis in September 2008 triggered a sharp and synchronized decline in swap rates, as central banks responded by lowering policy rates to stimulate economic activity \citep{RBA2024}. 
+    \item \textbf{Regime 2} \textcolor{UCPHred}{\textbf{|}} \; Central banks in several advanced economies launched large-scale asset purchase programmes from 2015 onwards, pushing long-term swap rates toward and below zero, most notably for EUR, DKK, and SEK. \citep[p.~6]{BorioZabai2016}. 
+    \item \textbf{Regime 3} \textcolor{UCPHred}{\textbf{|}} \; The COVID-19 pandemic in March 2020 marked a trough for many currencies, as central banks cut policy rates to near zero and launched large-scale asset purchase programmes \citep{Cantu2021}. 
+    \item \textbf{Regime 4} \textcolor{UCPHred}{\textbf{|}} \; A surge in inflation following the COVID-19 pandemic, amplified by Russia's invasion of Ukraine, caused a sharp and synchronized tightening of monetary policy across all currencies from 2022 onwards, reversing the prolonged low-rate environment \citep{IMF2022}. 
+\end{itemize}
+
+These periods are relevant for the model evaluation in later chapters, as they represent changing interest-rate regimes and structural shifts in the swap-rate environment. Figure~\ref{fig:D2a_swap_curves} illustrates the cross-sectional term structure on 31 August 2016, a date representative of the prolonged low-rate environment between the Quantitative Easing regime and the COVID-19 pandemic. 
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Figures/thesis_results/DataVisualizations/D2a_swap_curves.png}
+    \caption{Cross-sectional swap rate curves for all nine currencies on 31 August 2016, displaying the general tendency of upward-sloping curves.}
+    \label{fig:D2a_swap_curves}
+\end{figure}
+
+All currencies display upward-sloping term structures while SEK, JPY, DKK and EUR show negative rates at the short end, reflecting the negative rate environment prevailing at the time. DKK closely tracks EUR across all maturities, consistent with the Danish krone's exchange-rate peg to the euro.
+
+\section{Sample Construction}
+
+The full sample used throughout the thesis, is constructed following \citet{MatinWanPoulsen2025}. Although swap rates are available at nine 
+maturities
+\[
+\{1\text{Y},2\text{Y},3\text{Y},5\text{Y},7\text{Y},10\text{Y},15\text{Y},20\text{Y},30\text{Y}\},
+\]
+we work with the eight-maturity subset obtained by dropping the 7-year tenor. 
+
+The sample is further restricted to swap curves from 2010 onwards, covering the period from 29 January 2010 to 29 February 2024, yielding 1\,470 curve observations in total, classified into three categories. Curves are \textit{inverted} when the short end of the curve exceeds the long end, and \textit{normal} when swap rates are non-negative at all maturities and the curve is non-inverted. A curve is \textit{negative} when at least one swap rate falls below zero. Negative curves are further decomposed into three sub-categories. \textit{Crossing} curves have negative swap rates at the first five maturities and a positive long end. \textit{Deeply negative} curves have negative swap rates at at least seven maturities. \textit{Other} negative curves are those that are neither crossing nor deeply negative.
+
+As shown in Table~\ref{tab:curve_type_counts}, normal curves dominate the sample, accounting for 70.9\% of observations. Inverted curves represent 9.1\%, and among negative curves, the crossing sub-category accounts for 5.5\%, while deeply negative curves are rare at only 0.7\%.
+
+\begin{table}[H]
+\centering
+\small
+\pgfplotstableread[col sep=comma]{Figures/thesis_results/DataVisualizations/D_curve_type_counts.csv}\datcurvetype
+\pgfplotstabletypeset[
+  columns={Curve Type, N, Share},
+  columns/Curve Type/.style={column name={Curve Type}, string type, column type=l},
+  columns/N/.style={column name={$N$}, string type, column type=r},
+  columns/Share/.style={column name={Share (\%)}, string type, column type=r},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every row no 0/.style={after row=\midrule},
+  every row no 1/.style={after row=\midrule},
+  every row no 5/.style={after row=\midrule},
+  every last row/.style={after row=\bottomrule},
+]{\datcurvetype}
+\caption{Number of curve observations by curve type in the full sample. Curves are classified as \textit{normal} when swap rates are non-negative at all maturities and the curve is non-inverted. Curves are \textit{inverted} when the short end exceeds the long end. A curve is classified as \textit{negative} when at least one swap rate is below zero. Negative curves are further decomposed into three categories. \textit{Crossing} curves have negative swap rates at the first five maturities and a positive long end. \textit{Deeply negative} curves have negative swap rates at at least seven maturities. \textit{Other} negative curves comprise the remaining negative observations.}
+\label{tab:curve_type_counts}
+\end{table}

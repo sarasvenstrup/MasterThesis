@@ -1,0 +1,132 @@
+\begin{figure}[H]
+\centering
+
+\begin{tikzpicture}[
+    scale=0.65,
+    transform shape,
+    neuron/.style={circle, minimum size=10mm, inner sep=0pt},
+    >=stealth
+]
+
+\definecolor{darkgrey}{RGB}{90,90,90}
+
+% -------- Step bracket tuning --------
+\def\StepTick{4pt}
+\def\StepRise{10pt}
+\def\StepGap{8pt}
+\def\TickSkew{6pt}
+
+% ======================
+% Input layer (3 visible nodes)
+% ======================
+\node[neuron, fill=gray!40] (S1)  at (0,  2.5) {$S^{(1)}$};
+\node[neuron, fill=gray!40] (S2)  at (0,  1.0) {$S^{(2)}$};
+\node at (0, -0.2) {$\vdots$};
+\node[neuron, fill=gray!40] (SM)  at (0, -2.2) {$S^{(M)}$};
+
+% ======================
+% Latent layer
+% ======================
+\node[neuron, fill=red!70] (Ztop) at (4,  1.9) {};
+\node[above=2mm] at (Ztop.north) {$\tau_i = 1,\ldots,30$};
+
+\node[neuron, fill=red!70] (Z1)  at (4,  0.4) {$z_{1}$};
+\node                    (Zvd) at (4, -0.6) {$\vdots$};
+\node[neuron, fill=red!70] (Zd)  at (4, -1.8) {$z_{\ell}$};
+
+% ======================
+% Hidden layer (10 nodes)
+% ======================
+\foreach \i in {1,...,10} {
+    \node[neuron, fill=red!40] (H\i) at (8, {(5.5-\i)*1.15}) {$x_{1,\mathcal{G}}^{(\i)}$};
+}
+
+% ======================
+% Output layer (3 nodes)
+% ======================
+\node[neuron, fill=red!20] (P1)  at (12,  2.5) {$P_{\tau_1}$};
+\node[neuron, fill=red!20] (P2)  at (12,  1.0) {$P_{\tau_2}$};
+\node at (12, -0.2) {$\vdots$};
+\node[neuron, fill=red!20] (P30) at (12, -2.2) {$P_{\tau_{30}}$};
+
+% ======================
+% Reconstructed swaps
+% ======================
+\node[neuron, fill=gray!10] (St1) at (16,  2.5) {$\tilde{S}^{(1)}$};
+\node[neuron, fill=gray!10] (St2) at (16,  1.0) {$\tilde{S}^{(2)}$};
+\node at (16, -0.2) {$\vdots$};
+\node[neuron, fill=gray!10] (StM) at (16, -2.2) {$\tilde{S}^{(M)}$};
+
+% ======================
+% Connections
+% ======================
+\foreach \s in {S1,S2,SM} {
+    \draw[->, draw=darkgray] (\s) -- (Z1);
+    \draw[->, draw=darkgray] (\s) -- (Zd);
+}
+
+\foreach \j in {1,...,10} {
+    \draw[->, draw=darkgray] (Ztop) -- (H\j);
+    \draw[->, draw=darkgray] (Z1)   -- (H\j);
+    \draw[->, draw=darkgray] (Zd)   -- (H\j);
+}
+
+\foreach \i in {1,...,10} {
+    \draw[->, draw=darkgray]         (H\i) -- (P1);
+    \draw[->, dashed, draw=darkgray] (H\i) -- (P2);
+    \draw[->, dotted, draw=darkgray] (H\i) -- (P30);
+}
+
+\draw[->, draw=darkgray] (P1) -- (St1);
+\draw[->, draw=darkgray] (P1) -- (St2);
+\draw[->, draw=darkgray] (P2) -- (St2);
+\draw[->, draw=darkgray] (P1)  -- (StM);
+\draw[->, draw=darkgray] (P2)  -- (StM);
+\draw[->, draw=darkgray] (P30) -- (StM);
+
+% ======================
+% Brackets
+% ======================
+
+\coordinate (StepY) at ([yshift=\StepRise]H1.north);
+
+\newcommand{\StepBracket}[3]{%
+  \draw[thick] (#1) -- ++(0,-\StepTick);
+  \draw[thick] (#1) -- (#2);
+  \draw[thick] (#2) -- ++(0,-\StepTick);
+  \node[above=4pt] at ($(#1)!0.5!(#2)$) {\textbf{#3}};
+}
+
+% Encoder bracket
+\coordinate (B0) at ([xshift=\TickSkew]S1.center |- StepY);
+\coordinate (B1) at ([xshift=-\TickSkew]Ztop.center |- StepY);
+\coordinate (EncL) at (B0);
+\coordinate (EncR) at ([xshift=-\StepGap]B1);
+\StepBracket{EncL}{EncR}{Encoder}
+
+% Decoder bracket (spans n1 to n4)
+\coordinate (B2) at ([xshift=\TickSkew]Ztop.center |- StepY);
+\coordinate (B3) at ([xshift=-\TickSkew]St1.center |- StepY);
+\coordinate (DecL) at ([xshift=\StepGap]B2);
+\coordinate (DecR) at (B3);
+\StepBracket{DecL}{DecR}{Decoder}
+
+% ======================
+% Layer labels
+% ======================
+\large
+\node at (0,  -6.2)  {Input};
+\node at (4,  -6.2)  {Latent};
+\node at (8,  -6.2)  {Hidden};
+\node at (12, -6.2)  {Prices};
+\node at (16, -6.2)  {Output};
+\normalsize
+
+\end{tikzpicture}
+
+\caption{Simplified overview of the encoder--decoder architecture. The encoder 
+maps a swap curve $\mathbf{S} = (S^{(1)}, \ldots, S^{(M)})^\top$ with $M$ maturities to $\ell$ latent factors $z = (z_1, \ldots, z_\ell)^\top$. In the decoder, the latent state $z$ is concatenated with a maturity index $\tau_i$ and passed through a hidden layer of width ten to produce a zero-coupon bond price 
+$P_{\tau_i}:=P(z, \tau_i)$. This is repeated successively across an annual maturity grid $\tau_i \in \{1Y,2Y, \ldots, 30Y\}$, as indicated by the solid, dashed, and dotted arrows. The resulting bond prices are then converted to the reconstructed swap rates $\widetilde{\mathbf{S}} = (\widetilde{S}^{(1)}, \ldots, 
+\widetilde{S}^{(M)})^\top$ at the same maturities as the input, using \eqref{estimatedswaprates}. Note that the figure is a simplification, as computing $P_{\tau_i}$ also relies on additional networks not shown here; see Figure~\ref{fig:rolf_architecture_details}.}
+\label{fig:rolf_architecture}
+\end{figure}

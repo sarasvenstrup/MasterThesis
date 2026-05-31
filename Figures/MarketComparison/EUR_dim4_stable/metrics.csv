@@ -1,0 +1,2 @@
+n_observations,mean_absolute_error,median_absolute_error,rmse,mean_relative_error_pct,correlation,r_squared
+1449,333.68105632775814,218.3177983290372,407.49114293280326,685.9504465666103,-0.2176056961126011,0.047352238980649705

@@ -1,0 +1,3 @@
+Metric,Normal,Inverted,Negative,Average
+IS RMSE,8.4,14.9,12.9,9.7
+OOS RMSE,11.4,20.4,23.5,16.4
