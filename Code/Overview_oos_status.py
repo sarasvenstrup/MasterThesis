@@ -1,6 +1,6 @@
 """
 Generates Figures/OOSResults/Roll/RUNS_STATUS.md from the run_manifest.json files.
-Run from repo root: python Code/gen_oos_status.py
+Run from repo root: python Code/Overview_oos_status.py
 """
 import json
 import os
@@ -101,7 +101,7 @@ def make_train_row(model, ep):
 lines = [
     "# OOS Rolling Run Status",
     "",
-    f"_Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} -- re-run `python Code/gen_oos_status.py` after pulling to refresh._",
+    f"_Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} -- re-run `python Code/Overview_oos_status.py` after pulling to refresh._",
     "",
     "## train5Y / test6M / step6M (main comparison)",
     "",

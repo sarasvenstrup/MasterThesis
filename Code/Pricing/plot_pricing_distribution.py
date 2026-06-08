@@ -61,7 +61,7 @@ from Code.Pricing.pricing import (
     get_grid_index_for_value,
     time0_forward_swap_and_annuity,
 )
-from Code.Pricing.compare_with_market import load_market_vols
+from Code.Pricing.ResultsGeneratorPricingComparison import load_market_vols
 
 
 STRUCTURES = [

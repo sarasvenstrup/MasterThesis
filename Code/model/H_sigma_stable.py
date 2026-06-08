@@ -38,7 +38,7 @@ class HSigmaStable(nn.Module):
         sigma_init: float = 0.3,
         sigma_min: float = 1e-4,
         sigma_max: float = 2,
-        rho_max: float = 0.999,   # kept for API compat; see note below
+        rho_max: float = 0.999,   # kept for API compatibility
     ):
         super().__init__()
 

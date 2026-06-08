@@ -1,9 +1,13 @@
 # =============================================================================
-# Shared utilities for the "scarcity vs. structural" experiments
-# (prevalence sweep + regime-only training).
+# Shared utilities for the representation experiment.
 #
-# Pulled out of Training_baseline_fixed_lr.py so both experiment drivers stay
-# small and self-contained.
+# Provides training, evaluation, and curve-type classification utilities
+# used by Representation_Experiment.py and Overnight_Representation_Experiment.py.
+#
+# The representation experiment trains fresh models across varying shares of
+# negative-rate curves in the training set (total size held fixed) to test
+# whether poor reconstruction of negative-rate curves is caused by their
+# scarcity in training or by a structural limitation of the encoder.
 # =============================================================================
 
 from __future__ import annotations
@@ -29,27 +33,29 @@ for p in (PROJECT_ROOT, REPO_ROOT):
 
 from Code.model.full_model import FullModel  # noqa: E402
 
-# Stable variant imported lazily inside train_baseline to avoid
+# Stable variant imported inside train_baseline on demand to avoid
 # requiring config.VARIANT to be set at module-import time.
 
 
 # -----------------------------------------------------------------------------
-# Regime flags
+# Curve-type classification
 # -----------------------------------------------------------------------------
 def compute_regime_flags(X_np: np.ndarray) -> Dict[str, np.ndarray]:
     """
-    X_np: (N, M) array of par swap rates in decimals; tenors ordered short -> long.
+    Classify swap curves into mutually interpretable curve types.
 
-    Returns a dict of boolean masks of length N for the regimes used in the
-    thesis (consistent with ResultsGenerator_augmented.py and the curve-type
-    definitions in Chapter "Data description"):
+    Parameters
+    ----------
+    X_np : (N, M) array of par swap rates in decimals, tenors ordered short to long.
 
-      - any_negative   : any tenor below zero (the "negative" regime in the table)
-      - deeply_negative: at least 7 of 8 tenors below zero
-      - crossing       : has both negative and positive tenors (any_negative
-                         AND not deeply_negative)
-      - inverted       : 1Y rate (index 0) strictly above 30Y rate (index -1)
-      - normal_positive: not inverted AND not any_negative (the "normal" regime)
+    Returns
+    -------
+    Dict of boolean masks of length N:
+      - any_negative   : at least one tenor is below zero
+      - deeply_negative: at least 7 of 8 tenors are below zero
+      - crossing       : has both negative and positive tenors
+      - inverted       : short rate (1Y) strictly above long rate (30Y)
+      - normal_positive: not inverted and not any_negative
     """
     short = X_np[:, 0]
     long_ = X_np[:, -1]
@@ -71,18 +77,19 @@ def compute_regime_flags(X_np: np.ndarray) -> Dict[str, np.ndarray]:
 
 
 # -----------------------------------------------------------------------------
-# Training core (baseline FullModel, fixed lr, no scheduler)
+# Training configuration and core training loop
 # -----------------------------------------------------------------------------
 @dataclass
 class TrainConfig:
+    """Training hyperparameters for a single run in the representation experiment."""
     latent_dim: int = 2
     epochs: int = 2000
     batch_size: int = 32
     fixed_lr: float = 1e-2
     seed: int = 0
-    log_every: int = 50          # epoch interval for the periodic loss line
-    heartbeat_every: int = 10    # epoch interval for a short "still alive" tick
-    target_mse: float = 1e-8
+    log_every: int = 50          # print full loss line every this many epochs
+    heartbeat_every: int = 10    # print short progress tick every this many epochs
+    target_mse: float = 1e-8    # stop early if training MSE drops below this
     model_type: str = "baseline"  # "baseline" or "stable"
 
 
@@ -97,11 +104,11 @@ def train_baseline(
     tag: str = "",
 ) -> Tuple[nn.Module, list]:
     """
-    Trains a fresh baseline FullModel on X_train with a fixed learning rate.
+    Train a fresh model on X_train with a fixed learning rate.
 
-    Mirrors the training loop in Training_baseline_fixed_lr.py (gradient
-    clipping, NaN guards) but strips eval/logging/plot code so it can be
-    called repeatedly inside an experiment loop.
+    Supports both the baseline (FullModel) and stable (FullModelStable)
+    architectures via cfg.model_type. Includes gradient clipping and NaN
+    guards so it can be called repeatedly inside the experiment sweep loop.
 
     Returns (model, train_loss_history).
     """
@@ -238,18 +245,15 @@ def train_with_retry(
     max_retries: int = 2,
 ) -> Tuple[nn.Module, list]:
     """
-    Calls train_baseline up to (1 + max_retries) times, incrementing the seed
-    by 1 on each retry.  Returns the run whose training RMSE is lowest.
+    Run train_baseline up to (1 + max_retries) times and return the best result.
 
-    Motivation: the stable model's ODE decoder occasionally blows up for
-    certain random initialisations, causing many batches to be skipped and
-    the model to converge to a bad local minimum (>25 bps on training data).
-    A single retry with a different seed almost always escapes this trap.
+    The stable model occasionally converges to a poor local minimum for certain
+    random initialisations. If training RMSE exceeds stuck_threshold_bps, the
+    run is retried with an incremented seed. Returns the run with the lowest
+    training RMSE.
 
-    stuck_threshold_bps : if training RMSE exceeds this, the run is flagged as
-                          stuck and a retry is launched (default 25 bps).
-    max_retries         : maximum number of extra attempts (default 2, so up to
-                          3 total training runs per prevalence point).
+    stuck_threshold_bps : RMSE threshold above which a retry is triggered (default 25 bps).
+    max_retries         : maximum number of additional attempts (default 2).
     """
     if device is None:
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -266,7 +270,7 @@ def train_with_retry(
                 flush=True,
             )
 
-        # Build a per-attempt config with the incremented seed
+        # Build a config with the incremented seed for this attempt
         attempt_cfg = TrainConfig(
             latent_dim=cfg.latent_dim,
             epochs=cfg.epochs,
@@ -281,7 +285,7 @@ def train_with_retry(
 
         model, history = train_baseline(X_train, attempt_cfg, device=device, tag=tag)
 
-        # Evaluate on training data — cheap, and a reliable stuck-run detector
+        # Evaluate on training data to detect stuck runs
         train_rmse = rmse_bps_overall(model, X_train, device)
 
         if train_rmse < best_rmse:
@@ -306,6 +310,7 @@ def train_with_retry(
 # -----------------------------------------------------------------------------
 @torch.no_grad()
 def predict_S_hat(model: nn.Module, X: torch.Tensor, device: torch.device, batch_size: int = 256) -> torch.Tensor:
+    """Run batched inference and return reconstructed swap curves on CPU."""
     model.eval()
     outs = []
     for i in range(0, X.shape[0], batch_size):

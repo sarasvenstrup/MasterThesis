@@ -1,3 +1,5 @@
+"""Swap data loading, preprocessing, and dataset-building utilities."""
+
 import os
 import re
 import pandas as pd
@@ -14,16 +16,11 @@ import seaborn as sns
 from cycler import cycler
 
 # ---------------------------------------------------------
-# 0) Repo-rooted path (no Desktop). Adjust if needed.
+# Path setup
 # ---------------------------------------------------------
-# Assumes you run from repo root.
-#REPO_ROOT = os.getcwd()
-#ROOT = os.path.join(REPO_ROOT, "SwapData")  # <-- your folder in the repo
-
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # <- parent of Code
 ROOT = os.path.join(REPO_ROOT, "SwapData")
 print("Repo root:", REPO_ROOT)
-#print("Data root:", DATA_ROOT)
 
 
 # If you want both datasets on the same maturity grid (as in your model/paper)
@@ -32,7 +29,8 @@ TARGET_TENORS: List[int] = [1, 2, 3, 5, 10, 15, 20, 30]
 # ============================= Set Figure/Plot Theme ===============================
 
 def set_paper_theme():
-    # 1) Use seaborn only to define a nice clean theme (works for matplotlib plots too)
+    """Apply the paper plot theme and return the custom colour palette."""
+    # Configure seaborn theme
     sns.set_theme(context="paper", style="darkgrid", font_scale=1.05)
 
     # Customize tab20b palette
@@ -40,8 +38,7 @@ def set_paper_theme():
     selected_indices = [0, 1, 2, 3, 12, 13, 14, 15, 8]
     palette = [full_palette[i] for i in selected_indices]
 
-
-    # 3) Global matplotlib defaults (applies to ALL figures you create afterwards)
+    # Global matplotlib defaults
     mpl.rcParams.update({
         # Figure / saving
         "figure.dpi": 180,
@@ -77,12 +74,12 @@ def set_paper_theme():
 
     })
 
-    # 4) Make the palette the default color cycle for matplotlib
+    # Set default colour cycle
     mpl.rcParams["axes.prop_cycle"] = cycler(color=palette)
 
     return palette
 def style_axis(ax, title=None, xlabel=None, ylabel=None, legend=True, legend_kwargs=None):
-    """Optional helper you can call per-figure for consistent finishing touches."""
+    """Apply consistent axis formatting (title, labels, grid, legend)."""
     if title is not None:
         ax.set_title(title)
     if xlabel is not None:
@@ -101,7 +98,6 @@ def style_axis(ax, title=None, xlabel=None, ylabel=None, legend=True, legend_kwa
             kw.update(legend_kwargs)
         ax.legend(**kw)
 
-# We now call the above function to ensure the wanted theme of the outputs from this script.
 custom_palette = set_paper_theme()
 
 # -----------------------------
@@ -123,6 +119,7 @@ currency_rename_map = {
 # 1) Helpers
 # ---------------------------------------------------------
 def extract_maturity_years(filename: str) -> int:
+    """Parse maturity in years from a filename containing a pattern like '10year'."""
     m = re.search(r"(\d+)\s*year", filename.lower())
     if not m:
         raise ValueError(f"Cannot infer maturity from filename: {filename}")
@@ -131,8 +128,18 @@ def extract_maturity_years(filename: str) -> int:
 
 def read_bloomberg_style_excel(path: str) -> pd.DataFrame:
     """
-    Handles files with metadata rows + a data table with headers: Date | PX_LAST
-    Returns columns: as_of_date (datetime64[ns]), swap_rate (float)
+    Read a Bloomberg-style Excel file and return a tidy swap-rate time series.
+
+    Parameters
+    ----------
+    path : str
+        Path to the Excel file. Metadata rows before the header are skipped
+        automatically by searching for a row containing 'Date' and 'PX_LAST'.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: as_of_date (datetime64[ns]), swap_rate (float).
     """
     raw = pd.read_excel(path, header=None, engine="openpyxl")
 
@@ -167,12 +174,22 @@ def read_bloomberg_style_excel(path: str) -> pd.DataFrame:
 
 def load_dataset(dataset_root: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Reads all excel files under dataset_root, infers:
-      - ccy = folder right above file
-      - maturity_years from filename "<something>10year<something>.xlsx"
-    Returns:
-      df_long: [as_of_date, ccy, maturity_years, swap_rate, source_file]
-      df_errors: [source_file, error]
+    Recursively load all Excel swap-rate files under dataset_root.
+
+    Currency is inferred from the immediate parent folder name; maturity in
+    years is parsed from the filename (e.g. '10year').
+
+    Parameters
+    ----------
+    dataset_root : str
+        Root directory to walk for .xlsx/.xls files.
+
+    Returns
+    -------
+    df_long : pd.DataFrame
+        Columns: as_of_date, ccy, maturity_years, swap_rate, source_file.
+    df_errors : pd.DataFrame
+        Columns: source_file, error — files that could not be parsed.
     """
     frames = []
     errors = []
@@ -221,10 +238,17 @@ def load_dataset(dataset_root: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 def long_to_wide(df_long: pd.DataFrame) -> pd.DataFrame:
     """
-    Pivot long swap quotes into curve matrix:
-      index: (as_of_date, ccy)
-      columns: maturity_years
-      values: swap_rate
+    Pivot a long swap-rate DataFrame to a wide curve matrix.
+
+    Parameters
+    ----------
+    df_long : pd.DataFrame
+        Long-format data with columns as_of_date, ccy, maturity_years, swap_rate.
+
+    Returns
+    -------
+    pd.DataFrame
+        Wide-format with columns as_of_date, ccy, and one column per maturity year.
     """
     if df_long.empty:
         return pd.DataFrame()
@@ -259,8 +283,19 @@ def show_failures(df_errors: pd.DataFrame, title: str, n: int = 20) -> None:
 
 def align_to_target_tenors(df_wide: pd.DataFrame, tenors: List[int]) -> pd.DataFrame:
     """
-    Keep only the tenors in 'tenors' (plus id columns).
-    If a tenor doesn't exist, it will be created with NaN.
+    Restrict a wide DataFrame to the specified tenors, adding NaN columns for any missing.
+
+    Parameters
+    ----------
+    df_wide : pd.DataFrame
+        Wide-format curve matrix with maturity year columns.
+    tenors : list of int
+        Target tenor columns to keep.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: as_of_date, ccy, and one column per tenor in tenors.
     """
     if df_wide.empty:
         return df_wide
@@ -286,12 +321,23 @@ def keep_complete_curves(df_wide: pd.DataFrame, tenors: List[int]) -> pd.DataFra
 
 def build_all_dataframes(root: str = ROOT, target_tenors: List[int] = TARGET_TENORS) -> Dict[str, object]:
     """
-    Loads both TestData and Bloombergdata from repo-rooted SwapDAta folder,
-    returns long+wide frames + errors.
-    Also:
-      - prints failing files (if any)
-      - aligns both wide frames to the same tenor grid (target_tenors)
-      - produces *_full versions containing only complete curves on that grid
+    Load both TestData and Bloombergdata, align to the target tenor grid, and
+    return a bundle of long, wide, and complete-curves DataFrames.
+
+    Parameters
+    ----------
+    root : str
+        Root directory containing the TestData and Bloombergdata subfolders.
+    target_tenors : list of int
+        Tenor grid to align both datasets to.
+
+    Returns
+    -------
+    dict
+        Keys: df_long_test, df_long_bbg, df_wide_test, df_wide_bbg,
+        df_wide_test_aligned, df_wide_bbg_aligned, df_wide_test_full,
+        df_wide_bbg_full, tenors_test, tenors_bbg, target_tenors,
+        errors_test, errors_bbg, root_used.
     """
     test_root = os.path.join(root, "TestData")
     bbg_root = os.path.join(root, "Bloombergdata")
@@ -345,6 +391,7 @@ def build_all_dataframes(root: str = ROOT, target_tenors: List[int] = TARGET_TEN
     }
 
 def filter_dataset_by_currency(meta, X_tensor, ccy_filter: Optional[Union[str, Sequence[str]]]):
+    """Filter meta and X_tensor to rows matching the given currency or currencies."""
     if ccy_filter is None:
         return meta.reset_index(drop=True), X_tensor
 
@@ -380,6 +427,37 @@ def my_data(
     target_tenors: List[int] = TARGET_TENORS,
     ccy_filter: Optional[Union[str, Sequence[str]]] = None,
 ):
+    """
+    Load and preprocess swap-rate data for model training.
+
+    Parameters
+    ----------
+    use : str, default "bbg"
+        Data source: "bbg" for Bloomberg data, "test" for test data.
+    target_tenors : list of int
+        Swap tenors in years to include.
+    ccy_filter : str, list of str, or None
+        Currency or currencies to retain. If None, all currencies are included.
+
+    Returns
+    -------
+    meta : pd.DataFrame
+        Training-sample metadata (as_of_date, ccy), from 2010-01-01 onward.
+    X_tensor : torch.Tensor, shape (N, d)
+        Training swap rates in decimal form.
+    meta_full : pd.DataFrame
+        Full-sample metadata (all dates).
+    X_tensor_full : torch.Tensor, shape (N_full, d)
+        Full-sample swap rates in decimal form.
+    tenors : np.ndarray
+        Tenor grid as float array.
+    df_wide : pd.DataFrame
+        Training-sample wide DataFrame (from 2010-01-01).
+    df_wide_all : pd.DataFrame
+        Full-sample wide DataFrame.
+    SCALE_IS_PERCENT : bool
+        True if the raw data was in percent units and has been divided by 100.
+    """
     assert use in {"test", "bbg"}, f"Unknown use='{use}'"
     assert len(target_tenors) >= 1, f"Expected at least 1 target tenor, got {len(target_tenors)}"
 

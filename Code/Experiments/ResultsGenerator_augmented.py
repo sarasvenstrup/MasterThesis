@@ -1,10 +1,8 @@
 # =============================================================================
 # ResultsGenerator_augmented.py
 #
-# Generates in-sample diagnostic figures for the augmented-input experiment.
-# Loads the checkpoint produced by Training_augmented_input.py and produces:
-#   1. Scatter of per-curve RMSE (bps) over time, coloured by regime
-#   2. Combined regime table (N + Avg RMSE) saved as CSV for LaTeX
+# Generates in-sample and out-of-sample diagnostic figures for the
+# augmented-input autoencoder experiment.
 #
 # Run from repo root:
 #   python Code/Experiments/ResultsGenerator_augmented.py
@@ -21,7 +19,7 @@ import matplotlib.pyplot as plt
 try:
     REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 except NameError:
-    REPO_ROOT = os.getcwd()  # PyCharm console: CWD is the project root
+    REPO_ROOT = os.getcwd()
 
 for _p in [REPO_ROOT, os.path.dirname(REPO_ROOT)]:
     if _p not in sys.path:
@@ -47,8 +45,17 @@ CCY_ORDER = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-# ── augmentation (must match Training_augmented_input.py exactly) ─────────────
+# ── augmentation ──────────────────────────────────────────────────────────────
 def augment(x: torch.Tensor) -> torch.Tensor:
+    """Append three derived shape features to the 8-tenor swap rate vector.
+
+    The three features are:
+      f1 = S[10Y] − S[1Y]              (slope: short-to-mid)
+      f2 = S[30Y] − S[10Y]             (long-end slope)
+      f3 = 2·S[10Y] − S[1Y] − S[30Y]  (curvature)
+
+    Returns a tensor of shape (N, 11).
+    """
     f1 = x[:, 4] - x[:, 0]
     f2 = x[:, 7] - x[:, 4]
     f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]
@@ -61,10 +68,8 @@ X_tensor = X_tensor.float()
 # =============================================================================
 # ResultsGenerator_augmented.py
 #
-# Generates in-sample diagnostic figures for the augmented-input experiment.
-# Loads the checkpoint produced by Training_augmented_input.py and produces:
-#   1. Scatter of per-curve RMSE (bps) over time, coloured by regime
-#   2. Combined regime table (N + Avg RMSE) saved as CSV for LaTeX
+# Generates in-sample and out-of-sample diagnostic figures for the
+# augmented-input autoencoder experiment.
 #
 # Run from repo root:
 #   python Code/Experiments/ResultsGenerator_augmented.py
@@ -81,7 +86,7 @@ import matplotlib.pyplot as plt
 try:
     REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 except NameError:
-    REPO_ROOT = os.getcwd()  # PyCharm console: CWD is the project root
+    REPO_ROOT = os.getcwd()
 
 for _p in [REPO_ROOT, os.path.dirname(REPO_ROOT)]:
     if _p not in sys.path:
@@ -107,8 +112,17 @@ CCY_ORDER = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-# ── augmentation (must match Training_augmented_input.py exactly) ─────────────
+# ── augmentation ──────────────────────────────────────────────────────────────
 def augment(x: torch.Tensor) -> torch.Tensor:
+    """Append three derived shape features to the 8-tenor swap rate vector.
+
+    The three features are:
+      f1 = S[10Y] − S[1Y]              (slope: short-to-mid)
+      f2 = S[30Y] − S[10Y]             (long-end slope)
+      f3 = 2·S[10Y] − S[1Y] − S[30Y]  (curvature)
+
+    Returns a tensor of shape (N, 11).
+    """
     f1 = x[:, 4] - x[:, 0]
     f2 = x[:, 7] - x[:, 4]
     f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]
@@ -173,12 +187,14 @@ df_regime = pd.DataFrame({
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def save_fig(fig, name):
+    """Save figure as a 300-dpi PNG to FIGURES_OUT and close it."""
     p = os.path.join(FIGURES_OUT, f"{name}.png")
     fig.savefig(p, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved: {p}")
 
 def save_table(df, name):
+    """Save DataFrame as CSV to FIGURES_OUT."""
     p = os.path.join(FIGURES_OUT, f"{name}.csv")
     df.to_csv(p)
     print(f"  Saved: {p}")
@@ -1294,6 +1310,12 @@ else:
 
 # ── helper: 3×6 actual-vs-fit grid for a given index set ─────────────────────
 def _plot_fit_grid(indices, regime_label, fname, seed=42):
+    """Draw a 3×6 grid of randomly sampled actual vs. baseline ℓ=2 fits.
+
+    Selects N_PLOTS=18 curves at random from `indices`, sorts them by dataset
+    index, and plots actual (black) vs. baseline ℓ=2 reconstruction side by
+    side with per-panel RMSE annotations. Saves to FIGURES_OUT/{fname}.png.
+    """
     N_PLOTS = 18
     if len(indices) < N_PLOTS:
         print(f"  ⚠️  Only {len(indices)} curves for '{regime_label}' — skipping")
@@ -1548,6 +1570,7 @@ else:
 
     def _draw_fm_panel(ax, gi, show_ylabel, show_xlabel, rmse_y, rmse_va,
                        rmse_x=0.97, rmse_ha="right"):
+        """Draw one failure-modes panel: actual (black) vs. baseline ℓ=2 (blue)."""
         _act      = X_np_all[gi] * 100.0
         _fit_b    = _baseline_S_hat[gi] * 100.0
         _rmse_bps = float(np.sqrt(np.mean(
@@ -1595,7 +1618,7 @@ else:
     fig_fm.tight_layout()
     save_fig(fig_fm, "baseline_fit_failure_modes")
 
-    # ── same figure but with augmented ℓ=2,3,4 added ─────────────────────────
+    # ── same figure with all baseline dims (ℓ=2,3,4) overlaid ───────────────
     fig_fm2, axes_fm2 = plt.subplots(2, 2, figsize=(12, 8), sharey=False)
     ax_fm2_tl = axes_fm2[0, 0]
     ax_fm2_tr = axes_fm2[0, 1]
@@ -1604,6 +1627,7 @@ else:
 
     def _draw_fm_panel_all_dim(ax, gi, show_ylabel, show_xlabel, rmse_y, rmse_va,
                                rmse_x=0.97, rmse_ha="right"):
+        """Draw one failure-modes panel: actual (black) vs. baseline ℓ=2,3,4 (solid, colour-coded)."""
         _act = X_np_all[gi] * 100.0
 
         # collect all fitted values to set y-limits
@@ -2094,8 +2118,6 @@ else:
         _fma_aug_hats[_fma_dim] = torch.cat(_fma_list).numpy()
         print(f"  Loaded augmented dim={_fma_dim}")
 
-    # Colors matching DIM_COLORS in ResultsGeneratorBaseline.py
-    # DIM_COLORS = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
     _fma_colors = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
     _fma_labels = {2: r"Augmented ($\ell=2$)",
                    3: r"Augmented ($\ell=3$)",
@@ -2109,6 +2131,7 @@ else:
 
     def _draw_fma_panel(ax, gi, show_ylabel, show_xlabel, rmse_y, rmse_va,
                         rmse_x=0.97, rmse_ha="right"):
+        """Draw one failure-modes panel: actual (black), baseline ℓ=2 (dashed black), augmented ℓ=2,3,4 (solid, colour-coded)."""
         _act   = X_np_all[gi] * 100.0
         _fit_b = _baseline_S_hat[gi] * 100.0
         _rmse_b = float(np.sqrt(np.mean((X_np_all[gi] - _baseline_S_hat[gi]) ** 2))) * 10_000
@@ -2338,12 +2361,14 @@ df_regime = pd.DataFrame({
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def save_fig(fig, name):
+    """Save figure as a 300-dpi PNG to FIGURES_OUT and close it."""
     p = os.path.join(FIGURES_OUT, f"{name}.png")
     fig.savefig(p, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved: {p}")
 
 def save_table(df, name):
+    """Save DataFrame as CSV to FIGURES_OUT."""
     p = os.path.join(FIGURES_OUT, f"{name}.csv")
     df.to_csv(p)
     print(f"  Saved: {p}")
@@ -3459,6 +3484,12 @@ else:
 
 # ── helper: 3×6 actual-vs-fit grid for a given index set ─────────────────────
 def _plot_fit_grid(indices, regime_label, fname, seed=42):
+    """Draw a 3×6 grid of randomly sampled actual vs. baseline ℓ=2 fits.
+
+    Selects N_PLOTS=18 curves at random from `indices`, sorts them by dataset
+    index, and plots actual (black) vs. baseline ℓ=2 reconstruction side by
+    side with per-panel RMSE annotations. Saves to FIGURES_OUT/{fname}.png.
+    """
     N_PLOTS = 18
     if len(indices) < N_PLOTS:
         print(f"  ⚠️  Only {len(indices)} curves for '{regime_label}' — skipping")
@@ -3713,6 +3744,7 @@ else:
 
     def _draw_fm_panel(ax, gi, show_ylabel, show_xlabel, rmse_y, rmse_va,
                        rmse_x=0.97, rmse_ha="right"):
+        """Draw one failure-modes panel: actual (black) vs. baseline ℓ=2 (blue)."""
         _act      = X_np_all[gi] * 100.0
         _fit_b    = _baseline_S_hat[gi] * 100.0
         _rmse_bps = float(np.sqrt(np.mean(
@@ -3760,7 +3792,7 @@ else:
     fig_fm.tight_layout()
     save_fig(fig_fm, "baseline_fit_failure_modes")
 
-    # ── same figure but with augmented ℓ=2,3,4 added ─────────────────────────
+    # ── same figure with all baseline dims (ℓ=2,3,4) overlaid ───────────────
     fig_fm2, axes_fm2 = plt.subplots(2, 2, figsize=(12, 8), sharey=False)
     ax_fm2_tl = axes_fm2[0, 0]
     ax_fm2_tr = axes_fm2[0, 1]
@@ -3769,6 +3801,7 @@ else:
 
     def _draw_fm_panel_all_dim(ax, gi, show_ylabel, show_xlabel, rmse_y, rmse_va,
                                rmse_x=0.97, rmse_ha="right"):
+        """Draw one failure-modes panel: actual (black) vs. baseline ℓ=2,3,4 (solid, colour-coded)."""
         _act = X_np_all[gi] * 100.0
 
         # collect all fitted values to set y-limits
@@ -4259,8 +4292,6 @@ else:
         _fma_aug_hats[_fma_dim] = torch.cat(_fma_list).numpy()
         print(f"  Loaded augmented dim={_fma_dim}")
 
-    # Colors matching DIM_COLORS in ResultsGeneratorBaseline.py
-    # DIM_COLORS = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
     _fma_colors = {2: custom_palette[4], 3: custom_palette[0], 4: custom_palette[6]}
     _fma_labels = {2: r"Augmented ($\ell=2$)",
                    3: r"Augmented ($\ell=3$)",
@@ -4274,6 +4305,7 @@ else:
 
     def _draw_fma_panel(ax, gi, show_ylabel, show_xlabel, rmse_y, rmse_va,
                         rmse_x=0.97, rmse_ha="right"):
+        """Draw one failure-modes panel: actual (black), baseline ℓ=2 (dashed black), augmented ℓ=2,3,4 (solid, colour-coded)."""
         _act   = X_np_all[gi] * 100.0
         _fit_b = _baseline_S_hat[gi] * 100.0
         _rmse_b = float(np.sqrt(np.mean((X_np_all[gi] - _baseline_S_hat[gi]) ** 2))) * 10_000

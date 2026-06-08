@@ -1,4 +1,5 @@
-# Code/utils/vol_features.py
+"""EWMA realized volatility features computed from swap-rate panels."""
+
 from __future__ import annotations
 import numpy as np
 import pandas as pd
@@ -13,10 +14,28 @@ def _ewma_vol_bps_one_group(
     annualize: bool = False,
 ) -> np.ndarray:
     """
-    Compute EWMA realized vol per tenor for ONE time-ordered group (one currency).
-    - Uses monthly changes in bps: x_t = 10000 * (S_t - S_{t-1})
-    - EWMA variance: v_t = lam v_{t-1} + (1-lam) x_t^2
-    Returns V_t = sqrt(v_t) in bps per month (or annualized if annualize=True)
+    Compute EWMA realized volatility per tenor for a single time-ordered currency group.
+
+    Monthly changes in bps: x_t = 10000 * (S_t - S_{t-1})
+    EWMA variance update:   v_t = lam * v_{t-1} + (1 - lam) * x_t^2
+
+    Parameters
+    ----------
+    S_dec : np.ndarray, shape (T, d)
+        Swap rates in decimal form, time-ordered.
+    half_life_months : float
+        EWMA half-life in months.
+    init_window : int, default 12
+        Number of initial changes used to seed the variance estimate.
+    eps : float, default 1e-12
+        Minimum variance clamp for numerical stability.
+    annualize : bool, default False
+        If True, multiplies volatility by sqrt(12) to annualize.
+
+    Returns
+    -------
+    np.ndarray, shape (T, d)
+        Realized volatility in bps per month (or annualized if annualize=True).
     """
     S_dec = np.asarray(S_dec, dtype=float)
     if S_dec.ndim != 2:
@@ -65,9 +84,25 @@ def ewma_vol_panel_from_meta(
     annualize: bool = False,
 ) -> torch.Tensor:
     """
-    Compute V_t per row in your stacked panel (N rows across currencies).
-    meta must contain columns: ['as_of_date', 'ccy'] aligned with X_tensor rows.
-    Returns V_tensor (N, d) in bps (monthly unless annualize=True).
+    Compute EWMA realized volatility for each row in a stacked multi-currency panel.
+
+    Parameters
+    ----------
+    meta : pd.DataFrame
+        Metadata with columns 'as_of_date' and 'ccy', aligned with X_tensor rows.
+    X_tensor : torch.Tensor, shape (N, d)
+        Swap rates in decimal form.
+    half_life_months : float, default 12.0
+        EWMA half-life in months.
+    init_window : int, default 12
+        Number of initial changes used to seed the variance estimate per currency.
+    annualize : bool, default False
+        If True, multiplies volatility by sqrt(12) to annualize.
+
+    Returns
+    -------
+    torch.Tensor, shape (N, d)
+        Realized volatility in bps per month (or annualized if annualize=True).
     """
     if not {"as_of_date", "ccy"}.issubset(meta.columns):
         raise ValueError("meta must contain columns ['as_of_date','ccy'].")

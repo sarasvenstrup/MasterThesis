@@ -1,5 +1,5 @@
 import torch.nn as nn
-from Code.utils.common import CenteredSoftStep  # Load the activation function
+from Code.utils.common import CenteredSoftStep
 
 class RShort(nn.Module):
     """
@@ -19,8 +19,13 @@ class RShort(nn.Module):
 
     def forward(self, z):
         """
-        z: (B,2) or (2,)
-        Returns: r_tilde (B,1) or (1,)
+        Parameters
+        ----------
+        z : (B, d) or (d,)
+
+        Returns
+        -------
+        r_tilde : (B, 1)
         """
 
         if z.dim() == 1:

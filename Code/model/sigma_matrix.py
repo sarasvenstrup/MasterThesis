@@ -19,13 +19,16 @@ def angles_to_rhos(angles: torch.Tensor, d: int) -> torch.Tensor:
     Then R = L_R @ L_R^T is PD by construction (diagonal = 1, all rows
     have unit norm, L_R has strictly positive diagonal when θ ∈ (0, π)).
 
-    Args:
-        angles: (B, n_corr)  with n_corr = d*(d-1)//2, values in (0, π)
-        d:      latent dimension
+    Parameters
+    ----------
+    angles : (B, n_corr) with n_corr = d*(d-1)//2, values in (0, π)
+    d : int
+        Latent dimension.
 
-    Returns:
-        rhos: (B, n_corr)  upper-triangle correlations in the standard
-              ordering [ρ12, ρ13, ..., ρ(d-1,d)]
+    Returns
+    -------
+    rhos : (B, n_corr) upper-triangle correlations in the standard
+           ordering [ρ12, ρ13, ..., ρ(d-1,d)]
     """
     if d <= 1:
         return angles[:, :0]  # (B, 0)
@@ -108,12 +111,14 @@ def corr_from_rhos(sigmas: torch.Tensor, rhos: torch.Tensor | None = None) -> to
     """
     Build the batch of correlation matrices implied by rhos.
 
-    Args:
-      sigmas: (B,d)
-      rhos:   (B,d*(d-1)//2) or None for d=1
+    Parameters
+    ----------
+    sigmas : (B, d)
+    rhos : (B, d*(d-1)//2) or None for d=1
 
-    Returns:
-      R: (B,d,d)
+    Returns
+    -------
+    R : (B, d, d)
     """
     d = _check_input_shapes(sigmas, rhos)
     B = sigmas.shape[0]
@@ -167,17 +172,22 @@ def check_sigmas_rhos(
     """
     Validate the batch of (sigmas, rhos) inputs.
 
-    Args:
-      sigmas:     (B,d)
-      rhos:       (B,d*(d-1)//2) or None for d=1
-      eigen_tol:  tolerance for eigenvalue tests; defaults by dtype
-      require_pd: if True, require min eigenvalue > eigen_tol (strictly PD)
-                  if False, require min eigenvalue >= -eigen_tol (PSD)
-      sigma_tol:  sigmas must be > sigma_tol when require_pd=True,
-                  otherwise sigmas must be >= -sigma_tol
+    Parameters
+    ----------
+    sigmas : (B, d)
+    rhos : (B, d*(d-1)//2) or None for d=1
+    eigen_tol : float, optional
+        Tolerance for eigenvalue tests; defaults by dtype.
+    require_pd : bool
+        If True, require min eigenvalue > eigen_tol (strictly PD);
+        if False, require min eigenvalue >= -eigen_tol (PSD).
+    sigma_tol : float
+        Sigmas must be > sigma_tol when require_pd=True,
+        otherwise sigmas must be >= -sigma_tol.
 
-    Returns:
-      dict with boolean masks and diagnostics.
+    Returns
+    -------
+    dict with boolean masks and diagnostics.
     """
     d = _check_input_shapes(sigmas, rhos)
 
@@ -271,9 +281,13 @@ def validate_sigmas_rhos(
 
 def L_from_sigmas_rhos_1d(sigmas: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
-    sigmas: (B,1) positive [sigma1]
-    returns:
-      L: (B,1,1) with Sigma = L L^T = sigma^2
+    Parameters
+    ----------
+    sigmas : (B, 1) positive [sigma1]
+
+    Returns
+    -------
+    L : (B, 1, 1) with Sigma = L L^T = sigma^2
     """
     device, dtype = sigmas.device, sigmas.dtype
     B = sigmas.shape[0]
@@ -286,10 +300,14 @@ def L_from_sigmas_rhos_1d(sigmas: torch.Tensor, eps: float = 1e-12) -> torch.Ten
 
 def L_from_sigmas_rhos_2d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
-    sigmas: (B,2) positive [sigma1, sigma2]
-    rhos:   (B,1) in (-1,1) [rho12]
-    returns:
-      L: (B,2,2) lower-triangular with Sigma = L L^T
+    Parameters
+    ----------
+    sigmas : (B, 2) positive [sigma1, sigma2]
+    rhos : (B, 1) in (-1, 1) [rho12]
+
+    Returns
+    -------
+    L : (B, 2, 2) lower-triangular Cholesky factor with Sigma = L L^T
     """
     device, dtype = sigmas.device, sigmas.dtype
     B = sigmas.shape[0]
@@ -311,10 +329,14 @@ def L_from_sigmas_rhos_2d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
 
 def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
-    sigmas: (B,3) positive [sigma1, sigma2, sigma3]
-    rhos:   (B,3) in (-1,1) ordered as [rho12, rho13, rho23]
-    returns:
-      L: (B,3,3) lower-triangular Cholesky factor such that Sigma = L L^T
+    Parameters
+    ----------
+    sigmas : (B, 3) positive [sigma1, sigma2, sigma3]
+    rhos : (B, 3) in (-1, 1) ordered as [rho12, rho13, rho23]
+
+    Returns
+    -------
+    L : (B, 3, 3) lower-triangular Cholesky factor with Sigma = L L^T
     """
     device, dtype = sigmas.device, sigmas.dtype
     B = sigmas.shape[0]
@@ -355,12 +377,14 @@ def L_from_sigmas_rhos_3d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float =
 
 def L_from_sigmas_rhos_4d(sigmas: torch.Tensor, rhos: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     """
-    sigmas: (B,4) positive [sigma1, sigma2, sigma3, sigma4]
-    rhos:   (B,6) in (-1,1) ordered as
-            [rho12, rho13, rho14, rho23, rho24, rho34]
+    Parameters
+    ----------
+    sigmas : (B, 4) positive [sigma1, sigma2, sigma3, sigma4]
+    rhos : (B, 6) in (-1, 1) ordered as [rho12, rho13, rho14, rho23, rho24, rho34]
 
-    returns:
-      L: (B,4,4) lower-triangular Cholesky factor such that Sigma = L L^T
+    Returns
+    -------
+    L : (B, 4, 4) lower-triangular Cholesky factor with Sigma = L L^T
     """
     device, dtype = sigmas.device, sigmas.dtype
     B = sigmas.shape[0]
@@ -443,12 +467,21 @@ def L_from_sigmas_rhos(
     """
     Construct the lower-triangular factor L implied by (sigmas, rhos).
 
-    Args:
-      validate:   if True, check the implied correlation matrix before building L
-      require_pd: if True, require the implied correlation matrix to be positive definite
-                  and sigmas to be strictly positive. If False, allow PSD / singular inputs.
-      eigen_tol:  tolerance for PD/PSD validation; defaults by dtype
-      sigma_tol:  tolerance for sigma positivity / nonnegativity
+    Parameters
+    ----------
+    sigmas : (B, d)
+    rhos : (B, d*(d-1)//2) or None for d=1
+    eps : float
+        Numerical floor for clamping inside Cholesky factors.
+    validate : bool
+        If True, check the implied correlation matrix before building L.
+    require_pd : bool
+        If True, require the correlation matrix to be positive definite
+        and sigmas strictly positive. If False, allow PSD / singular inputs.
+    eigen_tol : float, optional
+        Tolerance for PD/PSD validation; defaults by dtype.
+    sigma_tol : float
+        Tolerance for sigma positivity / nonnegativity.
     """
     d = _check_input_shapes(sigmas, rhos)
 

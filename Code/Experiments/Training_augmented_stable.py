@@ -1,16 +1,15 @@
 # =============================================================================
 # Training_augmented_stable.py
 #
-# Experiment: stable autoencoder with augmented encoder input.
+# Trains a stable-decoder autoencoder with augmented encoder input.
 # The encoder receives the 8 swap rates PLUS 3 derived shape features:
-#   - 10Y − 1Y   (short slope)
-#   - 30Y − 10Y  (long slope)
-#   - 2×10Y − 1Y − 30Y  (curvature / butterfly)
+#   - 10Y − 1Y              (short-to-mid slope)
+#   - 30Y − 10Y             (long-end slope)
+#   - 2×10Y − 1Y − 30Y     (curvature / butterfly)
 # The decoder still outputs 8 swap rates only.
 # The loss is MSE over all 11 values (swap rates + derived features),
 # giving each element equal weight.
 #
-# Nothing in the existing baseline pipeline is touched.
 # Outputs go to:
 #   Figures/TrainingResults/dim{N}_augmented_stable/ep{E}/
 #   checkpoints/fullmodel_augmented_stable_dim{N}_ep{E}.pt
@@ -36,7 +35,7 @@ from torch.utils.data import TensorDataset, DataLoader
 try:
     REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 except NameError:
-    REPO_ROOT = os.getcwd()  # PyCharm console: CWD is the project root
+    REPO_ROOT = os.getcwd()
 
 for _p in [REPO_ROOT, os.path.dirname(REPO_ROOT)]:
     if _p not in sys.path:
@@ -71,14 +70,19 @@ FIGURES_DIR = os.path.join(
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 # ── augmentation ──────────────────────────────────────────────────────────────
-# Tenor order: [1, 2, 3, 5, 10, 15, 20, 30]
-#              idx: 0  1  2  3   4   5   6   7
-
 def augment(x: torch.Tensor) -> torch.Tensor:
-    """Append 3 derived shape features to the 8-dim swap-rate vector."""
-    f1 = x[:, 4] - x[:, 0]                          # 10Y − 1Y
-    f2 = x[:, 7] - x[:, 4]                          # 30Y − 10Y
-    f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]         # 2×10Y − 1Y − 30Y
+    """Append three derived shape features to the 8-tenor swap rate vector.
+
+    The three features are:
+      f1 = S[10Y] − S[1Y]              (slope: short-to-mid)
+      f2 = S[30Y] − S[10Y]             (long-end slope)
+      f3 = 2·S[10Y] − S[1Y] − S[30Y]  (curvature)
+
+    Returns a tensor of shape (N, 11).
+    """
+    f1 = x[:, 4] - x[:, 0]
+    f2 = x[:, 7] - x[:, 4]
+    f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]
     return torch.cat([x, f1.unsqueeze(1), f2.unsqueeze(1), f3.unsqueeze(1)], dim=1)
 
 def compute_feats(x: torch.Tensor) -> torch.Tensor:
@@ -124,6 +128,7 @@ loss_fn = nn.MSELoss()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def row_finite_mask(t: torch.Tensor) -> torch.Tensor:
+    """Return a boolean mask of rows where all values are finite."""
     return torch.isfinite(t).all(dim=1)
 
 USE_SET_TO_NONE = True
@@ -144,6 +149,7 @@ def predict_S_hat(X_orig: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
     return torch.cat(outs, dim=0)
 
 def eval_rmse_bps(X_orig: torch.Tensor, meta_df: pd.DataFrame, batch_size: int = 256):
+    """Compute per-currency and average RMSE in bps on X_orig using the current model."""
     S_hat_all = predict_S_hat(X_orig, batch_size)
     mask  = row_finite_mask(X_orig) & row_finite_mask(S_hat_all)
     n_bad  = int((~mask).sum().item())

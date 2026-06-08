@@ -1,10 +1,22 @@
+"""Swap-rate utilities: compute par swap rates from discount factor curves."""
+
 import torch
 
 def par_swap_from_discount(P: torch.Tensor, tenors: list[int]) -> torch.Tensor:
     """
-    P: (B,T) with P[:, j] = discount factor for maturity (j+1)
-    tenors: list like [1,2,3,5,10,15,20,30]
-    returns: (B, len(tenors))
+    Compute par swap rates from a discount factor curve.
+
+    Parameters
+    ----------
+    P : torch.Tensor, shape (B, T)
+        Discount factors, where P[:, j] is the discount factor for maturity j+1.
+    tenors : list of int
+        Swap tenors in years, e.g. [1, 2, 3, 5, 10, 15, 20, 30].
+
+    Returns
+    -------
+    torch.Tensor, shape (B, len(tenors))
+        Par swap rates for each batch element and tenor.
     """
     B, T = P.shape
     device = P.device

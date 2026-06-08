@@ -1,9 +1,4 @@
-# Common utilities for the master thesis
-# Do not run this notebook directly
-
-
-# %pip install torch
-# dbutils.library.restartPython()
+"""Common utilities shared across the thesis codebase: activation functions and plot theme."""
 
 import seaborn as sns
 import torch
@@ -24,6 +19,7 @@ class CenteredSoftStep(nn.Module):
 # Layout & Themes
 
 def set_paper_theme():
+    """Apply the paper plot theme and return the custom colour palette."""
     sns.set_theme(
         style="darkgrid",
         context="paper",

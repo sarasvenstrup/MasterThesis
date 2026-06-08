@@ -3,7 +3,16 @@ import torch.nn as nn
 from Code.utils.common import CenteredSoftStep
 
 class DecoderG(nn.Module):
+    """Two-layer MLP decoder: maps (z, τ) → g(z, τ) for a batch of curves and tenors."""
+
     def __init__(self, latent_dim: int, hidden_dim: int, bias: bool = True):
+        """
+        Parameters
+        ----------
+        latent_dim : dimension of the latent vector z.
+        hidden_dim : number of hidden units.
+        bias       : include bias terms in the linear layers.
+        """
         super().__init__()
         self.latent_dim = latent_dim
 
@@ -14,6 +23,14 @@ class DecoderG(nn.Module):
         )
 
     def forward(self, z: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        z   : (B, d) latent vectors.
+        tau : (N,)   tenor grid.
+
+        Returns (B, N) decoded values.
+        """
         B, d = z.shape
         N = tau.numel()
 

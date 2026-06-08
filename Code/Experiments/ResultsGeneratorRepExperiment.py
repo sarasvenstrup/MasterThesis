@@ -1,5 +1,5 @@
 # =============================================================================
-# plot_prevalence_results.py
+# ResultsGeneratorRepExperiment.py
 #
 # Reads completed prevalence-sweep CSVs and produces a combined thesis figure:
 #
@@ -9,8 +9,8 @@
 #   Fig 2 — baseline only (cleaner single-panel for thesis use)
 #
 # Usage:
-#   python Code/Experiments/plot_prevalence_results.py
-#   python Code/Experiments/plot_prevalence_results.py --dim 2 --epochs 2000 --n-train 2000
+#   python Code/Experiments/ResultsGeneratorRepExperiment.py
+#   python Code/Experiments/ResultsGeneratorRepExperiment.py --dim 2 --epochs 2000 --n-train 2000
 # =============================================================================
 
 import argparse

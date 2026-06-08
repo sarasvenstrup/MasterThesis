@@ -58,6 +58,11 @@ def plot_vol_timeseries(
         PlotConfig instance for consistent saving. If None, displays plot.
     save_name : str or None
         Name for saved figure (without extension). Only used if plot_cfg is provided.
+
+    Returns
+    -------
+    fig : matplotlib.Figure
+    ax : matplotlib.Axes
     """
     if selected_structures is None:
         # Select common ATM structures
@@ -125,18 +130,23 @@ def plot_vol_surface_heatmap(
         Name for saved figure (without extension). Only used if plot_cfg is provided.
     cmap : str
         Colormap name
+
+    Returns
+    -------
+    fig : matplotlib.Figure or None
+    ax : matplotlib.Axes or None
     """
     if date is None:
         date = df['as_of_date'].max()
     else:
         date = pd.to_datetime(date)
-    
+
     subset = df[df['as_of_date'] == date].copy()
-    
+
     if subset.empty:
         print(f"No data available for date {date}")
         return None, None
-    
+
     # Pivot to create surface matrix
     pivot = subset.pivot_table(
         values='vol',
@@ -144,9 +154,9 @@ def plot_vol_surface_heatmap(
         columns='swap_tenor',
         aggfunc='mean'
     )
-    
+
     fig, ax = plt.subplots(figsize=figsize)
-    
+
     sns.heatmap(
         pivot,
         annot=True,
@@ -203,18 +213,23 @@ def plot_vol_surface_3d(
         Name for saved figure (without extension). Only used if plot_cfg is provided.
     cmap : str
         Colormap name
+
+    Returns
+    -------
+    fig : matplotlib.Figure or None
+    ax : matplotlib.Axes or None
     """
     if date is None:
         date = df['as_of_date'].max()
     else:
         date = pd.to_datetime(date)
-    
+
     subset = df[df['as_of_date'] == date].copy()
-    
+
     if subset.empty:
         print(f"No data available for date {date}")
         return None, None
-    
+
     # Pivot to create surface matrix
     pivot = subset.pivot_table(
         values='vol',
@@ -222,7 +237,7 @@ def plot_vol_surface_3d(
         columns='swap_tenor',
         aggfunc='mean'
     )
-    
+
     # Create meshgrid for 3D plotting
     X = pivot.columns.values  # swap_tenor
     Y = pivot.index.values    # option_maturity
@@ -292,18 +307,23 @@ def plot_term_structure(
         PlotConfig instance for consistent saving. If None, displays plot.
     save_name : str or None
         Name for saved figure (without extension). Only used if plot_cfg is provided.
+
+    Returns
+    -------
+    fig : matplotlib.Figure or None
+    ax : matplotlib.Axes or None
     """
     if date is None:
         date = df['as_of_date'].max()
     else:
         date = pd.to_datetime(date)
-    
+
     subset = df[df['as_of_date'] == date].copy()
-    
+
     if subset.empty:
         print(f"No data available for date {date}")
         return None, None
-    
+
     if option_maturities is None:
         option_maturities = sorted(subset['option_maturity'].unique())
     
@@ -363,18 +383,23 @@ def plot_expiry_structure(
         PlotConfig instance for consistent saving. If None, displays plot.
     save_name : str or None
         Name for saved figure (without extension). Only used if plot_cfg is provided.
+
+    Returns
+    -------
+    fig : matplotlib.Figure or None
+    ax : matplotlib.Axes or None
     """
     if date is None:
         date = df['as_of_date'].max()
     else:
         date = pd.to_datetime(date)
-    
+
     subset = df[df['as_of_date'] == date].copy()
-    
+
     if subset.empty:
         print(f"No data available for date {date}")
         return None, None
-    
+
     if swap_tenors is None:
         swap_tenors = sorted(subset['swap_tenor'].unique())
     
@@ -432,6 +457,11 @@ def plot_vol_distributions(
         PlotConfig instance for consistent saving. If None, displays plot.
     save_name : str or None
         Name for saved figure (without extension). Only used if plot_cfg is provided.
+
+    Returns
+    -------
+    fig : matplotlib.Figure
+    ax : matplotlib.Axes or np.ndarray of Axes
     """
     if by_structure:
         # Box plots for each structure
@@ -561,6 +591,11 @@ def plot_vol_evolution_multiple_dates(
         Name for saved figure (without extension). Only used if plot_cfg is provided.
     cmap : str
         Colormap name
+
+    Returns
+    -------
+    fig : matplotlib.Figure
+    axes : np.ndarray of Axes
     """
     if dates is None:
         # Select evenly spaced dates

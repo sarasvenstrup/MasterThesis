@@ -81,9 +81,12 @@ def price_swaption_structure(
     the straddle implied normal volatility and the forward centring bias
     diagnostic.
 
-    Returns dict with pricing results including straddle price, payer
-    and receiver legs, forward centring bias, implied vol, and pathwise
-    averages used for diagnostics.
+    Returns
+    -------
+    dict
+        Pricing results: straddle price, payer and receiver legs, forward
+        centring bias, implied vol, and pathwise averages. On failure,
+        all numeric fields are NaN and 'success' is False.
     """
     try:
         result = pricing.atm_swaption_straddle_mc_price_from_simulation(
@@ -165,10 +168,7 @@ def price_all_structures(
 ) -> pd.DataFrame:
     """
     Price multiple swaption structures using the SAME simulated paths.
-    
-    This is the efficient approach - simulate once, price all structures
-    from those same paths. Ensures consistency across all results.
-    
+
     Parameters
     ----------
     ctx : dict
@@ -410,7 +410,7 @@ def plot_mc_convergence(
 # =============================================================================
 
 def _get_nvol_dates(excel_path: Path, sheet_name: str) -> List[pd.Timestamp]:
-    """Return sorted unique dates from the NVol sheet (used for date-pair matching)."""
+    """Return sorted unique dates from the NVol sheet."""
     df = pd.read_excel(excel_path, sheet_name=sheet_name)
     dates = []
     for row_idx in range(4, len(df)):

@@ -36,8 +36,9 @@ class KMuStable(nn.Module):
         """
         Compute the stable drift matrix M = -(V^T V + eps*I).
         
-        Returns:
-            M: (latent_dim, latent_dim) tensor with strictly negative eigenvalues
+        Returns
+        -------
+        M : (latent_dim, latent_dim) tensor with strictly negative eigenvalues
         """
         VtV = torch.matmul(self.V.t(), self.V)  # (d, d)
         M = -(VtV + self.epsilon * torch.eye(self.latent_dim, device=self.V.device, dtype=self.V.dtype))
@@ -47,11 +48,13 @@ class KMuStable(nn.Module):
         """
         Compute mu(z) = M z + N using the stable parameterization of M.
         
-        Args:
-            z: (B, latent_dim) or (latent_dim,) latent factors
-            
-        Returns:
-            mu: (B, latent_dim) drift
+        Parameters
+        ----------
+        z : (B, latent_dim) or (latent_dim,) latent factors
+
+        Returns
+        -------
+        mu : (B, latent_dim) drift
         """
         if z.dim() == 1:
             z = z.unsqueeze(0)

@@ -1,3 +1,8 @@
+"""
+Simulate latent interest rate paths using Euler-Maruyama discretisation of the trained
+neural SDE model, and decode them to discount curves.
+"""
+
 import math
 import os
 import sys
@@ -25,7 +30,6 @@ if REPO_ROOT not in sys.path:
 
 from Code import config
 from Code.model.full_model_stable import FullModel
-from Code.model.full_model_price import FullModelPrice
 from Code.load_swapdata import my_data
 from Code.model.sigma_matrix import L_from_sigmas_rhos
 
@@ -36,16 +40,10 @@ checkpoint_path = r"C:\Users\Bruger\PycharmProjects\MasterThesis\Figures\Trainin
 
 
 def load_and_setup_model(device, checkpoint_path, latent_dim=2, use_double=True):
+    """Load a FullModel from checkpoint and prepare it for inference."""
     state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
-    # Auto-detect DecoderGStable checkpoints by the presence of G.z_scale.
-    # Those were trained with FullModelPrice and must be loaded into it so
-    # that the tanh input normalisation is applied during simulation.
-    if "G.z_scale" in state_dict:
-        model = FullModelPrice(latent_dim=latent_dim).to(device)
-        print("  [load] detected DecoderGStable checkpoint — using FullModelPrice")
-    else:
-        model = FullModel(latent_dim=latent_dim).to(device)
+    model = FullModel(latent_dim=latent_dim).to(device)
 
     result = model.load_state_dict(state_dict, strict=False)
     if result.missing_keys:
@@ -83,6 +81,7 @@ def get_r(model, z):
 
 
 def compute_latent_statistics(model, X_tensor, device, latent_dim):
+    """Encode the training dataset and return the mean, covariance, and std of the latent cloud."""
     z_train_list = []
 
     with torch.no_grad():
@@ -115,19 +114,36 @@ def _euler_step_inference(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Single Euler-Maruyama step for inference mode (no gradients).
-    
+
     Parameters
     ----------
+    model : object
+        Trained model with drift network K, diffusion network H, and short-rate network R.
+    z : torch.Tensor, shape (n_paths, d)
+        Current latent state.
+    sqrt_dt : float
+        Square root of the time step.
+    device : torch.device
+        Device for tensor operations.
+    dtype : torch.dtype
+        Floating-point dtype.
+    diffusion_scale : float, default 1.0
+        Scalar multiplier applied to the diffusion shock.
     dW : torch.Tensor, optional
-        Pre-generated Brownian increments. If None, generates standard random noise.
+        Pre-generated Brownian increments of shape (n_paths, d).
+        If None, standard Gaussian noise is drawn internally.
         For antithetic variates, pass paired (positive/negative) noise externally.
-    
+
     Returns
     -------
-    z_new : (n_paths, d)      — updated latent state
-    r     : (n_paths,)        — short rate at new state
-    mu    : (n_paths, d)      — drift at new state
-    L     : (n_paths, d, d)   — diffusion matrix at new state
+    z_new : torch.Tensor, shape (n_paths, d)
+        Updated latent state.
+    r : torch.Tensor, shape (n_paths,)
+        Short rate at the new state.
+    mu : torch.Tensor, shape (n_paths, d)
+        Drift at the new state.
+    L : torch.Tensor, shape (n_paths, d, d)
+        Diffusion matrix at the new state.
     """
     n_paths = z.shape[0]
     d = z.shape[1]
@@ -164,13 +180,38 @@ def simulate_latent_paths(
 ):
     """
     Simulate latent state paths using Euler-Maruyama discretization.
-    
+
     Parameters
     ----------
+    model : object
+        Trained model with drift, diffusion, and short-rate networks.
+    z0 : torch.Tensor, shape (1, d)
+        Initial latent state.
+    n_paths : int
+        Number of Monte Carlo paths.
+    n_steps : int
+        Number of time steps.
+    dt : float
+        Time step size in years.
+    device : torch.device
+        Device for tensor operations.
+    diffusion_scale : float, default 1.0
+        Scalar multiplier applied to the diffusion shock at each step.
     use_antithetic : bool, default False
         If True, uses antithetic variates for variance reduction.
         Generates n_paths/2 random paths and pairs them with their negatives.
         This reduces MC variance by ~30-50% at no extra computational cost.
+
+    Returns
+    -------
+    z_paths : torch.Tensor, shape (n_paths, n_steps+1, d)
+        Latent state trajectories.
+    r_paths : torch.Tensor, shape (n_paths, n_steps+1)
+        Short-rate trajectories.
+    mu_paths : torch.Tensor, shape (n_paths, n_steps+1, d)
+        Drift trajectories.
+    L_paths : torch.Tensor, shape (n_paths, n_steps+1, d, d)
+        Diffusion matrix trajectories.
     """
 
     if z0.dim() != 2 or z0.shape[0] != 1:
@@ -232,6 +273,21 @@ def simulate_latent_paths(
 
 
 def compute_discount_paths(r_paths: torch.Tensor, dt: float) -> torch.Tensor:
+    """
+    Compute pathwise discount factors from short-rate paths using the trapezoid rule.
+
+    Parameters
+    ----------
+    r_paths : torch.Tensor, shape (n_paths, n_steps+1)
+        Short-rate trajectories.
+    dt : float
+        Time step size in years.
+
+    Returns
+    -------
+    torch.Tensor, shape (n_paths, n_steps+1)
+        Discount factor D(0, t) = exp(-∫_0^t r_s ds) for each path and time step.
+    """
     if dt <= 0:
         raise ValueError("dt must be positive")
     if r_paths.ndim != 2:
@@ -251,11 +307,14 @@ def compute_discount_paths(r_paths: torch.Tensor, dt: float) -> torch.Tensor:
 
 def plot_simulation_results(results, n_paths_to_plot=20):
     """
-    Plot the simulation results including latent paths, interest rates, and discount curves.
+    Plot simulation results including latent paths, short rates, and discount curves.
 
-    Args:
-        results: Dictionary returned from run_simulation
-        n_paths_to_plot: Number of paths to plot (default: 20)
+    Parameters
+    ----------
+    results : dict
+        Dictionary returned by run_simulation.
+    n_paths_to_plot : int, default 20
+        Number of paths to include in the plots.
     """
     z_paths = results["z_paths"].cpu().numpy()
     r_paths = results["r_paths"].cpu().numpy()
@@ -348,6 +407,21 @@ def plot_simulation_results(results, n_paths_to_plot=20):
 
 
 def resolve_curve_index(meta, as_of_date=0):
+    """
+    Return the row index in meta matching the given as_of_date.
+
+    Parameters
+    ----------
+    meta : pd.DataFrame
+        Metadata table with an 'as_of_date' column.
+    as_of_date : int, str, or pd.Timestamp, default 0
+        Date to look up. If 0 or None, returns 0 (the first row).
+
+    Returns
+    -------
+    int
+        Row index of the matching date.
+    """
     if as_of_date == 0 or as_of_date is None:
         return 0
 
@@ -386,13 +460,45 @@ def run_simulation(
 ):
     """
     Run Monte Carlo simulation of the latent interest rate model.
-    
+
     Parameters
     ----------
+    use : str, default "bbg"
+        Data source passed to my_data().
+    latent_dim : int, default 2
+        Dimension of the latent state.
+    checkpoint_path : str or None
+        Path to the model checkpoint file.
+    n_paths : int, default 500
+        Number of Monte Carlo paths.
+    n_steps : int, default 24
+        Number of time steps.
+    dt : float, default 1/12
+        Time step size in years.
+    as_of_date : str, pd.Timestamp, or None
+        Starting curve date. If None, uses the first row of the dataset.
+    ccy_filter : str, default ""
+        Currency filter passed to my_data().
+    diffusion_scale : float, default 1.0
+        Scalar multiplier applied to the diffusion shock.
     use_antithetic : bool, default False
         If True, uses antithetic variates for variance reduction.
         Reduces MC standard error by ~30-50% at no extra computational cost.
-        Recommended for production pricing runs.
+    seed : int, default 1234
+        Random seed for reproducibility.
+    device : torch.device or None
+        Computation device. If None, selects CUDA if available, else CPU.
+    show_plot : bool, default True
+        If True, displays simulation plots after completion.
+    decode_steps : list of int or None
+        Indices of time steps to decode to discount curves.
+        If None, all steps are decoded.
+
+    Returns
+    -------
+    dict
+        Dictionary containing simulation results: model, latent paths, short-rate paths,
+        discount curves, decoded discount curve grids, and metadata.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -438,7 +544,7 @@ def run_simulation(
 
     print(f"Initial latent state z0: {z0.detach().cpu().numpy().flatten()}")
 
-    # Decode initial curve directly from latent state using FullModel decoder
+    # Decode initial curve from latent state
     with torch.no_grad():
         _, aux0 = model.decode_from_z(
             z0,
@@ -483,10 +589,7 @@ def run_simulation(
     n_paths, n_times, d = z_paths.shape
     times_all = np.arange(n_steps + 1) * dt
 
-    # Determine which time steps to decode.
-    # decode_steps=None means all steps (legacy behaviour).
-    # Pass a list of step indices to only decode what pricing actually needs,
-    # e.g. [0, 12, 60, 120] for expiries {0, 1, 5, 10}Y with dt=1/12.
+    # Determine which time steps to decode; decode_steps=None decodes all steps.
     if decode_steps is None:
         decode_indices = list(range(n_times))
     else:

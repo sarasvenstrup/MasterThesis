@@ -1,15 +1,12 @@
 # =============================================================================
 # OOSRoll_augmented_stable.py
 #
-# Rolling OOS experiment for the augmented-input autoencoder.
-# Identical window logic to OutOfSampleRoll.py — only the forward pass,
-# loss, and model construction differ:
-#   - Encoder receives 11-dim augmented input (8 swap rates + 3 shape features)
-#   - Decoder outputs 8 swap rates as normal
-#   - Loss is MSE over all 11 values (swap rates + derived features)
-#   - RMSE evaluation is on 8-dim S_hat vs original X only
+# Rolling out-of-sample experiment for the stable augmented-input autoencoder.
+# The encoder receives an 11-dimensional input (8 swap rates + 3 derived
+# shape features), while the stable decoder outputs the original 8 swap rates.
+# The training loss is MSE over all 11 values; RMSE evaluation uses only
+# the 8-dim reconstruction against the original swap rates.
 #
-# Nothing in the existing pipeline is touched.
 # Outputs go to:
 #   Figures/OOSResults/Roll/OOS_roll_dim{N}_augmented_stable/...
 # =============================================================================
@@ -91,18 +88,21 @@ LATENT_Z_CSV   = os.path.join(FIGURES_DIR, "latent_z_all.csv")
 PARAMETERS_CSV = os.path.join(FIGURES_DIR, "parameters_all.csv")
 
 # ── augmentation ──────────────────────────────────────────────────────────────
-# Tenor order: [1, 2, 3, 5, 10, 15, 20, 30]
-#              idx: 0  1  2  3   4   5   6   7
-
 def augment(x: torch.Tensor) -> torch.Tensor:
-    """Append 3 derived shape features to the 8-dim swap-rate vector."""
-    f1 = x[:, 4] - x[:, 0]                          # 10Y − 1Y
-    f2 = x[:, 7] - x[:, 4]                          # 30Y − 10Y
-    f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]         # 2×10Y − 1Y − 30Y
+    """Append 3 derived shape features to the 8-dim swap-rate vector.
+
+    Features (tenor order [1,2,3,5,10,15,20,30]):
+      f1 = 10Y − 1Y   (slope)
+      f2 = 30Y − 10Y  (long-end slope)
+      f3 = 2×10Y − 1Y − 30Y  (curvature)
+    """
+    f1 = x[:, 4] - x[:, 0]
+    f2 = x[:, 7] - x[:, 4]
+    f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]
     return torch.cat([x, f1.unsqueeze(1), f2.unsqueeze(1), f3.unsqueeze(1)], dim=1)
 
 def compute_feats(x: torch.Tensor) -> torch.Tensor:
-    """Return only the 3 derived features (B, 3)."""
+    """Return the 3 derived shape features for a batch of swap-rate vectors (B, 3)."""
     f1 = x[:, 4] - x[:, 0]
     f2 = x[:, 7] - x[:, 4]
     f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]
@@ -120,11 +120,12 @@ assert len(meta) == X_tensor.shape[0], "meta and X_tensor length mismatch"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def row_finite_mask(t: torch.Tensor) -> torch.Tensor:
+    """Return a boolean mask that is True for rows with all finite values."""
     return torch.isfinite(t).all(dim=1)
 
 @torch.no_grad()
 def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
-    """Augment input, run encoder, return 8-dim S_hat."""
+    """Augment the input, run the model, and return the 8-dim reconstruction on CPU."""
     model.eval()
     outs = []
     for i in range(0, len(X), batch_size):
@@ -134,6 +135,7 @@ def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> t
     return torch.cat(outs, dim=0)
 
 def rmse_bps_on_subset(model: nn.Module, X_sub: torch.Tensor, meta_sub: pd.DataFrame):
+    """Compute per-currency and average RMSE (bps) for a given data subset."""
     S_hat = predict_S_hat(model, X_sub, batch_size=EVAL_BATCH_SIZE)
     mask   = row_finite_mask(X_sub) & row_finite_mask(S_hat)
     n_bad  = int((~mask).sum().item())
@@ -146,7 +148,7 @@ def rmse_bps_on_subset(model: nn.Module, X_sub: torch.Tensor, meta_sub: pd.DataF
     return rmse_per_ccy, avg_rmse_bps, n_good, n_bad
 
 def make_loader(X_sub: torch.Tensor, batch_size: int):
-    """Yields (X_aug, X_orig) pairs."""
+    """Build a DataLoader yielding (augmented input, original swap rates) pairs."""
     X_aug = augment(X_sub)
     ds    = TensorDataset(X_aug, X_sub)
     return DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
@@ -154,6 +156,7 @@ def make_loader(X_sub: torch.Tensor, batch_size: int):
 WINDOW_SEED = 2
 
 def train_one_window(X_train: torch.Tensor):
+    """Train a fresh stable augmented-input model on one rolling window. Returns (model, mse_history, lr_history)."""
     torch.manual_seed(WINDOW_SEED)
     np.random.seed(WINDOW_SEED)
 
@@ -201,7 +204,7 @@ def train_one_window(X_train: torch.Tensor):
                 print(f"      [S_hat NaN/Inf epoch={epoch} batch={batch_idx}]")
                 continue
 
-            # augmented loss: MSE over swap rates + derived features (11 values)
+            # Loss: MSE over all 11 values (8 swap rates + 3 derived features)
             feat_true = compute_feats(xb)
             feat_hat  = compute_feats(S_hat)
             loss = loss_fn(
@@ -252,6 +255,7 @@ def train_one_window(X_train: torch.Tensor):
 # ── per-roll saving helpers ───────────────────────────────────────────────────
 @torch.no_grad()
 def get_latent(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    """Return latent vectors for all rows of X."""
     model.eval()
     zs = []
     for i in range(0, len(X), batch_size):
@@ -262,6 +266,7 @@ def get_latent(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torc
 
 @torch.no_grad()
 def extract_parameters(model: nn.Module, X: torch.Tensor, meta_sub: pd.DataFrame) -> pd.DataFrame:
+    """Extract per-curve model parameters (mu, sigma, rho, r_tilde) as a DataFrame."""
     model.eval()
     mask   = row_finite_mask(X)
     X_m    = X[mask].to(device)
@@ -285,11 +290,13 @@ def extract_parameters(model: nn.Module, X: torch.Tensor, meta_sub: pd.DataFrame
     return rec
 
 def _append_csv(df: pd.DataFrame, path: str):
+    """Append a DataFrame to a CSV file, writing the header only if the file is new."""
     write_header = not os.path.exists(path) or os.path.getsize(path) == 0
     df.to_csv(path, mode="a", header=write_header, index=False)
 
 def save_roll_outputs(model: nn.Module, X_train: torch.Tensor, meta_train_sub: pd.DataFrame,
                       test_start, X_test: torch.Tensor = None, meta_test: pd.DataFrame = None):
+    """Append latent vectors, model parameters, and predictions for one window to the combined CSVs."""
     ts = test_start.date().isoformat()
 
     # Latent vectors
@@ -305,7 +312,7 @@ def save_roll_outputs(model: nn.Module, X_train: torch.Tensor, meta_train_sub: p
     df_p.insert(0, "test_start", ts)
     _append_csv(df_p, PARAMETERS_CSV)
 
-    # Predictions — actual/fitted columns use original 8-dim swap rates
+    # Predictions — actual and fitted columns use the original 8-dim swap rates
     tenor_cols = [f"tenor_{t}" for t in TARGET_TENORS]
 
     def _save_predictions(X: torch.Tensor, meta_sub: pd.DataFrame, path: str):
@@ -475,7 +482,7 @@ with open(manifest_path, "w") as f:
 print(f"Manifest finalised: {manifest_path}")
 print("\nRolling OOS done.")
 
-# ── plot IS vs OOS RMSE curve ─────────────────────────────────────────────────
+# ── plot in-sample vs out-of-sample RMSE over time ───────────────────────────
 if avg_rmse_curve:
     dates    = [d for d, _ in avg_rmse_curve]
     oos_vals = [v for _, v in avg_rmse_curve]

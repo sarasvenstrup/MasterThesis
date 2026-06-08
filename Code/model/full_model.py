@@ -4,7 +4,6 @@ import torch.nn as nn
 from .Encoder import Encoder
 from .DecoderG import DecoderG
 
-# Baseline components only — no stable imports, no config dependency
 from .K_mu import KMu as KMuBaseline
 from .R_short import RShort
 from .H_sigma import HSigma as HSigmaBaseline
@@ -18,18 +17,15 @@ from Code.utils.ode import (
     solve_AB,
 )
 
-VARIANT = "baseline"  # frozen — never changes
+VARIANT = "baseline"
 
 
 class FullModel(nn.Module):
     """
-    Baseline-only FullModel.  Stable variant imports and config checks have
-    been removed so that changes to the stable pipeline can never affect
-    baseline results or initialization.
+    Baseline autoencoder model.
 
-    Returns:
-        - P_mkt only, by default
-        - (P_mkt, aux) if return_aux=True
+    Returns S_hat (reconstructed swap rates) by default, or (S_hat, aux)
+    if return_aux=True.
     """
 
     def __init__(
@@ -93,6 +89,7 @@ class FullModel(nn.Module):
         B_vals: torch.Tensor,
         dG_dtau: torch.Tensor,
     ) -> dict:
+        """Compute per-tenor no-arbitrage residuals R_tau and SR_tau."""
         r = r_tilde.unsqueeze(1).expand(-1, G_vals.shape[1])
 
         gTmu = (grad_z_G * mu.unsqueeze(1)).sum(dim=2)
@@ -127,15 +124,14 @@ class FullModel(nn.Module):
             return_aux: bool = False,
     ):
         """
-        Decode latent states directly to discount factors and swap rates.
+        Decode latent states to discount factors and swap rates.
 
-        Args:
-            z:   shape (B, latent_dim) or (latent_dim,)
-            tau: optional custom tau grid. If None, uses the model's default grid 0,1,...,tau_max
+        Parameters
+        ----------
+        z   : (B, latent_dim) or (latent_dim,) latent vectors.
+        tau : optional tenor grid. If None, uses the default grid 0, 1, …, tau_max.
 
-        Returns:
-            - P_mkt by default
-            - (P_mkt, aux) if return_aux=True
+        Returns P_mkt by default, or (P_mkt, aux) if return_aux=True.
         """
         squeeze_back = False
         if z.dim() == 1:
@@ -249,6 +245,10 @@ class FullModel(nn.Module):
             do_arb_checks: bool = False,
             return_aux: bool = False,
     ):
+        """Encode S_in to z, decode to swap rates, and return S_hat.
+
+        Returns S_hat by default, or (S_hat, aux) if return_aux=True.
+        """
         squeeze_back = False
         if S_in.dim() == 1:
             S_in = S_in.unsqueeze(0)

@@ -1,3 +1,13 @@
+"""
+Load swaption normal volatilities from a Bloomberg-style Excel export.
+
+Parses Bloomberg swaption codes (e.g. "15" → 1Y expiry × 5Y tenor),
+selects the SwapNVol (Bachelier) sheet for the requested currency, and
+returns a tidy DataFrame with columns: currency, as_of_date,
+option_maturity, swap_tenor, vol.
+"""
+
+
 import os
 import pandas as pd
 
@@ -53,8 +63,7 @@ def _pick_sheet(excel_path, currency):
     Pick the sheet whose name matches the requested currency and the
     Bachelier (normal) convention.  The Bloomberg-style file uses
     "SwapNVol" for normal-vol sheets and "SwapVol" for Black/lognormal
-    sheets; we select the normal-vol sheet because the rest of the
-    pricing pipeline uses Bachelier throughout.
+    sheets.
     """
     xls = pd.ExcelFile(excel_path, engine="openpyxl")
     ccy = currency.upper().strip()
@@ -129,8 +138,10 @@ def load_swaption_vol_data(
         col 4 = vols  for code in col 4
         etc.
 
-    Returns columns:
-        currency, as_of_date, option_maturity, swap_tenor, vol
+    Returns
+    -------
+    pd.DataFrame with columns: currency, as_of_date, option_maturity,
+    swap_tenor, vol.
     """
     if excel_path is None:
         excel_path = _DEFAULT_EXCEL

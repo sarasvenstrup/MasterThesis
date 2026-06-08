@@ -1,23 +1,21 @@
-# Code/config.py
-# ─────────────────────────────────────────────────────────────
-# Single source of truth for the active model variant.
-# All pipeline scripts import VARIANT from here.
-#
-# "baseline" → original K and H implementation
-# "stable"   → numerically stable K and H (for simulation/pricing)
-#
-# Changing this one line switches the entire pipeline.
-# ─────────────────────────────────────────────────────────────
+"""
+Single source of truth for the active model variant.
+All pipeline scripts import VARIANT from here.
+
+    "baseline" — original K, H and R implementation
+    "stable"   — numerically stable K, H and R (for simulation/pricing)
+"""
 
 import os
 import sys
 
-# Can be overridden by the MODEL_VARIANT env var (used by run_all_dims.py).
+# Can be overridden by the MODEL_VARIANT environment variable.
 VARIANT = os.environ.get("MODEL_VARIANT", "stable")
 
 
 def confirm_variant():
-    # When called from run_all_dims.py (non-interactive), skip the prompt.
+    """Prompt the user to confirm the active variant, unless running in non-interactive mode."""
+    # In non-interactive mode, skip the prompt.
     if os.environ.get("SKIP_VARIANT_CONFIRM") == "1":
         print(f"[run_all_dims] Variant confirmed automatically: '{VARIANT}'")
         return

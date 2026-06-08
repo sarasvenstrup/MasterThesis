@@ -1,7 +1,7 @@
 # =============================================================================
 # Overnight sweep — Prevalence experiment
 #
-# Runs Experiment_prevalence_sweep.py sequentially for specific (dim, model_type)
+# Runs Representation_Experiment.py sequentially for specific (dim, model_type)
 # pairs. To run both simultaneously, open two terminals and paste the commands
 # printed at startup.
 #
@@ -10,7 +10,7 @@
 #     any_negative_dim{d}_ep{E}_N{N}_{model_type}/
 #
 # Launch from repo root (or right-click → Run in PyCharm):
-#   python Code/Experiments/Overnight_prevalence_sweep.py
+#   python Code/Experiments/Overnight_Representation_Experiment.py
 # =============================================================================
 
 import os
@@ -40,7 +40,7 @@ SEED        = 0
 PREVALENCES = "0.00,0.05,0.10,0.15,0.20,0.30,0.40,0.50,0.60,0.75,1.00"
 # ──────────────────────────────────────────────────────────────────────────
 
-EXPERIMENT_SCRIPT = os.path.join(HERE, "Experiment_prevalence_sweep.py")
+EXPERIMENT_SCRIPT = os.path.join(HERE, "Representation_Experiment.py")
 
 
 def make_cmd(latent_dim: int, model_type: str) -> list:

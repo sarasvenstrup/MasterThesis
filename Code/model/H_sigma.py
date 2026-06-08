@@ -14,9 +14,9 @@ class HSigma(nn.Module):
 
     def __init__(self, latent_dim: int, hidden_dim: int, bias: bool = False):
         super().__init__()
-        self.d = int(latent_dim)                       # <-- FIX: store dimension
+        self.d = int(latent_dim)
         self.n_corr = self.d * (self.d - 1) // 2
-        out_dim = self.d + self.n_corr                 # <-- FIX: correct output size
+        out_dim = self.d + self.n_corr
 
         self.net = nn.Sequential(
             nn.Linear(self.d, hidden_dim, bias=bias),
@@ -50,7 +50,7 @@ class HSigma(nn.Module):
         # 2) Correlations (in (-1,1))
         if self.n_corr > 0:
             atanh_rhos = raw[:, self.d:]  # (B,n_corr)
-            rhos = torch.tanh(atanh_rhos)  # tanh naturally bounds to (-1, 1), no need to clamp
+            rhos = torch.tanh(atanh_rhos)  # bounded to (-1, 1)
         else:
             rhos = raw[:, :0]  # (B,0) empty
 

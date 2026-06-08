@@ -1,4 +1,4 @@
-# Code/utils/helpers.py
+"""Shared dataclasses, matrix utilities, and plot helpers used across the thesis codebase."""
 
 from __future__ import annotations
 from dataclasses import dataclass
@@ -41,7 +41,17 @@ class DataConfig:
 # -----------------------------
 def cov_from_L(L: torch.Tensor) -> torch.Tensor:
     """
-    L: (B,d,d) diffusion (Cholesky-like). Returns Sigma = L L^T: (B,d,d).
+    Compute covariance matrix from a diffusion factor.
+
+    Parameters
+    ----------
+    L : torch.Tensor, shape (B, d, d)
+        Diffusion matrix (Cholesky-like).
+
+    Returns
+    -------
+    torch.Tensor, shape (B, d, d)
+        Covariance matrix Sigma = L @ L^T.
     """
     if L.ndim != 3 or L.shape[-1] != L.shape[-2]:
         raise ValueError(f"Expected L shape (B,d,d), got {tuple(L.shape)}")
@@ -49,7 +59,21 @@ def cov_from_L(L: torch.Tensor) -> torch.Tensor:
 
 
 def vols_from_cov(Sigma: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
-    """Sigma: (B,d,d) -> vols: (B,d)."""
+    """
+    Extract marginal volatilities from a covariance matrix.
+
+    Parameters
+    ----------
+    Sigma : torch.Tensor, shape (B, d, d)
+        Covariance matrix.
+    eps : float, default 1e-12
+        Clamp minimum for numerical safety.
+
+    Returns
+    -------
+    torch.Tensor, shape (B, d)
+        Marginal standard deviations (volatilities).
+    """
     if Sigma.ndim != 3 or Sigma.shape[-1] != Sigma.shape[-2]:
         raise ValueError(f"Expected Sigma shape (B,d,d), got {tuple(Sigma.shape)}")
     diag = torch.diagonal(Sigma, dim1=1, dim2=2)
@@ -58,7 +82,21 @@ def vols_from_cov(Sigma: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
 
 
 def corr_from_cov(Sigma: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
-    """Sigma: (B,d,d) -> Corr: (B,d,d)."""
+    """
+    Compute a correlation matrix from a covariance matrix.
+
+    Parameters
+    ----------
+    Sigma : torch.Tensor, shape (B, d, d)
+        Covariance matrix.
+    eps : float, default 1e-12
+        Clamp minimum for numerical safety.
+
+    Returns
+    -------
+    torch.Tensor, shape (B, d, d)
+        Correlation matrix.
+    """
     vol = vols_from_cov(Sigma, eps=eps)  # (B,d)
     # Clamp for numerical safety to prevent division by zero
     denom = torch.clamp(vol.unsqueeze(2) * vol.unsqueeze(1), min=eps)  # (B,d,d)
@@ -80,8 +118,26 @@ def build_params_df_from_L(
     eps: float = 1e-12
 ) -> pd.DataFrame:
     """
-    Use when your model returns a full diffusion matrix L(z).
-    Produces mu_k, sigma_k (marginal vols), rho_ij, and r_tilde.
+    Build a parameter DataFrame from a full diffusion matrix L(z).
+
+    Parameters
+    ----------
+    meta : pd.DataFrame
+        Metadata with columns ccy and as_of_date.
+    mu : torch.Tensor, shape (B, d)
+        Drift vectors.
+    L : torch.Tensor, shape (B, d, d)
+        Diffusion matrices.
+    r_tilde : torch.Tensor, shape (B,) or (B, 1)
+        Short-rate values.
+    eps : float, default 1e-12
+        Clamp minimum used in covariance computations.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns mu_k, sigma_k (marginal vols), rho_ij (off-diagonal correlations),
+        and r_tilde, sorted by ccy and as_of_date.
     """
     if r_tilde.ndim == 2 and r_tilde.shape[1] == 1:
         r_tilde = r_tilde.squeeze(1)
@@ -120,8 +176,24 @@ def build_params_df_from_diag_vol(
     r_tilde: torch.Tensor      # (B,) or (B,1)
 ) -> pd.DataFrame:
     """
-    Use when your model returns only diagonal vols sigma_k(z) (no correlations).
-    Produces mu_k, sigma_k, r_tilde (no rho_ij columns).
+    Build a parameter DataFrame when only diagonal volatilities are available.
+
+    Parameters
+    ----------
+    meta : pd.DataFrame
+        Metadata with columns ccy and as_of_date.
+    mu : torch.Tensor, shape (B, d)
+        Drift vectors.
+    sigma : torch.Tensor, shape (B, d)
+        Marginal volatilities.
+    r_tilde : torch.Tensor, shape (B,) or (B, 1)
+        Short-rate values.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns mu_k, sigma_k, and r_tilde, sorted by ccy and as_of_date.
+        No rho_ij columns.
     """
     if r_tilde.ndim == 2 and r_tilde.shape[1] == 1:
         r_tilde = r_tilde.squeeze(1)
@@ -147,6 +219,7 @@ def build_params_df_from_diag_vol(
 
 
 def cols_matching(df: pd.DataFrame, pattern: str) -> List[str]:
+    """Return column names matching a regex pattern."""
     pat = re.compile(pattern)
     return [c for c in df.columns if pat.match(c)]
 
@@ -159,6 +232,7 @@ def _safe_name(name: str) -> str:
 
 
 def save_figure(fig: plt.Figure, cfg: PlotConfig, name: str) -> Tuple[Path, Path]:
+    """Save a figure as PNG and PDF and print the output path."""
     safe = _safe_name(name)
     tag = f"_{cfg.use_tag}" if cfg.use_tag else ""
     png_path = cfg.out_dir / f"{safe}{tag}.png"
@@ -170,6 +244,7 @@ def save_figure(fig: plt.Figure, cfg: PlotConfig, name: str) -> Tuple[Path, Path
 
 
 def plot_param_over_time(params_df: pd.DataFrame, col: str, cfg: PlotConfig, title: Optional[str] = None):
+    """Plot a model parameter over time, one line per currency."""
     fig, ax = plt.subplots(figsize=(11, 4))
 
     for ccy, g in params_df.groupby("ccy"):
@@ -188,6 +263,7 @@ def plot_param_over_time(params_df: pd.DataFrame, col: str, cfg: PlotConfig, tit
 
 
 def hist_param(params_df: pd.DataFrame, col: str, cfg: PlotConfig, bins: int = 50):
+    """Plot a histogram of a single parameter column."""
     fig, ax = plt.subplots(figsize=(6, 3.5))
     ax.hist(params_df[col].values, bins=bins)
     ax.set_title(f"Histogram of {col}")
@@ -204,6 +280,7 @@ def plot_recon_on_date(
     data_cfg: DataConfig,
     cfg: PlotConfig
 ):
+    """Plot actual vs reconstructed swap curves for all currencies on a given date."""
     m = meta_eval_df.copy()
     date_pick = pd.to_datetime(date_pick)
     idx = (m["as_of_date"] == date_pick).values
@@ -232,9 +309,7 @@ def plot_recon_on_date(
     #plt.show()
 
 def rmse_bps_per_currency_paper(S_true, S_pred, meta_df):
-    """
-    Computes in-sample RMSE in basis points per currency.
-    """
+    """Return in-sample RMSE in basis points per currency."""
 
     if torch.is_tensor(S_true):
         S_true = S_true.detach().cpu().numpy()
@@ -246,7 +321,7 @@ def rmse_bps_per_currency_paper(S_true, S_pred, meta_df):
 
     rmses = {}
     for ccy in tmp["ccy"].unique():
-        # FIX: NumPy 2.x compatibility - use isin() for proper boolean indexing
+        # NumPy 2.x: use isin() for boolean indexing
         idx = tmp["ccy"].isin([ccy]).values
         e = err[idx, :]
         rmses[ccy] = float(np.sqrt(np.mean(e**2)) * 10000.0)
@@ -256,13 +331,39 @@ def rmse_bps_per_currency_paper(S_true, S_pred, meta_df):
     return out
 
 def check_monotonicity(P):
-    # P: (B,T)
+    """
+    Count discount-curve monotonicity violations.
+
+    Parameters
+    ----------
+    P : torch.Tensor, shape (B, T)
+        Discount factor paths.
+
+    Returns
+    -------
+    int
+        Number of (path, step) pairs where P increases.
+    """
     violations = (P[:, 1:] - P[:, :-1]) > 1e-8
     n_viol = violations.sum().item()
     return n_viol
 
 def instantaneous_forward(P: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
-    # P: (B,T), tau: (T,)
+    """
+    Compute instantaneous forward rates from discount factors using finite differences.
+
+    Parameters
+    ----------
+    P : torch.Tensor, shape (B, T)
+        Discount factor curve.
+    tau : torch.Tensor, shape (T,)
+        Maturity grid.
+
+    Returns
+    -------
+    torch.Tensor, shape (B, T)
+        Instantaneous forward rate f(tau) = -d/dtau log P(tau).
+    """
     logP = torch.log(P)
     dlogP = torch.zeros_like(logP)
 
@@ -278,6 +379,7 @@ def instantaneous_forward(P: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
     return f
 
 def finite_minmax(x: torch.Tensor):
+    """Return the min and max of finite elements in a tensor as Python floats."""
     xf = x[torch.isfinite(x)]
     if xf.numel() == 0:
         return float("nan"), float("nan")
@@ -289,6 +391,7 @@ def plot_swap_curves_on_date_observed(df_wide_obs: pd.DataFrame,
                                       currency_colors: dict,
                                       date_pick,
                                       plot_cfg: H.PlotConfig):
+    """Plot observed swap curves for all currencies on a given date."""
     date_pick = pd.to_datetime(date_pick)
     dfo = df_wide_obs.copy()
     dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
@@ -331,6 +434,7 @@ def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
                                             currency_colors: dict,
                                             plot_cfg: H.PlotConfig,
                                             title: str = None):
+    """Plot the observed time series of a single swap tenor for all currencies."""
     dfo = df_wide_obs.copy()
     dfo["as_of_date"] = pd.to_datetime(dfo["as_of_date"])
 
@@ -358,6 +462,7 @@ def plot_swap_timeseries_one_tenor_observed(df_wide_obs: pd.DataFrame,
     save_figure(fig, plot_cfg, f"paper_fig2b_timeseries_{tenor_col}")
 
 def plot_latents_over_time(z_eval_t: torch.Tensor, meta_eval_df: pd.DataFrame, cfg: H.PlotConfig):
+    """Plot encoded latent factors over time, one line per currency."""
     order = meta_eval_df.sort_values(["ccy", "as_of_date"]).index.to_numpy()
     m = meta_eval_df.loc[order].reset_index(drop=True)
     z_np = z_eval_t.detach().cpu().numpy()[order]

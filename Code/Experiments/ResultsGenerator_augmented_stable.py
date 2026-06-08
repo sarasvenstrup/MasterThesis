@@ -1,10 +1,8 @@
 # =============================================================================
 # ResultsGenerator_augmented_stable.py
 #
-# Generates in-sample diagnostic figures for the augmented-input experiment.
-# Loads the checkpoint produced by Training_augmented_stable.py and produces:
-#   1. Scatter of per-curve RMSE (bps) over time, coloured by regime
-#   2. Combined regime table (N + Avg RMSE) saved as CSV for LaTeX
+# Generates in-sample and out-of-sample diagnostic figures for the
+# augmented-input stable-decoder autoencoder experiment.
 #
 # Run from repo root:
 #   python Code/Experiments/ResultsGenerator_augmented_stable.py
@@ -21,7 +19,7 @@ import matplotlib.pyplot as plt
 try:
     REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 except NameError:
-    REPO_ROOT = os.getcwd()  # PyCharm console: CWD is the project root
+    REPO_ROOT = os.getcwd()
 
 for _p in [REPO_ROOT, os.path.dirname(REPO_ROOT)]:
     if _p not in sys.path:
@@ -62,11 +60,20 @@ CCY_ORDER = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-# ── augmentation (must match Training_augmented_stable.py exactly) ─────────────
+# ── augmentation ──────────────────────────────────────────────────────────────
 def augment(x: torch.Tensor) -> torch.Tensor:
-    f1 = x[:, 4] - x[:, 0]                          # 10Y − 1Y
-    f2 = x[:, 7] - x[:, 4]                          # 30Y − 10Y
-    f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]         # 2×10Y − 1Y − 30Y
+    """Append three derived shape features to the 8-tenor swap rate vector.
+
+    The three features are:
+      f1 = S[10Y] − S[1Y]              (slope: short-to-mid)
+      f2 = S[30Y] − S[10Y]             (long-end slope)
+      f3 = 2·S[10Y] − S[1Y] − S[30Y]  (curvature)
+
+    Returns a tensor of shape (N, 11).
+    """
+    f1 = x[:, 4] - x[:, 0]
+    f2 = x[:, 7] - x[:, 4]
+    f3 = 2.0 * x[:, 4] - x[:, 0] - x[:, 7]
     return torch.cat([x, f1.unsqueeze(1), f2.unsqueeze(1), f3.unsqueeze(1)], dim=1)
 
 # ── load data ─────────────────────────────────────────────────────────────────
@@ -128,12 +135,14 @@ df_regime = pd.DataFrame({
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def save_fig(fig, name):
+    """Save figure as a 300-dpi PNG to FIGURES_OUT and close it."""
     p = os.path.join(FIGURES_OUT, f"{name}.png")
     fig.savefig(p, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved: {p}")
 
 def save_table(df, name):
+    """Save DataFrame as CSV to FIGURES_OUT."""
     p = os.path.join(FIGURES_OUT, f"{name}.csv")
     df.to_csv(p)
     print(f"  Saved: {p}")
@@ -355,6 +364,12 @@ _REGIME_GROUPS_OOS = [
 ]
 
 def _load_oos_preds(variant_key, dim):
+    """Load OOS predictions CSV for a given variant and latent dim.
+
+    Computes per-curve RMSE (bps) and attaches regime flags
+    (deep_flag, cross_flag, inv_flag, other_neg_flag, normal_flag).
+    Returns None if the predictions file is not found.
+    """
     _path = os.path.join(
         REPO_ROOT, "Figures", "OOSResults", "Roll",
         f"OOS_roll_dim{dim}_{variant_key}",
@@ -482,8 +497,6 @@ fig_comp.subplots_adjust(bottom=0.12)
 save_fig(fig_comp, "all_models_fitted_vs_actual")
 
 # ── figure: failure modes — 2×2 grid, all four comparison models ──────────────
-# Same four representative curves as failure_modes_all_models.png in the
-# augmented chapter, but with all four model comparison variants overlaid.
 print("\nGenerating failure modes comparison figure (all models)...")
 
 # ── curve indices ──────────────────────────────────────────────────────────────

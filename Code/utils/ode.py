@@ -1,3 +1,8 @@
+"""
+Autograd helpers for Poulsen ODE coefficients and an RK4 solver for the (A, B)
+term-structure system.
+"""
+
 import torch
 import torch.nn as nn
 from torch.func import vmap, jvp, jacfwd
@@ -16,16 +21,43 @@ def paper_alpha_beta_gamma_trace(
     eps: float = 1e-4
 ):
     """
-    alpha = (-dG/dtau + (∇G)^T mu + 1/2 Tr[σ^T H(G) σ]) / G
-    beta  = r_tilde / G
-    gamma = 1/2 Tr[σ^T ∇G ∇G^T σ] = 1/2 || σ^T ∇G ||^2
+    Compute ODE coefficients alpha, beta, gamma from the Poulsen equations.
+
+        alpha = (-dG/dtau + (∇G)^T mu + 1/2 Tr[σ^T H(G) σ]) / G
+        beta  = r_tilde / G
+        gamma = 1/2 || σ^T ∇G ||^2
+
+    Parameters
+    ----------
+    G : torch.Tensor, shape (B, N)
+        Numeraire values at each maturity.
+    dG_dtau : torch.Tensor, shape (B, N)
+        Maturity derivative of G.
+    grad_z_G : torch.Tensor, shape (B, N, d)
+        Gradient of G with respect to the latent state z.
+    trace_cov_hess : torch.Tensor, shape (B, N)
+        Trace term Tr[sigma^T H(G) sigma] for each maturity.
+    mu : torch.Tensor, shape (B, d)
+        Drift vector.
+    sigma : torch.Tensor, shape (B, d, d)
+        Diffusion matrix.
+    r_tilde : torch.Tensor, shape (B,) or (B, 1)
+        Short-rate values.
+    eps : float, default 1e-4
+        Stabiliser threshold for division by G.
+
+    Returns
+    -------
+    alpha : torch.Tensor, shape (B, N)
+    beta : torch.Tensor, shape (B, N)
+    gamma : torch.Tensor, shape (B, N)
     """
     if r_tilde.ndim == 1:
         r_tilde = r_tilde.unsqueeze(1)  # (B,1)
 
     B, d = mu.shape
 
-    # stabiliser division med G
+    # stabilise division by G
     sgn = torch.sign(G)
     sgn = torch.where(sgn == 0, torch.ones_like(sgn), sgn)
     G_safe = torch.where(G.abs() >= eps, G, eps * sgn)
@@ -47,18 +79,26 @@ def paper_alpha_beta_gamma_trace(
 # -------------------------
 def d_tau_autograd_nodewise(G_module: nn.Module, z: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
     """
-    Return dG/dtau evaluated for each z in batch and each tau in tau-grid.
+    Return dG/dtau for each (z_i, tau_j) pair using forward-mode autodiff.
 
-    Assumptions:
-      - G_module(z_batch, tau_batch) returns shape (B, 1) or (B,) for tau_batch shape (B,1) or (B,)
-      - Here we evaluate pointwise: G(z_i, tau_j)
-    Output:
-      dG_dtau: (B,N)
+    Parameters
+    ----------
+    G_module : nn.Module
+        Module mapping (z_batch, tau_batch) to shape (B, 1) or (B,).
+    z : torch.Tensor, shape (B, d)
+        Batch of latent states.
+    tau : torch.Tensor, shape (N,)
+        Maturity grid.
+
+    Returns
+    -------
+    torch.Tensor, shape (B, N)
+        Maturity derivative dG/dtau evaluated pointwise at each (z_i, tau_j).
     """
     tau = tau.to(device=z.device, dtype=z.dtype)
 
     def G_scalar(z_single: torch.Tensor, t_scalar: torch.Tensor) -> torch.Tensor:
-        # ensure shapes consistent for your G
+        # ensure consistent shapes
         out = G_module(z_single.unsqueeze(0), t_scalar.view(1))  # (1,1) or (1,)
         return out.squeeze()
 
@@ -79,12 +119,23 @@ def d_tau_autograd_nodewise(G_module: nn.Module, z: torch.Tensor, tau: torch.Ten
 # -------------------------
 def grad_and_trace_cov_hess_G(G_fn, z: torch.Tensor, sigma: torch.Tensor):
     """
-    G_fn: callable mapping (z_single: (d,)) -> (N,)  OR (N,1) squeezed to (N,)
-          (i.e. returns all maturities in one go)
+    Compute the gradient and covariance-weighted Hessian trace of G with respect to z.
 
-    Returns:
-      grad_z_G: (B,N,d)
-      trace_cov_hess: (B,N) = Tr[σ^T H(G) σ]  (per maturity)
+    Parameters
+    ----------
+    G_fn : callable
+        Maps z_single of shape (d,) to shape (N,) for all maturities at once.
+    z : torch.Tensor, shape (B, d)
+        Batch of latent states.
+    sigma : torch.Tensor, shape (B, d, d)
+        Diffusion matrix.
+
+    Returns
+    -------
+    grad_z_G : torch.Tensor, shape (B, N, d)
+        Jacobian of G with respect to z.
+    trace_cov_hess : torch.Tensor, shape (B, N)
+        Trace Tr[sigma^T H(G) sigma] for each maturity.
     """
 
     # jac_single: (d,) -> (N,d)
@@ -114,6 +165,27 @@ def grad_and_trace_cov_hess_G(G_fn, z: torch.Tensor, sigma: torch.Tensor):
 # Poulsen solver: RK4 (3/8 rule)
 # -------------------------
 def solve_AB(tau: torch.Tensor, alpha: torch.Tensor, beta: torch.Tensor, gamma: torch.Tensor):
+    """
+    Integrate the Poulsen ODE system for (A, B) using the RK4 3/8 rule.
+
+    Parameters
+    ----------
+    tau : torch.Tensor, shape (N,)
+        Maturity grid.
+    alpha : torch.Tensor, shape (B, N)
+        ODE coefficient alpha at each maturity.
+    beta : torch.Tensor, shape (B, N)
+        ODE coefficient beta at each maturity.
+    gamma : torch.Tensor, shape (B, N)
+        ODE coefficient gamma at each maturity.
+
+    Returns
+    -------
+    A : torch.Tensor, shape (B, N)
+        Integrated A trajectory.
+    Bv : torch.Tensor, shape (B, N)
+        Integrated B trajectory.
+    """
     device = alpha.device
     dtype = alpha.dtype
     tau = tau.to(device=device, dtype=dtype)

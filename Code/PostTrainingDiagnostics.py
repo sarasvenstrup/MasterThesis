@@ -1,7 +1,4 @@
 """
-PostTrainingDiagnostics.py
-=======================
-
 Comprehensive post-training diagnostics on the training set.
 
 Checks
@@ -102,7 +99,7 @@ BATCH_SIZE = 256
 MAX_TEST = 5000              # expensive checks use subsample; None = all
 SHOW_PLOTS = False            # Changed to False for batch processing
 
-# expected stable-H defaults from FullModel(...)
+# Expected stable-H defaults
 SIGMA_MIN_EXPECTED = 1e-4
 SIGMA_MAX_EXPECTED = 0.20
 RHO_MAX_EXPECTED = 0.999
@@ -131,25 +128,30 @@ SEED = 1234
 # Utility helpers
 # =============================================================================
 def set_seeds(seed: int) -> None:
+    """Set NumPy and PyTorch random seeds."""
     np.random.seed(seed)
     torch.manual_seed(seed)
 
 
 def get_device() -> torch.device:
+    """Return CUDA device if available, otherwise CPU."""
     return torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
 def get_output_dir(checkpoint_path: str) -> str:
+    """Return the Diagnostics output directory for a checkpoint, creating it if needed."""
     out_dir = os.path.join(os.path.dirname(checkpoint_path), "Diagnostics")
     os.makedirs(out_dir, exist_ok=True)
     return out_dir
 
 
 def status_str(ok: bool) -> str:
+    """Return 'PASS' if ok is True, else 'WARN'."""
     return "PASS" if ok else "WARN"
 
 
 def safe_bp(x: float) -> float:
+    """Convert a decimal rate to basis points."""
     return 1e4 * x
 
 
@@ -157,6 +159,23 @@ def safe_bp(x: float) -> float:
 # Loading
 # =============================================================================
 def load_model(checkpoint_path: str, latent_dim: int, device: torch.device) -> FullModel:
+    """
+    Load a FullModel checkpoint from disk.
+
+    Parameters
+    ----------
+    checkpoint_path : str
+        Path to the checkpoint file (.pt).
+    latent_dim : int
+        Latent dimension expected by FullModel.
+    device : torch.device
+        Device to load the model onto.
+
+    Returns
+    -------
+    FullModel
+        Model in eval mode with double precision weights.
+    """
     obj = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     model = FullModel(latent_dim=latent_dim).to(device)
@@ -181,6 +200,27 @@ def load_model(checkpoint_path: str, latent_dim: int, device: torch.device) -> F
 
 
 def load_training_data(use: str, ccy_filter: str, device: torch.device, dtype: torch.dtype):
+    """
+    Load swap-rate training data via my_data.
+
+    Parameters
+    ----------
+    use : str
+        Data source identifier passed to my_data.
+    ccy_filter : str
+        Currency filter string; empty string loads all currencies.
+    device : torch.device
+        Device to place X_tensor on.
+    dtype : torch.dtype
+        Dtype to cast X_tensor to.
+
+    Returns
+    -------
+    meta : pd.DataFrame
+    X_tensor : torch.Tensor, shape (N, d)
+    tenors : list
+    scale_is_percent : bool
+    """
     meta, X_tensor, _, _, tenors, _, _, scale_is_percent = my_data(
         use=use, ccy_filter=ccy_filter
     )
@@ -196,6 +236,23 @@ def load_training_data(use: str, ccy_filter: str, device: torch.device, dtype: t
 # =============================================================================
 @torch.no_grad()
 def encode_all(model: FullModel, X: torch.Tensor, batch_size: int) -> torch.Tensor:
+    """
+    Encode all rows of X through the model encoder in batches.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    X : torch.Tensor, shape (N, d_obs)
+        Input swap-rate curves.
+    batch_size : int
+        Number of rows per batch.
+
+    Returns
+    -------
+    torch.Tensor, shape (N, latent_dim)
+        Latent representations.
+    """
     zs = []
     was_training = model.training
     model.eval()
@@ -209,6 +266,27 @@ def encode_all(model: FullModel, X: torch.Tensor, batch_size: int) -> torch.Tens
 
 @torch.no_grad()
 def decode_default_all(model: FullModel, z_all: torch.Tensor, batch_size: int):
+    """
+    Decode all latent points on the model's default annual tau grid.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_all : torch.Tensor, shape (N, latent_dim)
+        Latent points to decode.
+    batch_size : int
+        Number of rows per batch.
+
+    Returns
+    -------
+    p_full : np.ndarray, shape (N, T)
+        Discount factor curves.
+    tau_grid : np.ndarray, shape (T,)
+        Tau grid used for decoding.
+    s_hat : np.ndarray or None, shape (N, K)
+        Reconstructed par swap rates, or None if unavailable.
+    """
     p_list, s_list = [], []
     tau_grid = None
 
@@ -228,6 +306,7 @@ def decode_default_all(model: FullModel, z_all: torch.Tensor, batch_size: int):
 
 
 def subsample_tensor(x: torch.Tensor, max_pts: int | None) -> torch.Tensor:
+    """Return a random subsample of x with at most max_pts rows."""
     if max_pts is None or x.shape[0] <= max_pts:
         return x
     idx = torch.randperm(x.shape[0], device=x.device)[:max_pts]
@@ -236,6 +315,7 @@ def subsample_tensor(x: torch.Tensor, max_pts: int | None) -> torch.Tensor:
 
 @torch.no_grad()
 def get_r_tilde(model: FullModel, z: torch.Tensor) -> np.ndarray:
+    """Return short-rate r_tilde(z) as a NumPy array."""
     r = model.R(z)
     if r.ndim == 2 and r.shape[-1] == 1:
         r = r.squeeze(-1)
@@ -247,6 +327,22 @@ def get_r_tilde(model: FullModel, z: torch.Tensor) -> np.ndarray:
 # =============================================================================
 @torch.no_grad()
 def check0_single_point_debug(model: FullModel, z_all: torch.Tensor):
+    """
+    Run a single-point forward pass on the median training curve.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_all : torch.Tensor, shape (N, latent_dim)
+        Full set of encoded latent points.
+
+    Returns
+    -------
+    dict
+        Contains idx, tau_grid, G_vals, beta_vals, B_vals, A_vals, P_vals,
+        and r_tilde for the selected curve.
+    """
     z_med = z_all.median(dim=0).values.unsqueeze(0)
     idx = int(((z_all - z_med) ** 2).sum(dim=1).argmin().item())
     z0 = z_all[idx:idx + 1]
@@ -292,6 +388,22 @@ def check0_single_point_debug(model: FullModel, z_all: torch.Tensor):
 # Check 1/2: discount-curve constraints
 # =============================================================================
 def check_discount_constraints(p_full: np.ndarray, tau_grid: np.ndarray) -> dict:
+    """
+    Check discount-curve constraints across the training set.
+
+    Parameters
+    ----------
+    p_full : np.ndarray, shape (N, T)
+        Discount factor curves.
+    tau_grid : np.ndarray, shape (T,)
+        Tau grid corresponding to the columns of p_full.
+
+    Returns
+    -------
+    dict
+        Contains p0_err, finite_pct, min_p, max_p, pct_nonpos, pct_above_one,
+        pct_upticks, and max_uptick.
+    """
     finite_mask = np.isfinite(p_full)
     finite_pct = 100.0 * finite_mask.mean()
 
@@ -321,11 +433,8 @@ def check_discount_constraints(p_full: np.ndarray, tau_grid: np.ndarray) -> dict
     print(f"max upward tau-step          = {max_uptick:.4e}")
     print(f"P(0)=1 status                = {status_str(p0_err.max() < P0_TOL)}")
     print(f"P>0 status                   = {status_str(pct_nonpos == 0.0)}")
-    # NOTE: The article does NOT require P <= 1.
-    # When r_tilde < 0 (negative rates), P(z,tau) = exp(A - B*G) > 1 is mathematically
-    # correct (e.g. P = exp(-r*tau) > 1 for r < 0 and tau > 0).
-    # We therefore report % P > 1 as purely informational -- no PASS/WARN status.
-    print(f"P<=1                         = informational only -- see NOTE above")
+    # The article does not require P <= 1; when r_tilde < 0, P > 1 is expected.
+    print(f"P<=1                         = informational only")
     print(f"monotone non-increasing      = {status_str(max_uptick <= MONO_TOL)}")
 
     return {
@@ -346,9 +455,22 @@ def check_discount_constraints(p_full: np.ndarray, tau_grid: np.ndarray) -> dict
 @torch.no_grad()
 def check_G_full_tau(model: FullModel, z_test: torch.Tensor) -> dict:
     """
-    Check G(z, tau) across the full tau grid.
-    G appears in the ODE denominator as beta = r_tilde / G.
-    Near-zero or negative G causes ODE blow-up in every forward pass.
+    Check G(z, tau) across the full tau grid for ODE denominator stability.
+
+    G appears in the ODE denominator; near-zero |G| causes numerical blow-up.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_test : torch.Tensor, shape (N, d)
+        Latent points to evaluate.
+
+    Returns
+    -------
+    dict
+        Contains G_all, tau_grid, G_by_tau_df, overall_min, overall_abs_min,
+        any_neg, any_tiny, G0, and pct_neg_G0.
     """
     device = z_test.device
     dtype  = z_test.dtype
@@ -425,16 +547,24 @@ def check_G_full_tau(model: FullModel, z_test: torch.Tensor) -> dict:
 
 def _cholesky_inside_terms(rhos: torch.Tensor, d: int) -> dict:
     """
-    Recomputes the sqrt arguments from the analytic Cholesky WITHOUT clamping.
+    Recompute the analytic Cholesky sqrt arguments without clamping.
 
-    A negative value means the eps clamp fired in L_from_sigmas_rhos for that
-    observation -- the rhos formed a geometrically invalid correlation matrix
-    and L was silently distorted. This is only possible for d >= 3.
+    A negative value indicates the eps-clamp fired, meaning the rhos formed a
+    geometrically invalid correlation matrix. Only possible for d >= 3.
 
-    Returns a dict of (N,) tensors, one per inside term:
-      d2: 1 - rho12^2                          (always > 0 when |rho12| < 1)
-      d3: the d=3 determinant expression        (< 0 => clamp fired)
-      d4: the d=4 determinant expression        (< 0 => clamp fired)
+    Parameters
+    ----------
+    rhos : torch.Tensor, shape (N, n_rho)
+        Correlation parameters from the H network.
+    d : int
+        Latent dimension.
+
+    Returns
+    -------
+    dict
+        Keys 'd2', 'd3', 'd4' (where applicable), each a (N,) tensor.
+        d2 = 1 - rho12^2; d3 = d=3 determinant expression;
+        d4 = d=4 determinant expression. Negative values indicate clamp fired.
     """
     out = {}
     if d < 2:
@@ -482,15 +612,31 @@ def _cholesky_inside_terms(rhos: torch.Tensor, d: int) -> dict:
 
 @torch.no_grad()
 def check_sigma_rho(model: FullModel, z_test: torch.Tensor) -> dict:
+    """
+    Check sigma positivity, rho bounds, covariance PSD, and Cholesky validity.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_test : torch.Tensor, shape (N, d)
+        Latent points to evaluate.
+
+    Returns
+    -------
+    dict
+        Contains sigmas, rhos, sigma_min, sigma_max, pct_sigma_nonpos,
+        pct_sigma_low, pct_sigma_high, rho_abs_max, pct_rho_out,
+        cov_min_eigs, cov_max_eigs, cond_numbers, min_cov_eig, max_cond,
+        mean_cond, diag_err_max, inside, and chol_any_neg.
+    """
     d = model.H.d
     sigmas, rhos = model.H(z_test)
     sigmas_np = sigmas.detach().cpu().numpy()
     rhos_np   = rhos.detach().cpu().numpy()
     N         = sigmas.shape[0]
 
-    # Use validate=False so we can report PSD violations ourselves rather than crashing.
-    # The _cholesky_inside_terms check below detects when the rhos form a non-PD
-    # correlation matrix (and thus when the eps-clamp in L_from_sigmas_rhos fires).
+    # Use validate=False to report PSD violations without crashing.
     L   = L_from_sigmas_rhos(sigmas, rhos, validate=False)
     cov = L @ L.transpose(-1, -2)
     eigs         = torch.linalg.eigvalsh(cov)       # (N, d)
@@ -587,12 +733,25 @@ def check_sigma_rho(model: FullModel, z_test: torch.Tensor) -> dict:
 @torch.no_grad()
 def check_r_tilde(model: FullModel, z_test: torch.Tensor) -> dict:
     """
-    Inspect the short rate r_tilde(z) across training z points.
+    Inspect the short-rate r_tilde(z) distribution across training latent points.
 
-    Reports distribution statistics and flags economically implausible values:
-      - r < -0.02  (-200 bp): deeply negative, unusual even in NIRP regimes
-      - r > 0.10   (+1000 bp): very high, plausible only in crisis/EM environments
-      - r < 0      (negative): valid for EUR/DKK/SEK/JPY/CHF in 2014-2022
+    Flags economically implausible values:
+      - r < -0.02  (-200 bp): deeply negative
+      - r > 0.10   (+1000 bp): very high
+      - r < 0: valid for NIRP currencies
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_test : torch.Tensor, shape (N, d)
+        Latent points to evaluate.
+
+    Returns
+    -------
+    dict
+        Distribution statistics: r_np, r_mean, r_std, r_min, r_max, r_p5,
+        r_p95, pct_neg, pct_very_neg, and pct_high.
     """
     R_NEG_WARN  = -0.02    # -200 bp floor
     R_HIGH_WARN =  0.10    # +1000 bp ceiling
@@ -645,13 +804,18 @@ def check_r_tilde(model: FullModel, z_test: torch.Tensor) -> dict:
 @torch.no_grad()
 def check_K_eigenvalues(model: FullModel) -> dict:
     """
-    Paper constraint: the drift matrix M must have all strictly negative
-    eigenvalues to guarantee mean-reversion of the latent process.
+    Check that all eigenvalues of the drift matrix M have strictly negative
+    real parts, verifying the mean-reversion guarantee.
 
-    Stable variant:  M = -(V^T V + eps*I)  -> negative definite by construction.
-    Baseline variant: M = weight matrix of K.lin -- may or may not be stable.
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
 
-    We verify this numerically and report PASS/WARN.
+    Returns
+    -------
+    dict
+        Contains M, eig_reals, max_real_eig, all_negative, has_imag, and skipped.
     """
     if hasattr(model.K, "stable_matrix"):
         M = model.K.stable_matrix().detach().cpu()
@@ -705,11 +869,21 @@ def check_K_eigenvalues(model: FullModel) -> dict:
 @torch.no_grad()
 def check_ODE_boundary(model: FullModel, z_test: torch.Tensor) -> dict:
     """
-    Paper constraint: the ODE initial conditions require A(0)=0 and B(0)=0
-    so that P(z,0) = exp(A(0) - B(0)*G(z,0)) = exp(0) = 1.
+    Check the ODE boundary conditions A(0) = 0 and B(0) = 0.
 
-    The solver initialises A=B=0 by construction, but this check catches
-    any solver regression or numerical drift at the boundary.
+    These conditions ensure P(z,0) = exp(A(0) - B(0)*G(z,0)) = 1.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_test : torch.Tensor, shape (N, d)
+        Latent points to evaluate.
+
+    Returns
+    -------
+    dict
+        Contains max_a0, max_b0, mean_a0, mean_b0, and ok.
     """
     a_errs, b_errs = [], []
 
@@ -754,11 +928,22 @@ def check_ODE_boundary(model: FullModel, z_test: torch.Tensor) -> dict:
 @torch.no_grad()
 def check_gamma_and_cov_symmetry(model: FullModel, z_test: torch.Tensor) -> dict:
     """
-    Paper constraints:
-      (a) gamma = 1/2 ||sigma^T nabla_z G||^2 >= 0 for all (z,tau).
-          Negative gamma would violate the ODE derivation.
-      (b) Sigma = L L^T must be symmetric.  Guaranteed by construction
-          but we verify numerically as a sanity check.
+    Check gamma non-negativity and covariance matrix symmetry.
+
+    Verifies: (a) gamma = 1/2 ||sigma^T nabla_z G||^2 >= 0 for all (z, tau);
+              (b) Sigma = L L^T is symmetric.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_test : torch.Tensor, shape (N, d)
+        Latent points to evaluate.
+
+    Returns
+    -------
+    dict
+        Contains gamma_min, gamma_max, gamma_nonneg, max_sym_err, and sym_ok.
     """
     gamma_mins, gamma_maxs = [], []
     sym_errs = []
@@ -807,6 +992,27 @@ def check_gamma_and_cov_symmetry(model: FullModel, z_test: torch.Tensor) -> dict
 # =============================================================================
 @torch.no_grad()
 def check_short_rate_tau_sweep(model: FullModel, z_test: torch.Tensor, tau_list: list[float]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Check short-rate consistency via finite-difference approximation at each tau.
+
+    Computes f_fd(0, tau) = -[log P(tau) - log P(0)] / tau and compares to r_tilde.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_test : torch.Tensor, shape (N, d)
+        Latent points to evaluate.
+    tau_list : list of float
+        Tau values to sweep over.
+
+    Returns
+    -------
+    summary_df : pd.DataFrame
+        Per-tau summary statistics (mean/median/max error).
+    detail_df : pd.DataFrame
+        Per-observation error records for all tau values.
+    """
     eps = 1e-15
     summary_rows = []
     detail_rows = []
@@ -875,6 +1081,21 @@ def check_short_rate_tau_sweep(model: FullModel, z_test: torch.Tensor, tau_list:
 # =============================================================================
 @torch.no_grad()
 def check_sharpe_ratios(model: FullModel, z_test: torch.Tensor) -> dict:
+    """
+    Compute the no-arbitrage Sharpe-ratio diagnostic SR_tau across training points.
+
+    Parameters
+    ----------
+    model : FullModel
+        Trained model.
+    z_test : torch.Tensor, shape (N, d)
+        Latent points to evaluate.
+
+    Returns
+    -------
+    dict
+        Contains SR (array or None), tau_axis, max_abs_sr, and mean_abs_sr.
+    """
     sr_list = []
     tau_axis = None
 
@@ -923,6 +1144,25 @@ def check_sharpe_ratios(model: FullModel, z_test: torch.Tensor) -> dict:
 # Check 7: reconstruction RMSE
 # =============================================================================
 def check_rmse_per_currency(X_tensor: torch.Tensor, S_hat: np.ndarray, meta: pd.DataFrame, scale_is_percent: bool) -> pd.DataFrame | None:
+    """
+    Compute reconstruction RMSE in basis points per currency.
+
+    Parameters
+    ----------
+    X_tensor : torch.Tensor, shape (N, K)
+        Observed swap rates.
+    S_hat : np.ndarray, shape (N, K) or None
+        Reconstructed swap rates.
+    meta : pd.DataFrame
+        Metadata with a 'ccy' column aligned to X_tensor rows.
+    scale_is_percent : bool
+        If True, rates are in percent units; if False, in decimal.
+
+    Returns
+    -------
+    pd.DataFrame or None
+        Per-currency RMSE in basis points, or None if S_hat is None.
+    """
     if S_hat is None:
         print("\nReconstruction RMSE not available: S_hat is None.")
         return None
@@ -972,6 +1212,7 @@ def save_outputs(
     sharpe_res: dict,
     rmse_df: pd.DataFrame | None,
 ) -> None:
+    """Save diagnostic metrics, tau sweep tables, RMSE, and G-values to CSV files."""
     # -- K eigenvalue fields --
     k_fields = {}
     if not k_res.get("skipped", True):
@@ -1065,6 +1306,7 @@ def make_summary_plot(
     sharpe_res: dict,
     rmse_df: pd.DataFrame | None,
 ):
+    """Generate and save the 3×3 post-training diagnostics summary figure."""
     fig, axes = plt.subplots(3, 3, figsize=(19, 13))
     cp_label = os.path.basename(os.path.dirname(checkpoint_path))
 
@@ -1290,9 +1532,7 @@ def run_diagnostics_single(checkpoint_path: str, latent_dim: int, device: torch.
         rmse_df=rmse_df,
     )
 
-    # -------------------------------------------------------------------------
-    # Article-constraint summary (Poulsen / Rolf Poulsen autoencoder paper)
-    # -------------------------------------------------------------------------
+    # Article-constraint summary
     print("\n" + "=" * 72)
     print("ARTICLE CONSTRAINT SUMMARY")
     print("=" * 72)
@@ -1360,6 +1600,7 @@ def run_diagnostics_single(checkpoint_path: str, latent_dim: int, device: torch.
 
 
 def main():
+    """Run diagnostics in batch mode over DIMENSIONS, or on a single checkpoint."""
     device = get_device()
     print(f"Using device: {device}")
     print(f"THESIS_ROOT: {THESIS_ROOT}")

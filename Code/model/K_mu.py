@@ -11,6 +11,15 @@ class KMu(nn.Module):
         self.lin = nn.Linear(latent_dim, latent_dim, bias=bias)
 
     def forward(self, z):
+        """
+        Parameters
+        ----------
+        z : (B, d) or (d,)
+
+        Returns
+        -------
+        mu : (B, d)
+        """
         if z.dim() == 1:
             z = z.unsqueeze(0)
         return self.lin(z)  # (B, latent_dim)

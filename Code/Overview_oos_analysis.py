@@ -2,7 +2,7 @@
 Generates OOS Results Analysis.md from the OOS rolling CSV results.
 
 Run from repo root:
-    python Code/gen_oos_analysis.py
+    python Code/Overview_oos_analysis.py
 
 Reads: Figures/OOSResults/Roll/OOS_roll_<model>/train5Y_test6M_step6M/ep<ep>/*.csv
 Writes: OOS Results Analysis.md  (repo root)
@@ -38,16 +38,19 @@ CURRENCIES = ["AUD", "CAD", "DKK", "EUR", "JPY", "NOK", "SEK", "GBP", "USD"]
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def model_key(dim, mtype):
+    """Return the canonical model key string for a given dimension and type."""
     return f"dim{dim}_{mtype}"
 
 
 def csv_path(dim, mtype, ep):
+    """Return the path to the rolling OOS CSV for a given model, or None if not found."""
     folder = os.path.join(ROLL_ROOT, f"OOS_roll_dim{dim}_{mtype}", SUBDIR, f"ep{ep}")
     hits = glob.glob(os.path.join(folder, "*.csv"))
     return hits[0] if hits else None
 
 
 def load_df(dim, mtype, ep):
+    """Load the rolling OOS CSV for a given model as a DataFrame, or None if missing."""
     p = csv_path(dim, mtype, ep)
     if p is None:
         return None
@@ -60,10 +63,12 @@ def load_df(dim, mtype, ep):
 
 
 def eig_cols(df):
+    """Return column names containing real eigenvalue values."""
     return [c for c in df.columns if c.startswith("eig_real_")]
 
 
 def fmt(v, decimals=1):
+    """Format a float to fixed decimal places, returning '—' for missing values."""
     if v is None or (isinstance(v, float) and np.isnan(v)):
         return "—"
     return f"{v:.{decimals}f}"
@@ -80,6 +85,7 @@ for dim, mtype, ep in MODELS:
 # ── per-model summary stats ───────────────────────────────────────────────────
 
 def summary(key):
+    """Compute mean/max OOS RMSE, mean IS RMSE, and bad-row count for a model."""
     d = data[key]
     df = d["df"]
     if df is None:
@@ -102,6 +108,7 @@ def summary(key):
 BIG_OOS_THRESHOLD = 50   # bps — windows above this get flagged
 
 def big_error_windows(threshold=BIG_OOS_THRESHOLD):
+    """Partition windows above the RMSE threshold into ODE-crash (A) and finite-wrong (B) groups."""
     mech_a = []   # ODE crash (n_test_bad > 0)
     mech_b = []   # Finite but wrong (n_test_bad == 0, huge RMSE)
     for key, d in data.items():
@@ -143,6 +150,7 @@ def big_error_windows(threshold=BIG_OOS_THRESHOLD):
 # ── eigenvalue summary per model ──────────────────────────────────────────────
 
 def eig_summary(key):
+    """Return eigenvalue range and stability window counts for a model."""
     d = data[key]
     df = d["df"]
     if df is None:
@@ -165,6 +173,7 @@ def eig_summary(key):
 # ── window-level per-currency details ────────────────────────────────────────
 
 def worst_window_details(key, window_start):
+    """Return a formatted string of the worst per-currency RMSE for a given window."""
     df = data[key]["df"]
     if df is None:
         return ""
@@ -199,7 +208,7 @@ now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 lines += [
     "# OOS Rolling Results: Stable vs Baseline — Full Analysis",
     "",
-    f"_Auto-generated: {now} — re-run `python Code/gen_oos_analysis.py` to refresh._",
+    f"_Auto-generated: {now} — re-run `python Code/Overview_oos_analysis.py` to refresh._",
     "",
 ]
 

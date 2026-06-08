@@ -337,10 +337,7 @@ def time0_forward_swap_and_annuity(
     Compute forward swap rate and annuity from time-0 discount curve.
     
     This is the NumPy-based version for analysis and validation.
-    For differentiable computation, use :func:`swap_rate_torch` (slice the
-    time-0 curve at the appropriate offset) or call
-    :func:`_swap_from_payment_dfs` directly with a torch tensor.
-    
+
     Parameters
     ----------
     P_full_0 : array-like
@@ -638,8 +635,6 @@ def swaption_payoff_from_simulation(
     n_paths = P_full_paths.shape[0]
 
     # --- Vectorised pathwise annuity / swap-rate / payoff ----------------
-    # Replaces the per-path Python loop: lookup payment-date column indices
-    # once, slice in one shot, then broadcast.
     payment_taus = [accrual * j for j in range(1, tenor + 1)]
     tau_indices = np.array(
         [get_grid_index_for_value(tau_grid, t) for t in payment_taus],
@@ -839,8 +834,7 @@ def bachelier_price(
     NumPy-based Bachelier (normal-model) swaption price.
     
     This is the non-differentiable version for Monte Carlo and analysis.
-    For gradient-based calibration, use bachelier_price_torch instead.
-    
+
     Parameters
     ----------
     forward : float
@@ -1198,16 +1192,6 @@ def atm_swaption_straddle_mc_price_from_simulation(
 
     is an MC estimator of  E^A[S(T_mu) - K]  under the annuity measure.
 
-    Implementation notes
-    --------------------
-    Earlier this function called ``atm_swaption_mc_price_from_simulation``
-    twice (payer then receiver). Each call recomputed the time-0 quote, the
-    per-path payment-date slice, and the discount-factor array — all of
-    which are independent of the payer/receiver flag. The function now does
-    ONE vectorised pass producing both leg payoffs from the same annuity /
-    swap-rate / discount arrays, and inverts Bachelier only once (on the
-    average).
-
     Returns
     -------
     dict with the same contract as before: ``payer_price``,
@@ -1296,8 +1280,7 @@ def atm_swaption_straddle_mc_price_from_simulation(
 
     # Standard error of the average uses the SAME paths and is therefore the
     # std of 0.5*(pv_pay + pv_rec) divided by sqrt(N) — no independence
-    # assumption needed (this is tighter than the previous conservative
-    # 0.5*sqrt(se_p^2 + se_r^2) upper bound).
+    # assumption needed.
     pv_avg_v = 0.5 * (pv_pay_v + pv_rec_v)
     straddle_se = float(np.std(pv_avg_v, ddof=1) / math.sqrt(n_valid)) if n_valid > 1 else 0.0
     se_pay = float(np.std(pv_pay_v, ddof=1) / math.sqrt(n_valid)) if n_valid > 1 else 0.0

@@ -1,3 +1,8 @@
+"""
+Rolling out-of-sample evaluation: train a fresh model on each window and record
+in-sample and OOS reconstruction RMSE.
+"""
+
 # ============================= Import Packages ===============================
 import os
 import sys
@@ -41,9 +46,7 @@ print("MKLDNN enabled:", torch.backends.mkldnn.enabled)
 USE = "bbg"
 LATENT_DIM = 2
 
-#
-
-# Recommended rolling window setup (baseline OOS)
+# Rolling window setup
 TRAIN_YEARS = 5
 TEST_MONTHS = 6
 STEP_MONTHS = 6
@@ -96,10 +99,12 @@ assert len(meta) == X_tensor.shape[0], "meta and X_tensor length mismatch"
 
 # ============================= Helpers ===============================
 def row_finite_mask(t: torch.Tensor) -> torch.Tensor:
+    """Return a boolean mask of rows where all elements are finite."""
     return torch.isfinite(t).all(dim=1)
 
 @torch.no_grad()
 def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    """Run batch inference and return reconstructed swap curves."""
     model.eval()
     outs = []
     N = X.shape[0]
@@ -110,6 +115,7 @@ def predict_S_hat(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> t
     return torch.cat(outs, dim=0)
 
 def rmse_bps_on_subset(model: nn.Module, X_sub: torch.Tensor, meta_sub: pd.DataFrame):
+    """Compute per-currency and average reconstruction RMSE in bps for a given subset."""
     S_hat = predict_S_hat(model, X_sub, batch_size=EVAL_BATCH_SIZE)
 
     mask = row_finite_mask(X_sub) & row_finite_mask(S_hat)
@@ -121,17 +127,19 @@ def rmse_bps_on_subset(model: nn.Module, X_sub: torch.Tensor, meta_sub: pd.DataF
     meta_eval = meta_sub.loc[mask.numpy()].reset_index(drop=True)
 
     rmse_per_ccy = H.rmse_bps_per_currency_paper(X_eval, S_eval, meta_eval)
-    avg_rmse_bps = float(rmse_per_ccy.mean())  # unweighted mean across currencies (recommended)
+    avg_rmse_bps = float(rmse_per_ccy.mean())  # unweighted mean across currencies
 
     return rmse_per_ccy, avg_rmse_bps, n_good, n_bad
 
 def make_loader(X_sub: torch.Tensor, batch_size: int):
+    """Wrap a tensor in a shuffled DataLoader."""
     ds = TensorDataset(X_sub)
     return DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
 
 WINDOW_SEED = 0  # fixed seed for every rolling window — change to reproduce
 
 def train_one_window(X_train: torch.Tensor):
+    """Train a fresh FullModel on a single rolling window and return the model and loss history."""
     torch.manual_seed(WINDOW_SEED)
     np.random.seed(WINDOW_SEED)
 
@@ -259,6 +267,7 @@ def train_one_window(X_train: torch.Tensor):
 # ============================= Per-roll saving helpers ===============================
 @torch.no_grad()
 def get_latent(model: nn.Module, X: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    """Encode a dataset in batches and return the concatenated latent vectors."""
     model.eval()
     zs = []
     for i in range(0, len(X), batch_size):
@@ -278,6 +287,7 @@ def _param_label(name):
 
 @torch.no_grad()
 def extract_parameters(model: nn.Module, X: torch.Tensor, meta_sub: pd.DataFrame) -> pd.DataFrame:
+    """Extract drift, diffusion, and short-rate parameters from a trained model for all finite rows."""
     model.eval()
     mask = row_finite_mask(X)
     X_m  = X[mask].to(device)
