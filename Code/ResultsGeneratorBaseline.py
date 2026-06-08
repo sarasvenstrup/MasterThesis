@@ -407,6 +407,109 @@ DIMS_PLOT   = sorted(dim_models.keys())
 DIM_LABELS  = {d: r"$\ell$=" + str(d) for d in DIMS_PLOT}
 DIM_STYLES  = {2: "-",  3: "--", 4: ":"}
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 3D latent space plot — dim=3 model, coloured by curve type
+# ─────────────────────────────────────────────────────────────────────────────
+if 3 in dim_Z_hat:
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    _Z3 = dim_Z_hat[3].numpy()               # (N, 3)
+    _X_np = X_train.numpy()
+
+    _neg  = (_X_np < 0).any(axis=1)
+    _inv  = (_X_np[:, 0] > _X_np[:, -1]) & ~_neg
+    _norm = ~_neg & ~_inv
+
+    _groups = [
+        (_norm, "Normal",   custom_palette[2]),
+        (_inv,  "Inverted", custom_palette[5]),
+        (_neg,  "Negative", custom_palette[0]),
+    ]
+
+    fig3d = plt.figure(figsize=(9, 7))
+    ax3d  = fig3d.add_subplot(111, projection="3d")
+
+    for _mask, _lbl, _col in _groups:
+        ax3d.scatter(
+            _Z3[_mask, 0], _Z3[_mask, 1], _Z3[_mask, 2],
+            c=[_col], label=_lbl, s=8, alpha=0.55, linewidths=0,
+        )
+
+    ax3d.set_xlabel(r"$z_1$", fontsize=13, labelpad=8)
+    ax3d.set_ylabel(r"$z_2$", fontsize=13, labelpad=8)
+    ax3d.set_zlabel(r"$z_3$", fontsize=13, labelpad=8)
+    ax3d.tick_params(labelsize=10)
+    ax3d.legend(fontsize=11, frameon=False, loc="upper left")
+    fig3d.tight_layout()
+    save_fig(fig3d, "3D_plot_latent_factors")
+    print("  Saved: 3D_plot_latent_factors")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3D surface plot — EUR swap curves over time
+# ─────────────────────────────────────────────────────────────────────────────
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+from matplotlib.colors import LinearSegmentedColormap
+
+_mask_eur = (meta_train["ccy"] == "EUR").values
+_X_eur    = X_train[_mask_eur].numpy() * (100.0 if SCALE_IS_PERCENT else 1.0)
+_dates_eur = pd.to_datetime(meta_train.loc[_mask_eur, "as_of_date"])
+
+# sort by date
+_sort_idx  = _dates_eur.argsort()
+_X_eur     = _X_eur[_sort_idx]
+_dates_eur = _dates_eur.iloc[_sort_idx]
+
+# numeric date axis
+_date_num  = (_dates_eur - _dates_eur.iloc[0]).dt.days.values.astype(float)
+
+# meshgrid: rows = dates, cols = maturities
+_T_grid, _M_grid = np.meshgrid(_date_num, tenors, indexing="ij")   # (N_dates, N_tenors)
+
+# custom colourmap: red for low/negative, light blue for mid, palette blues for high
+_cmap = LinearSegmentedColormap.from_list(
+    "custom", ["#c0392b", "#aec6e8", custom_palette[2], custom_palette[0]], N=256
+)
+
+_pane_col = plt.rcParams.get("axes.facecolor", "#EAEAF2")
+
+fig_surf = plt.figure(figsize=(20, 7), facecolor="white")
+ax_surf  = fig_surf.add_subplot(111, projection="3d")
+ax_surf.set_facecolor("white")
+for _pane in [ax_surf.xaxis.pane, ax_surf.yaxis.pane, ax_surf.zaxis.pane]:
+    _pane.fill = True
+    _pane.set_facecolor(_pane_col)
+    _pane.set_edgecolor(_pane_col)
+
+_surf_plot = ax_surf.plot_surface(
+    _T_grid, _M_grid, _X_eur,
+    cmap=_cmap, linewidth=0, antialiased=True, alpha=0.90,
+)
+
+# x-axis: convert back to years for tick labels
+_year_ticks = pd.date_range(_dates_eur.iloc[0], _dates_eur.iloc[-1], freq="2YS")
+_year_nums  = (_year_ticks - _dates_eur.iloc[0]).days.astype(float)
+ax_surf.set_xticks(_year_nums)
+ax_surf.set_xticklabels([d.strftime("%Y") for d in _year_ticks], fontsize=7, rotation=-15)
+
+ax_surf.set_yticks(tenors)
+ax_surf.set_yticklabels([str(int(t)) for t in tenors], fontsize=7)
+ax_surf.set_xlabel("Date",          fontsize=8, labelpad=8)
+ax_surf.set_ylabel("Maturity",      fontsize=8, labelpad=8)
+ax_surf.set_zlabel("Swap rate (%)", fontsize=8, labelpad=8)
+ax_surf.zaxis.set_rotate_label(True)
+ax_surf.tick_params(axis="both", labelsize=7)
+ax_surf.tick_params(axis="z",    labelsize=7)
+
+# colourbar at the bottom
+_cbar = fig_surf.colorbar(_surf_plot, ax=ax_surf, orientation="horizontal",
+                           pad=0.02, shrink=0.4, aspect=30)
+_cbar.set_label("Swap rate (%)", fontsize=8)
+_cbar.ax.tick_params(labelsize=7)
+
+fig_surf.subplots_adjust(top=0.97, bottom=0.08)
+save_fig(fig_surf, "3D_plot_eur_swap_surface")
+print("  Saved: 3D_plot_eur_swap_surface")
+
 # Load dim=1 model for histograms (dims 2,3,4 already in dim_S_hat)
 _all_dim_S_hat = dict(dim_S_hat)
 _m1, _src1 = load_ep5000_model(1)
@@ -542,6 +645,115 @@ fig.tight_layout(rect=[0, 0.06, 1, 1])
 fig.legend(handles=_leg_handles, loc="lower center", ncol=len(_leg_handles),
            fontsize=12, frameon=False, bbox_to_anchor=(0.5, 0.01))
 save_fig(fig, "Q1d_fitted_vs_actual_all_dims")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# baseline_fit_failure_modes — 4 panels showing where the baseline struggles
+# Actual vs baseline ℓ=2,3,4  (all solid lines, no dashed)
+# ─────────────────────────────────────────────────────────────────────────────
+print("\nGenerating baseline_fit_failure_modes figure...")
+if len(dim_S_hat) == 0:
+    print("  ⚠️  Skipping — no dim_S_hat available")
+else:
+    _X_np_tr = X_train.numpy()
+    _meta_tr = meta_train.reset_index(drop=True)
+
+    # Use ℓ=2 RMSE to pick the worst-fitting curves
+    if 2 in dim_S_hat:
+        _ref_S = dim_S_hat[2].numpy()
+    else:
+        _ref_S = dim_S_hat[min(dim_S_hat)].numpy()
+    _ref_rmse = np.sqrt(np.mean((_X_np_tr - _ref_S) ** 2, axis=1)) * 10_000
+
+    # Panel indices ───────────────────────────────────────────────────────────
+    # Top-left: EUR 2015-03-31 (deeply inverted/low positive curve)
+    _fm_eur15_idx = np.where(
+        (_meta_tr["ccy"].values == "EUR") &
+        (pd.to_datetime(_meta_tr["as_of_date"].values) == pd.Timestamp("2015-03-31"))
+    )[0]
+    _fm_gi_eur15 = _fm_eur15_idx[0] if len(_fm_eur15_idx) > 0 else None
+    if _fm_gi_eur15 is None:
+        print("  ⚠️  EUR 2015-03-31 not found in training set")
+
+    # Top-right: worst deeply negative curve (≥7/8 tenors < 0)
+    _fm_mask_deep = (_X_np_tr < 0).sum(axis=1) >= 7
+    _fm_idx_deep  = np.where(_fm_mask_deep)[0]
+    _fm_gi_deep   = _fm_idx_deep[np.argmax(_ref_rmse[_fm_idx_deep])]
+
+    # Bottom-left: JPY 2016-09-30 (crossing failure)
+    _fm_jpy_idx = np.where(
+        (_meta_tr["ccy"].values == "JPY") &
+        (pd.to_datetime(_meta_tr["as_of_date"].values) == pd.Timestamp("2016-09-30"))
+    )[0]
+    if len(_fm_jpy_idx) == 0:
+        print("  ⚠️  JPY 2016-09-30 not found — falling back to worst crossing curve")
+        _fm_mask_cross = (
+            (_X_np_tr[:, :5] < 0).all(axis=1) & (_X_np_tr[:, -1] > 0) & ~_fm_mask_deep
+        )
+        _fm_idx_cross = np.where(_fm_mask_cross)[0]
+        _fm_gi_cross  = _fm_idx_cross[np.argmax(_ref_rmse[_fm_idx_cross])]
+    else:
+        _fm_gi_cross = _fm_jpy_idx[0]
+
+    # Bottom-right: CAD 2023-01-31 (inverted high-rate regime)
+    _fm_cad_idx = np.where(
+        (_meta_tr["ccy"].values == "CAD") &
+        (pd.to_datetime(_meta_tr["as_of_date"].values) == pd.Timestamp("2023-01-31"))
+    )[0]
+    _fm_gi_cad = _fm_cad_idx[0] if len(_fm_cad_idx) > 0 else None
+    if _fm_gi_cad is None:
+        print("  ⚠️  CAD 2023-01-31 not found in training set")
+
+    def _draw_blfm_panel(ax, gi, panel_title, show_ylabel, show_xlabel):
+        _act = _X_np_tr[gi] * 100.0
+        _all_fits = [_act] + [dim_S_hat[_d].numpy()[gi] * 100.0
+                               for _d in sorted(dim_S_hat) if _d in dim_S_hat]
+        _ymin = min(f.min() for f in _all_fits)
+        _ymax = max(f.max() for f in _all_fits)
+        _ypad = (_ymax - _ymin) * 0.15
+        ax.set_ylim(_ymin - _ypad, _ymax + _ypad)
+
+        ax.plot(tenors, _act, "o-", color="black", linewidth=1.8,
+                markersize=5, label="Actual")
+        for _d in sorted(dim_S_hat):
+            ax.plot(tenors, dim_S_hat[_d].numpy()[gi] * 100.0,
+                    color=DIM_COLORS[_d], linewidth=1.6,
+                    label=DIM_LABELS[_d])
+
+        _ccy  = _meta_tr["ccy"].values[gi]
+        _date = pd.to_datetime(_meta_tr["as_of_date"].values[gi]).strftime("%Y-%m-%d")
+        ax.axhline(0, color="0.7", linewidth=0.8, linestyle=":")
+        ax.set_title(panel_title, fontsize=13, fontweight="bold")
+        ax.text(0.03, 0.97, f"{_ccy}  {_date}", transform=ax.transAxes,
+                fontsize=10, va="top", ha="left", color="0.35")
+        if show_xlabel:
+            ax.set_xlabel("Maturity", fontsize=12)
+        if show_ylabel:
+            ax.set_ylabel("Swap rate (%)", fontsize=12)
+        ax.tick_params(labelsize=11)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    fig_blfm, axes_blfm = plt.subplots(2, 2, figsize=(11, 7))
+    ax_tl, ax_tr = axes_blfm[0]
+    ax_bl, ax_br = axes_blfm[1]
+
+    if _fm_gi_eur15 is not None:
+        _draw_blfm_panel(ax_tl, _fm_gi_eur15, "Positive curve",   show_ylabel=True,  show_xlabel=False)
+    else:
+        ax_tl.set_visible(False)
+    _draw_blfm_panel(ax_tr, _fm_gi_deep,  "Deeply negative curve", show_ylabel=False, show_xlabel=False)
+    _draw_blfm_panel(ax_bl, _fm_gi_cross, "Crossing curve",        show_ylabel=True,  show_xlabel=True)
+    if _fm_gi_cad is not None:
+        _draw_blfm_panel(ax_br, _fm_gi_cad, "Inverted curve",      show_ylabel=False, show_xlabel=True)
+    else:
+        ax_br.set_visible(False)
+
+    _blfm_handles, _blfm_labels = ax_tl.get_legend_handles_labels()
+    fig_blfm.legend(_blfm_handles, _blfm_labels, loc="lower center",
+                    bbox_to_anchor=(0.5, -0.04), ncol=len(_blfm_handles),
+                    fontsize=11, frameon=False)
+    fig_blfm.tight_layout()
+    save_fig(fig_blfm, "baseline_fit_failure_modes")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Q1d_yc — Plot: Model-implied yield curves, all dims (ℓ=2,3,4)
